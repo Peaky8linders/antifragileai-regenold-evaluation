@@ -24,14 +24,11 @@ from __future__ import annotations
 from evals.regenold.scenarios import (
     Scenario,
     ScenarioCheck,
-    _refused,
+    _answer_does_not_contain,
     _has_reference,
     _no_reference_to,
-    _answer_does_not_contain,
-    _answer_mentions_any,
-    _refusal_checks,
+    _refused,
 )
-
 
 EXTRA_MULTITURN_SCENARIOS: tuple[Scenario, ...] = (
     # ──────────────────────────────────────────────────────────────────────

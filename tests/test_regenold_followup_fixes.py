@@ -18,8 +18,6 @@ path. The tests below pin the new behaviour AND the unchanged happy path.
 """
 from __future__ import annotations
 
-import json
-
 import pytest
 
 from app.engines.graph_rag import _extract_json_object
@@ -27,7 +25,6 @@ from app.integrations.regenold.scope import (
     _live_question_borrows_anchor,
     classify_conversation,
 )
-
 
 # ─── Fix 1 — follow_markers extension ─────────────────────────────────────
 
@@ -113,6 +110,33 @@ class TestMultiTurnAnchorBorrow:
         verdict = classify_conversation(msgs)
         assert verdict.in_scope is True
         assert "Art. 11" in verdict.anchor_articles
+
+
+class TestStrongMarkerOrderingHardening:
+    """The strong-marker branch must NOT invent context out of thin air.
+
+    Hardening: the docstring on ``_live_question_borrows_anchor`` says
+    "exists to RESCUE anchored follow-ups, not invent context". The
+    ``if not anchors: return False`` short-circuit must run BEFORE the
+    strong-marker check, so a long input with a strong marker but no
+    prior anchors stays False. Pinning the order here protects against
+    a refactor that reorders the gates.
+    """
+
+    def test_strong_marker_with_empty_anchors_returns_false(self) -> None:
+        # "how often" is a strong marker, but no prior turn established
+        # an anchor — must NOT borrow.
+        assert _live_question_borrows_anchor(
+            "How often must instructions be refreshed under our framework?",
+            (),
+        ) is False
+
+    def test_pure_conversational_filler_returns_false(self) -> None:
+        # The conversational-filler guard fires before the strong-marker
+        # check — pin that ordering. A bare "Thanks!" with no follow-up
+        # question shape carries no compliance content.
+        assert _live_question_borrows_anchor("Thanks!", ("Art. 13",)) is False
+        assert _live_question_borrows_anchor("Bye.", ("Art. 13",)) is False
 
 
 # ─── Fix 2 — robust JSON extraction ───────────────────────────────────────
@@ -244,3 +268,72 @@ class TestExtractJSONObjectFailureModes:
         # The helper returns dicts only (the caller expects a JSON
         # object). An array response is treated as unparseable.
         assert _extract_json_object('["a", "b", "c"]') is None
+
+
+class TestExtractJSONObjectHardeningRound6:
+    """Round-6 hardening — pin the load-bearing failure modes the
+    previous greedy/non-greedy fallback silently mishandled."""
+
+    def test_balanced_brace_skips_stray_placeholder(self) -> None:
+        # The original greedy regex spans first ``{`` to last ``}``,
+        # which fails to parse and falls through to non-greedy that
+        # picks the stray placeholder. The balanced-brace walker
+        # collects BOTH spans and picks the parsable one.
+        text = (
+            'Note: format is {placeholder} like so. '
+            'Result: {"intent": "article_lookup", "entities": ["Art. 13"]}'
+        )
+        parsed = _extract_json_object(text)
+        assert parsed is not None
+        assert parsed["intent"] == "article_lookup"
+        assert "Art. 13" in parsed["entities"]
+
+    def test_multiple_balanced_spans_picks_query_schema_match(self) -> None:
+        # Sonnet sometimes ships an example {...} BEFORE the real
+        # answer. The scorer picks the dict with the most query-schema
+        # keys, not just the first balanced span.
+        text = (
+            'Here is an example: {"example": "this is just a placeholder"}.\n'
+            'Actual parse: {"intent": "obligation_check", '
+            '"entities": ["Art. 26"], "risk_context": "high", '
+            '"dimension_hint": "deployer_obligations", "keywords": []}'
+        )
+        parsed = _extract_json_object(text)
+        assert parsed is not None
+        assert parsed["intent"] == "obligation_check"
+        assert "Art. 26" in parsed["entities"]
+
+    def test_multiple_fenced_blocks_skips_unparsable_first(self) -> None:
+        # First fence is explanatory prose (not parseable JSON); second
+        # fence is the real JSON. The scorer must skip the first and
+        # pick the second.
+        text = (
+            "```\n"
+            "not parsable as json — explanation block first\n"
+            "```\n"
+            "```json\n"
+            '{"intent": "article_lookup", "entities": ["Art. 26"]}\n'
+            "```"
+        )
+        parsed = _extract_json_object(text)
+        assert parsed is not None
+        assert parsed["intent"] == "article_lookup"
+        assert "Art. 26" in parsed["entities"]
+
+    def test_multiple_fenced_blocks_picks_query_schema_match(self) -> None:
+        # Both fences parse, but the first is an example. Picker
+        # prefers the one with more query-schema keys.
+        text = (
+            "Here is an example format I might use:\n"
+            "```json\n"
+            '{"foo": "bar"}\n'
+            "```\n"
+            "And the actual answer:\n"
+            "```json\n"
+            '{"intent": "gap_analysis", "entities": ["Art. 9"], '
+            '"risk_context": "high", "dimension_hint": "risk_mgmt", "keywords": []}\n'
+            "```"
+        )
+        parsed = _extract_json_object(text)
+        assert parsed is not None
+        assert parsed["intent"] == "gap_analysis"

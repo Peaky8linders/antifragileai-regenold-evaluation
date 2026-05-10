@@ -10,19 +10,30 @@ Required env: ``MISTRAL_API_KEY``. Optional: ``MISTRAL_BASE_URL``
 """
 from __future__ import annotations
 
+import atexit
 import logging
 import os
 import time
 
 import httpx
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
 
 class MistralRequest(BaseModel):
+    """Wire-shape model for one Mistral chat-completions call.
+
+    The ``user`` field is intentionally NOT length-constrained at this
+    layer — the route's ``RegenoldAskRequest`` already enforces the
+    live-user-message non-empty rule, and the engine's ``sanitize_for_llm``
+    pass can legitimately shrink an input. Re-checking here previously
+    raised a Pydantic ValidationError that surfaced as a generic 500
+    instead of a clean deterministic-fallback.
+    """
+
     system: str = ""
-    user: str = Field(min_length=1)
+    user: str = ""
     model: str = "mistral-large-latest"
     max_tokens: int = 1024
     temperature: float = 0.0
@@ -53,6 +64,26 @@ class _HttpxMistralProvider:
     def __init__(self) -> None:
         self._base_url = os.getenv("MISTRAL_BASE_URL", "https://api.mistral.ai").rstrip("/")
         self._timeout = float(os.getenv("MISTRAL_TIMEOUT_SECONDS", "30"))
+        # Long-lived client = one TLS handshake + persistent connection
+        # pool. Per-request `httpx.post` opens a fresh TLS handshake
+        # (~50-200ms over the public internet) AND leaks sockets in
+        # TIME_WAIT under concurrent load. Eng-review round-6 finding —
+        # measurable savings on 251-scenario eval runs.
+        self._client = httpx.Client(
+            base_url=self._base_url,
+            timeout=self._timeout,
+            limits=httpx.Limits(
+                max_keepalive_connections=10,
+                max_connections=20,
+            ),
+        )
+        atexit.register(self._close)
+
+    def _close(self) -> None:
+        try:
+            self._client.close()
+        except Exception:  # noqa: BLE001 — atexit best-effort
+            pass
 
     def _headers(self) -> dict[str, str]:
         key = os.getenv("MISTRAL_API_KEY", "").strip()
@@ -65,6 +96,12 @@ class _HttpxMistralProvider:
     def complete(self, req: MistralRequest) -> MistralResponse:
         if not is_mistral_enabled():
             return MistralResponse(error="mistral_api_key_not_set", model=req.model)
+        if not (req.user or "").strip():
+            # Defensive — the route layer enforces non-empty user input,
+            # but if the engine's sanitize-for-LLM pass shrinks an input
+            # to empty whitespace we fall back gracefully instead of
+            # round-tripping a malformed payload to Mistral.
+            return MistralResponse(error="empty_user_after_sanitise", model=req.model)
 
         body = {
             "model": req.model,
@@ -80,11 +117,10 @@ class _HttpxMistralProvider:
         start = time.perf_counter()
         for attempt in (1, 2):
             try:
-                response = httpx.post(
-                    f"{self._base_url}/v1/chat/completions",
+                response = self._client.post(
+                    "/v1/chat/completions",
                     headers=self._headers(),
                     json=body,
-                    timeout=self._timeout,
                 )
             except httpx.HTTPError as exc:
                 logger.warning("mistral_provider.network_error attempt=%s err=%s", attempt, exc)

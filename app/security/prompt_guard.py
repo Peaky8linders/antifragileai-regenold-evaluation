@@ -9,7 +9,6 @@ from __future__ import annotations
 import re
 import unicodedata
 
-
 # Prefix prepended to every system prompt. Empty string is the safe
 # default — kept as a hook so a partner deploy can opt in to a
 # hardening preamble without modifying call sites.

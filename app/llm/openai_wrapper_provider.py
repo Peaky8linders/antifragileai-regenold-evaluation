@@ -57,7 +57,7 @@ def is_openai_wrapper_enabled() -> bool:
 
 
 class _OpenAIWrapperProvider:
-    """OpenAI Chat Completions client. Stateless; one shared httpx call."""
+    """OpenAI Chat Completions client. One pooled httpx.Client per process."""
 
     def __init__(self) -> None:
         self._base_url = (
@@ -66,6 +66,23 @@ class _OpenAIWrapperProvider:
         )
         self._api_key = os.getenv("OPENAI_API_KEY", "dummy")
         self._timeout = float(os.getenv("OPENAI_TIMEOUT_SECONDS", "60"))
+        # Pooled client — see mistral_provider.py for the rationale.
+        self._client = httpx.Client(
+            base_url=self._base_url,
+            timeout=self._timeout,
+            limits=httpx.Limits(
+                max_keepalive_connections=10,
+                max_connections=20,
+            ),
+        )
+        import atexit
+        atexit.register(self._close)
+
+    def _close(self) -> None:
+        try:
+            self._client.close()
+        except Exception:  # noqa: BLE001 — atexit best-effort
+            pass
 
     def _headers(self) -> dict[str, str]:
         return {
@@ -89,11 +106,10 @@ class _OpenAIWrapperProvider:
 
         start = time.perf_counter()
         try:
-            response = httpx.post(
-                f"{self._base_url}/chat/completions",
+            response = self._client.post(
+                "/chat/completions",
                 headers=self._headers(),
                 json=body,
-                timeout=self._timeout,
             )
         except httpx.HTTPError as exc:
             return OpenAIWrapperResponse(

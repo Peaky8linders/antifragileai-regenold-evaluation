@@ -100,7 +100,9 @@ regenold-eu-ai-act-rag/
 ```bash
 # Python 3.12+
 py -3.12 -m venv .venv
-.venv\Scripts\python.exe -m pip install -r requirements.txt
+.venv\Scripts\python.exe -m pip install -e .          # runtime deps only
+# OR for dev/test:
+.venv\Scripts\python.exe -m pip install -e ".[dev]"
 
 # Run the FastAPI app (KB-fallback mode — no LLM key required)
 .venv\Scripts\python.exe -m uvicorn app.main:app --reload --port 8002
@@ -110,6 +112,14 @@ curl -X POST http://127.0.0.1:8002/api/v1/regenold/eu-ai-act/ask \
   -H "Content-Type: application/json" \
   -d '{"messages":[{"role":"user","content":"What does Art. 13 require?"}]}'
 ```
+
+### Port allocations
+
+The bundle's FastAPI app binds to `8002` by convention (the parent `legit-ai` uses `8001`). The optional `claude-code-openai-wrapper` (Sonnet path) binds to `8000`. They never conflict because they listen on different ports.
+
+### Reverse-proxy deployments
+
+When deploying behind a CDN or reverse proxy (Railway, Cloudflare, nginx), set `REGENOLD_TRUST_PROXY=true` so the anonymous-tier rate limiter reads `X-Forwarded-For` instead of the direct socket address. **WARNING**: only enable when your proxy overwrites (not appends) XFF, otherwise an attacker can spoof their IP to bypass the per-IP bucket.
 
 ## Run the evals
 

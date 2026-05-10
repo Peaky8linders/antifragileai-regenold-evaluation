@@ -44,11 +44,15 @@ _JSON_FENCE_RE = re.compile(
     r"```(?:json5?|jsonc)?\s*\n?(.*?)\n?```",
     re.IGNORECASE | re.DOTALL,
 )
-# Match the first balanced JSON object span. Greedy on closing brace so
-# nested objects are absorbed. Falls back to non-greedy if greedy fails.
-_JSON_OBJECT_GREEDY_RE = re.compile(r"\{.*\}", re.DOTALL)
-_JSON_OBJECT_NONGREEDY_RE = re.compile(r"\{.*?\}", re.DOTALL)
 _TRAILING_COMMA_RE = re.compile(r",\s*(?=[}\]])")
+
+# Query-schema keys — used to disambiguate which balanced {...} span is
+# the real intent payload when an LLM emits multiple objects in prose
+# (e.g. an example {...} placeholder before the real answer). The
+# _llm_parse_query call site expects these five keys.
+_QUERY_SCHEMA_KEYS = frozenset(
+    {"intent", "entities", "risk_context", "dimension_hint", "keywords"}
+)
 
 
 def _strip_trailing_commas(text: str) -> str:
@@ -71,23 +75,68 @@ def _try_parse(candidate: str) -> dict | None:
     return result if isinstance(result, dict) else None
 
 
+def _balanced_brace_spans(text: str) -> list[str]:
+    """Yield every balanced ``{...}`` span in the text in document order.
+
+    Walks the string with a depth counter so a stray ``{placeholder}`` in
+    prose AROUND the real JSON doesn't poison the match the way greedy
+    regex does (greedy spans first ``{`` to last ``}`` regardless of
+    nesting — which fails to parse when there are multiple top-level
+    objects in the response).
+
+    Eng-review round-6 fix (regenold-eu-ai-act-rag follow-up): the
+    original ``re.search(r"\\{.*\\}", text, re.DOTALL)`` approach
+    returned `None` for ``"Note: fmt is {x} — {\\"intent\\":\\"y\\"}"``
+    because the greedy regex spans both braces and fails to parse.
+    Walking braces by depth picks BOTH spans, then ``_try_parse`` filters
+    to the parsable one. Bounded by string length — O(n) walk.
+    """
+    spans: list[str] = []
+    depth = 0
+    start = -1
+    for i, ch in enumerate(text):
+        if ch == "{":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == "}":
+            if depth > 0:
+                depth -= 1
+                if depth == 0 and start >= 0:
+                    spans.append(text[start:i + 1])
+                    start = -1
+    return spans
+
+
+def _score_query_dict(parsed: dict) -> int:
+    """Score a candidate parsed dict by how many query-schema keys it has.
+
+    Used to pick the RIGHT object when an LLM ships multiple balanced
+    spans (an example + the real answer). The dict whose keys most
+    overlap with :data:`_QUERY_SCHEMA_KEYS` wins; ties broken by
+    insertion order (i.e. document order, so a tie favours the LATER
+    span — LLMs ship the answer after their reasoning).
+    """
+    return len(_QUERY_SCHEMA_KEYS & set(parsed.keys()))
+
+
 def _extract_json_object(text: str) -> dict | None:
     """Extract a parseable JSON object from an arbitrary LLM response.
 
-    Strategy (first hit wins):
+    Strategy:
 
     1. **Direct parse**: the response is already valid JSON (the happy
-       path — no markdown, no prose).
+       path — Mistral + the deterministic-fallback path always ship
+       clean JSON, so this is the production hot path).
     2. **Fenced-block extraction**: walk every ```` ``` ```` fenced span
-       (with optional ``json``/``json5``/``jsonc`` language tag) and try
-       to parse each one's body. Picks the first parsable hit so prose
-       intermixed with multiple code blocks still resolves to the right
-       JSON payload.
-    3. **Brace-span fallback**: if no fence parses, hunt for the first
-       balanced ``{...}`` span in the raw text. Greedy first (absorbs
-       nested objects), non-greedy as a last resort (Sonnet occasionally
-       emits a short JSON block sandwiched between two long prose
-       paragraphs that contain stray ``{``/``}`` glyphs).
+       (with optional ``json``/``json5``/``jsonc`` language tag). When
+       multiple fences carry valid JSON, prefer the one with the most
+       query-schema keys (Sonnet sometimes ships an example block before
+       the real answer).
+    3. **Balanced-brace fallback**: when no fence parses, walk every
+       balanced ``{...}`` span in the text. Same query-schema scoring
+       picks the right span; ties broken in favour of later spans (LLMs
+       ship the answer AFTER their reasoning).
 
     Returns the parsed dict on success, or ``None`` if every strategy
     failed — the caller raises so the deterministic-parse fallback fires.
@@ -96,29 +145,32 @@ def _extract_json_object(text: str) -> dict | None:
         return None
     cleaned = text.strip()
 
-    # 1. Direct parse — strict JSON response.
+    # 1. Direct parse — strict JSON response (HOT path on Mistral).
     direct = _try_parse(cleaned)
     if direct is not None:
         return direct
 
-    # 2. Fenced-block extraction — find every fenced span and try each.
-    for match in _JSON_FENCE_RE.finditer(cleaned):
-        candidate = match.group(1).strip()
-        result = _try_parse(candidate)
+    # 2. Fenced-block extraction — collect every parsable fence, pick
+    # the one with the most query-schema keys (later span wins ties).
+    fenced_candidates: list[tuple[int, int, dict]] = []
+    for idx, match in enumerate(_JSON_FENCE_RE.finditer(cleaned)):
+        result = _try_parse(match.group(1))
         if result is not None:
-            return result
+            fenced_candidates.append((_score_query_dict(result), idx, result))
+    if fenced_candidates:
+        # Higher score wins; ties → later span (higher idx).
+        fenced_candidates.sort(key=lambda t: (t[0], t[1]), reverse=True)
+        return fenced_candidates[0][2]
 
-    # 3. Brace-span fallback — first balanced {...} block.
-    greedy = _JSON_OBJECT_GREEDY_RE.search(cleaned)
-    if greedy is not None:
-        result = _try_parse(greedy.group(0))
+    # 3. Balanced-brace fallback — same scoring on each balanced span.
+    brace_candidates: list[tuple[int, int, dict]] = []
+    for idx, span in enumerate(_balanced_brace_spans(cleaned)):
+        result = _try_parse(span)
         if result is not None:
-            return result
-    nongreedy = _JSON_OBJECT_NONGREEDY_RE.search(cleaned)
-    if nongreedy is not None:
-        result = _try_parse(nongreedy.group(0))
-        if result is not None:
-            return result
+            brace_candidates.append((_score_query_dict(result), idx, result))
+    if brace_candidates:
+        brace_candidates.sort(key=lambda t: (t[0], t[1]), reverse=True)
+        return brace_candidates[0][2]
 
     return None
 
@@ -209,7 +261,21 @@ def _openai_wrapper_complete_for_graph_rag(
         )
     )
     if response.error:
-        logger.warning("graph_rag.openai_wrapper_call_failed: %s", response.error[:200])
+        # Loud surface for the auth-broken case so the eval operator
+        # doesn't silently A/B Sonnet against deterministic-fallback
+        # for an entire round and only spot the mismatch in the JSON
+        # snapshot post-hoc.
+        if "not_logged_in" in response.error:
+            logger.error(
+                "graph_rag.openai_wrapper_not_logged_in — Sonnet path is DOWN. "
+                "Re-seed the wrapper's OAuth token by running login.bat. "
+                "Falling back to deterministic for this call.",
+            )
+        else:
+            logger.warning(
+                "graph_rag.openai_wrapper_call_failed: %s",
+                response.error[:200],
+            )
         return None
     return response.text
 
@@ -266,7 +332,6 @@ def _llm_parse_query(question: str) -> GraphQuery:
     try:
         from app.config import settings
         from app.data.graph_rag_prompts import QUERY_PARSE_SYSTEM
-
         from app.security.prompt_guard import PROMPT_HARDENING_PREFIX, sanitize_for_llm
 
         sanitized_question = sanitize_for_llm(question, context_type="query")
@@ -402,7 +467,11 @@ def _llm_generate_answer(
 
         context_text = "\n".join(context_parts) if context_parts else "No EU AI Act references match this query."
 
-        from app.security.prompt_guard import PROMPT_HARDENING_PREFIX, sanitize_for_llm, validate_llm_output
+        from app.security.prompt_guard import (
+            PROMPT_HARDENING_PREFIX,
+            sanitize_for_llm,
+            validate_llm_output,
+        )
 
         sanitized_question = sanitize_for_llm(question, context_type="query")
         user_message = f"QUESTION: {sanitized_question}\n\n"
@@ -674,8 +743,8 @@ def _retrieve_from_kb(
 ) -> GraphContext:
     """Fallback: retrieve context from KB when Neo4j is unavailable."""
     from app.data.kb import (
-        MATURITY_DIMENSIONS,
         EC_CHECKER_OBLIGATION_MAP,
+        MATURITY_DIMENSIONS,
         get_dimensions_for_risk_level,
     )
 

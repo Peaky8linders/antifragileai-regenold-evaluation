@@ -11,8 +11,6 @@ should restore CodexAI's full KB module (and the Neo4j client).
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Iterable
-
 
 # Version pin surfaced on every Regenold response (telemetry mode).
 KB_VERSION = "2024.1689.v2"

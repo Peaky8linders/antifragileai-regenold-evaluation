@@ -31,20 +31,18 @@ from fastapi.testclient import TestClient
 from pydantic import SecretStr
 
 from app.config import settings
-from app.main import app
 from app.integrations.regenold.models import (
     MAX_ANSWER_SENTENCES,
     MAX_REFERENCES,
     _split_sentences,
 )
+from app.main import app
 from app.rate_limit import limiter
-
 from evals.regenold.scenarios import (
     CATEGORIES,
     SCENARIOS,
     Scenario,
 )
-
 
 # ── Regenold-rubric quality metrics (batch-level) ─────────────────────────
 #
@@ -200,17 +198,76 @@ def _run_scenario(client: TestClient, scenario: Scenario) -> ScenarioResult:
 
 
 def run_all() -> list[ScenarioResult]:
-    """Run every scenario and return the result list."""
+    """Run every scenario and return the result list.
+
+    Snapshots + restores ``settings.regenold.api_key`` so the eval runner
+    doesn't permanently mutate the module-level Pydantic settings object.
+    Without this, a test that asserts the unconfigured-deploy 503 path
+    fails if it runs AFTER the runner in the same pytest session.
+    """
     # Make sure a key is configured so the auth dep doesn't trip with a
     # 503 — the public anonymous tier still works without a key, but a
     # configured key makes the optional-auth dep behave consistently.
+    prev_key = settings.regenold.api_key
     settings.regenold.api_key = SecretStr("regenold-eval-key")
+    try:
+        with TestClient(app) as client:
+            return [_run_scenario(client, s) for s in SCENARIOS]
+    finally:
+        settings.regenold.api_key = prev_key
 
-    with TestClient(app) as client:
-        return [_run_scenario(client, s) for s in SCENARIOS]
+
+def _diff_against_prior(
+    results: list[ScenarioResult], prior_path: Path | None
+) -> str:
+    """Render a one-block diff vs the prior round's JSON snapshot.
+
+    Catches silent regressions: a refactor that flips 2 scenarios from
+    PASS→FAIL only shows up at OVERALL "249/251 (99.2%)" — easy to miss.
+    With a diff the operator sees "REGRESSED: foo, bar" in the report.
+    Empty string if there's no prior snapshot or no scenario flipped.
+    """
+    if not prior_path or not prior_path.exists():
+        return ""
+    try:
+        prior = json.loads(prior_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return ""
+    prior_by_id: dict[str, bool] = {
+        s.get("id"): bool(s.get("passed"))
+        for s in prior.get("scenarios", [])
+        if s.get("id")
+    }
+    regressed = [
+        r.scenario_id
+        for r in results
+        if not r.passed and prior_by_id.get(r.scenario_id) is True
+    ]
+    recovered = [
+        r.scenario_id
+        for r in results
+        if r.passed and prior_by_id.get(r.scenario_id) is False
+    ]
+    new_scenarios = [
+        r.scenario_id for r in results if r.scenario_id not in prior_by_id
+    ]
+    if not regressed and not recovered and not new_scenarios:
+        return f"DIFF vs {prior_path.name}: no scenario flipped (PASS/FAIL parity)"
+    lines = [f"DIFF vs {prior_path.name}:"]
+    if regressed:
+        lines.append(f"  REGRESSED ({len(regressed)}): {', '.join(regressed)}")
+    if recovered:
+        lines.append(f"  RECOVERED ({len(recovered)}): {', '.join(recovered)}")
+    if new_scenarios:
+        lines.append(f"  NEW ({len(new_scenarios)}): {len(new_scenarios)} scenarios")
+    return "\n".join(lines)
 
 
-def _format_report(results: list[ScenarioResult]) -> str:
+def _format_report(
+    results: list[ScenarioResult],
+    *,
+    prior_path: Path | None = None,
+) -> str:
     """Human-readable per-category report with pass/fail counts."""
     by_cat: dict[str, list[ScenarioResult]] = {c: [] for c in CATEGORIES}
     for r in results:
@@ -223,6 +280,10 @@ def _format_report(results: list[ScenarioResult]) -> str:
     total_pass = sum(1 for r in results if r.passed)
     total = len(results)
     lines.append(f"OVERALL: {total_pass}/{total} passed ({total_pass / total * 100:.1f}%)")
+    # Diff vs prior round — surfaces silent flips at the top of the report.
+    diff = _diff_against_prior(results, prior_path)
+    if diff:
+        lines.append(diff)
     # Regenold-rubric batch metrics
     if results:
         durations = [r.duration_ms for r in results]
@@ -364,12 +425,36 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Suppress the human-readable report (only emit JSON).",
     )
+    parser.add_argument(
+        "--prior",
+        type=Path,
+        default=None,
+        help=(
+            "Path to a prior eval JSON snapshot. When set, the report "
+            "includes a DIFF block listing scenarios that regressed (passed "
+            "previously, failed now) and recovered (vice versa). Defaults to "
+            "the latest evals/regenold_results_*.json sibling of the --json target."
+        ),
+    )
     args = parser.parse_args(argv)
+
+    # Default --prior to the most recent snapshot if not explicitly set.
+    prior_path: Path | None = args.prior
+    if prior_path is None and args.json is not None:
+        candidates = sorted(
+            args.json.parent.glob("regenold_results_*.json"),
+            key=lambda p: p.stat().st_mtime if p.exists() else 0,
+            reverse=True,
+        )
+        # Skip the target itself if it already exists.
+        candidates = [p for p in candidates if p != args.json]
+        if candidates:
+            prior_path = candidates[0]
 
     results = run_all()
 
     if not args.quiet:
-        print(_format_report(results))
+        print(_format_report(results, prior_path=prior_path))
 
     if args.json:
         payload = _serialise_results(results)

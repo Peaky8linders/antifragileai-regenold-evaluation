@@ -960,15 +960,24 @@ SCENARIOS: tuple[Scenario, ...] = (
 )
 
 
-# Round-5 expansion: 100 multi-turn + 100 tricky/misleading scenarios authored
-# inside the regenold-eu-ai-act-rag partner-transparency repo. Merged here so
-# the runner's existing ``from evals.regenold.scenarios import SCENARIOS``
-# import picks them up without changes. Imports are lazy via a builder
-# function so the extension files (which re-import ``Scenario`` /
-# ``ScenarioCheck`` / predicate helpers from this module) don't trip a
-# circular import.
 def _build_full_scenarios() -> tuple[Scenario, ...]:
-    """Return base + multi-turn-extension + tricky-extension scenarios."""
+    """Return base + multi-turn-extension + tricky-extension scenarios.
+
+    Round-5 expansion: 100 multi-turn + 100 tricky/misleading scenarios
+    authored inside the regenold-eu-ai-act-rag partner-transparency repo.
+    Merged here so the runner's existing ``from evals.regenold.scenarios
+    import SCENARIOS`` import picks them up without changes.
+
+    The imports are lazy via this builder function so the extension files
+    (which re-import ``Scenario`` / ``ScenarioCheck`` / predicate helpers
+    from this module) don't trip a circular import.
+
+    We catch ONLY ``ModuleNotFoundError`` — a real syntax error / typo /
+    circular import in the extension files surfaces loudly instead of
+    silently dropping 200 scenarios. Without this, the eval suite would
+    pass at 51 scenarios and the eval-gate test (which floors at 70%
+    pass rate) wouldn't catch the regression.
+    """
     extra_mt: tuple[Scenario, ...] = ()
     extra_tr: tuple[Scenario, ...] = ()
     try:
@@ -976,19 +985,27 @@ def _build_full_scenarios() -> tuple[Scenario, ...]:
             EXTRA_MULTITURN_SCENARIOS,
         )
         extra_mt = tuple(EXTRA_MULTITURN_SCENARIOS)
-    except ImportError:
-        pass
+    except ModuleNotFoundError:
+        pass  # Genuinely-missing file = OK in a slimmed-down deploy.
     try:
         from evals.regenold.scenarios_tricky_extended import (
             EXTRA_TRICKY_SCENARIOS,
         )
         extra_tr = tuple(EXTRA_TRICKY_SCENARIOS)
-    except ImportError:
+    except ModuleNotFoundError:
         pass
     return SCENARIOS + extra_mt + extra_tr
 
 
 SCENARIOS = _build_full_scenarios()
+# Hard floor: if the round-5 extensions silently drop, fail loud. 51 is
+# the baseline; the full set is 251. Anything in between means one of
+# the extensions failed to import for a non-ModuleNotFoundError reason
+# OR an extension is malformed and lost scenarios.
+assert len(SCENARIOS) == 51 or len(SCENARIOS) >= 200, (
+    f"Expected 51 (baseline-only) or ≥200 (with round-5 expansion); "
+    f"got {len(SCENARIOS)} — an extension file is broken."
+)
 
 
 CATEGORIES: tuple[str, ...] = tuple(

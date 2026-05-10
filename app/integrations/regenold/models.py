@@ -40,7 +40,7 @@ class RegenoldAskRequest(BaseModel):
     messages: list[RegenoldChatMessage] = Field(min_length=1)
 
     @model_validator(mode="after")
-    def _last_user_message_must_be_non_empty(self) -> "RegenoldAskRequest":
+    def _last_user_message_must_be_non_empty(self) -> RegenoldAskRequest:
         """The last user message (the live question) must carry content.
 
         Round-3 hardening (eng-review H11): ``RegenoldChatMessage.content``
@@ -195,7 +195,7 @@ def question_hash(question: str) -> str:
     consumer that grepped a 16-char prefix of an old hash still
     matches the same prefix of the new full digest.
     """
-    payload = f"{_QUESTION_HASH_SALT}:{question.strip()}".encode("utf-8")
+    payload = f"{_QUESTION_HASH_SALT}:{question.strip()}".encode()
     return hashlib.sha256(payload).hexdigest()
 
 

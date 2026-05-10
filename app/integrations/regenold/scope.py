@@ -44,12 +44,12 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Iterable
+from typing import Any
 
 from app.data.article_existence import ARTICLE_EXISTENCE
-
 
 # ── Refusal classes ──────────────────────────────────────────────────────
 
@@ -696,6 +696,25 @@ KEYWORD_TO_ARTICLE: dict[str, str] = {
 }
 
 
+# Pre-compiled regex alternation over every keyword in KEYWORD_TO_ARTICLE.
+# Built once at module load — replaces the previous per-call sort + O(N*M)
+# substring scan loop. ``re.finditer`` walks the input once; the
+# alternation's left-to-right semantics combined with sorting keywords by
+# length DESC give us the same substring-shadowing guarantee (longer
+# phrases win on overlapping spans because re.finditer advances past
+# the matched span before considering the next match).
+#
+# Eng-review round-6 perf finding: parent CLAUDE.md flagged the O(N*M)
+# walk as a deferred optimisation. Closed here.
+_KEYWORD_ALTERNATION_RE = re.compile(
+    "(" + "|".join(
+        re.escape(k)
+        for k in sorted(KEYWORD_TO_ARTICLE.keys(), key=len, reverse=True)
+    ) + ")",
+    re.IGNORECASE,
+)
+
+
 def derive_anchor_articles_from_keywords(text: str) -> tuple[str, ...]:
     """Map well-known anchor keywords (FRIA, GPAI, …) to canonical refs.
 
@@ -707,39 +726,21 @@ def derive_anchor_articles_from_keywords(text: str) -> tuple[str, ...]:
     so a question like ``"Do I need a FRIA?"`` produces ``Art. 27`` as
     a defensive citation in the route's response.
 
-    Substring-shadowing guard: longer keywords (``annex iv``) consume
-    the range so shorter substrings (``annex i``) cannot rematch on
-    the same span. Without this, ``"Summarise Annex IV"`` would
-    inappropriately surface BOTH ``Annex IV`` and ``Annex I``.
+    Substring-shadowing: longer keywords win on overlapping spans because
+    the pre-compiled alternation is sorted DESC by keyword length and
+    ``re.finditer`` advances past each matched span. ``"Summarise Annex
+    IV"`` matches only ``annex iv``, never the shorter ``annex i`` that
+    sits inside it.
     """
     if not text:
         return ()
-    low = text.lower()
-    consumed: list[tuple[int, int]] = []
     out: list[str] = []
     seen: set[str] = set()
-    # Sort keys by length DESC so longer phrases match first
-    # ("annex iv" before "annex i", "fundamental rights impact assessment"
-    # before standalone words).
-    for keyword in sorted(KEYWORD_TO_ARTICLE.keys(), key=len, reverse=True):
-        # Find every occurrence; accept the first one that doesn't
-        # overlap an already-consumed span.
-        idx = 0
-        while True:
-            pos = low.find(keyword, idx)
-            if pos < 0:
-                break
-            end = pos + len(keyword)
-            # Skip if this span overlaps a longer-keyword consumption.
-            overlaps = any(c_start < end and pos < c_end for c_start, c_end in consumed)
-            if not overlaps:
-                consumed.append((pos, end))
-                ref = KEYWORD_TO_ARTICLE[keyword]
-                if ref in ARTICLE_EXISTENCE and ref not in seen:
-                    seen.add(ref)
-                    out.append(ref)
-                break  # Only consume one occurrence per keyword
-            idx = pos + 1
+    for m in _KEYWORD_ALTERNATION_RE.finditer(text.lower()):
+        ref = KEYWORD_TO_ARTICLE.get(m.group(0))
+        if ref and ref in ARTICLE_EXISTENCE and ref not in seen:
+            seen.add(ref)
+            out.append(ref)
     return tuple(out)
 
 

@@ -17,10 +17,21 @@ depend on).
 from __future__ import annotations
 
 import logging
+import os
+from collections import deque
+from collections.abc import Iterator
 from dataclasses import dataclass, field
-from typing import Any, Iterator
+from typing import Any
 
 logger = logging.getLogger(__name__)
+
+
+# Hard cap on the in-memory audit chain. The full CodexAI AuditStore is
+# durable (hash-chained SQLite/Postgres); this stub trades durability
+# for simplicity. Without a cap, a long-running uvicorn process leaks
+# memory for every chain entry. ``deque(maxlen=...)`` drops the oldest
+# entry in O(1) when full so insertion stays cheap.
+_DEFAULT_MAX_RECORDS = int(os.getenv("REGENOLD_AUDIT_CAP", "10000"))
 
 
 @dataclass
@@ -34,7 +45,18 @@ class _RecordedEntry:
 
 @dataclass
 class _NoOpStore:
-    records: list[_RecordedEntry] = field(default_factory=list)
+    """In-memory recorder with a bounded backing deque.
+
+    The deque's ``maxlen`` caps the chain at ``REGENOLD_AUDIT_CAP``
+    entries (default 10000) so a long-running process can't leak
+    memory. Oldest entries fall off the back when the cap is hit.
+    ``get_chain`` walks newest-first via ``reversed()`` which deque
+    supports in O(1) per step.
+    """
+
+    records: deque[_RecordedEntry] = field(
+        default_factory=lambda: deque(maxlen=_DEFAULT_MAX_RECORDS)
+    )
 
     def record(
         self,

@@ -43,6 +43,7 @@ Competition spec contract guards:
 from __future__ import annotations
 
 import hashlib
+import os
 from typing import Any
 
 import structlog
@@ -51,9 +52,9 @@ from pydantic import ValidationError
 from slowapi.util import get_remote_address
 
 from app.data.kb import KB_VERSION
+from app.engines.graph_rag import ask_compliance_question
 from app.evidence.models import EvidenceEntryType
 from app.evidence.store import get_evidence_store
-from app.engines.graph_rag import ask_compliance_question
 from app.integrations.regenold.auth import (
     optional_regenold_api_key,
     validate_regenold_api_key,
@@ -120,6 +121,36 @@ def _hash16(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
 
 
+# Trust X-Forwarded-For only when the deploy explicitly opts in by
+# setting REGENOLD_TRUST_PROXY=true. Without this, an anonymous-tier
+# attacker behind any CDN could spoof XFF to bypass the per-IP bucket.
+# Default = OFF (use direct socket address). The README + .env.example
+# both document the trust-boundary requirement.
+_TRUST_PROXY = os.getenv("REGENOLD_TRUST_PROXY", "").strip().lower() in {
+    "true", "1", "yes", "on",
+}
+
+
+def _client_addr(request: Request) -> str:
+    """Resolve the caller's client address for rate-limit + audit purposes.
+
+    Default: ``request.client.host`` (the direct socket address). When
+    ``REGENOLD_TRUST_PROXY=true``, read the leftmost hop of
+    ``X-Forwarded-For`` instead — required when the bundle is deployed
+    behind a reverse proxy / CDN that overwrites XFF. The deploy operator
+    is on the hook for ensuring the proxy actually overwrites (not
+    appends), otherwise an attacker can spoof their address.
+    """
+    if _TRUST_PROXY:
+        xff = request.headers.get("x-forwarded-for", "").strip()
+        if xff:
+            # Leftmost = original client per the de-facto convention.
+            first_hop = xff.split(",", 1)[0].strip()
+            if first_hop:
+                return first_hop
+    return get_remote_address(request) or "unknown"
+
+
 def _regenold_rate_key(request: Request) -> str:
     """Return the rate-limit bucket key for this request.
 
@@ -130,7 +161,8 @@ def _regenold_rate_key(request: Request) -> str:
     Anonymous tier: no header OR no configured key on this deploy —
     bucket prefix ``regenold-anon:`` with a 16-hex IP hash so the
     30/min budget is per-source-IP rather than global. The raw IP is
-    never stored.
+    never stored. When ``REGENOLD_TRUST_PROXY=true``, the IP is read
+    from ``X-Forwarded-For`` (leftmost) instead of the direct socket.
 
     The two tiers are stored under DIFFERENT keys, so a flood of anon
     traffic cannot exhaust a partner's privileged 60/min budget.
@@ -138,8 +170,7 @@ def _regenold_rate_key(request: Request) -> str:
     api_key = request.headers.get("X-Regenold-Api-Key", "")
     if api_key and validate_regenold_api_key(api_key):
         return f"{_RATE_KEY_PREFIX_AUTHED}{_hash16(api_key)}"
-    ip = get_remote_address(request) or "unknown"
-    return f"{_RATE_KEY_PREFIX_ANON}{_hash16(ip)}"
+    return f"{_RATE_KEY_PREFIX_ANON}{_hash16(_client_addr(request))}"
 
 
 def _regenold_dynamic_limit(key: str) -> str:
@@ -300,17 +331,20 @@ def _build_scope_refusal_response(
         ip_hash: str | None = None
     else:
         chain_tenant_id = "public:regenold-anon"
-        client_ip = get_remote_address(request) or "unknown"
-        ip_hash = _hash16(client_ip)
+        ip_hash = _hash16(_client_addr(request))
 
     try:
         store = get_evidence_store()
         chain_payload: dict[str, Any] = {
             "question_hash": question_hash(question),
             "has_system_context": bool(system_context),
-            "history_turns_used": sum(
-                1 for m in history_turns if getattr(m, "role", None) in ("user", "assistant")
-            ) - 1,
+            # Clamp at 0 — a request with only system messages should
+            # report ``history_turns_used=0``, not ``-1``.
+            "history_turns_used": max(
+                0,
+                sum(1 for m in history_turns if getattr(m, "role", None) in ("user", "assistant"))
+                - 1,
+            ),
             "references": [],
             "answer_excerpt": (out.answer or "")[:500],
             "confidence": confidence,
@@ -458,7 +492,7 @@ def _build_question_from_history(messages: list[Any]) -> tuple[str, str | None]:
 @limiter.limit(_regenold_dynamic_limit, key_func=_regenold_rate_key)
 def regenold_eu_ai_act_ask(
     request: Request,
-    body: Any = Body(...),
+    body: Any = Body(...),  # noqa: B008 — FastAPI-idiomatic Body(...) at default position
     include_telemetry: bool = False,
     api_key: str | None = Depends(optional_regenold_api_key),
 ) -> RegenoldAskResponse:
@@ -711,8 +745,7 @@ def regenold_eu_ai_act_ask(
         ip_hash: str | None = None
     else:
         chain_tenant_id = "public:regenold-anon"
-        client_ip = get_remote_address(request) or "unknown"
-        ip_hash = _hash16(client_ip)
+        ip_hash = _hash16(_client_addr(request))
 
     # Best-effort audit-chain entry (no secrets, no raw question text).
     try:
@@ -720,9 +753,12 @@ def regenold_eu_ai_act_ask(
         chain_payload = {
             "question_hash": question_hash(question),
             "has_system_context": bool(system_context),
-            "history_turns_used": sum(
-                1 for m in req.messages if m.role in ("user", "assistant")
-            ) - 1,  # turns BEFORE the live user question
+            # Clamp at 0 — turns BEFORE the live user question. A request
+            # with only system messages should report 0, not -1.
+            "history_turns_used": max(
+                0,
+                sum(1 for m in req.messages if m.role in ("user", "assistant")) - 1,
+            ),
             "references": references,
             "answer_excerpt": (out.answer or "")[:500],
             # Audit telemetry: persist confidence + retrieval path + KB

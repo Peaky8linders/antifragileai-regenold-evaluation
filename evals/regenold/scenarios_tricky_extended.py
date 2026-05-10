@@ -41,7 +41,6 @@ from evals.regenold.scenarios import (
     _refused,
 )
 
-
 # ── Helper: a check bundle for "must not echo the false premise". ────────
 # Used heavily across leading_premise + sycophancy + citation_poisoning.
 

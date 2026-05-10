@@ -7,10 +7,8 @@ this file small so partners auditing the bundle can read it in one pass.
 """
 from __future__ import annotations
 
-from typing import Annotated, Any
-
-from pydantic import Field, SecretStr, field_validator
-from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+from pydantic import Field, SecretStr
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class GraphRAGSettings(BaseSettings):

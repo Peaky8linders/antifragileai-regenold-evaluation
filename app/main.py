@@ -6,13 +6,33 @@ Stripped-down extract — only the surface needed to exercise
 """
 from __future__ import annotations
 
+import os
+
 from fastapi import FastAPI
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
 from app.config import settings
+from app.llm import resolve_provider
 from app.rate_limit import limiter, rate_limit_handler
 from app.routes.regenold import regenold_router
+
+# Fail-loud at module-import on a typo in P2P_GRAPH_RAG_PROVIDER. Without
+# this, a typo like "mistraal" silently degrades every request to the
+# deterministic-fallback path with no operator-visible signal — the eval
+# snapshot would "complete normally" but every scenario took the non-LLM
+# path. Boot-time validation surfaces the typo before any traffic hits.
+try:
+    resolve_provider(
+        os.getenv("P2P_GRAPH_RAG_PROVIDER"),
+        default_when_auto="anthropic",
+    )
+except ValueError as _exc:
+    raise RuntimeError(
+        f"P2P_GRAPH_RAG_PROVIDER is misconfigured: {_exc}. "
+        "Valid values: mistral / anthropic / cli / openai_wrapper / auto / "
+        "(unset = auto). See app/llm/__init__.py::resolve_provider."
+    ) from _exc
 
 
 app = FastAPI(

@@ -1,3 +1,7 @@
+# Runtime dependencies. For dev/test, install via `pip install -e ".[dev]"`.
+# For LLM providers requiring SDK clients (anthropic, neo4j), install via
+# `pip install -e ".[anthropic]"` or `"[neo4j]"` (Mistral + the OpenAI
+# wrapper are httpx-only and bundled here).
 fastapi>=0.115.0
 uvicorn[standard]>=0.30.0
 pydantic>=2.9.0,<3
@@ -6,6 +10,4 @@ slowapi>=0.1.9
 structlog>=24.0.0
 httpx>=0.27.0
 python-multipart>=0.0.9
-pytest>=8.0.0
-pytest-xdist>=3.5.0
-ruff>=0.6.0
+
