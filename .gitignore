@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.ruff_cache/
+.env
+*.log
+.idea/
+.vscode/
+*.egg-info/
+dist/
+build/
+evals/regenold_results_local*.json
+evals/regenold_results_anthropic_wrapper*.json

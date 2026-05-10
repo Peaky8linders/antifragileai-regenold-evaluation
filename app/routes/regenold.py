@@ -1,0 +1,757 @@
+"""Regenold partner integration — grounded EU AI Act Q&A.
+
+Public surface for the Regenold regulatory-AI agent's grounded Q&A
+contest entry. Authentication is OPTIONAL — the route is reachable
+without a partner key (this is a competition deliverable; gating on a
+private key would defeat the entry's discoverability).
+
+Tier resolution at request time:
+
+* **Privileged tier** — caller sends a valid ``X-Regenold-Api-Key``
+  header. Rate limit 60/min keyed on the sha256 truncation of the key;
+  evidence chain stamps ``tenant_id="partner:regenold"`` so an auditor
+  can filter partner traffic without seeing the raw key.
+* **Anonymous tier** — no header (or no configured key on this deploy).
+  Rate limit 30/min keyed on the IP-hash; tenant stamps
+  ``"public:regenold-anon"`` plus a 16-hex IP hash on the chain payload
+  for forensic traceability under GDPR Art. 4(5) pseudonymisation.
+
+Header present but invalid (typo / stale / wrong tenant) still 403s —
+silent downgrade to anonymous would mask partner-side bugs.
+
+Backed by the existing Graph RAG engine — this route is a thin
+adapter that reshapes the response into Regenold's expected wire shape
+(see ``docs/partners/regenold/INTEGRATION.md`` and ``PARTNER-GUIDE.md``).
+
+Competition spec contract guards:
+
+* **Multi-turn conversation history** — :func:`_build_question_from_history`
+  walks the full message list, threading prior assistant turns into the
+  question prompt so a follow-up like "What about deployers?" still
+  resolves against the prior assistant answer's context. Pre-fix we
+  only used the last user message; multi-turn questions silently lost
+  their referent.
+* **References capped at 5** (per spec "minimal set"; example shows 2).
+* **Answer truncated to 4 sentences** (per spec "3-4 sentences max").
+* **Default response = spec-clean** (``answer`` / ``references`` /
+  ``reasoning``). Telemetry (``confidence`` / ``kb_version`` /
+  ``retrieval_path`` / ``nodes_traversed`` / ``obligations_found`` /
+  ``gaps_found``) only emitted when ``?include_telemetry=true`` so the
+  competition evaluator gets the minimal shape it expects.
+"""
+
+from __future__ import annotations
+
+import hashlib
+from typing import Any
+
+import structlog
+from fastapi import APIRouter, Body, Depends, HTTPException, Request, status
+from pydantic import ValidationError
+from slowapi.util import get_remote_address
+
+from app.data.kb import KB_VERSION
+from app.evidence.models import EvidenceEntryType
+from app.evidence.store import get_evidence_store
+from app.engines.graph_rag import ask_compliance_question
+from app.integrations.regenold.auth import (
+    optional_regenold_api_key,
+    validate_regenold_api_key,
+)
+from app.integrations.regenold.models import (
+    MAX_REFERENCES,
+    RegenoldAskRequest,
+    RegenoldAskResponse,
+    normalise_answer_for_regenold,
+    question_hash,
+    reference_from_article_ref,
+)
+from app.integrations.regenold.scope import (
+    ConversationVerdict,
+    classify_conversation,
+    refusal_copy_for,
+)
+from app.models import GraphRAGRequest
+from app.rate_limit import limiter
+
+logger = structlog.get_logger(__name__)
+
+regenold_router = APIRouter(tags=["regenold"])
+
+
+# Closed-world refusal threshold. Below this, an answer with empty
+# references gets replaced by a structured no-match response. 0.5 is
+# the engine's "sparse data" floor (per ``_compute_confidence`` in
+# ``app/engines/graph_rag.py``); below that we have neither graph nor
+# KB context to ground the answer.
+_CONFIDENCE_FLOOR_FOR_ANSWER = 0.5
+
+# Structured no-match copy. Static string keeps the response
+# deterministic and free of LLM-generated content for the refusal
+# branch — auditors can grep for it in the chain. Crafted to fit the
+# spec's "3-4 sentences max" — exactly 3 sentences as written.
+_NO_MATCH_ANSWER = (
+    "No matching obligation found in the EU AI Act for this question. "
+    "Try rephrasing with a specific article reference (e.g. \"Art. 13\"), "
+    "a risk level (e.g. \"high-risk\"), or a compliance dimension "
+    "(e.g. \"transparency\")."
+)
+
+
+# Tier prefixes — used by both the rate-limit key_func and the dynamic
+# limit resolver below. The prefix is the public discriminator between
+# the privileged + anonymous buckets, so they NEVER share storage.
+_RATE_KEY_PREFIX_AUTHED = "regenold-key:"
+_RATE_KEY_PREFIX_ANON = "regenold-anon:"
+
+
+# How many trailing turns of conversation history we thread into the
+# question prompt when the request carries a multi-turn conversation.
+# 2 = the immediately-preceding ``assistant`` + ``user`` pair plus the
+# current question. Empirically enough to disambiguate "What about
+# deployers?"-style follow-ups without dwarfing the question itself in
+# the engine's 2K-char question budget.
+_HISTORY_TURNS_TO_INCLUDE = 4
+
+
+def _hash16(value: str) -> str:
+    """Truncated sha256 hex (16 chars / 64 bits) — pseudonymisation
+    helper. Used for partner-key + IP under GDPR Art. 4(5)."""
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
+
+
+def _regenold_rate_key(request: Request) -> str:
+    """Return the rate-limit bucket key for this request.
+
+    Privileged tier: the caller sent a valid ``X-Regenold-Api-Key`` —
+    bucket prefix ``regenold-key:`` so 60/min applies (see
+    :func:`_regenold_dynamic_limit`).
+
+    Anonymous tier: no header OR no configured key on this deploy —
+    bucket prefix ``regenold-anon:`` with a 16-hex IP hash so the
+    30/min budget is per-source-IP rather than global. The raw IP is
+    never stored.
+
+    The two tiers are stored under DIFFERENT keys, so a flood of anon
+    traffic cannot exhaust a partner's privileged 60/min budget.
+    """
+    api_key = request.headers.get("X-Regenold-Api-Key", "")
+    if api_key and validate_regenold_api_key(api_key):
+        return f"{_RATE_KEY_PREFIX_AUTHED}{_hash16(api_key)}"
+    ip = get_remote_address(request) or "unknown"
+    return f"{_RATE_KEY_PREFIX_ANON}{_hash16(ip)}"
+
+
+def _regenold_dynamic_limit(key: str) -> str:
+    """Map the rate-limit bucket key to its tier limit string.
+
+    slowapi calls a callable ``limit_value`` with the resolved
+    ``key_func(request)`` value when the limit_value signature
+    declares a ``key`` parameter (see :class:`slowapi.wrappers.LimitGroup`).
+
+    - ``regenold-key:<hash>`` → ``60/minute`` (partner tier)
+    - ``regenold-anon:<hash>`` → ``30/minute`` (public tier)
+    - anything else → conservative anon tier (defensive fallback;
+      should never hit prod because :func:`_regenold_rate_key` only
+      emits the two prefixes above).
+    """
+    if key.startswith(_RATE_KEY_PREFIX_AUTHED):
+        return "60/minute"
+    return "30/minute"
+
+
+def _reference_rank(formatted: str) -> tuple[int, int, str]:
+    """Sort key for P1 #7 — sort references by citation strength.
+
+    Returns ``(type_priority, -specificity, formatted)`` so callers can
+    use Python's stable sort to land Articles before Annexes, more
+    specific paragraph chains before bare-article cites, and ties
+    resolved alphabetically (deterministic).
+
+    Type priority (lower = better):
+    - 0 — ``Article ...`` (regulation body, primary citation surface)
+    - 1 — ``Annex ...``   (regulation annex, secondary)
+    - 9 — anything else   (defensive fallback; should never hit prod
+      because ``reference_from_article_ref`` only emits the two shapes
+      above, but cheap insurance against a future format extension)
+
+    Specificity is the count of dot-separated subpoint segments after
+    the type prefix. ``Article 13.1.a`` → 2 segments, ``Article 13.1``
+    → 1 segment, ``Article 13`` → 0 segments. We negate it in the
+    sort key so MORE specific lands FIRST (tiebreaks on alphabetical
+    formatted string for determinism).
+    """
+    if formatted.startswith("Article "):
+        type_priority = 0
+        body = formatted[len("Article ") :]
+    elif formatted.startswith("Annex "):
+        type_priority = 1
+        body = formatted[len("Annex ") :]
+    else:
+        return (9, 0, formatted)
+    # ``13.1.a`` → 3 tokens; the first token is the article/annex
+    # number, the rest are the subpoint chain. 0 specificity = bare
+    # ``Article 13`` (1 token), 1 = ``13.1`` (2 tokens), 2 = ``13.1.a``
+    # (3 tokens), etc.
+    specificity = max(0, len(body.split(".")) - 1)
+    return (type_priority, -specificity, formatted)
+
+
+def _resolve_retrieval_path(graph_stats: dict[str, Any]) -> str:
+    """Derive the retrieval path label from the engine's graph_stats.
+
+    The engine populates ``nodes_traversed`` from Neo4j hits when the
+    graph is live; ``_retrieve_from_kb`` populates the same field but
+    only with KB-derived counts. We can't perfectly distinguish the
+    two from outside the engine without extending its return shape,
+    so we use a heuristic: any traversal with edges_followed > 0 OR
+    obligations_found > 0 implies the live graph answered (KB
+    fallback only populates dimension_info / synthetic obligations).
+    Empty-everything → ``deterministic`` (fallback path also fires
+    when the LLM is unavailable).
+    """
+    nodes = int(graph_stats.get("nodes_traversed", 0) or 0)
+    edges = int(graph_stats.get("edges_followed", 0) or 0)
+    obligations = int(graph_stats.get("obligations_found", 0) or 0)
+    gaps = int(graph_stats.get("gaps_found", 0) or 0)
+
+    if edges > 0 or gaps > 0 or obligations > 1:
+        return "neo4j"
+    if nodes > 0:
+        return "kb_fallback"
+    return "deterministic"
+
+
+def _build_telemetry_reasoning(
+    *, confidence: float, kb_version: str, retrieval_path: str, ref_count: int
+) -> str:
+    """Compact human-readable retrieval-telemetry summary.
+
+    ONLY emitted when ``?include_telemetry=true``. The default response
+    keeps ``reasoning=None`` per the Regenold spec's "*will not be
+    considered and might increase latency*" guidance — so we don't burn
+    output tokens on a field the evaluator skips.
+    """
+    return (
+        f"Confidence: {confidence:.2f}; KB {kb_version}; "
+        f"retrieval: {retrieval_path}; references: {ref_count}"
+    )
+
+
+def _build_scope_refusal_response(
+    *,
+    scope: ConversationVerdict,
+    include_telemetry: bool,
+    request: Request,
+    api_key: str | None,
+    question: str,
+    system_context: str | None,
+    history_turns: list[Any],
+) -> RegenoldAskResponse:
+    """Construct the spec-clean refusal response for an out-of-scope conversation.
+
+    Common shape:
+
+    * ``answer`` = :func:`refusal_copy_for` (3-sentence tailored prose).
+    * ``references`` = ``[]``.
+    * ``retrieval_path`` = ``"no_match"`` (in telemetry mode).
+    * ``confidence`` = ``0.0`` (in telemetry mode).
+    * ``reasoning`` = empty string by default (or the telemetry summary
+      when ``?include_telemetry=true``).
+
+    Also writes a tier-aware audit-chain entry the same way the
+    in-scope branch does — so an auditor can grep "every refused
+    request" by ``retrieval_path`` and see the rationale.
+    """
+    from app.evidence.models import EvidenceEntryType
+    from app.evidence.store import get_evidence_store
+
+    answer_text = refusal_copy_for(scope.verdict)
+    confidence = 0.0
+    retrieval_path: Any = "no_match"
+
+    if include_telemetry:
+        out = RegenoldAskResponse(
+            answer=answer_text,
+            references=[],
+            reasoning=_build_telemetry_reasoning(
+                confidence=confidence,
+                kb_version=KB_VERSION,
+                retrieval_path=retrieval_path,
+                ref_count=0,
+            ),
+            confidence=confidence,
+            kb_version=KB_VERSION,
+            retrieval_path=retrieval_path,
+            nodes_traversed=0,
+            obligations_found=0,
+            gaps_found=0,
+        )
+    else:
+        out = RegenoldAskResponse(
+            answer=answer_text,
+            references=[],
+            reasoning="",
+        )
+
+    # Tier-aware tenant stamping — same shape as the in-scope branch.
+    if api_key:
+        chain_tenant_id = "partner:regenold"
+        ip_hash: str | None = None
+    else:
+        chain_tenant_id = "public:regenold-anon"
+        client_ip = get_remote_address(request) or "unknown"
+        ip_hash = _hash16(client_ip)
+
+    try:
+        store = get_evidence_store()
+        chain_payload: dict[str, Any] = {
+            "question_hash": question_hash(question),
+            "has_system_context": bool(system_context),
+            "history_turns_used": sum(
+                1 for m in history_turns if getattr(m, "role", None) in ("user", "assistant")
+            ) - 1,
+            "references": [],
+            "answer_excerpt": (out.answer or "")[:500],
+            "confidence": confidence,
+            "retrieval_path": retrieval_path,
+            "kb_version": KB_VERSION,
+            "tier": "partner" if api_key else "anon",
+            "include_telemetry_requested": bool(include_telemetry),
+            # Refusal-class telemetry — auditor can filter "every
+            # non-existent-article refusal" or "every off-topic refusal"
+            # without parsing the prose.
+            "scope_reason": scope.reason.value,
+            "scope_evidence": scope.verdict.evidence[:200],
+        }
+        if scope.verdict.unknown_articles:
+            chain_payload["unknown_articles"] = list(scope.verdict.unknown_articles)
+        if scope.anchor_articles:
+            chain_payload["anchor_articles"] = list(scope.anchor_articles)
+        if ip_hash is not None:
+            chain_payload["ip_hash"] = ip_hash
+
+        store.record(
+            entry_type=EvidenceEntryType.regenold_question,
+            payload=chain_payload,
+            article_ref="EU AI Act",
+            created_by="regenold" if api_key else "regenold-anon",
+            tenant_id=chain_tenant_id,
+        )
+    except Exception as exc:  # noqa: BLE001 - best-effort evidence
+        logger.debug("regenold_question_evidence_failed", error=str(exc))
+
+    return out
+
+
+def _surface_anchor_citations(
+    candidates: list[str],
+    seen_refs: set[str],
+    anchors: tuple[str, ...],
+) -> list[str]:
+    """Defensively add anchor articles as references when the engine
+    failed to surface them.
+
+    The engine's deterministic-fallback path emits zero citations
+    (citations come from graph nodes which the KB fallback doesn't
+    populate). For an in-scope question that explicitly named
+    ``Art. 5`` / ``Annex IV``, a wire response with empty references
+    is needlessly poor. This helper takes the conversation's anchor
+    articles and appends any not-yet-cited ones — formatted via
+    :func:`reference_from_article_ref` so they pass the same shape +
+    existence validation as engine-sourced refs.
+
+    Returns a NEW candidates list (the caller still sorts + caps it).
+    """
+    enriched = list(candidates)
+    for anchor in anchors:
+        formatted = reference_from_article_ref(anchor)
+        if not formatted or formatted in seen_refs:
+            continue
+        seen_refs.add(formatted)
+        enriched.append(formatted)
+    return enriched
+
+
+def _build_question_from_history(messages: list[Any]) -> tuple[str, str | None]:
+    """Build (question, system_context) from the full conversation history.
+
+    Spec input is an OpenAI-style multi-turn conversation. A naive
+    "take the last user message" loses follow-up context — e.g. after
+    the assistant explains Art. 13 transparency, the user's "What about
+    for deployers using third-party systems?" is unintelligible without
+    the prior turn.
+
+    Strategy:
+    1. Concatenate every ``system`` message into ``system_context``
+       (these are standing instructions / system-prompt material).
+    2. Locate the LAST ``user`` message — that's the live question.
+    3. If the conversation has prior turns, prepend the last
+       :data:`_HISTORY_TURNS_TO_INCLUDE` non-system turns as a
+       "Conversation so far" preamble inside the question prompt.
+       Each turn is labelled by role so the engine can distinguish
+       what the user asked previously vs. what the assistant said.
+    4. Truncate to the engine's 2 000-char question budget (system
+       context to 1 000 chars). Anything dropped wouldn't have improved
+       retrieval anyway.
+
+    Returns ``(question, system_context_or_None)``.
+    """
+    # Pull out system messages first — they're not part of the dialogue.
+    system_parts = [m.content for m in messages if m.role == "system"]
+    system_context = "\n".join(p for p in system_parts if p.strip()) or None
+
+    # Conversation = everything except system messages, in order.
+    dialogue = [m for m in messages if m.role in ("user", "assistant")]
+
+    # Find the last user message — that's the live question.
+    last_user_idx = -1
+    for i in range(len(dialogue) - 1, -1, -1):
+        if dialogue[i].role == "user":
+            last_user_idx = i
+            break
+
+    if last_user_idx < 0:
+        # No user message in the dialogue. Fall back to the last
+        # message regardless of role — better than blank.
+        live_question = dialogue[-1].content.strip() if dialogue else ""
+        history_turns: list[Any] = []
+    else:
+        live_question = dialogue[last_user_idx].content.strip()
+        # History = the last N turns BEFORE the live user message.
+        history_start = max(0, last_user_idx - _HISTORY_TURNS_TO_INCLUDE)
+        history_turns = dialogue[history_start:last_user_idx]
+
+    if history_turns:
+        history_block = "\n".join(
+            f"{m.role.capitalize()}: {m.content.strip()}" for m in history_turns
+        )
+        question = (
+            "Conversation so far:\n"
+            f"{history_block}\n"
+            "\n"
+            "Latest question:\n"
+            f"{live_question}"
+        )
+    else:
+        question = live_question
+
+    # Engine cap — GraphRAGRequest.question is 2000-char max, system
+    # description 1000-char max. Truncate from the LEFT (drop oldest
+    # turns first) so the live question always survives.
+    if len(question) > 2000:
+        question = question[-2000:]
+    if system_context is not None and len(system_context) > 1000:
+        system_context = system_context[-1000:]
+
+    return question, system_context
+
+
+@regenold_router.post(
+    "/regenold/eu-ai-act/ask",
+    response_model=RegenoldAskResponse,
+    response_model_exclude_none=True,
+    responses={
+        403: {"description": "Invalid API key (header present but did not match)"},
+    },
+)
+@limiter.limit(_regenold_dynamic_limit, key_func=_regenold_rate_key)
+def regenold_eu_ai_act_ask(
+    request: Request,
+    body: Any = Body(...),
+    include_telemetry: bool = False,
+    api_key: str | None = Depends(optional_regenold_api_key),
+) -> RegenoldAskResponse:
+    """Regenold partner endpoint: grounded EU AI Act Q&A with citations.
+
+    Auth is OPTIONAL. ``api_key`` will be ``None`` for anonymous callers
+    (the public competition tier) and the validated raw key when a
+    matching ``X-Regenold-Api-Key`` was sent (the partner tier). Rate
+    limit + evidence-chain ``tenant_id`` are derived from this value.
+
+    Backed by the existing Graph RAG engine (Neo4j KG + KB fallback).
+    Response is reshaped into Regenold's expected wire shape:
+
+    - ``answer`` — short (3-4 sentence) prose, post-truncated to enforce
+      the cap regardless of LLM behaviour.
+    - ``references`` — formatted EU AI Act citations (``Article N.x.y``
+      / ``Annex IV.2``), validated against ``ARTICLE_EXISTENCE`` AND a
+      strict per-spec output regex. Capped at :data:`MAX_REFERENCES`
+      (spec: "minimal set"). Sorted by citation strength.
+    - ``reasoning`` — ``None`` by default per spec ("*will not be
+      considered and might increase latency*"). Becomes a telemetry
+      summary when ``?include_telemetry=true``.
+
+    Optional ``?include_telemetry=true`` query param exposes the
+    underlying confidence + KB version + retrieval path + graph-stats
+    fields for verifier-style flows. Default (no query param) keeps the
+    competition spec's minimal contract.
+
+    Closed-world refusal fires when retrieval returns no usable context
+    (confidence < 0.5 AND no references) — emits a structured no-match
+    response instead of LLM prose grounded in nothing.
+    """
+
+    # Input contract:
+    # - primary: request body is `[{role, content}, ...]` (OpenAI/LiteLLM style)
+    # - compatibility: `{ "messages": [...] }` or legacy `{ "question": "...", ... }`
+    raw_messages: list[dict] | None = None
+    if isinstance(body, list):
+        raw_messages = body
+    elif isinstance(body, dict):
+        if "messages" in body:
+            raw_messages = body.get("messages")  # type: ignore[assignment]
+        elif "question" in body:
+            raw_messages = [
+                {"role": "user", "content": body.get("question")},
+            ]
+
+    if not raw_messages:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "regenold_invalid_input", "message": "Expected messages array."},
+        )
+
+    # P0 #5 — Pydantic ValidationError for over-cap content (>4K) or
+    # malformed message shape. Wrap so the response is 422 with a stable
+    # error code instead of bubbling up as a 500. Same shape as the
+    # explicit ``regenold_invalid_input`` raise above.
+    try:
+        req = RegenoldAskRequest.model_validate({"messages": raw_messages})
+    except ValidationError as exc:
+        # Use literal 422 — Starlette's status.HTTP_422_UNPROCESSABLE_ENTITY
+        # constant trips a DeprecationWarning that gets escalated when
+        # raised inside a chained-exception path (renamed to
+        # _UNPROCESSABLE_CONTENT in Starlette 0.39+).
+        #
+        # P1 hardening (2026-05-09 eng-review wave): Pydantic v2's
+        # ``ValidationError.errors()`` returns dicts that include the
+        # offending ``input`` field — for a 4 KB content failure, the
+        # entire 4 KB round-trips back to the caller. That's a low-cost
+        # DOS amplifier (1 KB request → N × 4 KB error response) AND a
+        # confirmation oracle for fuzzers. Project to a stripped shape:
+        # caller already KNOWS what they sent, so dropping ``input`` /
+        # ``url`` / ``ctx`` costs them nothing and removes the amplification.
+        stripped_errors = [
+            {
+                "loc": err.get("loc"),
+                "type": err.get("type"),
+                "msg": err.get("msg"),
+            }
+            for err in exc.errors()[:5]
+        ]
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "regenold_invalid_input",
+                "message": (
+                    "Message validation failed. Each message content is "
+                    "limited to 4000 characters; role must be one of "
+                    "user / assistant / system."
+                ),
+                "errors": stripped_errors,
+            },
+        ) from exc
+
+    # Build question + system_context from the FULL conversation history
+    # (multi-turn aware — see :func:`_build_question_from_history`).
+    question, system_context = _build_question_from_history(req.messages)
+
+    # ── Scope gate ─────────────────────────────────────────────────────
+    # Run conversation-aware scope classification BEFORE retrieval.
+    # The engine's KB-fallback path will cheerfully answer ANY question
+    # with generic dimension boilerplate ("Under the EU AI Act, 10
+    # compliance dimensions are in scope for this question…"); the
+    # scope gate intercepts off-topic / non-existent / conversational /
+    # injection inputs and ships a tailored refusal copy instead.
+    #
+    # Multi-turn aware: a short follow-up like "What about deployers?"
+    # after "What does Art. 13 require?" still counts as in-scope
+    # because the prior turn establishes Art. 13 as an anchor — this
+    # is the "coreference rescue" branch in classify_conversation.
+    scope = classify_conversation(req.messages)
+    if not scope.in_scope:
+        return _build_scope_refusal_response(
+            scope=scope,
+            include_telemetry=include_telemetry,
+            request=request,
+            api_key=api_key,
+            question=question,
+            system_context=system_context,
+            history_turns=req.messages,
+        )
+
+    rag_req = GraphRAGRequest(
+        question=question,
+        # Regenold's use case is "about the regulation"; do not force a tenant-specific
+        # risk_level or answers payload here. Optional system-context is passed through
+        # to let the engine condition the answer.
+        system_description=system_context,
+    )
+
+    rag_res = ask_compliance_question(rag_req)
+
+    # Reference reshaping: validate via reference_from_article_ref
+    # (drops hallucinations + enforces output shape), dedupe, sort by
+    # citation strength, then cap at the spec's "minimal set" budget.
+    candidates: list[str] = []
+    seen_refs: set[str] = set()
+    for c in (rag_res.citations or []):
+        ref = getattr(c, "article_ref", "") or ""
+        formatted = reference_from_article_ref(ref)
+        if not formatted or formatted in seen_refs:
+            continue
+        seen_refs.add(formatted)
+        candidates.append(formatted)
+
+    # Surface conversation anchors (e.g. ``Art. 5`` / ``Annex IV``
+    # explicitly mentioned in the live question or a prior turn) when
+    # the engine missed them — the deterministic-fallback path emits
+    # zero citations, so without this an in-scope ``Summarise Annex IV``
+    # would ship with an empty references list. Anchors are validated
+    # through ``reference_from_article_ref`` (same existence + shape
+    # gate as engine-sourced refs).
+    candidates = _surface_anchor_citations(
+        candidates, seen_refs, scope.anchor_articles
+    )
+
+    candidates.sort(key=_reference_rank)
+    references: list[str] = candidates[:MAX_REFERENCES]
+
+    confidence = float(getattr(rag_res, "confidence", 0.0) or 0.0)
+    retrieval_path = _resolve_retrieval_path(getattr(rag_res, "graph_stats", {}) or {})
+
+    # Closed-world refusal. If we have neither references nor confidence,
+    # refuse the answer rather than ship LLM prose grounded in nothing.
+    # Note: an answer WITH references at confidence < 0.5 is still
+    # returned — the reference list is itself a grounding signal.
+    if not references and confidence < _CONFIDENCE_FLOOR_FOR_ANSWER:
+        # The static no-match string is already plain prose at 3
+        # sentences; no normalisation needed.
+        answer_text = _NO_MATCH_ANSWER
+        confidence = 0.0
+        retrieval_path = "no_match"
+    else:
+        # Full normalisation pipeline:
+        #   markdown strip → sentence split → drop label-only / degenerate
+        #   / meta-leak sentences → strip "Answer:" opener → 4-sentence cap.
+        # Fixes three classes of bugs the engine output ships with:
+        #   1. Markdown formatting that violates the spec ("**bold**",
+        #      headings, bullet lists).
+        #   2. Implementation-detail leakage ("Based on the compliance
+        #      knowledge graph, …", "the graph context lacks…").
+        #   3. Truncation cutting mid-numbered-list because the naive
+        #      sentence splitter saw "Art. 26" / "1." as boundaries.
+        answer_text = normalise_answer_for_regenold(rag_res.answer)
+        if not answer_text:
+            # All sentences dropped as meta-leak/label/degenerate. Fall
+            # back to the deterministic refusal so we ship a coherent
+            # message rather than an empty answer field.
+            answer_text = _NO_MATCH_ANSWER
+            retrieval_path = "no_match"
+            confidence = 0.0
+
+    # Surface the engine's graph_stats so a downstream verifier (when
+    # telemetry is requested) can judge retrieval breadth without
+    # re-asking. The closed-world refusal branch above kept graph_stats
+    # intact (we only flipped retrieval_path); a verifier comparing
+    # nodes_traversed=0 against retrieval_path="no_match" gets a
+    # coherent picture.
+    graph_stats = getattr(rag_res, "graph_stats", {}) or {}
+    nodes_traversed = max(0, int(graph_stats.get("nodes_traversed", 0) or 0))
+    obligations_found = max(0, int(graph_stats.get("obligations_found", 0) or 0))
+    gaps_found = max(0, int(graph_stats.get("gaps_found", 0) or 0))
+
+    # Default response shape = competition spec only. Telemetry block
+    # populated only when ?include_telemetry=true (and serialised via
+    # response_model_exclude_none on the route, so unset Optional
+    # fields disappear from the JSON entirely).
+    if include_telemetry:
+        out = RegenoldAskResponse(
+            answer=answer_text,
+            references=references,
+            reasoning=_build_telemetry_reasoning(
+                confidence=confidence,
+                kb_version=KB_VERSION,
+                retrieval_path=retrieval_path,
+                ref_count=len(references),
+            ),
+            confidence=confidence,
+            kb_version=KB_VERSION,
+            retrieval_path=retrieval_path,  # type: ignore[arg-type]
+            nodes_traversed=nodes_traversed,
+            obligations_found=obligations_found,
+            gaps_found=gaps_found,
+        )
+    else:
+        out = RegenoldAskResponse(
+            answer=answer_text,
+            references=references,
+            # Spec note: "Can optionally be empty. … will not be
+            # considered and might increase latency."
+            # Empty string keeps the key present in the wire response
+            # (the spec example template includes a "reasoning" key)
+            # without burning tokens on actual content. None would be
+            # dropped by ``response_model_exclude_none`` and the
+            # evaluator might accept that, but presence-with-empty is
+            # the safest spec-literal reading.
+            reasoning="",
+        )
+
+    # Tier-aware tenant stamping for the audit chain.
+    # - Partner tier (validated api_key) → tenant_id="partner:regenold"
+    #   so an auditor can filter on "show me every Regenold partner
+    #   request" without inspecting the request body.
+    # - Anonymous tier → tenant_id="public:regenold-anon" + a 16-hex IP
+    #   hash on the chain payload so forensic correlation across
+    #   anonymous traffic is still possible while honouring GDPR
+    #   Art. 4(5) pseudonymisation. The raw IP is never persisted.
+    if api_key:
+        chain_tenant_id = "partner:regenold"
+        ip_hash: str | None = None
+    else:
+        chain_tenant_id = "public:regenold-anon"
+        client_ip = get_remote_address(request) or "unknown"
+        ip_hash = _hash16(client_ip)
+
+    # Best-effort audit-chain entry (no secrets, no raw question text).
+    try:
+        store = get_evidence_store()
+        chain_payload = {
+            "question_hash": question_hash(question),
+            "has_system_context": bool(system_context),
+            "history_turns_used": sum(
+                1 for m in req.messages if m.role in ("user", "assistant")
+            ) - 1,  # turns BEFORE the live user question
+            "references": references,
+            "answer_excerpt": (out.answer or "")[:500],
+            # Audit telemetry: persist confidence + retrieval path + KB
+            # version regardless of include_telemetry — this is internal
+            # forensic data, not part of the wire response.
+            "confidence": confidence,
+            "retrieval_path": retrieval_path,
+            "kb_version": KB_VERSION,
+            "tier": "partner" if api_key else "anon",
+            "include_telemetry_requested": bool(include_telemetry),
+            "scope_reason": scope.reason.value,
+            "scope_evidence": scope.verdict.evidence[:200],
+        }
+        if scope.anchor_articles:
+            chain_payload["anchor_articles"] = list(scope.anchor_articles)
+        if ip_hash is not None:
+            # Only attach ip_hash on the anonymous branch — partner
+            # traffic is already identified by the (hashed) key on the
+            # rate-limit bucket and the partner: tenant prefix.
+            chain_payload["ip_hash"] = ip_hash
+
+        store.record(
+            entry_type=EvidenceEntryType.regenold_question,
+            payload=chain_payload,
+            article_ref="EU AI Act",
+            created_by="regenold" if api_key else "regenold-anon",
+            tenant_id=chain_tenant_id,
+        )
+    except Exception as exc:  # noqa: BLE001 - best-effort evidence
+        logger.debug("regenold_question_evidence_failed", error=str(exc))
+
+    return out
