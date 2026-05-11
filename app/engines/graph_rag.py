@@ -673,6 +673,37 @@ def _deterministic_parse(question: str) -> GraphQuery:
         ("incident reporting", "Art. 73"),
         ("fines", "Art. 99"),
         ("penalties", "Art. 99"),
+        # Prohibited practices (Art. 5) — must appear before generic high-risk keywords
+        ("prohibited", "Art. 5"),
+        ("prohibition", "Art. 5"),
+        ("always prohibited", "Art. 5"),
+        ("unacceptable risk", "Art. 5"),
+        ("banned", "Art. 5"),
+        ("social scoring", "Art. 5"),
+        ("subliminal manipulation", "Art. 5"),
+        ("predictive policing", "Art. 5"),
+        ("real-time biometric", "Art. 5"),
+        ("remote biometric identification", "Art. 5"),
+        ("biometric categorisation", "Art. 5"),
+        # Emotion recognition — prohibited in workplaces/education (Art. 5) AND
+        # transparency obligation for all other contexts (Art. 50)
+        ("emotion recognition", "Art. 5"),
+        ("emotion recognition", "Art. 50"),
+        # Technical documentation / hardware specs (Art. 11 + Annex IV)
+        ("technical documentation", "Art. 11"),
+        ("hardware", "Annex IV"),
+        ("system architecture", "Annex IV"),
+        ("training methodology", "Annex IV"),
+        # High-risk classification (Art. 6 / Annex III)
+        ("high-risk classification", "Art. 6"),
+        ("classified as high-risk", "Art. 6"),
+        ("annex iii use case", "Annex III"),
+        ("annex iii use cases", "Annex III"),
+        ("biometric identification", "Annex III"),
+        ("doctor", "Annex III"),
+        ("medical", "Annex III"),
+        ("healthcare", "Annex III"),
+        ("transcrib", "Annex III"),
     ]
     for kw, art_ref in _KEYWORD_ENTITY_MAP:
         if kw in q_lower and art_ref not in entities:
@@ -693,15 +724,10 @@ def _deterministic_answer(question: str, context: GraphContext) -> str:
     parts: list[str] = []
 
     if context.obligations:
-        parts.append(
-            f"The EU AI Act sets out {len(context.obligations)} "
-            f"obligations relevant to your query."
-        )
-        for obl in context.obligations[:5]:
-            parts.append(
-                f"- **{obl.get('article', 'N/A')}**: {obl.get('text', 'N/A')} "
-                f"[{obl.get('id', '')}]"
-            )
+        for obl in context.obligations[:3]:
+            article = obl.get("article", "N/A")
+            text = obl.get("text", "N/A")
+            parts.append(f"{article}: {text}")
 
     if context.gaps:
         parts.append(
@@ -735,14 +761,11 @@ def _deterministic_answer(question: str, context: GraphContext) -> str:
     # KB itself — rather than pretending we have no data, we surface
     # those dimensions directly.
     if not parts and context.dimension_info:
-        parts.append(
-            f"Under the EU AI Act, {len(context.dimension_info)} "
-            f"compliance dimensions are in scope for this question:"
-        )
-        for d in context.dimension_info[:8]:
+        labels = [d.get("dim_name", d.get("dim_id", "")) for d in context.dimension_info[:4] if d.get("dim_name") or d.get("dim_id")]
+        if labels:
             parts.append(
-                f"- **{d.get('dim_name', d.get('dim_id', 'N/A'))}** — "
-                f"{d.get('question_count', 0)} questions"
+                f"This question touches the following EU AI Act obligations: "
+                f"{', '.join(labels)}."
             )
 
     if not parts:
