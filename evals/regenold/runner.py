@@ -205,13 +205,11 @@ def run_all() -> list[ScenarioResult]:
     Without this, a test that asserts the unconfigured-deploy 503 path
     fails if it runs AFTER the runner in the same pytest session.
     """
-    # Make sure a key is configured so the auth dep doesn't trip with a
-    # 503 — the public anonymous tier still works without a key, but a
-    # configured key makes the optional-auth dep behave consistently.
+    _eval_key = "regenold-eval-key"
     prev_key = settings.regenold.api_key
-    settings.regenold.api_key = SecretStr("regenold-eval-key")
+    settings.regenold.api_key = SecretStr(_eval_key)
     try:
-        with TestClient(app) as client:
+        with TestClient(app, headers={"X-Regenold-Api-Key": _eval_key}) as client:
             return [_run_scenario(client, s) for s in SCENARIOS]
     finally:
         settings.regenold.api_key = prev_key

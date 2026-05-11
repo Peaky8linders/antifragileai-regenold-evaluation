@@ -56,7 +56,7 @@ from app.engines.graph_rag import ask_compliance_question
 from app.evidence.models import EvidenceEntryType
 from app.evidence.store import get_evidence_store
 from app.integrations.regenold.auth import (
-    optional_regenold_api_key,
+    require_regenold_api_key,
     validate_regenold_api_key,
 )
 from app.integrations.regenold.models import (
@@ -325,13 +325,8 @@ def _build_scope_refusal_response(
             reasoning="",
         )
 
-    # Tier-aware tenant stamping — same shape as the in-scope branch.
-    if api_key:
-        chain_tenant_id = "partner:regenold"
-        ip_hash: str | None = None
-    else:
-        chain_tenant_id = "public:regenold-anon"
-        ip_hash = _hash16(_client_addr(request))
+    chain_tenant_id = "partner:regenold"
+    ip_hash: str | None = None
 
     try:
         store = get_evidence_store()
@@ -350,7 +345,7 @@ def _build_scope_refusal_response(
             "confidence": confidence,
             "retrieval_path": retrieval_path,
             "kb_version": KB_VERSION,
-            "tier": "partner" if api_key else "anon",
+            "tier": "partner",
             "include_telemetry_requested": bool(include_telemetry),
             # Refusal-class telemetry — auditor can filter "every
             # non-existent-article refusal" or "every off-topic refusal"
@@ -362,14 +357,12 @@ def _build_scope_refusal_response(
             chain_payload["unknown_articles"] = list(scope.verdict.unknown_articles)
         if scope.anchor_articles:
             chain_payload["anchor_articles"] = list(scope.anchor_articles)
-        if ip_hash is not None:
-            chain_payload["ip_hash"] = ip_hash
 
         store.record(
             entry_type=EvidenceEntryType.regenold_question,
             payload=chain_payload,
             article_ref="EU AI Act",
-            created_by="regenold" if api_key else "regenold-anon",
+            created_by="regenold",
             tenant_id=chain_tenant_id,
         )
     except Exception as exc:  # noqa: BLE001 - best-effort evidence
@@ -486,7 +479,9 @@ def _build_question_from_history(messages: list[Any]) -> tuple[str, str | None]:
     response_model=RegenoldAskResponse,
     response_model_exclude_none=True,
     responses={
-        403: {"description": "Invalid API key (header present but did not match)"},
+        401: {"description": "Missing X-Regenold-Api-Key header"},
+        403: {"description": "Invalid API key"},
+        503: {"description": "Regenold integration not configured on this deployment"},
     },
 )
 @limiter.limit(_regenold_dynamic_limit, key_func=_regenold_rate_key)
@@ -494,14 +489,12 @@ def regenold_eu_ai_act_ask(
     request: Request,
     body: Any = Body(...),  # noqa: B008 — FastAPI-idiomatic Body(...) at default position
     include_telemetry: bool = False,
-    api_key: str | None = Depends(optional_regenold_api_key),
+    api_key: str = Depends(require_regenold_api_key),
 ) -> RegenoldAskResponse:
     """Regenold partner endpoint: grounded EU AI Act Q&A with citations.
 
-    Auth is OPTIONAL. ``api_key`` will be ``None`` for anonymous callers
-    (the public competition tier) and the validated raw key when a
-    matching ``X-Regenold-Api-Key`` was sent (the partner tier). Rate
-    limit + evidence-chain ``tenant_id`` are derived from this value.
+    Auth is REQUIRED. Callers must send a valid ``X-Regenold-Api-Key``
+    header. Missing key → 401, wrong key → 403, unconfigured deploy → 503.
 
     Backed by the existing Graph RAG engine (Neo4j KG + KB fallback).
     Response is reshaped into Regenold's expected wire shape:
@@ -732,21 +725,6 @@ def regenold_eu_ai_act_ask(
             reasoning="",
         )
 
-    # Tier-aware tenant stamping for the audit chain.
-    # - Partner tier (validated api_key) → tenant_id="partner:regenold"
-    #   so an auditor can filter on "show me every Regenold partner
-    #   request" without inspecting the request body.
-    # - Anonymous tier → tenant_id="public:regenold-anon" + a 16-hex IP
-    #   hash on the chain payload so forensic correlation across
-    #   anonymous traffic is still possible while honouring GDPR
-    #   Art. 4(5) pseudonymisation. The raw IP is never persisted.
-    if api_key:
-        chain_tenant_id = "partner:regenold"
-        ip_hash: str | None = None
-    else:
-        chain_tenant_id = "public:regenold-anon"
-        ip_hash = _hash16(_client_addr(request))
-
     # Best-effort audit-chain entry (no secrets, no raw question text).
     try:
         store = get_evidence_store()
@@ -767,25 +745,20 @@ def regenold_eu_ai_act_ask(
             "confidence": confidence,
             "retrieval_path": retrieval_path,
             "kb_version": KB_VERSION,
-            "tier": "partner" if api_key else "anon",
+            "tier": "partner",
             "include_telemetry_requested": bool(include_telemetry),
             "scope_reason": scope.reason.value,
             "scope_evidence": scope.verdict.evidence[:200],
         }
         if scope.anchor_articles:
             chain_payload["anchor_articles"] = list(scope.anchor_articles)
-        if ip_hash is not None:
-            # Only attach ip_hash on the anonymous branch — partner
-            # traffic is already identified by the (hashed) key on the
-            # rate-limit bucket and the partner: tenant prefix.
-            chain_payload["ip_hash"] = ip_hash
 
         store.record(
             entry_type=EvidenceEntryType.regenold_question,
             payload=chain_payload,
             article_ref="EU AI Act",
-            created_by="regenold" if api_key else "regenold-anon",
-            tenant_id=chain_tenant_id,
+            created_by="regenold",
+            tenant_id="partner:regenold",
         )
     except Exception as exc:  # noqa: BLE001 - best-effort evidence
         logger.debug("regenold_question_evidence_failed", error=str(exc))
