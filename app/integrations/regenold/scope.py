@@ -827,6 +827,18 @@ KEYWORD_TO_ARTICLE: dict[str, str] = {
     "commission review": "Art. 112",
     "commission evaluation": "Art. 112",
     "review clause": "Art. 112",
+    # Art. 113 "when will X become subject" routing (round 9.1 hotfix)
+    "become subject to obligations": "Art. 113",
+    "become subject to the obligations": "Art. 113",
+    "when will the obligations": "Art. 113",
+    "when will high-risk": "Art. 113",
+    "when will high risk": "Art. 113",
+    "when does annex iii apply": "Art. 113",
+    # Art. 51 GPAI threshold variants (round 9.1 hotfix)
+    "threshold makes a gpai": "Art. 51",
+    "threshold for systemic risk": "Art. 51",
+    "what threshold makes": "Art. 51",
+    "training flops": "Art. 51",
     # Annex II / V / VIII anchors
     "criminal offences": "Annex II",
     "annex ii offences": "Annex II",
