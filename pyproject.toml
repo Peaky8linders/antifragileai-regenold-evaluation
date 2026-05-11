@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Standalone EU AI Act grounded Q&A — Regenold partner transparency bundle."
 readme = "README.md"
 requires-python = ">=3.12"
-license = {text = "Apache-2.0"}
+license = "Apache-2.0"
 authors = [
   {name = "Antifragile AI", email = "compliance@antifragile-ai.net"},
 ]
@@ -54,3 +54,6 @@ select = ["E", "F", "I", "B", "UP", "W", "C90"]
 #       wire-shape compat; switching here would diverge from the verbatim
 #       copies we're tracking.
 ignore = ["E501", "C901", "UP042"]
+
+[tool.setuptools.packages.find]
+include = ["app*", "evals*"]
