@@ -15,21 +15,16 @@ def _messages(content: str) -> list[dict[str, str]]:
     return [{"role": "user", "content": content}]
 
 
-def test_regenold_endpoint_anonymous_tier_accepted() -> None:
-    """Auth is optional — the public anonymous tier returns 200, NOT 401.
-
-    Pre-PR this returned 401 ``regenold_api_key_missing``. The Regenold
-    competition entry needs the route reachable without a partner key,
-    so anonymous traffic now flows under the 30/min per-IP-hash bucket
-    with ``tenant_id="public:regenold-anon"`` on the chain.
-    """
+def test_regenold_endpoint_missing_key_returns_401() -> None:
+    """Auth is required — a request with no X-Regenold-Api-Key header must return 401."""
     settings.regenold.api_key = SecretStr("regenold-test-key")
     c = _client()
     r = c.post(
         "/api/v1/regenold/eu-ai-act/ask",
         json=_messages("What does EU AI Act Art. 13(1)(a) require?"),
     )
-    assert r.status_code == 200, r.json()
+    assert r.status_code == 401, r.json()
+    assert r.json()["detail"]["code"] == "regenold_api_key_missing"
 
 
 def test_regenold_endpoint_rejects_invalid_key() -> None:
@@ -48,12 +43,11 @@ def test_regenold_endpoint_rejects_invalid_key() -> None:
     assert r.status_code == 403
 
 
-def test_regenold_endpoint_unconfigured_deploy_treats_header_as_anon() -> None:
-    """Deployment with no configured key + a header → anonymous, NOT 503.
+def test_regenold_endpoint_unconfigured_deploy_returns_503() -> None:
+    """Deployment with no configured key → 503 (integration not provisioned).
 
-    Staged-but-inactive posture: a stray header on a deploy that hasn't
-    been provisioned should NOT block the public competition path. The
-    optional dep ignores the header when ``_configured_key()`` is None.
+    The strict dep raises 503 when ``_configured_key()`` is None so the
+    operator is alerted that the partner key has not been set.
     """
     settings.regenold.api_key = None  # Unconfigured deploy
     try:
@@ -63,7 +57,8 @@ def test_regenold_endpoint_unconfigured_deploy_treats_header_as_anon() -> None:
             headers={"X-Regenold-Api-Key": "anything-since-no-config"},
             json=_messages("Summarise EU AI Act Art. 13."),
         )
-        assert r.status_code == 200, r.json()
+        assert r.status_code == 503, r.json()
+        assert r.json()["detail"]["code"] == "regenold_not_configured"
     finally:
         # Reset for the rest of the suite which expects a configured key.
         settings.regenold.api_key = SecretStr("regenold-test-key")
@@ -487,38 +482,24 @@ def test_dynamic_limit_resolves_60_for_authed_30_for_anon() -> None:
     assert _regenold_dynamic_limit("unknown-prefix:zzz") == "30/minute"
 
 
-def test_anonymous_request_writes_public_tenant_chain_entry() -> None:
-    """End-to-end: a no-header request stamps tenant_id="public:regenold-anon".
-
-    Audits a real evidence-chain row written by the route — operates on
-    the in-process audit store the rest of the suite uses.
-    """
+def test_unauthenticated_request_returns_401_and_writes_no_chain_entry() -> None:
+    """Auth is required — a no-header request is rejected before touching the chain."""
     from app.evidence.store import get_evidence_store
 
     settings.regenold.api_key = SecretStr("regenold-test-key")
     store = get_evidence_store()
-    before = len(list(store.get_chain(tenant_id="public:regenold-anon", limit=1000)))
+    before_partner = len(list(store.get_chain(tenant_id="partner:regenold", limit=1000)))
 
     c = _client()
     r = c.post(
         "/api/v1/regenold/eu-ai-act/ask",
         json=_messages("Summarise EU AI Act Art. 26."),
     )
-    assert r.status_code == 200, r.json()
+    assert r.status_code == 401, r.json()
 
-    # get_chain default order is DESC (newest-first), so rows[0] is the
-    # entry the route just wrote.
-    rows = list(store.get_chain(tenant_id="public:regenold-anon", limit=1000))
-    assert len(rows) > before, "no public:regenold-anon chain entry written"
-    last = rows[0]
-    payload = last.payload if isinstance(last.payload, dict) else {}
-    assert payload.get("tier") == "anon"
-    # Anon tier carries an IP hash for forensic correlation under
-    # GDPR Art. 4(5) pseudonymisation. 16-hex sha256 truncation.
-    ip_hash = payload.get("ip_hash")
-    assert isinstance(ip_hash, str), payload
-    assert len(ip_hash) == 16
-    assert all(c in "0123456789abcdef" for c in ip_hash)
+    # Dep rejects before the handler runs, so no chain entry should be written.
+    after_partner = len(list(store.get_chain(tenant_id="partner:regenold", limit=1000)))
+    assert after_partner == before_partner, "chain entry written despite 401 rejection"
 
 
 def test_authenticated_request_writes_partner_tenant_chain_entry() -> None:
@@ -564,6 +545,7 @@ def test_default_response_shape_matches_spec_template() -> None:
     c = _client()
     r = c.post(
         "/api/v1/regenold/eu-ai-act/ask",
+        headers={"X-Regenold-Api-Key": "regenold-test-key"},
         json=_messages("What does EU AI Act Art. 13(1)(a) require?"),
     )
     assert r.status_code == 200
@@ -587,6 +569,7 @@ def test_default_reasoning_is_empty_not_telemetry() -> None:
     c = _client()
     r = c.post(
         "/api/v1/regenold/eu-ai-act/ask",
+        headers={"X-Regenold-Api-Key": "regenold-test-key"},
         json=_messages("Summarise EU AI Act Art. 13."),
     )
     assert r.status_code == 200
@@ -607,6 +590,7 @@ def test_references_capped_at_max_references() -> None:
     c = _client()
     r = c.post(
         "/api/v1/regenold/eu-ai-act/ask",
+        headers={"X-Regenold-Api-Key": "regenold-test-key"},
         json=_messages("Summarise EU AI Act Art. 13(1)(a)."),
     )
     assert r.status_code == 200
@@ -633,6 +617,7 @@ def test_references_match_strict_spec_format() -> None:
     c = _client()
     r = c.post(
         "/api/v1/regenold/eu-ai-act/ask",
+        headers={"X-Regenold-Api-Key": "regenold-test-key"},
         json=_messages("Summarise EU AI Act Art. 13(1)(a)."),
     )
     assert r.status_code == 200
@@ -677,6 +662,7 @@ def test_answer_endpoint_truncates_long_engine_output() -> None:
     c = _client()
     r = c.post(
         "/api/v1/regenold/eu-ai-act/ask",
+        headers={"X-Regenold-Api-Key": "regenold-test-key"},
         json=_messages("Summarise EU AI Act Art. 13."),
     )
     assert r.status_code == 200
@@ -703,6 +689,7 @@ def test_multi_turn_history_threaded_into_question() -> None:
     c = _client()
     r = c.post(
         "/api/v1/regenold/eu-ai-act/ask",
+        headers={"X-Regenold-Api-Key": "regenold-test-key"},
         json=[
             {"role": "user", "content": "What does Art. 13 require for transparency?"},
             {
@@ -717,7 +704,7 @@ def test_multi_turn_history_threaded_into_question() -> None:
     # Evidence chain should record that we used 2 prior turns
     # (1 user + 1 assistant before the live question).
     store = get_evidence_store()
-    rows = list(store.get_chain(tenant_id="public:regenold-anon", limit=10))
+    rows = list(store.get_chain(tenant_id="partner:regenold", limit=10))
     assert rows, "no chain row written"
     last = rows[0]
     payload = last.payload if isinstance(last.payload, dict) else {}

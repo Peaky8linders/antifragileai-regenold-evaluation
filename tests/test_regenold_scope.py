@@ -21,6 +21,10 @@ def _client() -> TestClient:
     return TestClient(app)
 
 
+def _authed_client(api_key: str = "regenold-scope-test-key") -> TestClient:
+    return TestClient(app, headers={"X-Regenold-Api-Key": api_key})
+
+
 def _msgs(*pairs: tuple[str, str]) -> list[dict[str, str]]:
     return [{"role": role, "content": content} for role, content in pairs]
 
@@ -411,7 +415,7 @@ class TestRouteScopeRefusal:
         settings.regenold.api_key = SecretStr("regenold-scope-test-key")
 
     def test_off_topic_gdpr_refuses(self) -> None:
-        c = _client()
+        c = _authed_client()
         r = c.post(
             "/api/v1/regenold/eu-ai-act/ask",
             json=_msgs(("user", "What does GDPR Article 17 say about deletion?")),
@@ -422,7 +426,7 @@ class TestRouteScopeRefusal:
         assert "outside the EU AI Act" in body["answer"]
 
     def test_non_existent_article_refuses_with_signal(self) -> None:
-        c = _client()
+        c = _authed_client()
         r = c.post(
             "/api/v1/regenold/eu-ai-act/ask",
             json=_msgs(("user", "What does Art. 200 of the EU AI Act say?")),
@@ -435,7 +439,7 @@ class TestRouteScopeRefusal:
         assert "113" in body["answer"]
 
     def test_conversational_refuses(self) -> None:
-        c = _client()
+        c = _authed_client()
         r = c.post(
             "/api/v1/regenold/eu-ai-act/ask",
             json=_msgs(("user", "Hi, how are you today?")),
@@ -447,7 +451,7 @@ class TestRouteScopeRefusal:
 
     def test_telemetry_path_no_match(self) -> None:
         """Refusal in telemetry mode → ``retrieval_path="no_match"``."""
-        c = _client()
+        c = _authed_client()
         r = c.post(
             "/api/v1/regenold/eu-ai-act/ask?include_telemetry=true",
             json=_msgs(("user", "What's the weather?")),
@@ -472,7 +476,7 @@ class TestRouteScopeRefusal:
         in the route fills the gap so partners get a useful reference
         list.
         """
-        c = _client()
+        c = _authed_client()
         r = c.post(
             "/api/v1/regenold/eu-ai-act/ask",
             json=_msgs(("user", "Summarise Annex IV technical documentation.")),
@@ -484,7 +488,7 @@ class TestRouteScopeRefusal:
 
     def test_multi_turn_coreference_rescue(self) -> None:
         """Follow-up 'What about deployers?' after Art. 13 still in-scope."""
-        c = _client()
+        c = _authed_client()
         r = c.post(
             "/api/v1/regenold/eu-ai-act/ask",
             json=_msgs(
@@ -509,7 +513,7 @@ class TestRouteScopeRefusal:
     def test_history_unknown_article_blocks_live_in_scope(self) -> None:
         """Bogus ref in earlier turn poisons the conversation —
         even if the live question is in-scope, refuse."""
-        c = _client()
+        c = _authed_client()
         r = c.post(
             "/api/v1/regenold/eu-ai-act/ask",
             json=_msgs(
@@ -528,16 +532,16 @@ class TestRouteScopeRefusal:
         from app.evidence.store import get_evidence_store
 
         store = get_evidence_store()
-        before = len(list(store.get_chain(tenant_id="public:regenold-anon", limit=1000)))
+        before = len(list(store.get_chain(tenant_id="partner:regenold", limit=1000)))
 
-        c = _client()
+        c = _authed_client()
         r = c.post(
             "/api/v1/regenold/eu-ai-act/ask",
             json=_msgs(("user", "Tell me about HIPAA.")),
         )
         assert r.status_code == 200, r.json()
 
-        rows = list(store.get_chain(tenant_id="public:regenold-anon", limit=1000))
+        rows = list(store.get_chain(tenant_id="partner:regenold", limit=1000))
         assert len(rows) > before
         last = rows[0]
         payload = last.payload if isinstance(last.payload, dict) else {}

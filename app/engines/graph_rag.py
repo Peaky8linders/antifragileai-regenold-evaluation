@@ -1,13 +1,22 @@
 """
 Graph RAG Compliance Q&A Engine — Conversational interface over the compliance graph.
 
-Architecture (two-stage):
-  1. PARSE: Natural language question → structured GraphQuery (LLM)
-  2. RETRIEVE: GraphQuery → Cypher queries against Neo4j → GraphContext
-  3. GENERATE: Question + GraphContext → cited answer (LLM)
+Architecture (two-stage pipeline):
+  Stage 1 (always): PARSE → RETRIEVE → deterministic KG-grounded answer
+    1a. PARSE:    deterministic ontology/KB keyword parse → structured GraphQuery
+                  (no LLM cost; fast, zero-latency)
+    1b. RETRIEVE: GraphQuery → Cypher queries against Neo4j → GraphContext
+                  (KB fallback when Neo4j unavailable)
+    1c. ANSWER:   GraphContext → citation-exact deterministic answer
 
-Falls back to KB-only mode when Neo4j is unavailable.
-Falls back to deterministic answers when Anthropic API key is not set.
+  Stage 2 (when Claude Max proxy available): ENHANCE via openai_wrapper
+    2.  Pass Stage-1 answer + original question to the Claude Max proxy
+        (http://127.0.0.1:8000/v1) for natural-language polish.
+        Falls back to the Stage-1 answer on any proxy error.
+
+Activate Stage 2 via env:
+    OPENAI_API_BASE=http://127.0.0.1:8000/v1   (or any OpenAI-spec endpoint)
+    OPENAI_API_KEY=<any non-empty string>
 """
 
 from __future__ import annotations
@@ -784,24 +793,111 @@ def _retrieve_from_kb(
     return context
 
 
+# ─── Two-stage generation ────────────────────────────────────────────────────
+
+def _claude_max_enhance_answer(
+    *,
+    question: str,
+    kg_answer: str,
+    system_description: str | None = None,
+) -> str | None:
+    """Stage-2: polish the KG-grounded answer via the Claude Max proxy.
+
+    Returns ``None`` on any failure so the caller falls back to the KG answer.
+    """
+    try:
+        from app.config import settings
+        from app.data.graph_rag_prompts import ANSWER_GENERATE_SYSTEM
+        from app.security.prompt_guard import (
+            PROMPT_HARDENING_PREFIX,
+            sanitize_for_llm,
+            validate_llm_output,
+        )
+
+        sanitized_q = sanitize_for_llm(question, context_type="query")
+        user_message = f"QUESTION: {sanitized_q}\n\n"
+        if system_description:
+            sanitized_desc = sanitize_for_llm(
+                system_description, context_type="system_description"
+            )
+            user_message += f"SYSTEM DESCRIPTION: {sanitized_desc}\n\n"
+        user_message += (
+            f"KNOWLEDGE GRAPH ANSWER:\n{kg_answer}\n\n"
+            "Refine the knowledge-graph answer above into a clear, concise compliance "
+            "response. Preserve every article citation and obligation ID. Lead with a "
+            "direct answer, 3-4 sentences maximum."
+        )
+        try:
+            max_tokens = settings.graph_rag.max_tokens
+        except Exception:  # noqa: BLE001
+            max_tokens = 512
+
+        text_raw = _openai_wrapper_complete_for_graph_rag(
+            system=PROMPT_HARDENING_PREFIX + ANSWER_GENERATE_SYSTEM,
+            user=user_message,
+            max_tokens=max_tokens,
+            temperature=0.0,
+        )
+        if text_raw is None:
+            return None
+        return validate_llm_output(text_raw.strip())
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("stage2_claude_max_enhance failed, keeping kg_answer: %s", exc)
+        return None
+
+
+def _two_stage_generate(
+    question: str,
+    context: GraphContext,
+    system_description: str | None = None,
+) -> tuple[str, bool]:
+    """Two-stage answer generation.
+
+    Stage 1 (always): deterministic KG-grounded answer — fast, citation-exact,
+    zero LLM cost.  Returns (answer, False) when Stage 2 is disabled.
+
+    Stage 2 (when Claude Max proxy available): pass the Stage-1 answer to the
+    ``openai_wrapper`` proxy for natural-language polish.  Falls back to the
+    Stage-1 answer if the proxy is unavailable or errors.  Returns (enhanced, True)
+    on success or (kg_answer, False) on fallback.
+    """
+    from app.llm.openai_wrapper_provider import is_openai_wrapper_enabled
+
+    kg_answer = _deterministic_answer(question, context)
+
+    if not is_openai_wrapper_enabled():
+        return kg_answer, False
+
+    enhanced = _claude_max_enhance_answer(
+        question=question,
+        kg_answer=kg_answer,
+        system_description=system_description,
+    )
+    if enhanced is not None:
+        return enhanced, True
+    return kg_answer, False
+
+
 # ─── Main entry point ────────────────────────────────────────────────────────
 
 def ask_compliance_question(request: GraphRAGRequest) -> GraphRAGResponse:
     """Main entry point: answer a natural language compliance question.
 
-    1. Parse the question into a structured GraphQuery
-    2. Retrieve relevant context from Neo4j (or KB fallback)
-    3. Generate a cited answer using LLM (or deterministic fallback)
-    4. Extract citations from the graph context
+    Two-stage pipeline:
+    1. PARSE (deterministic, always): ontology/KB-based keyword parse — no LLM cost.
+    2. RETRIEVE: Neo4j graph traversal / KB fallback.
+    3. GENERATE Stage 1: citation-exact deterministic answer from retrieved context.
+    4. GENERATE Stage 2 (when Claude Max proxy wired): polish via openai_wrapper.
+    5. Extract citations and compute confidence from the graph context.
     """
-    # Step 1: Parse
-    query = _llm_parse_query(request.question)
+    # Stage 1 — Parse: always deterministic (ontology/taxonomy/KB, no LLM cost)
+    query = _deterministic_parse(request.question)
 
     # Override risk context if provided in request
     if request.risk_level:
         query.risk_context = request.risk_level.value
 
-    # Step 2: Retrieve
+    # Stage 1 — Retrieve
     answer_dict = {k: v for k, v in request.answers.items()} if request.answers else {}
     context = _retrieve_from_graph(
         query,
@@ -809,7 +905,11 @@ def ask_compliance_question(request: GraphRAGRequest) -> GraphRAGResponse:
         answers=answer_dict,
     )
 
-    # Step 3: Generate
+    # Stage 1 + 2 — Generate
+    answer_text, stage2_used = _two_stage_generate(
+        request.question, context, request.system_description,
+    )
+
     reasoning_trace = [
         f"Intent: {query.intent}",
         f"Entities: {query.entities}",
@@ -817,13 +917,10 @@ def ask_compliance_question(request: GraphRAGRequest) -> GraphRAGResponse:
         f"Dimension hint: {query.dimension_hint or 'none'}",
         f"Graph nodes traversed: {context.nodes_traversed}",
         f"Graph edges followed: {context.edges_followed}",
+        f"Stage 2 (Claude Max enhanced): {stage2_used}",
     ]
 
-    answer_text = _llm_generate_answer(
-        request.question, context, request.system_description,
-    )
-
-    # Step 4: Extract citations
+    # Stage 4 — Extract citations from context
     citations: list[CitationNode] = []
     seen_ids: set[str] = set()
 
