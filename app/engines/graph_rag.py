@@ -700,8 +700,6 @@ def _deterministic_parse(question: str) -> GraphQuery:
         ("annex iii use case", "Annex III"),
         ("annex iii use cases", "Annex III"),
         ("biometric identification", "Annex III"),
-        ("doctor", "Annex III"),
-        ("medical", "Annex III"),
         ("healthcare", "Annex III"),
         ("transcrib", "Annex III"),
     ]
