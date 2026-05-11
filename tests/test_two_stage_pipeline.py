@@ -3,23 +3,59 @@
 Stage 1 (always): deterministic ontology/KB parse → Neo4j/KB retrieval →
   citation-exact structured answer.  No LLM cost; always runs.
 
-Stage 2 (when Claude Max proxy available): pass the Stage-1 answer to the
-  ``openai_wrapper`` proxy (Claude Max subscription at 127.0.0.1:8000/v1)
-  for natural-language polish.  Falls back to Stage-1 answer on any error.
+Stage 2 (auto-activated): pass the Stage-1 answer to the ``openai_wrapper``
+  proxy (Claude Max subscription) for natural-language polish.
+
+Stage 2 fires when BOTH:
+  a) ``is_openai_wrapper_enabled()`` → the proxy is wired up, AND
+  b) ``_needs_stage2_enhancement()`` → the question is complex enough:
+       - multi-turn conversation history in the question
+       - gap_analysis or cross_framework intent
+       - ≥ 2 article entities (comparison / multi-obligation)
+       - live question > 200 chars
+       - synthesis / remediation / comparison keywords present
 """
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
 from app.engines.graph_rag import (
     GraphContext,
+    GraphQuery,
     _claude_max_enhance_answer,
+    _needs_stage2_enhancement,
     _two_stage_generate,
     ask_compliance_question,
 )
 from app.models import GraphRAGRequest
+
+
+# ─── Helpers ─────────────────────────────────────────────────────────────────
+
+# A question that is always complex enough to trigger Stage 2 — multi-turn
+# indicator is the most reliable signal.
+_MULTI_TURN_Q = (
+    "Conversation so far:\nUser: What does Art. 9 require?\n"
+    "Assistant: Article 9 requires data governance.\n\n"
+    "Latest question:\nWhat are the specific training-data obligations?"
+)
+
+# A short, single-article question — should NOT trigger Stage 2 on its own.
+_SIMPLE_Q = "What does Art. 9 require?"
+
+
+def _query(intent: str = "article_lookup", entities: list[str] | None = None) -> GraphQuery:
+    return GraphQuery(
+        intent=intent,
+        entities=entities or [],
+        raw_question="",
+    )
+
+
+def _empty_ctx() -> GraphContext:
+    return GraphContext()
 
 
 # ─── Stage 1: parse is always deterministic ──────────────────────────────────
@@ -31,7 +67,7 @@ class TestStage1AlwaysDeterministic:
 
     def test_llm_parse_query_never_called(self) -> None:
         with patch("app.engines.graph_rag._llm_parse_query") as mock_llm:
-            req = GraphRAGRequest(question="What does Art. 9 require?")
+            req = GraphRAGRequest(question=_SIMPLE_Q)
             ask_compliance_question(req)
         mock_llm.assert_not_called()
 
@@ -47,108 +83,149 @@ class TestStage1AlwaysDeterministic:
         mock_det.assert_called_once()
 
     def test_reasoning_trace_has_seven_entries(self) -> None:
-        """The trace must include the new Stage-2 indicator entry."""
-        req = GraphRAGRequest(question="What does Art. 9 require?")
+        """The trace must include the Stage-2 indicator entry."""
+        req = GraphRAGRequest(question=_SIMPLE_Q)
         result = ask_compliance_question(req)
         assert len(result.reasoning_trace) == 7, result.reasoning_trace
 
     def test_reasoning_trace_includes_stage2_indicator(self) -> None:
-        req = GraphRAGRequest(question="What does Art. 9 require?")
+        req = GraphRAGRequest(question=_SIMPLE_Q)
         result = ask_compliance_question(req)
-        stage2_entries = [
-            t for t in result.reasoning_trace if "Stage 2" in t
-        ]
+        stage2_entries = [t for t in result.reasoning_trace if "Stage 2" in t]
         assert len(stage2_entries) == 1, result.reasoning_trace
+
+
+# ─── _needs_stage2_enhancement heuristic ─────────────────────────────────────
+
+
+class TestNeedsStage2Heuristic:
+    """Unit tests on the complexity heuristic that gates Stage-2 activation."""
+
+    # --- must return True ---
+
+    def test_multi_turn_prefix_triggers(self) -> None:
+        assert _needs_stage2_enhancement(_MULTI_TURN_Q, _empty_ctx()) is True
+
+    def test_gap_analysis_intent_triggers(self) -> None:
+        assert _needs_stage2_enhancement(
+            _SIMPLE_Q, _empty_ctx(), _query(intent="gap_analysis")
+        ) is True
+
+    def test_cross_framework_intent_triggers(self) -> None:
+        assert _needs_stage2_enhancement(
+            _SIMPLE_Q, _empty_ctx(), _query(intent="cross_framework")
+        ) is True
+
+    def test_two_or_more_entities_triggers(self) -> None:
+        assert _needs_stage2_enhancement(
+            _SIMPLE_Q,
+            _empty_ctx(),
+            _query(entities=["Art. 9", "Art. 10"]),
+        ) is True
+
+    def test_long_live_question_triggers(self) -> None:
+        long_q = "What are the exact obligations " + "a " * 100 + "deployer faces?"
+        assert _needs_stage2_enhancement(long_q, _empty_ctx()) is True
+
+    @pytest.mark.parametrize("keyword", [
+        "compare these two articles",
+        "what is the difference between Art. 9 and Art. 10",
+        "vs. the GDPR approach",
+        "how should we prioritise the remediation work",
+        "please explain why this obligation exists",
+    ])
+    def test_complex_keywords_trigger(self, keyword: str) -> None:
+        assert _needs_stage2_enhancement(keyword, _empty_ctx()) is True
+
+    # --- must return False ---
+
+    def test_simple_short_question_does_not_trigger(self) -> None:
+        assert _needs_stage2_enhancement(_SIMPLE_Q, _empty_ctx()) is False
+
+    def test_single_entity_article_lookup_does_not_trigger(self) -> None:
+        assert _needs_stage2_enhancement(
+            _SIMPLE_Q, _empty_ctx(), _query(intent="article_lookup", entities=["Art. 9"])
+        ) is False
+
+    def test_obligation_check_no_extras_does_not_trigger(self) -> None:
+        assert _needs_stage2_enhancement(
+            "Does Art. 13 require disclosure?",
+            _empty_ctx(),
+            _query(intent="obligation_check", entities=["Art. 13"]),
+        ) is False
 
 
 # ─── Stage 2: Claude Max proxy engagement ────────────────────────────────────
 
 
 class TestStage2ClaudeMaxProxy:
-    """Stage 2 fires only when is_openai_wrapper_enabled() returns True."""
+    """Stage 2 fires only when wrapper is enabled AND heuristic returns True."""
 
     def test_stage2_skipped_when_wrapper_disabled(self) -> None:
         with (
-            patch(
-                "app.engines.graph_rag._two_stage_generate",
-                wraps=__import__(
-                    "app.engines.graph_rag", fromlist=["_two_stage_generate"]
-                )._two_stage_generate,
-            ),
-            patch(
-                "app.llm.openai_wrapper_provider.is_openai_wrapper_enabled",
-                return_value=False,
-            ),
-            patch(
-                "app.engines.graph_rag._openai_wrapper_complete_for_graph_rag"
-            ) as mock_wrapper,
+            patch("app.llm.openai_wrapper_provider.is_openai_wrapper_enabled", return_value=False),
+            patch("app.engines.graph_rag._openai_wrapper_complete_for_graph_rag") as mock_wrapper,
         ):
-            req = GraphRAGRequest(question="What does Art. 9 require?")
+            req = GraphRAGRequest(question=_MULTI_TURN_Q[:2000])
             result = ask_compliance_question(req)
 
         mock_wrapper.assert_not_called()
-        # Stage 2 indicator must be False
-        stage2_line = next(
-            t for t in result.reasoning_trace if "Stage 2" in t
-        )
+        stage2_line = next(t for t in result.reasoning_trace if "Stage 2" in t)
         assert "False" in stage2_line
 
-    def test_stage2_fires_when_wrapper_enabled(self) -> None:
+    def test_stage2_skipped_for_simple_question_even_when_wrapper_enabled(self) -> None:
+        """A simple single-article question must NOT trigger Stage 2 even if the
+        proxy is running — Stage 2 cost is only paid when the question warrants it."""
         with (
-            patch(
-                "app.llm.openai_wrapper_provider.is_openai_wrapper_enabled",
-                return_value=True,
-            ),
+            patch("app.llm.openai_wrapper_provider.is_openai_wrapper_enabled", return_value=True),
+            patch("app.engines.graph_rag._openai_wrapper_complete_for_graph_rag") as mock_wrapper,
+        ):
+            req = GraphRAGRequest(question=_SIMPLE_Q)
+            result = ask_compliance_question(req)
+
+        mock_wrapper.assert_not_called()
+        stage2_line = next(t for t in result.reasoning_trace if "Stage 2" in t)
+        assert "False" in stage2_line
+
+    def test_stage2_fires_for_multi_turn_when_wrapper_enabled(self) -> None:
+        with (
+            patch("app.llm.openai_wrapper_provider.is_openai_wrapper_enabled", return_value=True),
             patch(
                 "app.engines.graph_rag._openai_wrapper_complete_for_graph_rag",
-                return_value="Enhanced compliance guidance for Art. 9.",
+                return_value="Enhanced compliance guidance.",
             ) as mock_wrapper,
         ):
-            req = GraphRAGRequest(question="What does Art. 9 require?")
+            req = GraphRAGRequest(question=_MULTI_TURN_Q[:2000])
             result = ask_compliance_question(req)
 
         mock_wrapper.assert_called_once()
-        assert result.answer == "Enhanced compliance guidance for Art. 9."
-        stage2_line = next(
-            t for t in result.reasoning_trace if "Stage 2" in t
-        )
+        assert result.answer == "Enhanced compliance guidance."
+        stage2_line = next(t for t in result.reasoning_trace if "Stage 2" in t)
         assert "True" in stage2_line
 
     def test_stage2_failure_returns_kg_answer(self) -> None:
         """When the Claude Max call returns None the Stage-1 KG answer is used."""
         with (
-            patch(
-                "app.llm.openai_wrapper_provider.is_openai_wrapper_enabled",
-                return_value=True,
-            ),
-            patch(
-                "app.engines.graph_rag._openai_wrapper_complete_for_graph_rag",
-                return_value=None,
-            ),
+            patch("app.llm.openai_wrapper_provider.is_openai_wrapper_enabled", return_value=True),
+            patch("app.engines.graph_rag._openai_wrapper_complete_for_graph_rag", return_value=None),
         ):
-            req = GraphRAGRequest(question="What does Art. 9 require?")
+            req = GraphRAGRequest(question=_MULTI_TURN_Q[:2000])
             result = ask_compliance_question(req)
 
-        # Must still return a non-empty grounded answer
         assert result.answer
-        stage2_line = next(
-            t for t in result.reasoning_trace if "Stage 2" in t
-        )
+        stage2_line = next(t for t in result.reasoning_trace if "Stage 2" in t)
         assert "False" in stage2_line
 
     def test_stage2_exception_returns_kg_answer(self) -> None:
         """A hard exception inside the wrapper path must not propagate."""
         with (
-            patch(
-                "app.llm.openai_wrapper_provider.is_openai_wrapper_enabled",
-                return_value=True,
-            ),
+            patch("app.llm.openai_wrapper_provider.is_openai_wrapper_enabled", return_value=True),
             patch(
                 "app.engines.graph_rag._openai_wrapper_complete_for_graph_rag",
                 side_effect=RuntimeError("connection refused"),
             ),
         ):
-            req = GraphRAGRequest(question="What does Art. 9 require?")
+            req = GraphRAGRequest(question=_MULTI_TURN_Q[:2000])
             result = ask_compliance_question(req)
 
         assert result.answer
@@ -160,53 +237,54 @@ class TestStage2ClaudeMaxProxy:
 class TestTwoStageGenerateUnit:
     """Direct unit tests on the helper without going through the route."""
 
-    def _empty_context(self) -> GraphContext:
-        return GraphContext()
-
     def test_returns_kg_answer_when_wrapper_disabled(self) -> None:
-        ctx = self._empty_context()
-        with patch(
-            "app.llm.openai_wrapper_provider.is_openai_wrapper_enabled",
-            return_value=False,
-        ):
-            answer, used = _two_stage_generate("What is Art. 9?", ctx)
-
+        with patch("app.llm.openai_wrapper_provider.is_openai_wrapper_enabled", return_value=False):
+            answer, used = _two_stage_generate(_MULTI_TURN_Q, _empty_ctx())
         assert not used
-        assert answer  # KG answer is never empty
+        assert answer
 
-    def test_returns_enhanced_when_wrapper_enabled(self) -> None:
-        ctx = self._empty_context()
+    def test_skips_stage2_for_simple_question_even_if_wrapper_enabled(self) -> None:
         with (
-            patch(
-                "app.llm.openai_wrapper_provider.is_openai_wrapper_enabled",
-                return_value=True,
-            ),
+            patch("app.llm.openai_wrapper_provider.is_openai_wrapper_enabled", return_value=True),
+            patch("app.engines.graph_rag._openai_wrapper_complete_for_graph_rag") as mock,
+        ):
+            answer, used = _two_stage_generate(_SIMPLE_Q, _empty_ctx())
+        assert not used
+        mock.assert_not_called()
+
+    def test_returns_enhanced_for_complex_question_when_wrapper_enabled(self) -> None:
+        with (
+            patch("app.llm.openai_wrapper_provider.is_openai_wrapper_enabled", return_value=True),
             patch(
                 "app.engines.graph_rag._openai_wrapper_complete_for_graph_rag",
                 return_value="Polished answer.",
             ),
         ):
-            answer, used = _two_stage_generate("What is Art. 9?", ctx)
-
+            answer, used = _two_stage_generate(_MULTI_TURN_Q, _empty_ctx())
         assert used
         assert answer == "Polished answer."
 
     def test_returns_kg_answer_when_enhance_returns_none(self) -> None:
-        ctx = self._empty_context()
         with (
-            patch(
-                "app.llm.openai_wrapper_provider.is_openai_wrapper_enabled",
-                return_value=True,
-            ),
-            patch(
-                "app.engines.graph_rag._openai_wrapper_complete_for_graph_rag",
-                return_value=None,
-            ),
+            patch("app.llm.openai_wrapper_provider.is_openai_wrapper_enabled", return_value=True),
+            patch("app.engines.graph_rag._openai_wrapper_complete_for_graph_rag", return_value=None),
         ):
-            answer, used = _two_stage_generate("What is Art. 9?", ctx)
-
+            answer, used = _two_stage_generate(_MULTI_TURN_Q, _empty_ctx())
         assert not used
         assert answer
+
+    def test_gap_analysis_query_triggers_stage2(self) -> None:
+        q = _query(intent="gap_analysis")
+        with (
+            patch("app.llm.openai_wrapper_provider.is_openai_wrapper_enabled", return_value=True),
+            patch(
+                "app.engines.graph_rag._openai_wrapper_complete_for_graph_rag",
+                return_value="Gap analysis answer.",
+            ),
+        ):
+            answer, used = _two_stage_generate(_SIMPLE_Q, _empty_ctx(), query=q)
+        assert used
+        assert answer == "Gap analysis answer."
 
 
 # ─── _claude_max_enhance_answer unit tests ───────────────────────────────────
@@ -223,10 +301,7 @@ class TestClaudeMaxEnhanceAnswerUnit:
             captured.append(str(kwargs.get("user", "")))
             return "Polished answer."
 
-        with patch(
-            "app.engines.graph_rag._openai_wrapper_complete_for_graph_rag",
-            side_effect=capture,
-        ):
+        with patch("app.engines.graph_rag._openai_wrapper_complete_for_graph_rag", side_effect=capture):
             result = _claude_max_enhance_answer(
                 question="What does Art. 9 require?",
                 kg_answer="Some KG answer text.",
@@ -238,26 +313,15 @@ class TestClaudeMaxEnhanceAnswerUnit:
         assert "Art. 9" in captured[0]
 
     def test_returns_none_when_wrapper_returns_none(self) -> None:
-        with patch(
-            "app.engines.graph_rag._openai_wrapper_complete_for_graph_rag",
-            return_value=None,
-        ):
-            result = _claude_max_enhance_answer(
-                question="What does Art. 9 require?",
-                kg_answer="KG answer.",
-            )
-        assert result is None
+        with patch("app.engines.graph_rag._openai_wrapper_complete_for_graph_rag", return_value=None):
+            assert _claude_max_enhance_answer(question="Q", kg_answer="A") is None
 
     def test_returns_none_on_exception(self) -> None:
         with patch(
             "app.engines.graph_rag._openai_wrapper_complete_for_graph_rag",
             side_effect=RuntimeError("boom"),
         ):
-            result = _claude_max_enhance_answer(
-                question="What does Art. 9 require?",
-                kg_answer="KG answer.",
-            )
-        assert result is None
+            assert _claude_max_enhance_answer(question="Q", kg_answer="A") is None
 
     def test_includes_system_description_when_provided(self) -> None:
         captured: list[str] = []
@@ -266,10 +330,7 @@ class TestClaudeMaxEnhanceAnswerUnit:
             captured.append(str(kwargs.get("user", "")))
             return "Polished."
 
-        with patch(
-            "app.engines.graph_rag._openai_wrapper_complete_for_graph_rag",
-            side_effect=capture,
-        ):
+        with patch("app.engines.graph_rag._openai_wrapper_complete_for_graph_rag", side_effect=capture):
             _claude_max_enhance_answer(
                 question="What is Art. 9?",
                 kg_answer="KG answer.",

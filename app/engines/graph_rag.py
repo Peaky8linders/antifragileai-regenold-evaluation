@@ -795,6 +795,61 @@ def _retrieve_from_kb(
 
 # ─── Two-stage generation ────────────────────────────────────────────────────
 
+# Keywords whose presence in the *live* part of the question signals enough
+# synthesis / comparison / remediation work that Stage-2 polish adds value.
+_COMPLEX_QUESTION_KEYWORDS = frozenset({
+    "compare", "comparison", "difference", "versus", " vs ", "vs.",
+    "trade-off", "tradeoff", "prioritise", "prioritize", "prioritis",
+    "remediat", "roadmap", "how should we", "what should we",
+    "explain why", "why do", "why does", "why is",
+    "what are the implications", "impact of",
+})
+
+
+def _needs_stage2_enhancement(
+    question: str,
+    context: GraphContext,  # noqa: ARG001 — reserved for future richness checks
+    query: "GraphQuery | None" = None,
+) -> bool:
+    """Return True when the question is complex enough to benefit from Stage-2 polish.
+
+    Fires on any of:
+    - Multi-turn context embedded by the route (``"Conversation so far:"`` prefix).
+    - Complex intents: gap_analysis, cross_framework (require synthesis across
+      multiple obligations/frameworks, not just single-article lookup).
+    - Multiple article entities (≥ 2) — implies a comparison or multi-obligation scope.
+    - Long live question (> 200 chars) — nuanced questions tend to need prose polish.
+    - Presence of comparison / remediation keywords.
+    """
+    # Multi-turn: the route threads prior turns as "Conversation so far:\n…"
+    if "Conversation so far:" in question:
+        return True
+
+    if query is not None:
+        # Synthesis-heavy intents always benefit from LLM polish
+        if query.intent in ("gap_analysis", "cross_framework"):
+            return True
+        # Multiple referenced articles → comparison / multi-obligation scope
+        if len(query.entities) >= 2:
+            return True
+
+    # Isolate the live part of the question (drop history preamble if present)
+    live_q = (
+        question.split("Latest question:", 1)[-1].strip()
+        if "Latest question:" in question
+        else question
+    )
+
+    if len(live_q) > 200:
+        return True
+
+    live_lower = live_q.lower()
+    if any(kw in live_lower for kw in _COMPLEX_QUESTION_KEYWORDS):
+        return True
+
+    return False
+
+
 def _claude_max_enhance_answer(
     *,
     question: str,
@@ -849,23 +904,32 @@ def _claude_max_enhance_answer(
 def _two_stage_generate(
     question: str,
     context: GraphContext,
+    query: "GraphQuery | None" = None,
     system_description: str | None = None,
 ) -> tuple[str, bool]:
     """Two-stage answer generation.
 
     Stage 1 (always): deterministic KG-grounded answer — fast, citation-exact,
-    zero LLM cost.  Returns (answer, False) when Stage 2 is disabled.
+    zero LLM cost.  Returns (answer, False) when Stage 2 is skipped.
 
-    Stage 2 (when Claude Max proxy available): pass the Stage-1 answer to the
-    ``openai_wrapper`` proxy for natural-language polish.  Falls back to the
-    Stage-1 answer if the proxy is unavailable or errors.  Returns (enhanced, True)
-    on success or (kg_answer, False) on fallback.
+    Stage 2 fires when ALL of these hold:
+    - The Claude Max proxy is wired (``is_openai_wrapper_enabled()``).
+    - The question is complex enough to benefit from LLM polish per
+      :func:`_needs_stage2_enhancement` — multi-turn conversation history,
+      gap-analysis / cross-framework intent, multiple article entities,
+      long question, or synthesis/remediation keywords.
+
+    Returns (enhanced, True) on success or (kg_answer, False) on fallback /
+    skip.
     """
     from app.llm.openai_wrapper_provider import is_openai_wrapper_enabled
 
     kg_answer = _deterministic_answer(question, context)
 
     if not is_openai_wrapper_enabled():
+        return kg_answer, False
+
+    if not _needs_stage2_enhancement(question, context, query):
         return kg_answer, False
 
     enhanced = _claude_max_enhance_answer(
@@ -907,7 +971,7 @@ def ask_compliance_question(request: GraphRAGRequest) -> GraphRAGResponse:
 
     # Stage 1 + 2 — Generate
     answer_text, stage2_used = _two_stage_generate(
-        request.question, context, request.system_description,
+        request.question, context, query, request.system_description,
     )
 
     reasoning_trace = [
