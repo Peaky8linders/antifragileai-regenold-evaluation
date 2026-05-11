@@ -558,10 +558,32 @@ def _deterministic_parse(question: str) -> GraphQuery:
     elif any(w in q_lower for w in ["nist", "iso", "framework", "cross"]):
         intent = "cross_framework"
 
-    # Extract article references
+    # Extract article + annex references — accept BOTH `Art. 13` / `Art 13`
+    # short-form AND `Article 13` long-form (Sonnet + the route's
+    # multi-turn preamble use either, so a regex that only knows the
+    # short-form silently loses the entity on common multi-turn shapes).
+    # Annex refs are catalogued as `Annex IV` etc.; the route's anchor
+    # surfacing depends on `query.entities` carrying them through so
+    # retrieval can find article-specific obligations.
     import re
-    entities = re.findall(r"Art\.?\s*(\d+)", question, re.IGNORECASE)
-    entities = [f"Art. {n}" for n in entities]
+    article_nums = re.findall(
+        r"\b(?:Art\.?|Article)\s*(\d{1,3})\b", question, re.IGNORECASE,
+    )
+    annex_romans = re.findall(
+        r"\bAnnex\s+([IVXLC]+)\b", question, re.IGNORECASE,
+    )
+    entities: list[str] = []
+    seen: set[str] = set()
+    for n in article_nums:
+        ent = f"Art. {n}"
+        if ent not in seen:
+            seen.add(ent)
+            entities.append(ent)
+    for r in annex_romans:
+        ent = f"Annex {r.upper()}"
+        if ent not in seen:
+            seen.add(ent)
+            entities.append(ent)
 
     # Detect risk context
     risk_context = None
@@ -850,15 +872,108 @@ def _needs_stage2_enhancement(
     return False
 
 
+def _build_context_references_block(context: GraphContext) -> str:
+    """Render the GraphContext as the ``EU AI ACT REFERENCES:`` block.
+
+    Mirrors the structured block built by :func:`_llm_generate_answer` so
+    Stage-2 polish operates against the SAME ground-truth surface the
+    direct-LLM path uses. Without this, the Stage-2 system prompt asks
+    the LLM to "cite only articles present in the supplied references"
+    while supplying no references — pure fabrication fuel.
+    """
+    parts: list[str] = []
+    if context.obligations:
+        parts.append(
+            f"APPLICABLE OBLIGATIONS ({len(context.obligations)}):\n"
+            + "\n".join(
+                f"- [{o.get('id', 'N/A')}] {o.get('text', '')} "
+                f"(Article: {o.get('article', 'N/A')})"
+                for o in context.obligations[:20]
+            )
+        )
+    if context.article_info:
+        parts.append(
+            f"\nARTICLE-SPECIFIC OBLIGATIONS ({len(context.article_info)}):\n"
+            + "\n".join(
+                f"- [{o.get('id', 'N/A')}] {o.get('text', '')} "
+                f"(Article: {o.get('article', 'N/A')})"
+                for o in context.article_info[:15]
+            )
+        )
+    if context.gaps:
+        parts.append(
+            f"\nCOMPLIANCE GAPS ({len(context.gaps)}):\n"
+            + "\n".join(
+                f"- [{g.get('obligation_id', g.get('id', 'N/A'))}] "
+                f"{g.get('text', '')} (Severity: {g.get('severity', 'N/A')})"
+                for g in context.gaps[:15]
+            )
+        )
+    if context.dimension_info:
+        parts.append(
+            "\nDIMENSION DETAILS:\n"
+            + "\n".join(
+                f"- {d.get('dim_name', d.get('dim_id', 'N/A'))}: "
+                f"{d.get('question_count', 0)} questions, "
+                f"{d.get('obligation_count', 0)} obligations"
+                for d in context.dimension_info
+            )
+        )
+    return "\n".join(parts) if parts else "No EU AI Act references match this query."
+
+
+# Regexes used by the post-Stage-2 hallucination guard. Tight enough to
+# pick up the citation shapes Sonnet emits in prose, loose enough not to
+# false-positive on incidental digits.
+_PROSE_ARTICLE_RE = re.compile(
+    r"\b(?:Art\.?|Article)\s+(\d{1,3})(?![\d])",
+    re.IGNORECASE,
+)
+_PROSE_ANNEX_RE = re.compile(r"\bAnnex\s+([IVXLC]+)\b", re.IGNORECASE)
+
+
+def _polished_prose_has_unknown_citations(prose: str) -> tuple[bool, str | None]:
+    """Detect citation drift in Stage-2 polished prose.
+
+    Returns ``(drifted, first_unknown)``. ``drifted=True`` when prose
+    mentions any ``Art./Article N`` or ``Annex X`` that is NOT in the EU
+    AI Act catalog (:data:`ARTICLE_EXISTENCE`). The caller drops the
+    polished output and falls back to the deterministic KG answer rather
+    than ship a fabricated citation.
+
+    This is the LAST line of defence against hallucination — the
+    Stage-2 prompt already supplies the structured references block AND
+    the system prompt forbids fabrication, but a temperature=0 Sonnet
+    call still occasionally drifts. The eval scorer dings any
+    references[] / prose mismatch hard, so the safer move is to drop
+    the polish entirely on detection.
+    """
+    from app.data.article_existence import ARTICLE_EXISTENCE
+
+    for num in _PROSE_ARTICLE_RE.findall(prose):
+        ref = f"Art. {num}"
+        if ref not in ARTICLE_EXISTENCE:
+            return True, ref
+    for roman in _PROSE_ANNEX_RE.findall(prose):
+        ref = f"Annex {roman.upper()}"
+        if ref not in ARTICLE_EXISTENCE:
+            return True, ref
+    return False, None
+
+
 def _claude_max_enhance_answer(
     *,
     question: str,
     kg_answer: str,
+    context: GraphContext | None = None,
     system_description: str | None = None,
 ) -> str | None:
     """Stage-2: polish the KG-grounded answer via the Claude Max proxy.
 
     Returns ``None`` on any failure so the caller falls back to the KG answer.
+    Supplies the structured EU AI Act references block to the LLM so it
+    has ground truth to cite from (matches the contract the
+    :data:`ANSWER_GENERATE_SYSTEM` prompt expects).
     """
     try:
         from app.config import settings
@@ -876,11 +991,22 @@ def _claude_max_enhance_answer(
                 system_description, context_type="system_description"
             )
             user_message += f"SYSTEM DESCRIPTION: {sanitized_desc}\n\n"
+
+        # Ground truth — same structured block the direct-LLM path uses.
+        # Without this, the system prompt's "cite only articles present
+        # in the supplied references" clause has nothing to constrain.
+        if context is not None:
+            user_message += (
+                f"EU AI ACT REFERENCES:\n"
+                f"{_build_context_references_block(context)}\n\n"
+            )
+
         user_message += (
-            f"KNOWLEDGE GRAPH ANSWER:\n{kg_answer}\n\n"
-            "Refine the knowledge-graph answer above into a clear, concise compliance "
-            "response. Preserve every article citation and obligation ID. Lead with a "
-            "direct answer, 3-4 sentences maximum."
+            f"KNOWLEDGE GRAPH ANSWER (draft):\n{kg_answer}\n\n"
+            "Refine the knowledge-graph draft above into a clear, concise compliance "
+            "response. Cite only articles, annexes, and obligations that appear in the "
+            "EU AI ACT REFERENCES block. Lead with a direct answer, 3-4 sentences "
+            "maximum."
         )
         try:
             max_tokens = settings.graph_rag.max_tokens
@@ -935,11 +1061,25 @@ def _two_stage_generate(
     enhanced = _claude_max_enhance_answer(
         question=question,
         kg_answer=kg_answer,
+        context=context,
         system_description=system_description,
     )
-    if enhanced is not None:
-        return enhanced, True
-    return kg_answer, False
+    if enhanced is None:
+        return kg_answer, False
+
+    # Post-Stage-2 hallucination guard: every Art./Annex mention in the
+    # polished prose must resolve to a real provision in ARTICLE_EXISTENCE.
+    # On drift, drop the polish and ship the Stage-1 KG answer.
+    drifted, bad_ref = _polished_prose_has_unknown_citations(enhanced)
+    if drifted:
+        logger.warning(
+            "stage2_drift_detected: prose cites %s (not in catalog) — "
+            "falling back to kg_answer",
+            bad_ref,
+        )
+        return kg_answer, False
+
+    return enhanced, True
 
 
 # ─── Main entry point ────────────────────────────────────────────────────────
