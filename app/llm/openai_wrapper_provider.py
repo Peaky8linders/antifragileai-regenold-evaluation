@@ -65,7 +65,13 @@ class _OpenAIWrapperProvider:
             or "http://127.0.0.1:8000/v1"
         )
         self._api_key = os.getenv("OPENAI_API_KEY", "dummy")
-        self._timeout = float(os.getenv("OPENAI_TIMEOUT_SECONDS", "60"))
+        # 8 s default — the Regenold latency budget is sub-second p95 on the
+        # deterministic path; Stage-2 polish is allowed to stretch but a
+        # 60-s upstream stall would block the request thread for a full
+        # minute. On timeout, the wrapper returns an error and the engine
+        # falls back to the Stage-1 KG answer. Operators can raise the cap
+        # by setting OPENAI_TIMEOUT_SECONDS explicitly.
+        self._timeout = float(os.getenv("OPENAI_TIMEOUT_SECONDS", "8"))
         # Pooled client — see mistral_provider.py for the rationale.
         self._client = httpx.Client(
             base_url=self._base_url,
