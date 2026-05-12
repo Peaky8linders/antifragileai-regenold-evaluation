@@ -20,3 +20,10 @@ _competition_rules.txt
 _paper_methodology.txt
 evals/regenold_results_baseline_pre_optimization.json
 evals/regenold_results_round16_optimization.json
+.claude/
+evals/regenold_results_fixed.json
+evals/regenold_results_no_orphan.json
+*.pdf
+*.zip
+*.txt
+
