@@ -555,10 +555,16 @@ def _surface_anchor_citations(
     asks_about_penalties = any(kw in user_low for kw in _PENALTY_KEYWORDS)
     asks_about_applicability = any(kw in user_low for kw in _APPLICABILITY_KEYWORDS)
     for anchor in anchors:
+        # EXPLICIT MENTION PROTECT: If the user explicitly mentions the
+        # article number, don't suppress it.
+        num_match = re.search(r"\d+", anchor)
+        explicit_mention = num_match and num_match.group(0) in user_low
+
         # Broad-anchor suppression — only when the question doesn't
-        # explicitly ask about that broad topic AND we already have a
+        # explicitly ask about that broad topic AND the user didn't
+        # name the article number explicitly AND we already have a
         # more-specific Article anchor in the candidate list.
-        if has_specific:
+        if has_specific and not explicit_mention:
             if anchor in _BROAD_PENALTY_ANCHORS and not asks_about_penalties:
                 continue
             if (
@@ -792,6 +798,10 @@ def regenold_eu_ai_act_ask(
 
     rag_res = ask_compliance_question(rag_req)
 
+    # Normalise answer first so we can use it to filter orphan references.
+    # Fixes UnboundLocalError in _drop_orphan_refs pass (P1 #4).
+    answer_text = normalise_answer_for_regenold(rag_res.answer)
+
     # Reference reshaping: validate via reference_from_article_ref
     # (drops hallucinations + enforces output shape), dedupe, sort by
     # citation strength, then cap at the spec's "minimal set" budget.
@@ -833,40 +843,30 @@ def regenold_eu_ai_act_ask(
     # specific citation continues to lead the wire response). See
     # :func:`_collapse_parent_refs` for the full rule set.
     candidates = _collapse_parent_refs(candidates)
+
     references: list[str] = candidates[:MAX_REFERENCES]
 
     confidence = float(getattr(rag_res, "confidence", 0.0) or 0.0)
     retrieval_path = _resolve_retrieval_path(getattr(rag_res, "graph_stats", {}) or {})
 
-    # Closed-world refusal. If we have neither references nor confidence,
-    # refuse the answer rather than ship LLM prose grounded in nothing.
-    # Note: an answer WITH references at confidence < 0.5 is still
-    # returned — the reference list is itself a grounding signal.
     if not references and confidence < _CONFIDENCE_FLOOR_FOR_ANSWER:
         # The static no-match string is already plain prose at 3
         # sentences; no normalisation needed.
         answer_text = _NO_MATCH_ANSWER
         confidence = 0.0
         retrieval_path = "no_match"
+    elif not answer_text:
+        # All sentences dropped as meta-leak/label/degenerate during the
+        # normalization pass above. Fall back to the deterministic
+        # refusal so we ship a coherent message rather than an empty
+        # answer field.
+        answer_text = _NO_MATCH_ANSWER
+        confidence = 0.0
+        retrieval_path = "no_match"
+        references = []  # Clear orphan refs since we're refusing
     else:
-        # Full normalisation pipeline:
-        #   markdown strip → sentence split → drop label-only / degenerate
-        #   / meta-leak sentences → strip "Answer:" opener → 4-sentence cap.
-        # Fixes three classes of bugs the engine output ships with:
-        #   1. Markdown formatting that violates the spec ("**bold**",
-        #      headings, bullet lists).
-        #   2. Implementation-detail leakage ("Based on the compliance
-        #      knowledge graph, …", "the graph context lacks…").
-        #   3. Truncation cutting mid-numbered-list because the naive
-        #      sentence splitter saw "Art. 26" / "1." as boundaries.
-        answer_text = normalise_answer_for_regenold(rag_res.answer)
-        if not answer_text:
-            # All sentences dropped as meta-leak/label/degenerate. Fall
-            # back to the deterministic refusal so we ship a coherent
-            # message rather than an empty answer field.
-            answer_text = _NO_MATCH_ANSWER
-            retrieval_path = "no_match"
-            confidence = 0.0
+        # Answer is already normalised at the top of the route.
+        pass
 
     # Orphan-citation enforcer: drop refs whose article number isn't
     # actually mentioned in the final answer prose. A phantom citation
