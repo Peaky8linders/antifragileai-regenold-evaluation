@@ -286,3 +286,118 @@ def test_breaker_resets_on_success(monkeypatch) -> None:
         result = ic.classify_intent("q3")        # succeeds → breaker resets
         assert result is not None
         assert ic._BREAKER.failures == 0
+
+
+# ── R66-D — newly-mapped primary anchors ─────────────────────────────────────
+
+
+class TestR66DPrimaryAnchorMap:
+    """Round 66-D — the three new INTENT_PRIMARY_ANCHOR mappings cover
+    intent labels where the LLM previously emitted a clean label but no
+    anchor, costing precision in the deterministic fallback. Test that
+    each new entry is present + that the default-injection path uses it
+    when the model omits ``primary_anchor``.
+    """
+
+    def test_taxonomy_includes_three_new_anchors(self) -> None:
+        # New mappings must be exactly what the engine downstream relies on.
+        assert ic.INTENT_PRIMARY_ANCHOR["risk_classification"] == "Art. 6"
+        assert ic.INTENT_PRIMARY_ANCHOR["compliance_checklist"] == "Art. 9"
+        assert ic.INTENT_PRIMARY_ANCHOR["comparative"] == "Art. 2"
+
+    def test_every_anchor_resolves_in_article_existence(self) -> None:
+        """No primary_anchor in the taxonomy can be a phantom article —
+        every default must resolve in :data:`ARTICLE_EXISTENCE` or the
+        engine's anchor-narrowing would inject a citation that fails the
+        wire-level validator.
+        """
+        from app.data.article_existence import ARTICLE_EXISTENCE  # noqa: PLC0415
+        for label, anchor in ic.INTENT_PRIMARY_ANCHOR.items():
+            assert anchor in ARTICLE_EXISTENCE, (
+                f"intent={label!r} primary_anchor={anchor!r} not in ARTICLE_EXISTENCE"
+            )
+
+    def test_risk_classification_default_injection(self, monkeypatch) -> None:
+        """Model returns ``risk_classification`` with empty primary →
+        taxonomy default ``Art. 6`` fills in.
+        """
+        monkeypatch.setenv("OPENAI_API_BASE", "http://127.0.0.1:8000/v1")
+
+        class FakeProvider:
+            def complete(self, _req):
+                return OpenAIWrapperResponse(
+                    text=(
+                        '{"intent": "risk_classification", "primary_anchor": "", '
+                        '"alternate_anchors": [], "confidence": 0.85}'
+                    ),
+                    model="claude-haiku-4-5",
+                )
+
+        with patch.object(ic, "get_openai_wrapper_provider", return_value=FakeProvider()):
+            result = ic.classify_intent("Is my CV-screening AI high-risk?")
+        assert result is not None
+        assert result.intent == "risk_classification"
+        assert result.primary_anchor == "Art. 6"
+
+    def test_compliance_checklist_default_injection(self, monkeypatch) -> None:
+        monkeypatch.setenv("OPENAI_API_BASE", "http://127.0.0.1:8000/v1")
+
+        class FakeProvider:
+            def complete(self, _req):
+                return OpenAIWrapperResponse(
+                    text=(
+                        '{"intent": "compliance_checklist", "primary_anchor": "", '
+                        '"alternate_anchors": [], "confidence": 0.75}'
+                    ),
+                    model="claude-haiku-4-5",
+                )
+
+        with patch.object(ic, "get_openai_wrapper_provider", return_value=FakeProvider()):
+            result = ic.classify_intent("What do I need to do to comply as a provider?")
+        assert result is not None
+        assert result.primary_anchor == "Art. 9"
+
+    def test_comparative_default_injection(self, monkeypatch) -> None:
+        monkeypatch.setenv("OPENAI_API_BASE", "http://127.0.0.1:8000/v1")
+
+        class FakeProvider:
+            def complete(self, _req):
+                return OpenAIWrapperResponse(
+                    text=(
+                        '{"intent": "comparative", "primary_anchor": "", '
+                        '"alternate_anchors": [], "confidence": 0.70}'
+                    ),
+                    model="claude-haiku-4-5",
+                )
+
+        with patch.object(ic, "get_openai_wrapper_provider", return_value=FakeProvider()):
+            result = ic.classify_intent("AI Act vs GDPR for FRIA?")
+        assert result is not None
+        assert result.primary_anchor == "Art. 2"
+
+    def test_prohibition_path_keeps_explicit_anchor(self, monkeypatch) -> None:
+        """The system prompt now nudges Sonnet/Haiku/Llama toward
+        ``primary_anchor=Art. 5`` when the question implies prohibition.
+        If the model honours this, the explicit anchor wins over the
+        default Art. 6 injection.
+        """
+        monkeypatch.setenv("OPENAI_API_BASE", "http://127.0.0.1:8000/v1")
+
+        class FakeProvider:
+            def complete(self, _req):
+                return OpenAIWrapperResponse(
+                    text=(
+                        '{"intent": "risk_classification", "primary_anchor": "Art. 5", '
+                        '"alternate_anchors": ["Art. 99"], "confidence": 0.92}'
+                    ),
+                    model="claude-haiku-4-5",
+                )
+
+        with patch.object(ic, "get_openai_wrapper_provider", return_value=FakeProvider()):
+            result = ic.classify_intent("Is emotion-recognition in workplaces prohibited?")
+        assert result is not None
+        assert result.intent == "risk_classification"
+        # Explicit Art. 5 from the model is preserved — NOT overwritten by
+        # the Art. 6 taxonomy default.
+        assert result.primary_anchor == "Art. 5"
+        assert "Art. 99" in result.alternate_anchors

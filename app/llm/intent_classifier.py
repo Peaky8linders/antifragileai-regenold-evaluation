@@ -110,6 +110,28 @@ INTENT_LABELS: tuple[str, ...] = (
 # candidate citation set when no explicit anchor was named in the
 # question; the canonical article for each topic is the single most-
 # cited answer in the round-19 FP analysis.
+#
+# R66-D — added the three missing entries (``risk_classification``,
+# ``compliance_checklist``, ``comparative``) so a clean intent label
+# without an explicit anchor still narrows the candidate pool. Round-65
+# judge runs surfaced these three labels as the dominant zero-anchor
+# fallbacks (LLM picks the right intent but leaves ``primary_anchor``
+# empty), forcing the engine into the broad keyword-spray retrieval
+# path that costs precision. Defaults chosen by frequency in the
+# davidath + V2 gold-reference distributions:
+#
+# * ``risk_classification`` → ``Art. 6`` — the high-risk classification
+#   entry point. When the question implies *prohibition* the LLM should
+#   set ``alternate_anchors=["Art. 5", ...]`` (the system prompt
+#   pushes this); the deterministic narrowing logic in
+#   :mod:`app.engines.graph_rag` reads both fields.
+# * ``compliance_checklist`` → ``Art. 9`` — risk-management is the
+#   most-common compliance entry point. Alternates typically land
+#   Art. 10 (data governance), Art. 14 (oversight), Art. 17 (QMS).
+# * ``comparative`` → ``Art. 2`` — scope. "AI Act vs GDPR / MDR / DSA"
+#   framing routes to the scope article first; the engine's
+#   ``cross_framework`` retrieval lens then surfaces the other
+#   regulation's anchors via the keyword path.
 INTENT_PRIMARY_ANCHOR: dict[str, str] = {
     "penalty_inquiry": "Art. 99",
     "transparency_obligation": "Art. 50",
@@ -120,6 +142,10 @@ INTENT_PRIMARY_ANCHOR: dict[str, str] = {
     "role_obligations": "Art. 26",
     "definition": "Art. 3",
     "timeline_question": "Art. 113",
+    # R66-D additions
+    "risk_classification": "Art. 6",
+    "compliance_checklist": "Art. 9",
+    "comparative": "Art. 2",
 }
 
 
@@ -270,6 +296,23 @@ alternate_anchors: a list of additional Art./Annex anchors (max 3),
 same shape as primary_anchor. Empty list if none.
 
 confidence: 0.0 (unsure) to 1.0 (certain). Use < 0.6 when ambiguous.
+
+Disambiguation guidance (R66-D — judge-driven):
+- If the question implies *prohibition* ("is X banned?", "is Y prohibited?",
+  "is Z illegal under the Act?") choose ``risk_classification`` and set
+  ``primary_anchor`` to ``"Art. 5"``. alternate_anchors should include
+  Art. 99 (penalty) only if penalty is asked.
+- If the question is generic ("is X high-risk?", "what tier does Y fall
+  into?") choose ``risk_classification`` and set ``primary_anchor`` to
+  ``"Art. 6"`` (Annex III via alternate_anchors when an Annex-III use case is named).
+- ``compliance_checklist`` is for "what do I need to do?" / "list the
+  obligations for ..." — primary_anchor should land on the most-load-bearing
+  article for the role × risk tier (Art. 9 for high-risk providers,
+  Art. 26 for deployers, Art. 16 for QMS-heavy queries).
+- ``comparative`` triggers on framework-vs-framework framing ("AI Act vs
+  GDPR", "alongside the MDR", "NIS2 + AI Act overlap"). primary_anchor
+  should be ``"Art. 2"`` (scope) and alternate_anchors should include
+  the most-relevant AI Act article for the topic of comparison.
 
 OUTPUT ONLY the JSON object. No surrounding text."""
 
