@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 # Art. 52(4) open-source designation, Art. 53(2) FOSS carve-out,
 # Art. 55 four systemic-risk obligations, Art. 79 market-surveillance
 # procedure).
-KB_VERSION = "2024.1689.v5"
+KB_VERSION = "2024.1689.v6"
 
 
 @dataclass(frozen=True)
@@ -726,6 +726,25 @@ EC_CHECKER_OBLIGATION_MAP: dict[str, dict[str, str]] = {
                 "authorisation within 24h, else immediate stop), and "
                 "notification of the relevant market-surveillance "
                 "authority and national data-protection authority."
+            ),
+            (
+                "Art. 5(1)(b) coverage for minors: the vulnerability-"
+                "exploitation prohibition expressly captures AI systems "
+                "that exploit vulnerabilities arising from age — minors "
+                "in particular. Age verification systems gating access "
+                "to AI services likely to materially harm children "
+                "(manipulative dark patterns, engagement-loop addiction "
+                "in gaming or social-media products, exploitative "
+                "persuasion targeting under-18 users) fall under this "
+                "prohibition when the system itself is designed to "
+                "leverage developmental, cognitive, or socio-economic "
+                "vulnerability of minors to distort behaviour in a way "
+                "that causes or is reasonably likely to cause "
+                "significant harm. Compliance pathways include age-"
+                "appropriate design, robust age-estimation safeguards "
+                "proportionate to the risk to children, and the Art. 50 "
+                "transparency duties where the system interacts with "
+                "users directly."
             ),
         ),
     ),

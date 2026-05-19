@@ -485,3 +485,69 @@ class TestR61StubAdditions:
         assert "AI Office" in summary, (
             f"Art. 54 stub missing 'AI Office'. Summary: {summary!r}"
         )
+
+
+class TestR66AgeVerification:
+    """R66-A — Art. 5(1)(b) age-verification / minor-protection stub.
+
+    R65 V2 + judge regression analysis identified that Art. 5(1)(b)
+    coverage for age-verification systems aimed at minors had ZERO
+    KB coverage. The R66-A stub addition lands new content under the
+    Art. 5 multi-stub ``_KBEntry`` covering: vulnerability exploitation
+    arising from age (minors in particular), gaming/social-media
+    addiction patterns, manipulative dark patterns aimed at under-18
+    users, and the Art. 50 transparency cross-reference for the user-
+    interaction surface.
+    """
+
+    def test_art_5_mentions_age_verification(self) -> None:
+        """The Art. 5 stub set must surface age-verification framing."""
+        blob = _art_5_blob()
+        assert "age verif" in blob, (
+            "Art. 5 stubs missing 'age verification' coverage for "
+            "Art. 5(1)(b) minor-protection lens. Blob (first 600 "
+            f"chars): {blob[:600]!r}"
+        )
+
+    def test_art_5_mentions_age_estimation(self) -> None:
+        """The compliance-pathway language must surface 'age
+        estimation' as a safeguard."""
+        blob = _art_5_blob()
+        assert "age estimation" in blob or "age-estimation" in blob, (
+            "Art. 5 stubs missing 'age estimation' as a compliance "
+            "pathway for the Art. 5(1)(b) minor-protection lens. Blob: "
+            f"{blob[:600]!r}"
+        )
+
+    def test_art_5_mentions_minor_protection(self) -> None:
+        """The stub must explicitly name minors / children as the
+        protected class — bare 'age' covers age-discrimination
+        generally; minor-targeted is the AI-Act-specific concern."""
+        blob = _art_5_blob()
+        assert "minor" in blob or "children" in blob, (
+            "Art. 5 stubs missing minor / children protection scope. "
+            f"Blob: {blob[:600]!r}"
+        )
+
+    def test_art_5_cross_references_art_50(self) -> None:
+        """Art. 5(1)(b) age-verification coverage should cross-reference
+        Art. 50 (transparency to natural persons interacting with AI)
+        because the user-interaction surface of these systems is the
+        load-bearing compliance pathway alongside the prohibition
+        analysis."""
+        blob = _art_5_blob()
+        assert "art. 50" in blob, (
+            "Art. 5 age-verification stub should cross-reference "
+            "Art. 50 transparency duties for user-interaction-surface "
+            f"compliance. Blob: {blob[:600]!r}"
+        )
+
+    def test_art_5_mentions_manipulative_dark_patterns(self) -> None:
+        """The R66-A brief flagged 'manipulative dark patterns' as a
+        load-bearing failure mode for gaming / social-media products
+        aimed at minors — surfaces under Art. 5(1)(b) exploitation."""
+        blob = _art_5_blob()
+        assert "dark pattern" in blob, (
+            "Art. 5 age-verification stub missing 'dark pattern' "
+            f"failure-mode framing. Blob: {blob[:600]!r}"
+        )

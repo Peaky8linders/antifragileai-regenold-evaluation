@@ -1057,6 +1057,63 @@ _AI_ACT_ANCHORS: frozenset[str] = frozenset(
         "untargeted scraping",
         "facial-image scraping",
         "facial image scraping",
+        # ── R66-A — KB age-verification + terrorist-exception + CE-verify gaps ──
+        # The R65 V2 + judge regression analysis surfaced three KB content
+        # gaps not previously anchored. Every anchor below is multi-word
+        # AND uniquely AI-Act-shaped (verified against the R34 P0 OOS
+        # regression set + the 21-scenario OOS probe — none false-
+        # positive). Bare tokens like "age", "verify", "minor" are
+        # NOT added because they substring-match unrelated English
+        # ("minor injury", "age 50 milestone", "verify my account").
+        #
+        # Group 1 — Art. 5(1)(b) minor-protection / age-verification.
+        # Each form pairs an AI-Act-shaped noun phrase with the
+        # protective-context qualifier ("minor user", "manipulative
+        # dark pattern") OR specialises a vague form with an "ai" /
+        # "ai-service" / "ai-system" qualifier downstream of the noun.
+        "age verification",
+        "age-verification",
+        "age estimation",
+        "age-estimation",
+        "age-appropriate design",
+        "minor user",
+        "manipulative dark pattern",
+        "manipulative dark patterns",
+        # Group 2 — Art. 5(1)(h) law-enforcement narrow-exception forms.
+        # The R57 KB stub-2 carved out the three exhaustive objectives;
+        # these anchors surface natural-language framings the engine
+        # currently misses (V2 borderline-prohibition kw 0.20 floor).
+        "terrorist attack exception",
+        "terrorist-attack exception",
+        "genuine and foreseeable terrorist",
+        "imminent terrorist threat",
+        "law-enforcement exception",
+        "law enforcement narrow exception",
+        "law-enforcement narrow exception",
+        "narrow exception to article 5",
+        "narrow exception to art. 5",
+        "real-time biometric identification exception",
+        "real time biometric identification exception",
+        # Group 3 — Art. 43 / Art. 48 CE-marking verification. The
+        # existing "conformity assessment" / "CE marking" anchors
+        # cover the noun side; these add the verify / validate /
+        # check verb-noun pairings the engine currently misses on
+        # downstream-customer / market-surveillance questions about
+        # CE-mark provenance.
+        "verify ce marking",
+        "verify ce mark",
+        "verify the ce marking",
+        "verify the ce mark",
+        "check ce marking",
+        "check the ce marking",
+        "ce marking verification",
+        "ce-marking verification",
+        "ce-mark validation",
+        "ce mark validation",
+        "validate conformity assessment",
+        "validate the conformity assessment",
+        "verify conformity",
+        "verify the conformity assessment",
     )
 )
 
@@ -1503,6 +1560,53 @@ KEYWORD_TO_ARTICLE: dict[str, str] = {
     "grew from a 30-employee sme": "Art. 62",
     "from sme to": "Art. 62",
     "transitioning out of sme": "Art. 62",
+    # ── R66-A — Age verification / terrorist exception / CE-verify ──
+    # Three keyword routes added per the R65 V2 + judge regression
+    # content-gap analysis. Each entry pairs the matched scope anchor
+    # with the canonical AI Act article it unambiguously surfaces.
+    # Group 1 — Art. 5(1)(b) age-verification + minor-protection.
+    "age verification": "Art. 5",
+    "age-verification": "Art. 5",
+    "age estimation": "Art. 5",
+    "age-estimation": "Art. 5",
+    "age-appropriate design": "Art. 5",
+    "minor user": "Art. 5",
+    "manipulative dark pattern": "Art. 5",
+    "manipulative dark patterns": "Art. 5",
+    # Group 2 — Art. 5(1)(h) terrorist-attack exception / RBI narrow
+    # exception. The KB stub for Art. 5 already carries the three
+    # exhaustive law-enforcement objectives (R57-B); these routes
+    # surface them on natural-language framings.
+    "terrorist attack exception": "Art. 5",
+    "terrorist-attack exception": "Art. 5",
+    "genuine and foreseeable terrorist": "Art. 5",
+    "imminent terrorist threat": "Art. 5",
+    "law-enforcement exception": "Art. 5",
+    "law enforcement narrow exception": "Art. 5",
+    "law-enforcement narrow exception": "Art. 5",
+    "narrow exception to article 5": "Art. 5",
+    "narrow exception to art. 5": "Art. 5",
+    "real-time biometric identification exception": "Art. 5",
+    "real time biometric identification exception": "Art. 5",
+    # Group 3 — Art. 43 (conformity assessment) + Art. 48 (CE marking
+    # placement). Verify/validate/check verb forms route to Art. 43
+    # because the verification process IS the conformity assessment;
+    # the explicit "CE marking placement" form retains Art. 48 via
+    # the existing "ce marking" anchor.
+    "verify ce marking": "Art. 43",
+    "verify ce mark": "Art. 43",
+    "verify the ce marking": "Art. 43",
+    "verify the ce mark": "Art. 43",
+    "check ce marking": "Art. 43",
+    "check the ce marking": "Art. 43",
+    "ce marking verification": "Art. 43",
+    "ce-marking verification": "Art. 43",
+    "ce-mark validation": "Art. 43",
+    "ce mark validation": "Art. 43",
+    "validate conformity assessment": "Art. 43",
+    "validate the conformity assessment": "Art. 43",
+    "verify conformity": "Art. 43",
+    "verify the conformity assessment": "Art. 43",
     # Governance bodies (Arts. 67-69)
     "advisory forum": "Art. 67",
     "scientific panel": "Art. 68",
