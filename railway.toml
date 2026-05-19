@@ -29,6 +29,19 @@ NEO4J_AUTO_SEED = "1"
 # ``CLAUDE.md`` round 47-B scorecard.
 REGENOLD_GRAPH_AWARE = "1"
 
+# Round 66-B — Stage-2.5 cite-describe guard. Drops references whose
+# KB-summary token set doesn't overlap the answer prose (the inverse
+# of the R31 sentence-level citation guard which drops sentences).
+# Targets the LLM-as-Judge ``refs`` axis where the judge fails a row
+# whose prose never substantively describes a cited Article.
+#
+# Default OFF on the deploy because the guard is rubric-NEGATIVE on
+# davidath (fewer refs cited → lower RefLoose) but expected to be
+# rubric-POSITIVE on the judge axis + RefConciseness. Flip ON after
+# the V2 + judge A/B confirms the rubric direction:
+#   railway variables --set REGENOLD_CITE_DESCRIBE_GUARD=1
+# REGENOLD_CITE_DESCRIBE_GUARD = "0"
+
 # Round 52 — Stage-0 intent classifier provider selection.
 #
 # Default ("" or "wrapper" semantics): Haiku 4.5 via the Claude Max
