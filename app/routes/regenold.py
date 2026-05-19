@@ -578,6 +578,102 @@ def _try_extractive_answer(
     return None
 
 
+_INTENT_BOOST_MIN_CONFIDENCE = 0.85
+"""R66-E Phase-2b — confidence floor for the intent boost.
+
+The boost is an aggressive *prioritisation* pass — it can move an anchor
+to position 0 or inject one ahead of the BM25 winner. It only fires
+when the Stage-0 classifier is essentially certain about the primary
+anchor (HippoRAG-style weighting). Below the threshold the boost is a
+no-op so a wobbly classifier output cannot displace deterministic
+retrieval winners.
+"""
+
+
+def boost_for_intent(
+    candidates: list[str],
+    intent_result: Any,
+    *,
+    min_confidence: float = _INTENT_BOOST_MIN_CONFIDENCE,
+    max_budget: int | None = None,
+) -> list[str]:
+    """R66-E Phase 2b — HippoRAG-style confidence-weighted intent boost.
+
+    When ``intent_result.confidence >= min_confidence`` AND
+    ``intent_result.primary_anchor`` is a valid AI Act ref:
+
+    * If the anchor is ALREADY in ``candidates``, move it to position 0
+      (preserving the relative order of the remaining candidates).
+    * If the anchor is NOT in ``candidates``, prepend it (subject to
+      ``max_budget`` — the new list never exceeds the budget; the last
+      candidate is dropped when needed to make room).
+
+    Otherwise returns ``candidates`` unchanged.
+
+    Pure-stdlib, no LLM call, no side effects. Never empties the list,
+    never raises (defensive — an exception in this helper would 500
+    the route). Validates the anchor against ``ARTICLE_EXISTENCE``
+    BEFORE injection, so a phantom classifier output can never
+    pollute the citation list.
+
+    Wired into the route's candidate-ranking step BEFORE
+    :func:`_surface_anchor_citations` and :func:`_collapse_parent_refs`
+    so the boosted anchor flows through all downstream passes.
+
+    :param candidates: user-facing refs (``Article 13`` / ``Annex III``)
+        in their current order.
+    :param intent_result: an ``IntentResult`` (or ``None``). The
+        ``.primary_anchor`` field (``"Art. 13"`` form) is read; the
+        anchor is converted to user-facing form internally.
+    :param min_confidence: confidence floor — default 0.85 (HippoRAG-
+        style "high confidence"); operators can pass 1.0 to disable.
+    :param max_budget: optional cap; when set AND the anchor is being
+        INJECTED (not just promoted), the new list is truncated to
+        the budget. Defaults to ``None`` which never truncates.
+    """
+    if not candidates:
+        # Never inject onto an empty list — that would invent a
+        # citation; the route's empty-candidates branch already
+        # handles the floor via :func:`zero_retrieval_fallback`.
+        return candidates
+    if intent_result is None:
+        return candidates
+    try:
+        confidence = float(getattr(intent_result, "confidence", 0.0) or 0.0)
+        primary = (getattr(intent_result, "primary_anchor", "") or "").strip()
+    except Exception:  # noqa: BLE001 — defensive
+        return candidates
+    if confidence < min_confidence or not primary:
+        return candidates
+
+    # Local imports — heavy, keep module-load cheap.
+    from app.data.article_existence import ARTICLE_EXISTENCE  # noqa: PLC0415
+
+    # primary is in internal form (e.g. "Art. 13"); validate AND
+    # convert to user-facing form.
+    if primary not in ARTICLE_EXISTENCE:
+        return candidates
+    formatted = reference_from_article_ref(primary)
+    if not formatted:
+        return candidates
+
+    # Case A — anchor already present → promote to position 0,
+    # preserving the order of the rest.
+    if formatted in candidates:
+        idx = candidates.index(formatted)
+        if idx == 0:
+            return candidates  # already at position 0; nothing to do
+        promoted = [formatted] + [r for i, r in enumerate(candidates) if i != idx]
+        return promoted
+
+    # Case B — anchor absent → inject at position 0. Truncate at the
+    # budget if set, so we never grow the list past the rubric cap.
+    injected = [formatted] + list(candidates)
+    if max_budget is not None and max_budget > 0 and len(injected) > max_budget:
+        injected = injected[:max_budget]
+    return injected
+
+
 def _collapse_parent_refs(refs: list[str]) -> list[str]:
     """Drop parent references when a more-specific child is also present.
 
@@ -1654,6 +1750,27 @@ def regenold_eu_ai_act_ask(
             live_user_message = m.content
             break
 
+    # R66-E Phase-2b — HippoRAG-style confidence-weighted intent boost.
+    # When the Stage-0 classifier is essentially certain about the
+    # primary anchor (confidence >= 0.85), promote that anchor to
+    # position 0 (or inject it at 0 if absent). The aggressive boost
+    # only fires above the high-confidence threshold; below it the
+    # call is a no-op so wobbly classifications cannot displace
+    # deterministic retrieval winners. Wired BEFORE
+    # ``_surface_anchor_citations`` and ``_collapse_parent_refs`` so
+    # the boosted anchor flows through every downstream pass.
+    #
+    # Fail-soft — any exception in the classifier OR helper is
+    # swallowed and the route continues with the unboosted candidates.
+    try:
+        _boost_intent_res = classify_intent(question)
+    except Exception:  # noqa: BLE001 — defensive (never let intent 500 the route)
+        _boost_intent_res = None
+    try:
+        candidates = boost_for_intent(candidates, _boost_intent_res)
+    except Exception:  # noqa: BLE001 — defensive
+        pass
+
     # Surface conversation anchors (e.g. ``Art. 5`` / ``Annex IV``
     # explicitly mentioned in the live question or a prior turn) when
     # the engine missed them — the deterministic-fallback path emits
@@ -2007,24 +2124,55 @@ def regenold_eu_ai_act_ask(
             answer_text = _fb_prose
             confidence = 0.0
             retrieval_path = "zero_retrieval_fallback"
-        else:  # pragma: no cover — defensive (fallback always returns ≥1 ref)
-            # Round-36 issue #40 hardening: empty references is the
-            # strongest closed-world signal — refuse regardless of
-            # confidence. ``_compute_confidence`` returns exactly 0.5
-            # for sparse retrieval (nodes_traversed < 5); the pre-fix
-            # strict-less-than check
-            # (``confidence < _CONFIDENCE_FLOOR_FOR_ANSWER``) let an
-            # empty-refs + conf-0.5 response slip through with engine
-            # prose intact. The confidence axis is now redundant: an
-            # empty grounding set means we have no citations to back
-            # the prose, so we ship the deterministic no-match string
-            # rather than ungrounded LLM content.
+        else:
+            # R66-E Phase 2a — Hierarchical Chapter Community Summary
+            # fallback. The zero_retrieval_fallback returned NO refs
+            # (defensive branch — pre-R66-E this was the dead-end
+            # ``_NO_MATCH_ANSWER`` path). When the question is broad /
+            # vague AND maps to a chapter (either via the broad-keyword
+            # scan or the intent classifier label), surface the
+            # chapter's regulator-voice summary + its load-bearing
+            # articles. Strictly additive — never displaces a
+            # zero-retrieval winner because this branch only fires
+            # when zero_retrieval produced no refs.
             #
-            # The static no-match string is already plain prose at 3
-            # sentences; no normalisation needed.
-            answer_text = _NO_MATCH_ANSWER
-            confidence = 0.0
-            retrieval_path = "no_match"
+            # When the chapter heuristic also misses, fall back to the
+            # historic Round-36 ``_NO_MATCH_ANSWER`` template (empty
+            # refs + refusal copy).
+            from app.data.chapter_summaries import (  # noqa: PLC0415
+                chapter_for_query,
+                primary_anchors_for_chapter,
+                summary_for_chapter,
+            )
+
+            _ch = chapter_for_query(question, intent_label=_intent_label)
+            _ch_anchors = primary_anchors_for_chapter(_ch) if _ch else ()
+            _ch_summary = summary_for_chapter(_ch) if _ch else None
+
+            _ch_refs_wire: list[str] = []
+            if _ch_anchors:
+                _seen_ch: set[str] = set()
+                for _r in _ch_anchors:
+                    _formatted = reference_from_article_ref(_r)
+                    if not _formatted or _formatted in _seen_ch:
+                        continue
+                    _seen_ch.add(_formatted)
+                    _ch_refs_wire.append(_formatted)
+
+            if _ch_summary and _ch_refs_wire:
+                references = _ch_refs_wire[:_effective_max_refs]
+                answer_text = _ch_summary
+                confidence = 0.0
+                retrieval_path = "chapter_summary_fallback"
+                _trace_guard("r66e_chapter_summary_fallback")
+            else:
+                # Round-36 issue #40 hardening: empty references is the
+                # strongest closed-world signal — refuse regardless of
+                # confidence. The static no-match string is already
+                # plain prose at 3 sentences; no normalisation needed.
+                answer_text = _NO_MATCH_ANSWER
+                confidence = 0.0
+                retrieval_path = "no_match"
     elif not answer_text:
         # All sentences dropped as meta-leak/label/degenerate during the
         # normalization pass above. Fall back to the deterministic

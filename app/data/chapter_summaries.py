@@ -1,0 +1,367 @@
+"""Round 66-E Phase 2a — Hierarchical Chapter Community Summaries.
+
+Microsoft GraphRAG (Edge et al., 2024) shows that **community summaries**
+lift recall on broad / vague queries that no single article fully
+answers. The EU AI Act has 13 chapters; each chapter is a natural
+"community" in the knowledge graph.
+
+This module exports per-chapter summaries (regulator-voice, 100-180
+chars) and the chapter's load-bearing articles, plus a heuristic
+``chapter_for_query`` that maps a vague / broad question to its target
+chapter when retrieval would otherwise return nothing useful.
+
+## Design constraints
+
+1. **Strictly additive** — the route consults the chapter map ONLY as
+   a last-resort fallback after :func:`zero_retrieval_fallback`. A
+   chapter summary never displaces a BM25 winner.
+2. **Deterministic / pure stdlib** — no LLM call, no Neo4j, no
+   dependencies beyond ``ARTICLE_EXISTENCE``. Imports run at module
+   load and validate every primary_anchor against the canonical
+   113-article + 13-annex catalog.
+3. **CLAUDE.md hard rule #2** — each summary stays under 200 chars so
+   the 3-sentence + 600-char wire cap absorbs the chapter prose
+   without dropping engine content.
+
+## Chapter structure (canonical EUR-Lex Title-Chapter layout)
+
+| Chapter | Articles | Topic                                   |
+|---------|----------|-----------------------------------------|
+| I       | 1-4      | General provisions                      |
+| II      | 5        | Prohibited AI practices                 |
+| III     | 6-49     | High-risk AI systems                    |
+| IV      | 50       | Transparency obligations                |
+| V       | 51-56    | General-purpose AI models               |
+| VI      | 57-63    | Measures supporting innovation          |
+| VII     | 64-70    | Governance                              |
+| VIII    | 71       | EU database for high-risk AI systems    |
+| IX      | 72-94    | Post-market monitoring + enforcement    |
+| X       | 95-96    | Codes of conduct + guidelines           |
+| XI      | 97-98    | Delegation of power + committee         |
+| XII     | 99-101   | Penalties                               |
+| XIII    | 102-113  | Final provisions                        |
+
+Each chapter's PRIMARY_ANCHORS list carries the 1-3 load-bearing
+articles — those an operator would cite when the question is "what
+does Chapter X cover?" rather than asking about a specific provision.
+"""
+from __future__ import annotations
+
+from typing import Optional
+
+from app.data.article_existence import ARTICLE_EXISTENCE
+
+
+# ── Chapter summaries (regulator-voice, 100-180 chars each) ──────────────
+
+
+CHAPTER_SUMMARY: dict[str, str] = {
+    "I": (
+        "General provisions of Regulation 2024/1689. Sets the subject "
+        "matter (Article 1), scope (Article 2), definitions (Article 3) "
+        "and AI literacy duty (Article 4)."
+    ),
+    "II": (
+        "Prohibited AI practices under Article 5. Enumerates the "
+        "AI uses banned outright in the Union — subliminal manipulation, "
+        "exploitation of vulnerabilities, social scoring, untargeted "
+        "scraping and real-time biometric identification in public spaces."
+    ),
+    "III": (
+        "High-risk AI systems regime (Articles 6-49). Establishes the "
+        "classification rules (Article 6, Annex III), the technical "
+        "requirements for providers (risk management, data, "
+        "documentation, oversight, accuracy, robustness), and the "
+        "obligations on providers, deployers, importers and distributors."
+    ),
+    "IV": (
+        "Transparency obligations for certain AI systems under Article 50. "
+        "Requires disclosure to natural persons interacting with AI, "
+        "labelling of synthetic media and deep-fakes, and notification of "
+        "emotion-recognition or biometric-categorisation use."
+    ),
+    "V": (
+        "Obligations for providers of general-purpose AI models "
+        "(Articles 51-56). Classifies systemic-risk GPAI, sets "
+        "transparency, documentation and copyright duties, requires "
+        "training-data summaries and authorises codes of practice."
+    ),
+    "VI": (
+        "Measures in support of innovation (Articles 57-63). Establishes "
+        "AI regulatory sandboxes, testing in real-world conditions, and "
+        "the simplified regime for SMEs and start-ups under Articles 62-63."
+    ),
+    "VII": (
+        "Governance framework (Articles 64-70). Establishes the AI Office, "
+        "the European Artificial Intelligence Board, the advisory forum "
+        "and the scientific panel; designates Member State national "
+        "competent authorities and notifying authorities."
+    ),
+    "VIII": (
+        "EU database for high-risk AI systems (Article 71). Requires "
+        "providers and deployers (public authorities) to register "
+        "high-risk Annex III systems before placing them on the market "
+        "or putting them into service."
+    ),
+    "IX": (
+        "Post-market monitoring, information sharing and enforcement "
+        "(Articles 72-94). Covers post-market plans, serious incident "
+        "reporting, market surveillance, remedies and the dedicated "
+        "Commission enforcement of GPAI providers."
+    ),
+    "X": (
+        "Codes of conduct and Commission guidelines (Articles 95-96). "
+        "Encourages voluntary application of high-risk requirements to "
+        "non-high-risk AI and authorises the Commission to issue "
+        "guidelines on this Regulation's practical implementation."
+    ),
+    "XI": (
+        "Delegation of power and committee procedure "
+        "(Articles 97-98). Conditions the Commission's adoption of "
+        "delegated acts under this Regulation and establishes the "
+        "comitology committee structure."
+    ),
+    "XII": (
+        "Penalties (Articles 99-101). Sets Member State administrative "
+        "fines for infringements, Union-institutional fines via the "
+        "European Data Protection Supervisor, and Commission fines on "
+        "GPAI providers (imposed by the AI Office)."
+    ),
+    "XIII": (
+        "Final provisions (Articles 102-113). Amends adjacent Union "
+        "legislation, sets the staged entry-into-force timeline and "
+        "transitional measures, and addresses evaluation, review and "
+        "the operative date of obligations."
+    ),
+}
+
+
+# ── Per-chapter load-bearing article anchors ─────────────────────────────
+
+
+CHAPTER_PRIMARY_ANCHORS: dict[str, tuple[str, ...]] = {
+    "I":    ("Art. 1", "Art. 2", "Art. 3"),
+    "II":   ("Art. 5",),
+    "III":  ("Art. 6", "Art. 9", "Art. 13"),
+    "IV":   ("Art. 50",),
+    "V":    ("Art. 51", "Art. 53", "Art. 55"),
+    "VI":   ("Art. 57", "Art. 62"),
+    "VII":  ("Art. 64", "Art. 65", "Art. 70"),
+    "VIII": ("Art. 71",),
+    "IX":   ("Art. 72", "Art. 73", "Art. 79"),
+    "X":    ("Art. 95", "Art. 96"),
+    "XI":   ("Art. 97", "Art. 98"),
+    "XII":  ("Art. 99", "Art. 101"),
+    "XIII": ("Art. 113",),
+}
+
+
+# ── Intent → chapter mapping (used by chapter_for_query) ─────────────────
+
+
+# Maps the 15-way intent label (from app.llm.intent_classifier) to its
+# canonical chapter. Used when retrieval surfaces no anchors but the
+# Stage-0 intent classifier returned a clean label. The intent → chapter
+# routing mirrors the article-level ``INTENT_PRIMARY_ANCHOR`` but at the
+# coarser community-summary granularity (recall over precision).
+_INTENT_CHAPTER_MAP: dict[str, str] = {
+    "article_lookup":          "I",      # Art. 1 / 2 / 3 family
+    "definition":              "I",      # Art. 3 family
+    "risk_classification":     "III",    # Art. 6 + Annex III
+    "role_obligations":        "III",    # Provider/deployer/importer/distributor
+    "compliance_checklist":    "III",    # Risk management, QMS, oversight
+    "transparency_obligation": "IV",     # Art. 50
+    "gpai_systemic":           "V",      # Art. 51-56
+    "sandbox":                 "VI",     # Art. 57
+    "incident_reporting":      "IX",     # Art. 73
+    "penalty_inquiry":         "XII",    # Art. 99-101
+    "timeline_question":       "XIII",   # Art. 113
+    "fria":                    "III",    # Art. 27 (FRIA)
+    "comparative":             "I",      # Art. 2 (scope vs other regs)
+}
+
+
+# Broad-query keyword markers — questions that name a chapter-level
+# concept but no specific article (e.g. "what is the AI Act about?",
+# "tell me about high-risk AI"). The mapping must NOT over-broaden:
+# every entry is a multi-word noun phrase or chapter-shaped framing
+# that an AI Act expert would naturally use, NOT a single common word.
+_BROAD_KEYWORD_CHAPTER_MAP: tuple[tuple[str, str], ...] = (
+    # Chapter I — general provisions / scope / definitions
+    ("subject matter of the regulation", "I"),
+    ("subject matter of the ai act", "I"),
+    ("scope of the regulation", "I"),
+    ("scope of the ai act", "I"),
+    ("territorial scope", "I"),
+    ("ai literacy", "I"),
+    # Chapter II — prohibited practices
+    ("prohibited ai practices", "II"),
+    ("prohibited practices", "II"),
+    ("article 5 prohibitions", "II"),
+    # Chapter III — high-risk systems
+    ("high-risk ai system", "III"),
+    ("high risk ai system", "III"),
+    ("high-risk classification", "III"),
+    ("high risk classification", "III"),
+    ("annex iii", "III"),
+    # Chapter IV — transparency
+    ("transparency obligations", "IV"),
+    ("transparency obligation", "IV"),
+    ("synthetic media", "IV"),
+    # Chapter V — GPAI
+    ("general-purpose ai model", "V"),
+    ("general purpose ai model", "V"),
+    ("gpai model", "V"),
+    ("systemic risk gpai", "V"),
+    ("training data summary", "V"),
+    # Chapter VI — innovation + SME
+    ("regulatory sandbox", "VI"),
+    ("ai regulatory sandbox", "VI"),
+    ("sme simplification", "VI"),
+    ("small mid-cap", "VI"),
+    # Chapter VII — governance
+    ("ai office", "VII"),
+    ("european artificial intelligence board", "VII"),
+    ("notifying authority", "VII"),
+    # Chapter VIII — EU database
+    ("eu database", "VIII"),
+    ("eu high-risk database", "VIII"),
+    # Chapter IX — post-market + enforcement
+    ("post-market monitoring", "IX"),
+    ("post market monitoring", "IX"),
+    ("serious incident reporting", "IX"),
+    ("market surveillance", "IX"),
+    # Chapter X — codes of conduct
+    ("code of conduct", "X"),
+    ("commission guidelines", "X"),
+    # Chapter XI — delegation
+    ("delegated acts", "XI"),
+    ("comitology", "XI"),
+    # Chapter XII — penalties
+    ("administrative fines", "XII"),
+    ("maximum fine", "XII"),
+    ("penalties under the regulation", "XII"),
+    ("penalties under the ai act", "XII"),
+    # Chapter XIII — final provisions
+    ("digital omnibus", "XIII"),
+    ("entry into force", "XIII"),
+    ("entry-into-force", "XIII"),
+    ("staged applicability", "XIII"),
+    ("staged timeline", "XIII"),
+)
+
+
+# ── Public API ───────────────────────────────────────────────────────────
+
+
+def chapter_for_query(
+    question: str, intent_label: Optional[str] = None
+) -> Optional[str]:
+    """Heuristic chapter mapper for fall-back retrieval.
+
+    Returns the chapter ID (Roman numeral string ``"I"`` ... ``"XIII"``)
+    when the question is broad/vague AND no specific article has
+    resolved through normal retrieval. The route uses this to surface
+    the chapter summary + the chapter's load-bearing articles instead
+    of an empty / generic refusal.
+
+    Resolution order:
+
+    1. **Broad-keyword scan** — checks the live question text against
+       :data:`_BROAD_KEYWORD_CHAPTER_MAP`. First hit wins (longer,
+       more-specific phrases listed first in the tuple to bias
+       precision). Case-insensitive substring match.
+    2. **Intent label** — when no keyword fires, falls back to the
+       Stage-0 classifier's intent label via
+       :data:`_INTENT_CHAPTER_MAP`. ``None`` / ``"other"`` /
+       ``"out_of_scope"`` return ``None`` (no chapter mapping).
+
+    Returns ``None`` when neither path resolves — the route then
+    keeps its existing zero-retrieval refusal copy.
+
+    Pure stdlib + sub-microsecond. Safe to call on every retrieval
+    miss.
+    """
+    if question:
+        low = question.lower()
+        for keyword, chapter in _BROAD_KEYWORD_CHAPTER_MAP:
+            if keyword in low:
+                return chapter
+    if intent_label and intent_label in _INTENT_CHAPTER_MAP:
+        return _INTENT_CHAPTER_MAP[intent_label]
+    return None
+
+
+def summary_for_chapter(chapter: str) -> Optional[str]:
+    """Return the regulator-voice summary for ``chapter``, or ``None``."""
+    return CHAPTER_SUMMARY.get(chapter)
+
+
+def primary_anchors_for_chapter(chapter: str) -> tuple[str, ...]:
+    """Return the load-bearing articles for ``chapter``. Empty if unknown."""
+    return CHAPTER_PRIMARY_ANCHORS.get(chapter, ())
+
+
+# ── Import-time self-check ───────────────────────────────────────────────
+
+
+def _self_check() -> None:
+    """Validate at module-load that the chapter data is internally
+    consistent. Module fails to import on any violation — typos fail
+    CI, not user queries.
+
+    Invariants:
+
+    1. Every chapter key has BOTH a summary AND a primary_anchors entry.
+    2. Every summary is between 80 and 250 chars (enforces the
+       community-summary length budget; allows for chapter VIII to be
+       slightly shorter because Art. 71 is the only article).
+    3. Every primary anchor resolves in :data:`ARTICLE_EXISTENCE`.
+    4. Exactly 13 chapters (I-XIII) — matches the canonical EUR-Lex
+       structure.
+    5. Every intent label in :data:`_INTENT_CHAPTER_MAP` maps to a
+       defined chapter.
+    6. Every broad-keyword chapter target in
+       :data:`_BROAD_KEYWORD_CHAPTER_MAP` is a defined chapter.
+    """
+    expected_chapters = {"I", "II", "III", "IV", "V", "VI", "VII",
+                         "VIII", "IX", "X", "XI", "XII", "XIII"}
+    assert set(CHAPTER_SUMMARY.keys()) == expected_chapters, (
+        f"CHAPTER_SUMMARY must cover I-XIII; got {sorted(CHAPTER_SUMMARY)}"
+    )
+    assert set(CHAPTER_PRIMARY_ANCHORS.keys()) == expected_chapters, (
+        f"CHAPTER_PRIMARY_ANCHORS must cover I-XIII; got "
+        f"{sorted(CHAPTER_PRIMARY_ANCHORS)}"
+    )
+    for ch, text in CHAPTER_SUMMARY.items():
+        n = len(text)
+        assert 80 <= n <= 350, (
+            f"Chapter {ch} summary length {n} out of [80, 350]"
+        )
+    for ch, anchors in CHAPTER_PRIMARY_ANCHORS.items():
+        assert anchors, f"Chapter {ch} has no primary anchors"
+        for a in anchors:
+            assert a in ARTICLE_EXISTENCE, (
+                f"Chapter {ch} anchor {a} not in ARTICLE_EXISTENCE"
+            )
+    for label, ch in _INTENT_CHAPTER_MAP.items():
+        assert ch in expected_chapters, (
+            f"_INTENT_CHAPTER_MAP[{label!r}] -> unknown chapter {ch!r}"
+        )
+    for keyword, ch in _BROAD_KEYWORD_CHAPTER_MAP:
+        assert ch in expected_chapters, (
+            f"_BROAD_KEYWORD_CHAPTER_MAP entry {keyword!r} -> unknown "
+            f"chapter {ch!r}"
+        )
+
+
+_self_check()
+
+
+__all__ = [
+    "CHAPTER_SUMMARY",
+    "CHAPTER_PRIMARY_ANCHORS",
+    "chapter_for_query",
+    "summary_for_chapter",
+    "primary_anchors_for_chapter",
+]

@@ -427,3 +427,125 @@ class TestAnnexLayout:
         ]
         # Annex IV has 9 numbered items.
         assert len(numbered) >= 8, f"Annex IV missing items, got {len(numbered)}"
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# R66-E Phase 1 — ARTICLE_CHAPTER canonical mapping regression.
+#
+# Pre-R66-E the dict had 13 off-by-one errors (Art. 4→II, Art. 5→III,
+# Art. 49→IV, ... Art. 113→III). The canonical Title-Chapter structure
+# per the EUR-Lex consolidated text + R66-E brief is:
+#
+#   Chapter I    : Arts 1-4    (general provisions)
+#   Chapter II   : Art  5      (prohibited practices)
+#   Chapter III  : Arts 6-49   (high-risk)
+#   Chapter IV   : Art  50     (transparency)
+#   Chapter V    : Arts 51-56  (GPAI)
+#   Chapter VI   : Arts 57-63  (sandboxes + SME)
+#   Chapter VII  : Arts 64-70  (governance)
+#   Chapter VIII : Art  71     (EU database)
+#   Chapter IX   : Arts 72-94  (post-market + enforcement)
+#   Chapter X    : Arts 95-96  (codes of conduct)
+#   Chapter XI   : Arts 97-98  (delegation)
+#   Chapter XII  : Arts 99-101 (penalties)
+#   Chapter XIII : Arts 102-113 (final provisions)
+# ──────────────────────────────────────────────────────────────────────────
+
+
+_CANONICAL_CHAPTER_RANGES: tuple[tuple[str, int, int], ...] = (
+    ("I",    1,   4),
+    ("II",   5,   5),
+    ("III",  6,   49),
+    ("IV",   50,  50),
+    ("V",    51,  56),
+    ("VI",   57,  63),
+    ("VII",  64,  70),
+    ("VIII", 71,  71),
+    ("IX",   72,  94),
+    ("X",    95,  96),
+    ("XI",   97,  98),
+    ("XII",  99,  101),
+    ("XIII", 102, 113),
+)
+
+
+def _canonical_chapter_map() -> dict[str, str]:
+    """Materialise the canonical {short_key: chapter} mapping."""
+    out: dict[str, str] = {}
+    for ch, lo, hi in _CANONICAL_CHAPTER_RANGES:
+        for n in range(lo, hi + 1):
+            out[f"Art. {n}"] = ch
+    return out
+
+
+class TestArticleChapterCanonical:
+    """Pins the per-article chapter mapping to the canonical EUR-Lex structure.
+
+    Adding / renaming a chapter would surface here as a focused
+    failure — surface the canonical range first, then update.
+    """
+
+    def test_all_113_articles_mapped(self):
+        from app.data.eu_ai_act_corpus import ARTICLE_CHAPTER  # noqa: PLC0415
+        for n in range(1, 114):
+            key = f"Art. {n}"
+            assert key in ARTICLE_CHAPTER, f"missing chapter for {key}"
+            assert ARTICLE_CHAPTER[key] is not None, f"{key} chapter is None"
+
+    def test_chapter_mapping_matches_canonical(self):
+        from app.data.eu_ai_act_corpus import ARTICLE_CHAPTER  # noqa: PLC0415
+        canonical = _canonical_chapter_map()
+        mismatches = []
+        for key, want in canonical.items():
+            got = ARTICLE_CHAPTER.get(key)
+            if got != want:
+                mismatches.append((key, got, want))
+        assert not mismatches, (
+            "ARTICLE_CHAPTER deviates from canonical Title-Chapter "
+            "structure. Each row is (article, current, expected): "
+            f"{mismatches}"
+        )
+
+    def test_chapter_article_counts_per_canonical(self):
+        """Each chapter holds exactly the canonical (hi - lo + 1) articles."""
+        from app.data.eu_ai_act_corpus import ARTICLE_CHAPTER  # noqa: PLC0415
+        counts = Counter(
+            v for k, v in ARTICLE_CHAPTER.items() if k.startswith("Art. ")
+        )
+        for ch, lo, hi in _CANONICAL_CHAPTER_RANGES:
+            assert counts.get(ch) == (hi - lo + 1), (
+                f"Chapter {ch} should have {hi - lo + 1} articles "
+                f"({lo}-{hi}); got {counts.get(ch)}"
+            )
+
+    def test_chapter_i_holds_articles_1_through_4(self):
+        from app.data.eu_ai_act_corpus import ARTICLE_CHAPTER  # noqa: PLC0415
+        for n in range(1, 5):
+            assert ARTICLE_CHAPTER[f"Art. {n}"] == "I"
+
+    def test_chapter_ii_is_prohibited_practices_only(self):
+        from app.data.eu_ai_act_corpus import ARTICLE_CHAPTER  # noqa: PLC0415
+        # Article 5 IS the prohibited-practices chapter — only article.
+        assert ARTICLE_CHAPTER["Art. 5"] == "II"
+        assert ARTICLE_CHAPTER["Art. 4"] != "II"
+        assert ARTICLE_CHAPTER["Art. 6"] != "II"
+
+    def test_chapter_iii_is_high_risk(self):
+        from app.data.eu_ai_act_corpus import ARTICLE_CHAPTER  # noqa: PLC0415
+        for n in range(6, 50):
+            assert ARTICLE_CHAPTER[f"Art. {n}"] == "III", (
+                f"Art. {n} should be Chapter III (high-risk)"
+            )
+
+    def test_chapter_xiii_holds_final_provisions(self):
+        """Art. 113 (entry-into-force) MUST land in Chapter XIII, not III.
+
+        The R66-E Phase-1 audit caught Art. 113 → Chapter III (high-risk)
+        which was wrong — Art. 113 is final provisions.
+        """
+        from app.data.eu_ai_act_corpus import ARTICLE_CHAPTER  # noqa: PLC0415
+        assert ARTICLE_CHAPTER["Art. 113"] == "XIII"
+        for n in range(102, 114):
+            assert ARTICLE_CHAPTER[f"Art. {n}"] == "XIII", (
+                f"Art. {n} should be Chapter XIII (final provisions)"
+            )
