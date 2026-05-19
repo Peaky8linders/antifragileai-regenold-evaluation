@@ -2879,3 +2879,152 @@ class TestR63BGPAIGate:
                 assert ref in ARTICLE_EXISTENCE, (
                     f"GPAI role-bolt ref {ref!r} not in catalog"
                 )
+
+
+class TestR66ScopeAnchors:
+    """R66-A — anchor + KEYWORD_TO_ARTICLE additions for the three
+    KB content gaps: age verification (Art. 5(1)(b)), terrorist-
+    attack exception (Art. 5(1)(h)), CE-marking verification (Art. 43).
+
+    Positive set — each new in-scope shape must FLIP the gate.
+    Negative set — every R34 P0 OOS regression + adjacent off-topic
+    framing must STILL refuse.
+    """
+
+    # ── Positive: age-verification / minor-protection (Art. 5(1)(b)) ──
+
+    def test_age_verification_for_minor_in_scope(self) -> None:
+        """Age verification under Art. 5(1)(b) — must flip in-scope."""
+        cv = classify_conversation(_msgs((
+            "user",
+            "Does our age verification system fall under Art. 5(1)(b) "
+            "for minor users?",
+        )))
+        assert cv.in_scope is True
+
+    def test_age_estimation_safeguard_question_in_scope(self) -> None:
+        """Compliance-pathway question — uses 'age estimation' anchor."""
+        cv = classify_conversation(_msgs((
+            "user",
+            "Are age estimation safeguards required for AI services "
+            "aimed at minor users?",
+        )))
+        assert cv.in_scope is True
+
+    def test_manipulative_dark_pattern_question_in_scope(self) -> None:
+        """Manipulative-dark-pattern question routes to Art. 5."""
+        cv = classify_conversation(_msgs((
+            "user",
+            "Do manipulative dark patterns aimed at children violate "
+            "the prohibition under Art. 5?",
+        )))
+        assert cv.in_scope is True
+
+    # ── Positive: terrorist-attack exception / RBI (Art. 5(1)(h)) ──
+
+    def test_terrorist_attack_exception_question_in_scope(self) -> None:
+        """The narrow LE exception phrasing must flip in-scope."""
+        cv = classify_conversation(_msgs((
+            "user",
+            "What is the terrorist attack exception under Art. 5(1)(h)?",
+        )))
+        assert cv.in_scope is True
+
+    def test_imminent_terrorist_threat_question_in_scope(self) -> None:
+        """The (ii) sub-clause natural-language framing."""
+        cv = classify_conversation(_msgs((
+            "user",
+            "Does the imminent terrorist threat allow real-time RBI?",
+        )))
+        assert cv.in_scope is True
+
+    # ── Positive: CE-marking verification (Art. 43) ──
+
+    def test_verify_ce_marking_question_in_scope(self) -> None:
+        """Verb-form 'verify CE marking' must flip in-scope."""
+        cv = classify_conversation(_msgs((
+            "user",
+            "How does a market-surveillance authority verify CE marking "
+            "on a high-risk AI system?",
+        )))
+        assert cv.in_scope is True
+
+    # ── Negative: R34 P0 + adjacent off-topic must STILL refuse ──
+
+    def test_oos_best_age_to_learn_skiing_still_refuses(self) -> None:
+        """Bare 'age' must NOT flip — would be a substring false-
+        positive. Only 'age verification' / 'age estimation' / etc.
+        are anchored."""
+        cv = classify_conversation(_msgs((
+            "user",
+            "Best age to learn skiing?",
+        )))
+        assert cv.in_scope is False
+
+    def test_oos_birth_certificate_processing_still_refuses(self) -> None:
+        """R34 P0 — birth-certificate civil-registry. The R66-A
+        additions must NOT change this behaviour."""
+        cv = classify_conversation(_msgs((
+            "user",
+            "Birth certificate processing time in France?",
+        )))
+        assert cv.in_scope is False
+
+    def test_oos_verify_netflix_subscription_still_refuses(self) -> None:
+        """Bare 'verify' must NOT substring-match. Only 'verify CE
+        marking' / 'verify conformity' anchors fire."""
+        cv = classify_conversation(_msgs((
+            "user",
+            "Can you help me verify my Netflix subscription auto-renewal?",
+        )))
+        assert cv.in_scope is False
+
+    def test_oos_terrorist_in_netflix_thriller_still_refuses(self) -> None:
+        """Bare 'terrorist' must NOT substring-match generic media
+        commentary. Only 'terrorist attack exception' / 'imminent
+        terrorist threat' / 'genuine and foreseeable terrorist' anchors
+        fire."""
+        cv = classify_conversation(_msgs((
+            "user",
+            "Was the terrorist plot in that Netflix thriller realistic?",
+        )))
+        assert cv.in_scope is False
+
+    def test_oos_minor_injury_still_refuses(self) -> None:
+        """Bare 'minor' substring-matches 'minor injury' / 'minor edit'
+        in generic English. Only 'minor user' (the AI-Act-specific
+        compound) is anchored."""
+        cv = classify_conversation(_msgs((
+            "user",
+            "How do I treat a minor injury at home?",
+        )))
+        assert cv.in_scope is False
+
+    # ── Typo / catalog guard ──
+
+    def test_r66_keyword_targets_resolve_in_article_existence(self) -> None:
+        """Every R66-A KEYWORD_TO_ARTICLE addition resolves in the
+        ARTICLE_EXISTENCE catalog (typo guard)."""
+        from app.data.article_existence import ARTICLE_EXISTENCE
+        from app.integrations.regenold.scope import KEYWORD_TO_ARTICLE
+        r66_keywords = (
+            "age verification",
+            "age estimation",
+            "minor user",
+            "manipulative dark pattern",
+            "terrorist attack exception",
+            "imminent terrorist threat",
+            "law-enforcement exception",
+            "narrow exception to article 5",
+            "verify ce marking",
+            "ce marking verification",
+            "validate conformity assessment",
+        )
+        for kw in r66_keywords:
+            assert kw in KEYWORD_TO_ARTICLE, (
+                f"R66-A keyword {kw!r} missing from KEYWORD_TO_ARTICLE"
+            )
+            ref = KEYWORD_TO_ARTICLE[kw]
+            assert ref in ARTICLE_EXISTENCE, (
+                f"R66-A keyword {kw!r} routes to {ref!r}, not in catalog"
+            )
