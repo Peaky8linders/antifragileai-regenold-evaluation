@@ -245,6 +245,40 @@ MANUAL_XREFS: tuple[tuple[str, str, str], ...] = (
         "R57-C — Risk-pyramid reconciliation: a system is either prohibited "
         "(Art. 5) or high-risk (Art. 6) — never both — edge surfaces the alternative",
     ),
+    # ── R59 — Section-2 HRAIS obligation chain (CRITIC-2) ────────────────
+    # Art. 6 classification triggers ALL of Section 2 (Arts. 9–18).
+    # Adding Art. 6→9 core edge means 1-hop scenario expansion now surfaces
+    # the risk-management-system article when Art. 6 is the initial hit.
+    (
+        "Art. 6",
+        "Art. 9",
+        "R59 — Art. 6 classification triggers Art. 9 risk-management-system obligation (Section 2 gateway)",
+    ),
+    (
+        "Art. 9",
+        "Art. 10",
+        "R59 — Art. 9(1) requires risk management measures aligned with Art. 10 data governance",
+    ),
+    (
+        "Art. 9",
+        "Art. 13",
+        "R59 — Art. 9 risk management outputs inform the Art. 13 transparency information chain",
+    ),
+    (
+        "Art. 9",
+        "Art. 14",
+        "R59 — Art. 9(5) risk measures must include human-oversight mechanisms (Art. 14)",
+    ),
+    (
+        "Art. 9",
+        "Art. 15",
+        "R59 — Art. 9(2)(b) requires robustness measures aligned with Art. 15 accuracy/robustness",
+    ),
+    (
+        "Art. 10",
+        "Art. 9",
+        "R59 — Reverse: Art. 10 data-governance obligations feed into Art. 9 risk management",
+    ),
 )
 
 

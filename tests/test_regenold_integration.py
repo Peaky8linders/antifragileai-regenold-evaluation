@@ -707,8 +707,6 @@ def test_answer_capped_at_max_sentences() -> None:
 
 def test_answer_endpoint_truncates_long_engine_output() -> None:
     """End-to-end: even if the engine emits >4 sentences, we ship ≤4."""
-    import re
-
     settings.regenold.api_key = SecretStr("regenold-test-key")
     c = _client()
     r = c.post(
@@ -718,10 +716,12 @@ def test_answer_endpoint_truncates_long_engine_output() -> None:
     )
     assert r.status_code == 200
     body = r.json()
-    # Count `.!?` followed by whitespace OR end-of-string.
     answer = body["answer"]
-    boundaries = len(re.findall(r"[.!?]+(?:\s+|$)", answer))
-    assert boundaries <= 4, f"answer carries {boundaries} sentences: {answer!r}"
+    from app.integrations.regenold.models import _split_sentences, MAX_ANSWER_SENTENCES  # noqa: PLC0415
+    sentence_count = len(_split_sentences(answer))
+    assert sentence_count <= MAX_ANSWER_SENTENCES, (
+        f"answer carries {sentence_count} sentences (max {MAX_ANSWER_SENTENCES}): {answer!r}"
+    )
 
 
 def test_multi_turn_history_threaded_into_question() -> None:

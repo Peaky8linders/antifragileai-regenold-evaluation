@@ -2309,3 +2309,61 @@ class TestR58FollowupMTRescue:
     def test_r58_does_not_regress_r34_restaurant(self) -> None:
         v = classify_scope("What's the best Italian restaurant in Rome?")
         assert v.in_scope is False
+
+
+class TestR59BareIncidentRemoved:
+    """R59 — bare 'incident' removed from anchors; OOS queries must still refuse."""
+
+    def test_bare_incident_osha_refuses(self) -> None:
+        """Factory incident without AI Act context must refuse."""
+        v = classify_scope("A factory incident occurred — is OSHA involved?")
+        assert v.in_scope is False, "OOS query incorrectly in-scope: factory OSHA incident"
+
+    def test_bare_incident_it_management_refuses(self) -> None:
+        """IT incident management without AI Act context must refuse."""
+        v = classify_scope("IT incident management procedures at our company")
+        assert v.in_scope is False, "OOS query incorrectly in-scope: IT incident management"
+
+    def test_bare_incident_workplace_refuses(self) -> None:
+        """Bare 'incident in the workplace' without AI Act anchor must refuse."""
+        v = classify_scope("incident in the workplace today")
+        assert v.in_scope is False, "OOS query incorrectly in-scope: workplace incident"
+
+    def test_serious_incident_ai_act_still_in_scope(self) -> None:
+        """'Serious incident' compound still surfaces as in-scope (Art. 73)."""
+        v = classify_scope("How do I report a serious incident under Art. 73?")
+        assert v.in_scope is True, "Legitimate Art. 73 serious-incident question incorrectly refused"
+
+
+class TestR59PLDCivilLiabilityTightened:
+    """R59 — PLD 'civil liability' pattern tightened to require product/defect co-occurrence."""
+
+    def test_pld_civil_liability_ai_act_question_not_refused(self) -> None:
+        """R59 — 'civil liability' + 'AI providers' without product/defect framing must NOT refuse as PLD."""
+        v = classify_scope("What are the civil liability implications for AI providers under the EU AI Act?")
+        assert v.in_scope is True, (
+            "AI Act civil-liability question incorrectly refused as PLD/OOS"
+        )
+
+    def test_pld_civil_liability_art_99_not_refused(self) -> None:
+        """Art. 99 penalty question mentioning civil liability must remain in-scope."""
+        v = classify_scope("Does the EU AI Act impose civil liability obligations on providers under Art. 99?")
+        assert v.in_scope is True, (
+            "Art. 99 civil-liability question incorrectly refused as PLD"
+        )
+
+    def test_pld_civil_liability_with_defective_product_still_refuses(self) -> None:
+        """PLD still fires when 'defective product' framing is present."""
+        v = classify_scope("Civil liability for a defective AI product causing personal injury")
+        # This should be near_oos (PLD) or out_of_scope — not an AI Act question
+        assert not v.in_scope or v.reason.value.startswith("near_oos"), (
+            f"Defective-product civil-liability should route to PLD, got: {v!r}"
+        )
+
+    def test_pld_ai_act_liability_phrase_still_refuses(self) -> None:
+        """The literal 'ai act liability' (wrong-frame) phrase still triggers PLD path."""
+        from app.integrations.regenold.scope import _pld_fact_pattern
+        result = _pld_fact_pattern("ai act liability for our system")
+        assert result == "Product Liability Directive", (
+            "'ai act liability' phrase should still trigger PLD pattern"
+        )

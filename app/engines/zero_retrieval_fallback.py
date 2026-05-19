@@ -85,7 +85,7 @@ _INTENT_SEED_MAP: dict[str, tuple[str, ...]] = {
     "role_obligations": ("Art. 9", "Art. 13", "Art. 14", "Art. 15", "Art. 26"),
     "penalty_inquiry": ("Art. 99", "Art. 100", "Art. 101"),
     "timeline_question": ("Art. 113",),
-    "transparency_obligation": ("Art. 50",),
+    "transparency_obligation": ("Art. 13", "Art. 50"),  # Art. 13 = high-risk; Art. 50 = limited-risk
     "incident_reporting": ("Art. 73",),
     "sandbox": ("Art. 57", "Art. 58", "Art. 59"),
     "gpai_systemic": ("Art. 51", "Art. 53", "Art. 55"),

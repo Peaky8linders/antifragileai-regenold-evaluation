@@ -415,3 +415,28 @@ def test_r55_a_combination_first_and_second_person():
     # is in the explicit pattern set; but 'your' → 'the' still fires.
     assert "your" not in out.lower()
     assert "the system" in out.lower()
+
+
+def test_r59_annex_roman_numeral_not_split():
+    """R59 — 'Annex I.' / 'Annex III.' should not be split as sentence boundaries."""
+    from app.integrations.regenold.tone_guard import enforce_tone
+    # "High-risk" should NOT be capitalised (it's mid-sentence after "Annex I.")
+    text = "Requirements under Annex I. High-risk systems must comply with Art. 9."
+    result = enforce_tone(text)
+    # The phrase "Annex I. High-risk" should survive without forcing a capital "H"
+    # — i.e. no spurious split at "Annex I. H"
+    assert ". High-risk" not in result or "Annex I." in result, (
+        f"Spurious sentence split at 'Annex I.': {result!r}"
+    )
+
+def test_r59_annex_iii_not_split():
+    """R59 — 'Annex III.' should not trigger a sentence split."""
+    from app.integrations.regenold.tone_guard import _SENTENCE_SPLIT
+    # Verify 'Annex III.' followed by space does NOT match the split pattern
+    test = "as listed in Annex III. The provider must"
+    matches = list(_SENTENCE_SPLIT.finditer(test))
+    # Should find no match at the 'Annex III.' boundary
+    annex_match_positions = [m.start() for m in matches if "Annex III" in test[max(0, m.start()-10):m.start()]]
+    assert len(annex_match_positions) == 0, (
+        f"Spurious split after 'Annex III.': {matches}"
+    )

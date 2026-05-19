@@ -487,7 +487,16 @@ def _pld_fact_pattern(text: str) -> str | None:
         return None
     if "property damage" in text or "property damages" in text:
         return "Product Liability Directive"
-    if "civil liability" in text:
+    # R59 — tighten: require explicit product/defect/injury framing.
+    # "Civil liability of AI providers" is a genuine AI Act Art. 99
+    # question; "civil liability for defective AI products" is PLD.
+    if "civil liability" in text and (
+        "product liability" in text
+        or "defective product" in text
+        or "defective ai" in text
+        or "personal injury" in text
+        or "bodily injury" in text
+    ):
         return "Product Liability Directive"
     return None
 
@@ -694,7 +703,10 @@ _AI_ACT_ANCHORS: frozenset[str] = frozenset(
         "CE marking",
         "EU database",
         "serious incident",
-        "incident",  # broader than "serious incident" — caught when phrasing splits
+        # R59 — bare "incident" removed from anchors. "serious incident" is
+        # the AI-Act-specific term (Art. 73); bare "incident" substring-matched
+        # generic workplace / OSHA / IT-incident queries. Use "serious incident"
+        # only.
         # ── Round-2 expansion (Regenold competition coverage) ────────
         # Additional anchors so the in-scope check fires on questions
         # that don't carry an explicit Art./Annex token but DO mention

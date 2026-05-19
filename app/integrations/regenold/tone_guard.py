@@ -127,7 +127,12 @@ _FIRST_PERSON_REWRITES: tuple[tuple[re.Pattern[str], str], ...] = (
 #   ([.!?]+)(\s+|$) — capture the actual terminator + gap
 _SENTENCE_SPLIT = re.compile(
     r"(?<!\be\.g)(?<!\bi\.e)(?<!\betc)"
-    r"(?<!\bArt)(?<!\bArts)(?<!\bAnnex)"
+    r"(?<!\bArt)(?<!\bArts)"
+    r"(?<!\bAnnex)"
+    r"(?<!\bAnnex I)(?<!\bAnnex II)(?<!\bAnnex III)(?<!\bAnnex IV)"
+    r"(?<!\bAnnex V)(?<!\bAnnex VI)(?<!\bAnnex VII)(?<!\bAnnex VIII)"
+    r"(?<!\bAnnex IX)(?<!\bAnnex X)(?<!\bAnnex XI)(?<!\bAnnex XII)"
+    r"(?<!\bAnnex XIII)"
     r"([.!?]+)(\s+|$)"
 )
 

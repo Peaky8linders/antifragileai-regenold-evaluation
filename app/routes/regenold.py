@@ -402,7 +402,7 @@ def _looks_like_scenario_shape(question: str) -> bool:
 #  * list    — "What are the X?" gold ENUMERATES, multi-clause
 #  * method  — "How do X?" gold often multi-step
 #  * description — fallback bucket, multi-clause is the norm
-_EXTRACT_HIGH_PRECISION_QTYPES = frozenset({"definition", "duration", "date"})
+_EXTRACT_HIGH_PRECISION_QTYPES = frozenset({"definition", "duration", "date", "purpose"})
 
 
 def _try_extractive_answer(
@@ -2165,6 +2165,13 @@ def regenold_eu_ai_act_ask(
                     retrieval_path = "consistency_guard"
                     _trace_guard("r48_consistency_guard")
                     _trace_guard("r49a_grounded_prose")
+                    # R59 — re-apply tone guard; the main enforce_tone()
+                    # call above ran BEFORE this guard replaced the text.
+                    try:
+                        from app.integrations.regenold.tone_guard import enforce_tone  # noqa: PLC0415
+                        answer_text = enforce_tone(answer_text)
+                    except Exception:  # noqa: BLE001 — fail-soft
+                        pass
             except Exception:  # noqa: BLE001 — never fail the route
                 pass
 
