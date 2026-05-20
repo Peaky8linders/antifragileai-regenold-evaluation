@@ -101,6 +101,7 @@ from app.integrations.regenold.scope import (
     classify_conversation,
     refusal_copy_for,
 )
+from app.integrations.regenold.text_normalize import normalize_unicode_punctuation
 from app.llm.intent_classifier import classify_intent
 from app.models import GraphRAGRequest
 from app.rate_limit import limiter
@@ -1526,6 +1527,20 @@ def regenold_eu_ai_act_ask(
             },
         ) from exc
 
+    # R67 — Unicode punctuation normalisation at the route boundary.
+    # The davidath benchmark + real partner traffic ship questions with
+    # U+2011 non-breaking hyphens (``deep‑fake``, ``post‑market``),
+    # smart quotes, and narrow no-break spaces. The scope gate and the
+    # engine's keyword-anchor maps do ASCII-literal substring matching,
+    # so an un-normalised question silently fails every anchor lookup
+    # and gets refused as out-of-scope. Fold to ASCII ONCE here so
+    # `_build_question_from_history`, `classify_conversation`, the
+    # deterministic parse, BM25, and the intent classifier all see
+    # ASCII. The translate map is length-preserving so the downstream
+    # 4 000-char message cap / 2 000-char engine cap are unaffected.
+    for _msg in req.messages:
+        _msg.content = normalize_unicode_punctuation(_msg.content)
+
     # Build question + system_context from the FULL conversation history
     # (multi-turn aware — see :func:`_build_question_from_history`).
     question, system_context = _build_question_from_history(req.messages)
@@ -2054,6 +2069,46 @@ def regenold_eu_ai_act_ask(
     # ``[Article 5, Article 5.1.f]`` which costs Ref Conciseness on the
     # Regenold "minimal set of references" rubric.
     candidates = _collapse_parent_refs(candidates)
+
+    # R67 — QA scope-anchor priority before the ref-budget cut.
+    #
+    # The R67 Unicode-hyphen normalisation made the engine see
+    # "high-risk" on focused QA questions it previously missed
+    # (``high‑risk`` with a U+2011). On a question like "obligations
+    # of providers regarding CE marking for high-risk AI systems" the
+    # engine now fires its role×risk obligation matrix and dumps the
+    # full provider×high-risk chain (Art. 6/8/9/10/11/.../48/49 — 15
+    # refs). The specific keyword anchor the question actually asks
+    # about (Art. 48 — "CE marking") lands mid-matrix and the tight
+    # 5-ref QA cap drops it.
+    #
+    # The scope gate already identified the precise anchor —
+    # ``scope.anchor_articles`` is keyword-derived and ordered most-
+    # specific-first (``ce marking`` → Art. 48 ahead of the generic
+    # ``high-risk`` → Art. 6). For QA-shape questions whose candidate
+    # list overflows the cap, float those anchors to the front so the
+    # question's actual subject survives the cut. Scenarios are NOT
+    # touched — their multi-article gold (davidath avg 9.8) wants the
+    # full matrix, and the scenario budget (10-12) doesn't crowd.
+    if (
+        not _is_scenario_question
+        and scope.anchor_articles
+        and len(candidates) > _effective_max_refs
+    ):
+        _scope_front: list[str] = []
+        for _anchor in scope.anchor_articles:
+            _anchor_wire = reference_from_article_ref(_anchor)
+            if (
+                _anchor_wire
+                and _anchor_wire in candidates
+                and _anchor_wire not in _scope_front
+            ):
+                _scope_front.append(_anchor_wire)
+        if _scope_front:
+            _front_set = set(_scope_front)
+            candidates = _scope_front + [
+                c for c in candidates if c not in _front_set
+            ]
 
     references: list[str] = candidates[:_effective_max_refs]
 

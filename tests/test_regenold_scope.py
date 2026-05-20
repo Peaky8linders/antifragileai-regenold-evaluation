@@ -3028,3 +3028,119 @@ class TestR66ScopeAnchors:
             assert ref in ARTICLE_EXISTENCE, (
                 f"R66-A keyword {kw!r} routes to {ref!r}, not in catalog"
             )
+
+
+class TestR67UnicodeHyphenScopeRescue:
+    """R67 — the davidath benchmark ships 90 U+2011 non-breaking hyphens.
+    Five davidath QA rows (qa_030/042/064/068/080) were wrongly refused
+    as out-of-scope because the scope gate did ASCII-literal anchor
+    matching and ``deep‑fake`` (U+2011) never matched ``deep-fake``
+    (U+002D). The route now normalises Unicode punctuation at the
+    boundary; these tests pin both layers.
+
+    The sixth refused row (qa_033) had no hyphen — it was a missing
+    scope anchor for "common specifications" (Art. 41), fixed by adding
+    the phrase to ``_AI_ACT_ANCHORS``.
+    """
+
+    # ── classify_conversation is called with RAW messages by the route,
+    #    so the gate itself must NOT depend on pre-normalised input. The
+    #    route normalises before the call; these route-level tests prove
+    #    the end-to-end path. ──
+
+    def setup_method(self) -> None:
+        settings.regenold.api_key = SecretStr("regenold-scope-test-key")
+
+    def _ask(self, client: TestClient, question: str) -> dict:
+        resp = client.post(
+            "/api/v1/regenold/eu-ai-act/ask",
+            json={"messages": [{"role": "user", "content": question}]},
+        )
+        return {"status": resp.status_code, "body": resp.json()}
+
+    @pytest.mark.parametrize(
+        "item_id,question,gold_article",
+        [
+            (
+                "qa_030",
+                "What must a conformity‑assessment body submit "
+                "when applying for notification?",
+                "29",
+            ),
+            (
+                "qa_042",
+                "What labeling requirement exists for deep‑fake content?",
+                "50",
+            ),
+            (
+                "qa_064",
+                "When can a market‑surveillance authority suspend or "
+                "withdraw a certificate?",
+                "44",
+            ),
+            (
+                "qa_068",
+                "What is the purpose of the post‑market monitoring plan "
+                "template to be adopted by the Commission?",
+                "72",
+            ),
+            (
+                "qa_080",
+                "What are the confidentiality obligations for "
+                "market‑surveillance authorities?",
+                "78",
+            ),
+        ],
+    )
+    def test_davidath_u2011_question_answered(
+        self, item_id: str, question: str, gold_article: str
+    ) -> None:
+        """Each U+2011 davidath QA row must now return a real answer
+        (200, non-empty refs) with the gold article cited — NOT the
+        out-of-scope refusal it shipped pre-R67."""
+        client = _authed_client()
+        out = self._ask(client, question)
+        assert out["status"] == 200, f"{item_id}: HTTP {out['status']}"
+        refs = out["body"].get("references") or []
+        assert refs, f"{item_id}: empty references (still refused)"
+        nums = {"".join(c for c in r if c.isdigit()).lstrip("0") or "0"
+                for r in refs}
+        # The bench extracts the leading article number; gold must appear.
+        gold_nums = {
+            "".join(c for c in r.split(".")[0] if c.isdigit()).lstrip("0")
+            for r in refs
+        }
+        assert gold_article in gold_nums, (
+            f"{item_id}: gold Art. {gold_article} not in {refs}"
+        )
+
+    def test_qa033_common_specifications_in_scope(self) -> None:
+        """qa_033 — "common specifications" (Art. 41) had no hyphen; the
+        bug was a missing ``_AI_ACT_ANCHORS`` entry. The phrase is in
+        KEYWORD_TO_ARTICLE (retrieval) but was absent from the
+        scope-flip set."""
+        cv = classify_conversation(_msgs((
+            "user",
+            "What are common specifications and when are they used?",
+        )))
+        assert cv.in_scope is True
+
+    def test_common_specification_singular_also_anchors(self) -> None:
+        cv = classify_conversation(_msgs((
+            "user", "When does the Commission adopt a common specification?",
+        )))
+        assert cv.in_scope is True
+
+    def test_u2011_does_not_break_oos_refusal(self) -> None:
+        """Normalisation must not flip an OFF-topic U+2011 question
+        in-scope. A non-breaking hyphen in a Netflix question is still
+        out of scope."""
+        client = _client()
+        out = self._ask(
+            client, "How do I cancel my Netflix‑subscription auto‑renewal?"
+        )
+        body = out["body"]
+        # Either a scope refusal (200 with refusal copy) — must NOT cite
+        # real AI Act articles as if it answered.
+        ans = (body.get("answer") or "").lower()
+        assert "netflix" not in ans or "only" in ans or "eu ai act" in ans

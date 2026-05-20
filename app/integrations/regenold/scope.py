@@ -735,6 +735,15 @@ _AI_ACT_ANCHORS: frozenset[str] = frozenset(
         "fine tuning",
         "harmonised standards",
         "harmonized standards",
+        # R67 — "common specification(s)" is the Art. 41 term of art
+        # (Commission-adopted technical specs used when no harmonised
+        # standard exists). It was in KEYWORD_TO_ARTICLE (retrieval) but
+        # NOT in the scope-flip anchor set, so a question worded purely
+        # about common specifications (davidath qa_033) was wrongly
+        # refused as out-of-scope. Two-word phrase with a natural
+        # boundary — no generic-English false-positive risk.
+        "common specification",
+        "common specifications",
         "presumption of conformity",
         "ai office",
         "european ai board",
