@@ -509,19 +509,34 @@ def _try_extractive_answer(
         if candidate:
             return candidate
 
-    # R68 — targeted extraction for a matrix-dumped focused QA question.
-    # ``preferred_refs`` is supplied ONLY when the engine matrix-dumped
-    # a QA question that DOES carry a specific scope keyword anchor
-    # ("CE marking" → Art. 48). Extract the question-overlap sentence
-    # from that specific article regardless of qtype. This is NOT the
-    # "indiscriminate extraction" the qtype gate below guards against —
-    # the preferred ref IS the question's subject, so its sentence is
-    # the gold-shaped answer, and it keeps the answer prose consistent
-    # with the R68-contained reference set (no cite-without-describe).
+    # R68 / R69 — targeted answer for a matrix-dumped focused QA
+    # question. ``preferred_refs`` is supplied ONLY when the engine
+    # matrix-dumped a QA question that DOES carry a specific scope
+    # keyword anchor ("CE marking" → Art. 48).
+    #
+    # R69 (#2) — prefer the hand-authored KB stub summary of the
+    # specific article. The KB stub is regulator-voice and describes
+    # the article's CORE obligation (gold-shaped); BM25 sentence
+    # extraction can pick a niche later sub-clause (Art. 48(5)
+    # cross-reference instead of the Art. 48(1)-(3) core CE-marking
+    # duty — the davidath QA gold paragraph). Fall back to sentence
+    # extraction when no KB stub is registered for the article.
     if preferred_refs:
+        try:
+            from app.integrations.regenold.grounded_prose import (  # noqa: PLC0415
+                _first_clause as _gp_first_clause,
+                _kb_summary as _gp_kb_summary,
+            )
+        except Exception:  # noqa: BLE001 — fall back to sentence extraction
+            _gp_kb_summary = None  # type: ignore[assignment]
+            _gp_first_clause = None  # type: ignore[assignment]
         for ref in preferred_refs:
             if not ref:
                 continue
+            if _gp_kb_summary is not None and _gp_first_clause is not None:
+                _kb = _gp_kb_summary(ref, question)
+                if _kb:
+                    return _gp_first_clause(_kb, max_chars=240)
             sentence = select_answer_sentence(question, ref)
             if sentence:
                 return sentence

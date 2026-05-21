@@ -3206,6 +3206,26 @@ class TestR68MatrixDumpContainment:
         ans = (body.get("answer") or "").lower()
         assert "ce marking" in ans, f"answer not about CE marking: {ans[:120]}"
 
+    def test_r69_matrix_dump_qa_uses_kb_stub_prose(self) -> None:
+        """R69 (#2) — a matrix-dumped focused QA question answers with
+        the hand-authored KB stub of the contained article (the
+        gold-shaped CORE obligation), NOT a niche BM25-picked
+        sub-clause. The Art. 48 KB stub leads with "affixed visibly,
+        legibly, and indelibly"; the pre-R69 BM25 pick was the
+        Art. 48(5) "subject to other Union law" cross-reference."""
+        body = self._ask(
+            "What are the obligations of providers regarding the "
+            "provision of a CE marking for high‑risk AI systems?"
+        )
+        ans = (body.get("answer") or "").lower()
+        # KB-stub core-obligation tokens — not the niche sub-clause.
+        assert "visibly" in ans and "legibly" in ans, (
+            f"answer is not the KB-stub core obligation: {ans[:160]}"
+        )
+        assert "subject to other union law" not in ans, (
+            f"answer is the niche Art. 48(5) sub-clause: {ans[:160]}"
+        )
+
     def test_scenario_keeps_full_matrix(self) -> None:
         """A scenario-shape question ("We are a provider of a high-risk
         AI system…") must NOT be contained — its multi-article gold
