@@ -442,6 +442,7 @@ def _try_extractive_answer(
     *,
     question: str,
     engine_citations: tuple,
+    preferred_refs: tuple[str, ...] = (),
 ) -> str | None:
     """Run the Round-26 extractive-QA pass.
 
@@ -462,6 +463,14 @@ def _try_extractive_answer(
        indiscriminate extraction hurts ``ans_correctness_strict``
        more than it helps ``ans_conciseness`` on broader question
        types where the gold answer spans multiple clauses.
+
+    ``preferred_refs`` (R68) jumps a set of article refs to the front of
+    the extraction try-order. The route passes the scope gate's specific
+    keyword anchors here when the engine matrix-dumped a focused QA
+    question — so the extracted sentence comes from the question's
+    actual subject (Art. 48 for "CE marking") rather than the matrix's
+    generic top-of-chain risk-tier article (Art. 6). This keeps the
+    answer prose consistent with the R68-contained reference set.
 
     Returns ``None`` when no extractive sentence is found; callers fall
     back to the existing ``normalise_answer_for_regenold`` output.
@@ -499,6 +508,23 @@ def _try_extractive_answer(
         candidate = select_definition_sentence(question)
         if candidate:
             return candidate
+
+    # R68 — targeted extraction for a matrix-dumped focused QA question.
+    # ``preferred_refs`` is supplied ONLY when the engine matrix-dumped
+    # a QA question that DOES carry a specific scope keyword anchor
+    # ("CE marking" → Art. 48). Extract the question-overlap sentence
+    # from that specific article regardless of qtype. This is NOT the
+    # "indiscriminate extraction" the qtype gate below guards against —
+    # the preferred ref IS the question's subject, so its sentence is
+    # the gold-shaped answer, and it keeps the answer prose consistent
+    # with the R68-contained reference set (no cite-without-describe).
+    if preferred_refs:
+        for ref in preferred_refs:
+            if not ref:
+                continue
+            sentence = select_answer_sentence(question, ref)
+            if sentence:
+                return sentence
 
     # Sentence-level extraction is restricted to high-precision shapes.
     # Other question types defer to the engine's multi-sentence prose.
@@ -549,6 +575,7 @@ def _try_extractive_answer(
 
     # Try the first 3 citations in order — the engine ranks them by
     # relevance, so the first article yielding a sentence wins.
+    # (``preferred_refs`` is handled by the R68 block above.)
     seen_refs: set[str] = set()
     for c in engine_citations[:3]:
         ref = getattr(c, "article_ref", "") or ""
@@ -1639,6 +1666,31 @@ def regenold_eu_ai_act_ask(
     # cost is one regex sweep over the question (sub-µs).
     _is_classification_topic = _detect_classification_topic(question) is not None
 
+    # R68 — role×risk obligation-matrix dump detection.
+    #
+    # The engine's ``_deterministic_answer`` emits the FULL provider×risk
+    # obligation chain (8-15 ``role-obligation-<role>-<risk>-Art. N``
+    # citation nodes) whenever it resolves a role + risk tier. That is
+    # correct for SCENARIO questions (davidath scenario gold averages
+    # 9.8 articles) but badly over-cites focused QA questions: "What are
+    # the obligations of providers regarding CE marking for high-risk AI
+    # systems?" pulls the whole 15-article chain when the gold is just
+    # Art. 48, and the specific keyword anchor is buried mid-matrix and
+    # dropped by the 5-ref QA cap. The LLM-as-Judge fails those rows on
+    # the refs axis ("Articles cited but never described in prose").
+    #
+    # Computed here — BEFORE the extractive-QA pass and the candidate
+    # pipeline — so both the prose extraction (preferred-ref ordering)
+    # and the reference containment below can act on the same signal.
+    _engine_matrix_dump = (
+        sum(
+            1
+            for c in (rag_res.citations or [])
+            if str(getattr(c, "node_id", "") or "").startswith("role-obligation-")
+        )
+        >= 8
+    )
+
     # Normalise answer first so we can use it to filter orphan references.
     # Fixes UnboundLocalError in _drop_orphan_refs pass (P1 #4).
     # Round-36 issue #49: classification verdicts are pre-shaped by the
@@ -1683,6 +1735,14 @@ def regenold_eu_ai_act_ask(
         extracted = _try_extractive_answer(
             question=question,
             engine_citations=rag_res.citations or (),
+            # R68 — when the engine matrix-dumped a focused QA question,
+            # prefer the scope gate's specific keyword anchors so the
+            # extracted prose matches the contained reference set.
+            preferred_refs=(
+                tuple(scope.anchor_articles)
+                if _engine_matrix_dump and scope.anchor_articles
+                else ()
+            ),
         )
         if extracted:
             answer_text = extracted
@@ -2070,31 +2130,15 @@ def regenold_eu_ai_act_ask(
     # Regenold "minimal set of references" rubric.
     candidates = _collapse_parent_refs(candidates)
 
-    # R67 — QA scope-anchor priority before the ref-budget cut.
+    # R67 / R68 — QA scope-anchor priority + matrix-dump containment.
     #
-    # The R67 Unicode-hyphen normalisation made the engine see
-    # "high-risk" on focused QA questions it previously missed
-    # (``high‑risk`` with a U+2011). On a question like "obligations
-    # of providers regarding CE marking for high-risk AI systems" the
-    # engine now fires its role×risk obligation matrix and dumps the
-    # full provider×high-risk chain (Art. 6/8/9/10/11/.../48/49 — 15
-    # refs). The specific keyword anchor the question actually asks
-    # about (Art. 48 — "CE marking") lands mid-matrix and the tight
-    # 5-ref QA cap drops it.
-    #
-    # The scope gate already identified the precise anchor —
+    # The scope gate already identified the question's precise anchors —
     # ``scope.anchor_articles`` is keyword-derived and ordered most-
     # specific-first (``ce marking`` → Art. 48 ahead of the generic
-    # ``high-risk`` → Art. 6). For QA-shape questions whose candidate
-    # list overflows the cap, float those anchors to the front so the
-    # question's actual subject survives the cut. Scenarios are NOT
-    # touched — their multi-article gold (davidath avg 9.8) wants the
-    # full matrix, and the scenario budget (10-12) doesn't crowd.
-    if (
-        not _is_scenario_question
-        and scope.anchor_articles
-        and len(candidates) > _effective_max_refs
-    ):
+    # ``high-risk`` → Art. 6). Two QA-only passes use that signal; both
+    # leave SCENARIO questions untouched (their multi-article gold —
+    # davidath avg 9.8 — wants the full role×risk matrix).
+    if not _is_scenario_question and scope.anchor_articles:
         _scope_front: list[str] = []
         for _anchor in scope.anchor_articles:
             _anchor_wire = reference_from_article_ref(_anchor)
@@ -2104,7 +2148,33 @@ def regenold_eu_ai_act_ask(
                 and _anchor_wire not in _scope_front
             ):
                 _scope_front.append(_anchor_wire)
-        if _scope_front:
+        if _scope_front and _engine_matrix_dump:
+            # R68 — the engine matrix-dumped a focused QA question
+            # (15-article provider×risk chain). Restrict the reference
+            # set to the scope gate's specific keyword anchors — the
+            # question's actual subject — and drop the rest of the
+            # matrix. This lifts the LLM-as-Judge refs axis (no more
+            # "Articles cited but never described in prose") and
+            # davidath Ref Conciseness / Strict.
+            #
+            # Drop the bare risk-tier anchor (``Article 6``) when it is
+            # NOT the most-specific anchor: the scope gate orders
+            # anchors specific-first, so an Article 6 that isn't at
+            # index 0 came from a generic "high-risk" qualifier, not
+            # the question's subject. Keep it when it leads — then the
+            # question genuinely asks about high-risk classification.
+            _restricted = list(_scope_front)
+            if len(_restricted) > 1 and _restricted[0] != "Article 6":
+                _restricted = [
+                    r for r in _restricted if r != "Article 6"
+                ] or _restricted
+            # Never empty the answer (R16 finding — over-broad beats
+            # empty). ``_scope_front`` is non-empty here so this holds.
+            candidates = _restricted
+        elif _scope_front and len(candidates) > _effective_max_refs:
+            # R67 — no matrix dump, but the candidate list overflows
+            # the cap. Float scope anchors to the front so the
+            # specific answer survives the cut.
             _front_set = set(_scope_front)
             candidates = _scope_front + [
                 c for c in candidates if c not in _front_set

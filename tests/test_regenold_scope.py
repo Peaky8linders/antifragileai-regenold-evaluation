@@ -3144,3 +3144,77 @@ class TestR67UnicodeHyphenScopeRescue:
         # real AI Act articles as if it answered.
         ans = (body.get("answer") or "").lower()
         assert "netflix" not in ans or "only" in ans or "eu ai act" in ans
+
+
+class TestR68MatrixDumpContainment:
+    """R68 — the engine's role×risk obligation matrix dumps the full
+    provider×risk chain (15 ``role-obligation-`` citation nodes) when it
+    resolves a role + risk tier. For a focused QA question that names a
+    specific subject ("CE marking for high-risk AI" → gold Art. 48) the
+    matrix buries the specific anchor and the LLM-as-Judge fails the row
+    on "Articles cited but never described".
+
+    R68 contains the matrix for QA-shape questions: the reference set is
+    restricted to the scope gate's specific keyword anchors, and the
+    bare risk-tier anchor (Article 6) is dropped when a more-specific
+    anchor leads. Scenario questions keep the full matrix (their
+    multi-article gold wants it).
+    """
+
+    def setup_method(self) -> None:
+        settings.regenold.api_key = SecretStr("regenold-scope-test-key")
+
+    def _ask(self, question: str) -> dict:
+        resp = _authed_client().post(
+            "/api/v1/regenold/eu-ai-act/ask",
+            json={"messages": [{"role": "user", "content": question}]},
+        )
+        return resp.json()
+
+    def test_ce_marking_qa_contained_to_specific_article(self) -> None:
+        """qa_134 — "obligations regarding CE marking for high-risk AI"
+        → contained to Article 48 (the CE-marking article). Pre-R68 it
+        shipped the 5-article matrix head [6, 8, 9, 10, 11]."""
+        body = self._ask(
+            "What are the obligations of providers regarding the "
+            "provision of a CE marking for high‑risk AI systems?"
+        )
+        refs = body.get("references") or []
+        assert "Article 48" in refs, f"gold Art. 48 missing: {refs}"
+        # The generic risk-tier anchor must NOT crowd the specific one.
+        assert "Article 6" not in refs, f"bare Art. 6 not dropped: {refs}"
+        assert len(refs) <= 2, f"matrix not contained: {refs}"
+
+    def test_post_market_monitoring_qa_contained(self) -> None:
+        """qa_068 — post-market monitoring plan template → Article 72."""
+        body = self._ask(
+            "What is the purpose of the post‑market monitoring plan "
+            "template to be adopted by the Commission?"
+        )
+        refs = body.get("references") or []
+        assert "Article 72" in refs, f"gold Art. 72 missing: {refs}"
+        assert len(refs) <= 2, f"matrix not contained: {refs}"
+
+    def test_contained_qa_prose_describes_cited_article(self) -> None:
+        """The R68 prose extraction keeps the answer consistent with the
+        contained reference set — the answer must actually be about the
+        cited article, not the generic obligation-matrix boilerplate."""
+        body = self._ask(
+            "What are the obligations of providers regarding the "
+            "provision of a CE marking for high‑risk AI systems?"
+        )
+        ans = (body.get("answer") or "").lower()
+        assert "ce marking" in ans, f"answer not about CE marking: {ans[:120]}"
+
+    def test_scenario_keeps_full_matrix(self) -> None:
+        """A scenario-shape question ("We are a provider of a high-risk
+        AI system…") must NOT be contained — its multi-article gold
+        wants the full role×risk obligation chain."""
+        body = self._ask(
+            "We are a provider of a high-risk AI system used for "
+            "recruitment. What are all our obligations under the Act?"
+        )
+        refs = body.get("references") or []
+        # Scenario budget is 10-12; the matrix should survive well past
+        # the 2-ref QA containment cap.
+        assert len(refs) >= 4, f"scenario matrix wrongly contained: {refs}"
