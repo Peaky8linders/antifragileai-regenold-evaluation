@@ -126,19 +126,34 @@ Report: `docs/reviews/round76-2026-05-22-18-35-16-d4b9da7.md`.
 
 ### LLM-as-judge scorecard (Sonnet 4.6, 4 axes × 100 rows)
 
-The LLM-as-judge run (`evals/judge/runner.py` — 4 single-axis Sonnet
-prompts per row: correctness / refs-faithfulness / conciseness / tone)
-is run separately over the `representative-100-r76.json` sidecar. The
-local Max wrapper degraded under the 400-call volume, so the judge is
-re-run via the Anthropic SDK direct path (`--provider anthropic`).
-Judge results are reported as a follow-up to this PR.
+The top-100 was run TWO ways and LLM-judged each: **deterministic**
+(in-process, no Stage-2, no Neo4j) and **live** (production Railway
+endpoint via the Regenold key → Cloudflare tunnel → Claude Max, with
+Stage-2 polish + Neo4j 2-hop active). Judge pass-rate over non-error
+rows:
 
-Reproduce:
-```
-py -3.12 -m evals.judge.runner \
-  --bench-sidecar evals/bench/results/representative-100-r76.json \
-  --label r76-rep100 --provider anthropic --concurrency 6
-```
+| Judge axis | Deterministic | Live (production) |
+| ---------- | ------------- | ----------------- |
+| Correctness | 0.63 | 0.55 |
+| Refs-faithfulness | 0.23 | 0.20 |
+| Conciseness | 0.53 | 0.41 |
+| Tone | 0.85 | 0.76 |
+| Latency p50 | 31 ms | 17,126 ms |
+
+**The live Stage-2-polished path scores worse on every judge axis and
+is 550× slower.** Isolating Stage-2 within the live run (same judge):
+Stage-2 ON loses on refs (0.13 vs 0.25), conciseness (0.23 vs 0.55) and
+tone (0.65 vs 0.88), is flat on correctness, and is 3.5× slower
+(19.6 s vs 5.6 s p50).
+
+Full issue analysis + the prioritised fix plan for the next round are
+in **`.planning/R77-PLAN.md`** — headline issues: (I1) Stage-2 polish
+is net-negative, (I2) the `"high-risk"` keyword anchors to Art. 6 and
+shadows the specific obligation article on nearly every obligation
+question, (I3) production latency p50 17 s, (I4) refs-faithfulness 0.20
+is the floor axis.
+
+Reproduce: see `.planning/R77-PLAN.md`.
 
 ## 7. Verification gates
 
