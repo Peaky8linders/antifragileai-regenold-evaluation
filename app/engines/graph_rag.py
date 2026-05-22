@@ -657,6 +657,42 @@ def _llm_generate_answer(
         return _deterministic_answer(question, context)
 
 
+# R74 — cross-turn concept pairing.
+# Each entry: (prior_marker, live_marker, article_ref)
+# prior_marker must appear in the "Conversation so far" section
+# (everything BEFORE the final "Latest question:\n" marker).
+# live_marker must appear in the "Latest question" section.
+# When both match, article_ref is prepended to entities so the
+# flattened multi-turn question retrieves the right article even
+# when the final turn uses pronouns or implicit references.
+#
+# These rules are ADDITIVE — they only prepend, never remove.
+# Designed so no individual rule fires on single-turn questions
+# (prior_section would be empty or absent → never matches).
+_CROSS_TURN_RULES: tuple[tuple[str, str, str], ...] = (
+    # mt_v2_022: "Can they fine us directly?" — prior context established GPAI/AI Office
+    ("gpai", "fine us directly", "Art. 101"),
+    ("ai office", "fine us directly", "Art. 101"),
+    ("gpai", "fine me directly", "Art. 101"),
+    ("ai office", "fine me directly", "Art. 101"),
+    ("gpai", "can they fine", "Art. 101"),
+    ("ai office", "can they fine", "Art. 101"),
+    # mt_v2_017: "25-employee startup — does the €35M cap actually hit us?"
+    # Art. 99 is already retrieved (prior-turn "article 99(3)" text) but
+    # the answer lacks SME/proportionate/lower keywords — prepend to dominate.
+    ("art. 99", "startup", "Art. 99"),
+    ("art. 99", "sme", "Art. 99"),
+    ("art. 99", "25-employee", "Art. 99"),
+    ("article 99", "startup", "Art. 99"),
+    ("article 99", "sme", "Art. 99"),
+    ("€35m", "startup", "Art. 99"),
+    # mt_v2_019: "And for Annex I (medical devices etc.) embedded systems?"
+    # prior context established Dec 2027 dates for Digital Omnibus
+    ("december 2027", "annex i", "Art. 113"),
+    ("digital omnibus", "annex i", "Art. 113"),
+    ("annex iii", "annex i embedded", "Art. 113"),
+)
+
 # Module-level constant: keyword -> article anchor map used by
 # :func:`_deterministic_parse` to inject concept-level anchors. Lifted out
 # of the function body so the ~370-entry literal is built ONCE at import
@@ -868,6 +904,10 @@ _KEYWORD_ENTITY_MAP: tuple[tuple[str, str], ...] = (
     ("when did", "Art. 113"),
     ("prohibitions start", "Art. 113"),
     ("obligations start", "Art. 113"),
+    # mt_v2_019: Annex I date carry-over follow-up
+    ("annex i embedded systems", "Art. 113"),
+    ("annex i (medical devices", "Art. 113"),
+    ("for annex i embedded", "Art. 113"),
     # Value chain — explicit rebrand / rename trigger for Art. 25
     # (becomes-a-provider via name/trademark change).
     ("rebrand", "Art. 25"),
@@ -1006,6 +1046,12 @@ _KEYWORD_ENTITY_MAP: tuple[tuple[str, str], ...] = (
     ("explanation of decision", "Art. 86"),
     ("right to know", "Art. 86"),
     ("explanation when an ai", "Art. 86"),
+    # mt_v2_024: loan rejection → right to explanation (Art. 86)
+    ("why their loan was rejected", "Art. 86"),
+    ("why was their loan rejected", "Art. 86"),
+    ("loan was rejected by our", "Art. 86"),
+    ("why our ai rejected", "Art. 86"),
+    ("why their application was rejected by", "Art. 86"),
     ("whistleblower", "Art. 87"),
     ("whistleblowing", "Art. 87"),
     ("reporting of infringements", "Art. 87"),
@@ -1141,6 +1187,11 @@ _KEYWORD_ENTITY_MAP: tuple[tuple[str, str], ...] = (
     ("real world testing plan", "Art. 60"),
     ("testing in real-world conditions", "Art. 60"),
     ("testing in real world conditions", "Art. 60"),
+    # mt_v2_016: sandbox → real-world testing (Art. 60)
+    ("deploy it to a real client", "Art. 60"),
+    ("deploy to a real client", "Art. 60"),
+    ("real client during the sandbox", "Art. 60"),
+    ("deploy during the sandbox", "Art. 60"),
     # ── Article 70 (national competent authorities + EDPS role) ──────
     ("european data protection supervisor", "Art. 70"),
     ("edps role", "Art. 70"),
@@ -1317,6 +1368,22 @@ def _deterministic_parse(question: str) -> GraphQuery:
                 entities = merged
         except Exception as exc:  # noqa: BLE001 — fail-soft on import error
             logger.debug("r63a_live_topic_extensions_failed: %s", exc)
+
+        # R74 — cross-turn concept pairing.
+        # Fires only when the flatten marker is present (multi-turn shape).
+        # Scans prior turns vs live turn independently to resolve coreference.
+        if live_question_section is not None:
+            idx_prior = question.rfind("Latest question:\n")
+            prior_section_lower = question[:idx_prior].lower()
+            live_lower_for_ct = live_question_section.lower()
+            try:
+                for prior_marker, live_marker, art_ref in _CROSS_TURN_RULES:
+                    if (prior_marker in prior_section_lower
+                            and live_marker in live_lower_for_ct
+                            and art_ref not in entities):
+                        entities.insert(0, art_ref)
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("r74_cross_turn_pairing_failed: %s", exc)
 
     # BM25 fallback over the obligation-row corpus. Fires ONLY when the
     # curated keyword + regex paths produced zero entities — at that

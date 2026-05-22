@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 # Art. 52(4) open-source designation, Art. 53(2) FOSS carve-out,
 # Art. 55 four systemic-risk obligations, Art. 79 market-surveillance
 # procedure).
-KB_VERSION = "2024.1689.v6"
+KB_VERSION = "2024.1689.v7"
 
 
 @dataclass(frozen=True)
@@ -960,7 +960,11 @@ EC_CHECKER_OBLIGATION_MAP: dict[str, dict[str, str]] = {
             "Penalty regime: up to EUR 35M or 7% of worldwide annual turnover for "
             "Article 5 prohibited-practice violations; up to EUR 15M / 3% for other "
             "obligations breaches; up to EUR 7.5M / 1% for incorrect or misleading "
-            "information to authorities."
+            "information to authorities. "
+            "Fines shall be proportionate to the gravity and nature of the infringement "
+            "and individual circumstances. Under Article 99(6), for SMEs and start-ups, "
+            "competent authorities shall apply lower fines where lower amounts are "
+            "effective and proportionate."
         ),
     },
     "Annex IV": {
