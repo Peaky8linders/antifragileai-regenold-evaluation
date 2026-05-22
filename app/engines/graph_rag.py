@@ -712,6 +712,12 @@ _KEYWORD_ENTITY_MAP: tuple[tuple[str, str], ...] = (
     # Transparency / deepfakes / chatbots (Art. 50)
     ("deepfake", "Art. 50"),
     ("deep fake", "Art. 50"),
+    # R76 — davidath qa_042 ("deep-fake content" labelling) shipped an
+    # ASCII-hyphenated form. The engine's keyword scan is a literal
+    # substring match with no hyphen normalisation (unlike scope.py's
+    # `_NORMALIZED_KEYWORD_TO_ARTICLE`), so "deepfake"/"deep fake" both
+    # missed it and the engine never surfaced Art. 50 as a candidate.
+    ("deep-fake", "Art. 50"),
     ("ai-generated content", "Art. 50"),
     ("ai generated content", "Art. 50"),
     ("synthetic content", "Art. 50"),
@@ -746,6 +752,11 @@ _KEYWORD_ENTITY_MAP: tuple[tuple[str, str], ...] = (
     ("ai board composition", "Art. 65"),
     # Market surveillance / penalties (Arts. 74/99)
     ("market surveillance", "Art. 74"),
+    # R76 — davidath qa_080 ("confidentiality obligations for market-
+    # surveillance authorities") has no engine keyword anchor; Art. 78
+    # (Confidentiality) is the operative article. Without this the
+    # engine ranked market-surveillance neighbours over Art. 78.
+    ("confidentiality", "Art. 78"),
     ("serious incident", "Art. 73"),
     ("incident reporting", "Art. 73"),
     ("fines", "Art. 99"),
