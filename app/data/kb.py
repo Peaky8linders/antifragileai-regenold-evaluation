@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 # Art. 52(4) open-source designation, Art. 53(2) FOSS carve-out,
 # Art. 55 four systemic-risk obligations, Art. 79 market-surveillance
 # procedure).
-KB_VERSION = "2024.1689.v7"
+KB_VERSION = "2024.1689.v8"
 
 
 @dataclass(frozen=True)
@@ -980,7 +980,9 @@ EC_CHECKER_OBLIGATION_MAP: dict[str, dict[str, str]] = {
         "dimension": "risk_mgmt",
         "summary": (
             "Eight high-risk use-case categories: biometrics, critical infrastructure, "
-            "education + vocational training, employment + worker management, "
+            "education + vocational training, employment + worker management "
+            "(recruitment, task allocation, promotion and termination decisions, and "
+            "performance evaluation affecting workers' fundamental rights), "
             "essential private + public services, law enforcement, migration + asylum "
             "+ border control, and administration of justice + democratic processes."
         ),
