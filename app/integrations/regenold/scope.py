@@ -1361,6 +1361,11 @@ KEYWORD_TO_ARTICLE: dict[str, str] = {
     "european ai board": "Art. 65",
     "national competent authority": "Art. 70",
     "market surveillance": "Art. 74",
+    # R76 — Art. 78 is "Confidentiality"; davidath qa_080 asks about
+    # confidentiality obligations and surfaced market-surveillance
+    # neighbours instead. Listed in _SCOPE_WEAK_KEYWORDS below so a bare
+    # "confidentiality" cannot flip an off-topic question in-scope.
+    "confidentiality": "Art. 78",
     "withdrawal": "Art. 79",
     "fines": "Art. 99",
     "penalties": "Art. 99",
@@ -1961,6 +1966,11 @@ _SCOPE_WEAK_KEYWORDS: frozenset[str] = frozenset({
     "high risk in vitro",
     "high risk in-vitro",
     "notified body certificate",
+    # R76 — "confidentiality" anchors Art. 78 for RETRIEVAL but is a
+    # common English noun; it must not flip the scope gate in-scope on
+    # its own (an in-scope AI Act confidentiality question always pairs
+    # it with "ai" / "provider" / "market surveillance" / "Article N").
+    "confidentiality",
 })
 
 
