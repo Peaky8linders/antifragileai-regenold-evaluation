@@ -551,77 +551,118 @@ def _keywords(text: str) -> list[str]:
 
 
 def run_wire(
-    selection: list[PoolItem], *, verbose: bool = False
+    selection: list[PoolItem],
+    *,
+    verbose: bool = False,
+    endpoint: str | None = None,
+    api_key: str | None = None,
 ) -> list[dict[str, Any]]:
     """Run every selected item through the wire; emit judge-ready rows.
+
+    Two modes:
+
+    * ``endpoint`` unset — in-process FastAPI ``TestClient`` (deterministic,
+      no network, the reproducible default).
+    * ``endpoint`` set — POST to the LIVE Regenold endpoint over HTTP
+      (production path: Railway -> Cloudflare named tunnel -> the Claude
+      Max wrapper). ``api_key`` is sent as the ``X-Regenold-Api-Key``
+      header. Transient Cloudflare-tunnel idle-kills are absorbed by
+      ``_http_retry.post_json_with_retry``.
 
     Each row carries the fields ``evals.judge.runner`` + ``evals.bench.
     metrics`` both consume: ``id, category, question, expected_keywords,
     expected_refs, predicted_answer, pred_refs, gold_answer,
-    gold_articles, latency_ms``.
+    gold_articles, http_status, latency_ms``.
     """
     rows: list[dict[str, Any]] = []
-    prev_key = settings.regenold.api_key
-    settings.regenold.api_key = SecretStr(_EVAL_KEY)
-    try:
-        with TestClient(
-            app, headers={"X-Regenold-Api-Key": _EVAL_KEY}
-        ) as client:
-            for idx, it in enumerate(selection):
-                if it.kind == "multiturn":
-                    # Turn 1, then feed its answer back as the assistant
-                    # turn before posting the coreferent follow-up.
-                    body1, lat1, _st1 = _ask(client, [it.messages[0]])
-                    answer1 = str(body1.get("answer") or "")
-                    history = [
-                        it.messages[0],
-                        {"role": "assistant", "content": answer1},
-                        it.messages[1],
-                    ]
-                    body, lat2, status = _ask(client, history)
-                    latency = lat1 + lat2
-                else:
-                    body, latency, status = _ask(
-                        client, [{"role": "user", "content": it.question}]
-                    )
-                answer = str(body.get("answer") or "")
-                refs = body.get("references") or []
-                if not isinstance(refs, list):
-                    refs = []
-                expected_refs = [f"Article {a}" for a in it.gold_articles]
-                rows.append({
-                    "id": it.item_id,
-                    "category": it.category,
-                    "kind": it.kind,
-                    "question": it.question,
-                    "representativeness": round(it.representativeness, 2),
-                    "expected_keywords": _keywords(it.gold_answer),
-                    "expected_refs": expected_refs,
-                    "gold_answer": it.gold_answer,
-                    "gold_articles": it.gold_articles,
-                    "predicted_answer": answer,
-                    "answer_preview": answer[:240],
-                    "pred_refs": [str(r) for r in refs],
-                    "http_status": status,
-                    "latency_ms": round(latency, 2),
-                })
-                if verbose:
-                    flag = "" if status == 200 else f"  !! HTTP-{status}"
-                    print(
-                        f"[wire] {idx + 1}/{len(selection)} {it.item_id:<10} "
-                        f"cat={it.category:<22} refs={len(refs)} "
-                        f"{latency:.0f}ms{flag}",
-                        flush=True,
-                    )
-            non_200 = sum(1 for r in rows if r.get("http_status") != 200)
-            if non_200:
+
+    def _process(asker) -> None:
+        for idx, it in enumerate(selection):
+            if it.kind == "multiturn":
+                # Turn 1, then feed its answer back as the assistant
+                # turn before posting the coreferent follow-up.
+                body1, lat1, _st1 = asker([it.messages[0]])
+                answer1 = str(body1.get("answer") or "")
+                history = [
+                    it.messages[0],
+                    {"role": "assistant", "content": answer1},
+                    it.messages[1],
+                ]
+                body, lat2, status = asker(history)
+                latency = lat1 + lat2
+            else:
+                body, latency, status = asker(
+                    [{"role": "user", "content": it.question}]
+                )
+            answer = str(body.get("answer") or "")
+            refs = body.get("references") or []
+            if not isinstance(refs, list):
+                refs = []
+            # The wire's `reasoning` field — when the endpoint is hit
+            # with `?include_reasoning=true` this carries the R50
+            # ReasoningTrace JSON (scope verdict, anchors, retrieval
+            # path, stage2_landed, confidence). Captured for diagnostics;
+            # the judge + metrics ignore it.
+            rows.append({
+                "id": it.item_id,
+                "category": it.category,
+                "kind": it.kind,
+                "question": it.question,
+                "representativeness": round(it.representativeness, 2),
+                "expected_keywords": _keywords(it.gold_answer),
+                "expected_refs": [f"Article {a}" for a in it.gold_articles],
+                "gold_answer": it.gold_answer,
+                "gold_articles": it.gold_articles,
+                "predicted_answer": answer,
+                "answer_preview": answer[:240],
+                "pred_refs": [str(r) for r in refs],
+                "reasoning": body.get("reasoning"),
+                "http_status": status,
+                "latency_ms": round(latency, 2),
+            })
+            if verbose:
+                flag = "" if status == 200 else f"  !! HTTP-{status}"
                 print(
-                    f"[wire] WARNING: {non_200}/{len(rows)} rows returned a "
-                    f"non-200 HTTP status — scored as empty-answer rows.",
+                    f"[wire] {idx + 1}/{len(selection)} {it.item_id:<10} "
+                    f"cat={it.category:<22} refs={len(refs)} "
+                    f"{latency:.0f}ms{flag}",
                     flush=True,
                 )
-    finally:
-        settings.regenold.api_key = prev_key
+        non_200 = sum(1 for r in rows if r.get("http_status") != 200)
+        if non_200:
+            print(
+                f"[wire] WARNING: {non_200}/{len(rows)} rows returned a "
+                f"non-200 HTTP status — scored as empty-answer rows.",
+                flush=True,
+            )
+
+    if endpoint:
+        # Live production path — no settings mutation, real HTTP.
+        from evals.bench._http_retry import (  # noqa: PLC0415
+            post_json_with_retry,
+        )
+
+        def _asker(messages: list[dict[str, str]]):
+            body, latency, status, _err, _att, _retried = (
+                post_json_with_retry(
+                    endpoint, messages, api_key, timeout=180.0,
+                )
+            )
+            return body, latency, status
+
+        if verbose:
+            print(f"[wire] LIVE endpoint: {endpoint}", flush=True)
+        _process(_asker)
+    else:
+        prev_key = settings.regenold.api_key
+        settings.regenold.api_key = SecretStr(_EVAL_KEY)
+        try:
+            with TestClient(
+                app, headers={"X-Regenold-Api-Key": _EVAL_KEY}
+            ) as client:
+                _process(lambda messages: _ask(client, messages))
+        finally:
+            settings.regenold.api_key = prev_key
     return rows
 
 
@@ -664,8 +705,15 @@ def run(
     limit: int | None = None,
     use_llm: bool = True,
     verbose: bool = False,
+    endpoint: str | None = None,
+    api_key: str | None = None,
 ) -> dict[str, Any]:
     """Build the pool, select 100, run the wire, persist a sidecar.
+
+    When ``endpoint`` is set the wire run hits the LIVE Regenold
+    endpoint (production: Railway -> Cloudflare tunnel -> Claude Max),
+    authenticated with ``api_key``. Otherwise it uses the in-process
+    deterministic TestClient.
 
     Returns the persisted payload (sidecar path under ``sidecar_path``).
     """
@@ -677,7 +725,9 @@ def run(
     mt_quota = _MULTITURN_QUOTA if limit is None else max(2, target // 5)
     selection = select_representative(pool, n=target, mt_quota=mt_quota)
 
-    rows = run_wire(selection, verbose=verbose)
+    rows = run_wire(
+        selection, verbose=verbose, endpoint=endpoint, api_key=api_key,
+    )
     scores = score_rows(rows)
     finished_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
@@ -695,6 +745,7 @@ def run(
         "pool_size": len(pool),
         "selected": len(selection),
         "selection_method": "stratified-proportional, order-based (no RNG)",
+        "wire_mode": f"live:{endpoint}" if endpoint else "testclient-deterministic",
         "category_distribution": cat_dist,
         "scores": scores,
         "rows": rows,
@@ -764,6 +815,18 @@ def main(argv: list[str] | None = None) -> int:
         "--no-llm", action="store_true",
         help="Skip LLM categorisation; use the deterministic fallback.",
     )
+    parser.add_argument(
+        "--endpoint", default=None,
+        help=(
+            "LIVE Regenold endpoint URL. When set, the wire run POSTs "
+            "over HTTP (Railway -> Cloudflare tunnel -> Claude Max) "
+            "instead of the in-process TestClient."
+        ),
+    )
+    parser.add_argument(
+        "--api-key", default=None,
+        help="X-Regenold-Api-Key value for the live endpoint.",
+    )
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args(argv)
 
@@ -772,6 +835,8 @@ def main(argv: list[str] | None = None) -> int:
         limit=args.limit,
         use_llm=not args.no_llm,
         verbose=args.verbose,
+        endpoint=args.endpoint,
+        api_key=args.api_key,
     )
     print(_format(payload))
     return 0
