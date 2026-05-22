@@ -297,6 +297,165 @@ def summary_for_chapter(chapter: str) -> Optional[str]:
     return CHAPTER_SUMMARY.get(chapter)
 
 
+def candidate_chapters_for_query(
+    question: str,
+    intent_label: str | None = None,
+) -> list[str]:
+    """Pre-retrieval chapter router — returns 1-3 candidate chapters.
+
+    Unlike :func:`chapter_for_query` (a last-resort fallback that returns
+    a single chapter when retrieval already failed), this function is
+    designed to run BEFORE BM25 to scope the search to the most likely
+    chapter(s). Called by the PageIndex-style hierarchical filter in
+    :func:`~app.engines.graph_rag._deterministic_parse`.
+
+    Returns a sorted list of Roman numeral chapter IDs when the query has
+    a clear chapter signal. Returns ``[]`` when the query is too broad or
+    cross-chapter (full-corpus BM25 is then used unchanged).
+
+    Scope guard: if ≥ 4 chapters are identified, returns ``[]`` — the
+    routing is uncertain and scoping would risk cutting relevant articles.
+
+    Resolution order:
+    1. Broad-keyword scan (high-precision phrases from
+       :data:`_BROAD_KEYWORD_CHAPTER_MAP`) — first hit adds one chapter.
+    2. Risk/domain marker scan — adds chapters for recognised patterns.
+    3. Intent label via :data:`_INTENT_CHAPTER_MAP` and local extension.
+    4. Scope guard — returns ``[]`` when ≥ 4 chapters identified.
+    """
+    chapters: set[str] = set()
+    low = question.lower() if question else ""
+
+    # 1. High-precision broad-keyword scan (first hit wins, then continue
+    #    marker scan for multi-chapter queries like "prohibited high-risk AI")
+    if low:
+        for keyword, chapter in _BROAD_KEYWORD_CHAPTER_MAP:
+            if keyword in low:
+                chapters.add(chapter)
+                break  # one high-precision anchor is enough
+
+    # 2. Risk/domain marker scan (additive — multiple can fire)
+    if low:
+        if any(m in low for m in (
+            "prohibited", "banned", "forbidden", "subliminal", "manipulat",
+            "social scoring", "biometric identification", "biometric id",
+            "real-time remote biometric",
+        )):
+            chapters.add("II")
+
+        if any(m in low for m in (
+            "high-risk", "high risk", "annex iii", "annex 3",
+            "safety component", "hrais", "risk management",
+            "technical documentation", "post-market monitoring plan",
+            "conformity assessment", "ce marking", "ce mark",
+            "fundamental rights impact", "fria",
+        )):
+            chapters.add("III")
+
+        if any(m in low for m in (
+            "general-purpose ai", "general purpose ai", "gpai",
+            "foundation model", "systemic risk model",
+            "training data summary", "copyright", "code of practice",
+        )):
+            chapters.add("V")
+
+        if any(m in low for m in (
+            "transparency obligation", "deepfake", "deep fake",
+            "synthetic media", "emotion recognition",
+            "biometric categorisation", "chatbot disclosure",
+        )):
+            chapters.add("IV")
+
+        if any(m in low for m in (
+            "administrative fine", "maximum fine", "sanction",
+            "penalty", "penalties", "fined",
+        )):
+            chapters.add("XII")
+
+        if any(m in low for m in (
+            "post-market monitoring", "post market monitoring",
+            "serious incident", "market surveillance",
+            "market withdrawal", "enforcement action",
+        )):
+            chapters.add("IX")
+
+        if any(m in low for m in (
+            "regulatory sandbox", "real-world testing",
+            "sme", "small medium enterprise", "start-up", "startup",
+            "innovation measure",
+        )):
+            chapters.add("VI")
+
+        if any(m in low for m in (
+            "ai office", "ai board", "european artificial intelligence board",
+            "national competent authority", "notifying authority",
+            "governance",
+        )):
+            chapters.add("VII")
+
+        if any(m in low for m in (
+            "eu database", "eudb", "register high-risk", "registration",
+        )):
+            chapters.add("VIII")
+
+        if any(m in low for m in (
+            "entry into force", "entry-into-force", "applicability date",
+            "transitional", "digital omnibus", "phased timeline",
+            "staged applicability",
+        )):
+            chapters.add("XIII")
+
+        if any(m in low for m in (
+            "delegated act", "comitology", "implementing act",
+            "committee procedure",
+        )):
+            chapters.add("XI")
+
+        if any(m in low for m in (
+            "code of conduct", "voluntary application",
+            "commission guidelines",
+        )):
+            chapters.add("X")
+
+        # Definitions / scope / general questions — Chapter I +
+        # Chapter III (Art. 3 carries key HR-AI definitions)
+        if any(m in low for m in (
+            "definition of ai", "definition of an ai",
+            "what is an ai system", "what counts as",
+            "scope of the", "subject matter",
+            "ai literacy",
+        )):
+            chapters.add("I")
+
+    # 3. Intent-label routing (catches intents the marker scan misses)
+    _LOCAL_INTENT_MAP: dict[str, str] = {
+        "article_lookup":       "I",
+        "risk_assessment":      "III",
+        "obligation_check":     "III",
+        "general_compliance":   "",   # too broad — no chapter signal
+        "gap_analysis":         "",   # too broad — no chapter signal
+        "cross_framework":      "",   # too broad — no chapter signal
+    }
+    if intent_label:
+        # Try the local map first (graph_rag intent labels)
+        local_chapter = _LOCAL_INTENT_MAP.get(intent_label, "MISSING")
+        if local_chapter == "MISSING":
+            # Fall back to chapter_summaries' built-in intent map
+            mapped = _INTENT_CHAPTER_MAP.get(intent_label)
+            if mapped:
+                chapters.add(mapped)
+        elif local_chapter:  # non-empty string → valid chapter
+            chapters.add(local_chapter)
+
+    # 4. Scope guard — too many chapters = uncertain routing
+    if len(chapters) >= 4:
+        return []
+
+    # Discard the empty sentinel (used to signal "no chapter")
+    chapters.discard("")
+    return sorted(chapters)
+
+
 def primary_anchors_for_chapter(chapter: str) -> tuple[str, ...]:
     """Return the load-bearing articles for ``chapter``. Empty if unknown."""
     return CHAPTER_PRIMARY_ANCHORS.get(chapter, ())
@@ -361,6 +520,7 @@ _self_check()
 __all__ = [
     "CHAPTER_SUMMARY",
     "CHAPTER_PRIMARY_ANCHORS",
+    "candidate_chapters_for_query",
     "chapter_for_query",
     "summary_for_chapter",
     "primary_anchors_for_chapter",

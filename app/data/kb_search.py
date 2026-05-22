@@ -814,5 +814,109 @@ def _index_stats() -> dict[str, int]:
     return {"total": len(index.docs), "kb": kb, "ontology": ontology}
 
 
+def top_articles_by_relevance_in_chapters(
+    question: str,
+    chapters: list[str],
+    *,
+    k: int = 5,
+    min_score: float = 1.0,
+) -> list[str]:
+    """Chapter-scoped BM25 — like :func:`top_articles_by_relevance` but
+    restricts scoring to documents whose article key belongs to one of
+    ``chapters`` (Roman numeral strings, e.g. ``["II", "III"]``).
+
+    Annexes whose chapter mapping is ``None`` in
+    :data:`~app.data.eu_ai_act_corpus.ARTICLE_CHAPTER` are included when
+    ``"III"`` is in the requested chapters (Annex I, II, III — the
+    high-risk classification annexes) or always when the query could
+    touch any annex (annex_fallback).
+
+    Falls back transparently to the full-corpus
+    :func:`top_articles_by_relevance` when the filtered candidate set is
+    empty or ``chapters`` is empty.
+
+    PageIndex rationale: pre-scoping BM25 to the relevant chapter(s)
+    removes inter-chapter noise (e.g. Art. 11 technical-docs proxy-matching
+    a query about Art. 50 transparency) and lifts top-1 precision without
+    changing the algorithm — same BM25 math, smaller candidate pool.
+    """
+    if not chapters or not question:
+        return top_articles_by_relevance(question, k=k, min_score=min_score)
+
+    from app.data.eu_ai_act_corpus import ARTICLE_CHAPTER  # noqa: PLC0415
+
+    chapter_set = set(chapters)
+
+    # Build the allowed article set from ARTICLE_CHAPTER.
+    # Annexes map to None — include them when Chapter III is requested
+    # (Annex I safety-component list, Annex II harmonisation legislation,
+    # Annex III high-risk use-case list are structurally part of Chapter III)
+    # or when a query keyword hints at an annex directly.
+    annex_keys = {k for k, v in ARTICLE_CHAPTER.items() if v is None and k.startswith("Annex")}
+    chapter_annex_inclusion: set[str] = set()
+    if "III" in chapter_set:
+        chapter_annex_inclusion.update({"Annex I", "Annex II", "Annex III", "Annex IV"})
+    if "V" in chapter_set:
+        chapter_annex_inclusion.update({"Annex IX", "Annex X", "Annex XI", "Annex XII"})
+
+    allowed_articles: set[str] = {
+        art_key
+        for art_key, ch in ARTICLE_CHAPTER.items()
+        if ch in chapter_set
+    } | chapter_annex_inclusion
+
+    if not allowed_articles:
+        return top_articles_by_relevance(question, k=k, min_score=min_score)
+
+    query_tokens = _tokenize(question)
+    if not query_tokens:
+        return []
+
+    index = _build_index()
+    if not index.docs:
+        return []
+
+    _SOURCE_WEIGHT = {
+        "kb": 1.0,
+        "ontology": 1.0,
+        "corpus": 0.6,
+        "definition": 0.8,
+    }
+    _MIN_SCORE_FACTOR = 0.4
+    _MIN_ABSOLUTE_RESCUE = 0.5
+
+    # Score only docs within the allowed article set.
+    raw_scores: list[tuple[int, str, float]] = []
+    best_raw = 0.0
+    for doc_idx, article_ref in enumerate(index.article_refs):
+        if article_ref not in allowed_articles:
+            continue
+        raw = _score(index, doc_idx, query_tokens)
+        if raw > best_raw:
+            best_raw = raw
+        raw_scores.append((doc_idx, article_ref, raw))
+
+    # Fall back to full corpus if no docs matched the chapter filter.
+    if not raw_scores:
+        return top_articles_by_relevance(question, k=k, min_score=min_score)
+
+    relative_floor = (
+        best_raw * _MIN_SCORE_FACTOR
+        if best_raw >= _MIN_ABSOLUTE_RESCUE
+        else float("inf")
+    )
+
+    best: dict[str, float] = {}
+    for doc_idx, article_ref, raw in raw_scores:
+        w = _SOURCE_WEIGHT.get(index.sources[doc_idx], 1.0)
+        weighted = raw * w
+        if weighted >= min_score or raw >= relative_floor:
+            if article_ref not in best or weighted > best[article_ref]:
+                best[article_ref] = weighted
+
+    sorted_refs = sorted(best, key=lambda r: best[r], reverse=True)
+    return sorted_refs[:k]
+
+
 # Public API
-__all__ = ["top_articles_by_relevance", "relevance_score"]
+__all__ = ["top_articles_by_relevance", "top_articles_by_relevance_in_chapters", "relevance_score"]

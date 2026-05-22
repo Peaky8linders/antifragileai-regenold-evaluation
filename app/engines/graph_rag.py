@@ -1335,13 +1335,46 @@ def _deterministic_parse(question: str) -> GraphQuery:
     # zero-precision fallback.
     if not entities:
         try:
-            from app.data.kb_search import top_articles_by_relevance
-            # Issue #54 — drop the absolute floor to 1.0. The
-            # ``top_articles_by_relevance`` helper now honours a
-            # relative-to-best cutoff too, so a 1-2 token query whose
-            # top raw score sits below 2.5 still surfaces a clear
-            # winner instead of returning empty.
-            bm25_hits = top_articles_by_relevance(question, k=3, min_score=1.0)
+            from app.data.chapter_summaries import candidate_chapters_for_query  # noqa: PLC0415
+            from app.data.kb_search import (  # noqa: PLC0415
+                top_articles_by_relevance,
+                top_articles_by_relevance_in_chapters,
+            )
+            # PageIndex-style hierarchical pre-filter: scope BM25 to the
+            # 1-2 most likely chapters before searching the full 135-doc
+            # corpus. When the query has a clear chapter signal (e.g.
+            # "How long must records be kept?" → Chapter III / IX), this
+            # removes inter-chapter noise and lifts top-1 precision.
+            # Falls back to full-corpus search when routing is uncertain
+            # (returns [] from candidate_chapters_for_query).
+            #
+            # Scoped path uses k=5 (vs full-corpus k=3) because the
+            # candidate pool is smaller — higher k does not add noise
+            # when the scope is already narrowed to 1 chapter's docs.
+            candidate_chapters = candidate_chapters_for_query(
+                question, intent_label=intent
+            )
+            if candidate_chapters:
+                bm25_hits = top_articles_by_relevance_in_chapters(
+                    question, candidate_chapters, k=5, min_score=1.0
+                )
+                logger.debug(
+                    "chapter_scoped_bm25: chapters=%s hits=%s",
+                    candidate_chapters, bm25_hits,
+                )
+                # If the scoped search yields nothing, fall through to
+                # full-corpus BM25 as a safety net.
+                if not bm25_hits:
+                    bm25_hits = top_articles_by_relevance(
+                        question, k=3, min_score=1.0
+                    )
+            else:
+                # Issue #54 — drop the absolute floor to 1.0. The
+                # ``top_articles_by_relevance`` helper honours a
+                # relative-to-best cutoff too, so a 1-2 token query
+                # whose top raw score sits below 2.5 still surfaces a
+                # clear winner instead of returning empty.
+                bm25_hits = top_articles_by_relevance(question, k=3, min_score=1.0)
             for ref in bm25_hits:
                 if ref not in entities:
                     entities.append(ref)
