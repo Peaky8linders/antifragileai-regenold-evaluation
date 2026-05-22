@@ -19,8 +19,9 @@ balanced 100-row subset that:
     sees how our wire answers it — hence "no bias"),
   * guarantees multi-turn coverage (a fixed quota of conversation
     chains),
-  * is fully reproducible (deterministic stratified sampling on a
-    fixed seed; the LLM categorisation is cached to disk).
+  * is fully reproducible (the stratified selection is purely
+    order-based — sorted by representativeness then item id, no RNG;
+    the LLM categorisation is cached to disk).
 
 ## Pipeline
 
@@ -66,10 +67,6 @@ _DATA_DIR = Path(__file__).parent / "data"
 _RESULTS_DIR = Path(__file__).parent / "results"
 _CACHE_PATH = _DATA_DIR / "representative_pool_categorized.json"
 
-# Deterministic seed — the stratified sampler and multi-turn chain
-# selection are seeded so a re-run reproduces the exact 100 rows.
-_SEED = 20260522
-
 # Single-turn taxonomy. Every davidath QA + scenario maps to exactly one.
 # Multi-turn chains carry the dedicated ``multi_turn`` category.
 _TAXONOMY: tuple[str, ...] = (
@@ -110,35 +107,20 @@ class PoolItem:
     category: str = ""
     representativeness: float = 0.0
     source: str = "davidath"
+    # For multi-turn items: the pool id of the scenario the chain was
+    # built from. Lets categorize_pool read the right scenario's
+    # representativeness rating (the build stride means mt_N is NOT
+    # built from sc_N).
+    source_scenario_id: str = ""
 
 
 # ── Pool construction ────────────────────────────────────────────────────
 
 
-def _scenario_to_question(s: dict[str, Any]) -> str:
-    """Synthesize a partner-style classification question from a scenario.
-
-    Mirrors ``evals.bench.runner._scenario_to_question`` exactly so the
-    representative sample exercises the identical wire shape.
-    """
-    role = (s.get("role") or "Provider").strip()
-    intended_use = (s.get("intended_use") or "").strip()
-    system_type = (s.get("system_type") or "").strip()
-    domain = (s.get("domain") or "").strip()
-    parts = [f"We are a {role.lower()}"]
-    if system_type:
-        parts.append(f"offering a {system_type.lower()}")
-    if intended_use:
-        parts.append(f"intended to {intended_use.lower()}")
-    if domain:
-        parts.append(f"in the {domain.lower()} domain")
-    prelude = ", ".join(parts) + "."
-    return (
-        f"{prelude} Under the EU AI Act, what is the risk classification "
-        f"of this system and what are the key obligations on us as "
-        f"{role.lower()}?"
-    )
-
+# The scenario->question conversion lives in evals.bench.dataset
+# (``scenario_to_question``) so the davidath runner + this benchmark
+# share one canonical question shape (no drift). Used via
+# ``bench_dataset.scenario_to_question`` below.
 
 _MULTITURN_FOLLOWUP = (
     "Given that classification, what are the key obligations we must "
@@ -187,7 +169,7 @@ def build_pool() -> list[PoolItem]:
             PoolItem(
                 item_id=f"sc_{i:03d}",
                 kind="scenario",
-                question=_scenario_to_question(s),
+                question=bench_dataset.scenario_to_question(s),
                 gold_answer=gold_answer,
                 gold_articles=gold_articles,
                 category="",  # categorised by the LLM pass
@@ -204,11 +186,14 @@ def build_pool() -> list[PoolItem]:
             rel = s.get("related_articles") or []
             gold_articles = [int(a) for a in rel if a is not None]
             obligations = s.get("obligations") or []
-            turn1 = _scenario_to_question(s)
+            turn1 = bench_dataset.scenario_to_question(s)
             gold_answer = (
                 f"This system is classified as {s.get('risk_level', '')}. "
                 + " ".join(obligations[:4])
             ).strip()
+            # mt_N is built from scenarios[N * stride] — record that
+            # scenario's pool id so categorize_pool reads the right
+            # representativeness rating.
             pool.append(
                 PoolItem(
                     item_id=f"mt_{i:03d}",
@@ -223,6 +208,7 @@ def build_pool() -> list[PoolItem]:
                     gold_answer=gold_answer,
                     gold_articles=gold_articles,
                     category=_MULTITURN_CATEGORY,
+                    source_scenario_id=f"sc_{i * stride:03d}",
                 )
             )
 
@@ -260,6 +246,13 @@ def _categorize_prompt(batch: list[tuple[int, str]]) -> str:
 
 
 def _parse_json_array(text: str) -> list[dict[str, Any]] | None:
+    """Extract the first balanced JSON array that parses to a list.
+
+    Tries EVERY ``[`` position, not just the first — Sonnet sometimes
+    prefixes a sentence containing a bracket (e.g. ``[the questions]``)
+    before the real array; hard-stopping at the first ``[`` would drop
+    a whole 12-item batch to the deterministic fallback.
+    """
     if not text:
         return None
     s = text.strip()
@@ -267,22 +260,26 @@ def _parse_json_array(text: str) -> list[dict[str, Any]] | None:
         s = s.strip("`")
         if s.lower().startswith("json"):
             s = s[4:]
-    start = s.find("[")
-    if start < 0:
-        return None
-    depth = 0
-    for i in range(start, len(s)):
-        if s[i] == "[":
-            depth += 1
-        elif s[i] == "]":
-            depth -= 1
-            if depth == 0:
-                try:
-                    parsed = json.loads(s[start:i + 1])
-                    return parsed if isinstance(parsed, list) else None
-                except Exception:  # noqa: BLE001
-                    return None
-    return None
+    pos = 0
+    while True:
+        start = s.find("[", pos)
+        if start < 0:
+            return None
+        depth = 0
+        for i in range(start, len(s)):
+            if s[i] == "[":
+                depth += 1
+            elif s[i] == "]":
+                depth -= 1
+                if depth == 0:
+                    try:
+                        parsed = json.loads(s[start:i + 1])
+                        if isinstance(parsed, list):
+                            return parsed
+                    except Exception:  # noqa: BLE001
+                        pass
+                    break  # this span isn't a JSON list — try the next [
+        pos = start + 1
 
 
 def _deterministic_category(item: PoolItem) -> str:
@@ -353,7 +350,11 @@ def categorize_pool(
     uncached = [it for it in single if it.item_id not in cache]
 
     if provider is not None and wrapper_req_cls is not None and uncached:
-        batch_size = 12
+        # 120-per-batch → only ~4 wrapper calls for the full 476-item
+        # pool. The local wrapper degrades under dozens of sequential
+        # calls (each call drives a Claude Code CLI process), so call
+        # COUNT — not per-call token size — is the dominant cost.
+        batch_size = 120
         for b in range(0, len(uncached), batch_size):
             chunk = uncached[b:b + batch_size]
             batch = [(j, it.question) for j, it in enumerate(chunk)]
@@ -362,9 +363,9 @@ def categorize_pool(
                 system=_CATEGORIZE_SYSTEM,
                 user=prompt,
                 model="claude-sonnet-4-6",
-                max_tokens=900,
+                max_tokens=4500,
                 temperature=0.0,
-                timeout_seconds=60.0,
+                timeout_seconds=240.0,
             )
             parsed: list[dict[str, Any]] | None = None
             try:
@@ -398,20 +399,27 @@ def categorize_pool(
                     flush=True,
                 )
         try:
-            _CACHE_PATH.write_text(
+            _CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+            _tmp = _CACHE_PATH.with_name(_CACHE_PATH.name + ".tmp")
+            _tmp.write_text(
                 json.dumps(cache, indent=2, ensure_ascii=False),
                 encoding="utf-8",
             )
-        except Exception:  # noqa: BLE001
-            pass
+            _tmp.replace(_CACHE_PATH)  # atomic swap — never a torn cache
+        except Exception as exc:  # noqa: BLE001
+            print(
+                f"[categorize] WARNING: cache write failed: {exc}",
+                file=sys.stderr, flush=True,
+            )
 
     # Apply cache / fallback to every item.
     for it in pool:
         if it.kind == "multiturn":
             it.category = _MULTITURN_CATEGORY
-            # Representativeness inherited from the scenario it was built
-            # from — multi-turn quality tracks the scenario's quality.
-            base = it.item_id.replace("mt_", "sc_")
+            # Representativeness inherited from the SOURCE scenario the
+            # chain was built from (source_scenario_id — the build
+            # stride means mt_N is NOT built from sc_N).
+            base = it.source_scenario_id or it.item_id.replace("mt_", "sc_")
             it.representativeness = float(
                 (cache.get(base) or {}).get("representativeness", 6.0)
             )
@@ -498,8 +506,16 @@ def select_representative(
 # ── Wire execution ───────────────────────────────────────────────────────
 
 
-def _ask(client: TestClient, messages: list[dict[str, str]]) -> tuple[dict, float]:
-    """POST a conversation to the Regenold wire. Returns ``(body, ms)``."""
+def _ask(
+    client: TestClient, messages: list[dict[str, str]]
+) -> tuple[dict, float, int]:
+    """POST a conversation to the Regenold wire.
+
+    Returns ``(body, elapsed_ms, http_status)``. The status lets the
+    caller tell a genuine empty/refusal answer apart from a wire
+    failure (401/403/422/5xx) that would otherwise be scored as a
+    silent zero row.
+    """
     try:
         limiter.reset()
     except Exception:  # noqa: BLE001
@@ -513,7 +529,7 @@ def _ask(client: TestClient, messages: list[dict[str, str]]) -> tuple[dict, floa
         body = {}
     if not isinstance(body, dict):
         body = {}
-    return body, elapsed
+    return body, elapsed, resp.status_code
 
 
 _KW_STOP = frozenset({
@@ -555,17 +571,17 @@ def run_wire(
                 if it.kind == "multiturn":
                     # Turn 1, then feed its answer back as the assistant
                     # turn before posting the coreferent follow-up.
-                    body1, lat1 = _ask(client, [it.messages[0]])
+                    body1, lat1, _st1 = _ask(client, [it.messages[0]])
                     answer1 = str(body1.get("answer") or "")
                     history = [
                         it.messages[0],
                         {"role": "assistant", "content": answer1},
                         it.messages[1],
                     ]
-                    body, lat2 = _ask(client, history)
+                    body, lat2, status = _ask(client, history)
                     latency = lat1 + lat2
                 else:
-                    body, latency = _ask(
+                    body, latency, status = _ask(
                         client, [{"role": "user", "content": it.question}]
                     )
                 answer = str(body.get("answer") or "")
@@ -586,15 +602,24 @@ def run_wire(
                     "predicted_answer": answer,
                     "answer_preview": answer[:240],
                     "pred_refs": [str(r) for r in refs],
+                    "http_status": status,
                     "latency_ms": round(latency, 2),
                 })
                 if verbose:
+                    flag = "" if status == 200 else f"  !! HTTP-{status}"
                     print(
                         f"[wire] {idx + 1}/{len(selection)} {it.item_id:<10} "
                         f"cat={it.category:<22} refs={len(refs)} "
-                        f"{latency:.0f}ms",
+                        f"{latency:.0f}ms{flag}",
                         flush=True,
                     )
+            non_200 = sum(1 for r in rows if r.get("http_status") != 200)
+            if non_200:
+                print(
+                    f"[wire] WARNING: {non_200}/{len(rows)} rows returned a "
+                    f"non-200 HTTP status — scored as empty-answer rows.",
+                    flush=True,
+                )
     finally:
         settings.regenold.api_key = prev_key
     return rows
@@ -669,7 +694,7 @@ def run(
         "finished_at": finished_at,
         "pool_size": len(pool),
         "selected": len(selection),
-        "seed": _SEED,
+        "selection_method": "stratified-proportional, order-based (no RNG)",
         "category_distribution": cat_dist,
         "scores": scores,
         "rows": rows,
