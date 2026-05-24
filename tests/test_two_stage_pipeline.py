@@ -128,15 +128,24 @@ class TestNeedsStage2Heuristic:
             _SIMPLE_Q, _empty_ctx(), _query(intent="cross_framework")
         ) is True
 
-    def test_two_or_more_entities_triggers(self) -> None:
+    def test_three_or_more_entities_triggers(self) -> None:
+        # R84: threshold raised 2 → 3 (bare 2-entity questions, e.g.
+        # ``"What does Article 13 say about Article 14?"``, are fine on
+        # the deterministic path). Pinned in tests/test_r84_latency_gate.py.
         assert _needs_stage2_enhancement(
             _SIMPLE_Q,
             _empty_ctx(),
-            _query(entities=["Art. 9", "Art. 10"]),
+            _query(entities=["Art. 9", "Art. 10", "Art. 11"]),
         ) is True
 
     def test_long_live_question_triggers(self) -> None:
-        long_q = "What are the exact obligations " + "a " * 100 + "deployer faces?"
+        # R84: threshold raised 200 → 350. Medium-length obligation
+        # questions (200-350 chars) deterministic-handle fine; only
+        # genuinely long synthesis questions need polish. Build > 350.
+        long_q = "What are the exact obligations " + "a " * 200 + "deployer faces?"
+        assert len(long_q) > 350, (
+            f"test setup: live_q must exceed the R84 350-char threshold, got {len(long_q)}"
+        )
         assert _needs_stage2_enhancement(long_q, _empty_ctx()) is True
 
     @pytest.mark.parametrize("keyword", [
@@ -144,7 +153,12 @@ class TestNeedsStage2Heuristic:
         "what is the difference between Art. 9 and Art. 10",
         "vs. the GDPR approach",
         "how should we prioritise the remediation work",
-        "please explain why this obligation exists",
+        # R84 dropped 6 overly-broad keywords from this trigger set
+        # (``"explain why"`` / ``"why do"`` / ``"why does"`` / ``"why is"``
+        # / ``"what are the implications"`` / ``"impact of"``) — the
+        # R81-A1 live decomposition showed they fired Stage-2 on routine
+        # obligation questions that handle fine deterministically. The
+        # genuine comparison / remediation markers below survive.
     ])
     def test_complex_keywords_trigger(self, keyword: str) -> None:
         assert _needs_stage2_enhancement(keyword, _empty_ctx()) is True

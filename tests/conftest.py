@@ -97,3 +97,38 @@ def _reset_audit_store():
     # handles cleanup. Keeping this one-sided also means a failing
     # test's audit-chain state is still inspectable in a post-mortem
     # pytest --pdb session.
+
+
+# R84 (2026-05-24) — `app.routes.regenold._classify_intent_cached` memoises
+# `classify_intent(question)` per request via a `ContextVar[dict | None]`.
+# Inside the route the ContextVar is `.set({})` at the top of the handler
+# (per-request scope). Tests that exercise `_classify_intent_cached` /
+# `_intent_anchor_set` directly skip that reset, so the lazy-init dict
+# from one test persists into the next and serves cached results across
+# distinct `patch("classify_intent", ...)` setups. Symptom: two tests
+# patching the SAME question key to different mocked IntentResult values
+# see the FIRST test's value in BOTH (e.g.
+# `test_unknown_article_anchor_is_dropped` caches an empty result for
+# `"What's the max fine?"` and the subsequent `test_known_article_anchor_is_kept`
+# reads the empty cache hit instead of the patched `Art. 99` result).
+# Mirrors the R63-E EvidenceStore isolation pattern above.
+try:
+    from app.routes import regenold as _regenold_module
+except ImportError:  # pragma: no cover — tested env always has this
+    _regenold_module = None
+
+
+@pytest.fixture(autouse=True)
+def _reset_request_intent_cache():
+    """Clear the per-request intent cache ContextVar between tests.
+
+    R84 isolation — see comment above. Setting the ContextVar to ``None``
+    re-arms the lazy-init path so each test starts with no in-flight
+    cache state.
+    """
+    if _regenold_module is not None:
+        try:
+            _regenold_module._request_intent_cache.set(None)
+        except Exception:  # noqa: BLE001 — never block a test on cleanup
+            pass
+    yield

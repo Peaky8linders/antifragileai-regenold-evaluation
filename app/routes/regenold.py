@@ -106,6 +106,55 @@ from app.llm.intent_classifier import classify_intent
 from app.models import GraphRAGRequest
 from app.rate_limit import limiter
 
+# R84 — per-request memoise for ``classify_intent`` (2026-05-24).
+#
+# Three call sites in this route (``_resolve_intent_anchors``, the
+# R66-E intent-boost path, and the R47-E zero-retrieval fallback) all
+# invoke ``classify_intent`` independently. The module-level R37
+# ``_INTENT_CACHE`` LRU already memoises across requests, but ON FIRST
+# encounter of a question each of the three sites pays a full
+# wrapper / Groq round-trip — ~0.3-1 s per cold miss × 3 = 0.9-3 s of
+# avoidable latency per cold request.
+#
+# A ContextVar-backed dict scoped to the FastAPI request handler
+# collapses the three calls down to ONE cold-cache RTT. The keys are
+# the raw question strings the call sites pass; sites that pass
+# different keys (``live_question`` vs the history-flattened
+# ``question``) memo into distinct slots — correct, by design.
+from contextvars import ContextVar  # noqa: E402,PLC0415
+
+_request_intent_cache: ContextVar[dict | None] = ContextVar(
+    "_request_intent_cache", default=None
+)
+
+
+def _classify_intent_cached(question: str):
+    """Per-request memo over ``classify_intent``.
+
+    Avoids 3× cold-cache RTT in one request — the route invokes
+    ``classify_intent`` from three sites (anchor narrowing, the R66-E
+    intent boost, and the R47-E zero-retrieval fallback). Module-level
+    R37 LRU handles cross-request memoisation; this layer handles the
+    within-one-request collapse.
+
+    The cache is keyed on the literal question string the caller
+    passes; sites that use different keys (``live_question`` vs the
+    flattened ``question``) miss intentionally rather than serving a
+    wrong-shape result.
+
+    Initialised at the top of the route handler via
+    ``_request_intent_cache.set({})``. When called outside a request
+    (e.g. tests), the ContextVar default ``None`` triggers a fresh
+    dict that is GC'd after the call returns.
+    """
+    cache = _request_intent_cache.get()
+    if cache is None:
+        cache = {}
+        _request_intent_cache.set(cache)
+    if question not in cache:
+        cache[question] = classify_intent(question)
+    return cache[question]
+
 logger = structlog.get_logger(__name__)
 
 regenold_router = APIRouter(tags=["regenold"])
@@ -888,7 +937,7 @@ def _intent_anchor_set(
     # avoids a circular-import risk with app.data on bench-runner paths.
     from app.data.article_existence import ARTICLE_EXISTENCE  # noqa: PLC0415
 
-    intent = classify_intent(live_question)
+    intent = _classify_intent_cached(live_question)
     if intent is None or intent.confidence < _INTENT_MIN_CONFIDENCE:
         return set(), set(), ""
     article_nums: set[str] = set()
@@ -1661,6 +1710,12 @@ def regenold_eu_ai_act_ask(
     else:
         _deactivate_reasoning_trace()
 
+    # R84 — reset the per-request intent cache so the three
+    # ``_classify_intent_cached`` call sites collapse to one cold-cache
+    # RTT within this request. The ContextVar is per-task so distinct
+    # FastAPI workers / concurrent requests get distinct dicts.
+    _request_intent_cache.set({})
+
     # Input contract:
     # - primary: request body is `[{role, content}, ...]` (OpenAI/LiteLLM style)
     # - compatibility: `{ "messages": [...] }` or legacy `{ "question": "...", ... }`
@@ -2020,7 +2075,7 @@ def regenold_eu_ai_act_ask(
     # Fail-soft — any exception in the classifier OR helper is
     # swallowed and the route continues with the unboosted candidates.
     try:
-        _boost_intent_res = classify_intent(question)
+        _boost_intent_res = _classify_intent_cached(question)
     except Exception:  # noqa: BLE001 — defensive (never let intent 500 the route)
         _boost_intent_res = None
     try:
@@ -2458,7 +2513,7 @@ def regenold_eu_ai_act_ask(
         # open) return None, which the fallback handles via its default
         # floor.
         try:
-            _intent_res = classify_intent(question)
+            _intent_res = _classify_intent_cached(question)
             _intent_label = _intent_res.intent if _intent_res else None
         except Exception:  # noqa: BLE001 — never let intent classifier 500 the route
             _intent_label = None
