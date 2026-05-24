@@ -2826,12 +2826,19 @@ def _retrieve_from_kb(
 
 # Keywords whose presence in the *live* part of the question signals enough
 # synthesis / comparison / remediation work that Stage-2 polish adds value.
+#
+# R84 (2026-05-24) — pruned 6 overly-broad triggers (``"explain why"``,
+# ``"why do"``, ``"why does"``, ``"why is"``,
+# ``"what are the implications"``, ``"impact of"``). The R81-A1 live
+# rep-100 decomposition (60/100 rows fired Stage-2; OFF p50 3.3 s vs ON
+# p50 21.4 s — 6.5× per-row cost) showed these matched routine
+# obligation questions that the deterministic answer handles fine. The
+# kept set is the genuine comparison / remediation surface where Sonnet
+# polish lifts answer quality.
 _COMPLEX_QUESTION_KEYWORDS = frozenset({
     "compare", "comparison", "difference", "versus", " vs ", "vs.",
     "trade-off", "tradeoff", "prioritise", "prioritize", "prioritis",
     "remediat", "roadmap", "how should we", "what should we",
-    "explain why", "why do", "why does", "why is",
-    "what are the implications", "impact of",
 })
 
 
@@ -2846,9 +2853,22 @@ def _needs_stage2_enhancement(
     - Multi-turn context embedded by the route (``"Conversation so far:"`` prefix).
     - Complex intents: gap_analysis, cross_framework (require synthesis across
       multiple obligations/frameworks, not just single-article lookup).
-    - Multiple article entities (≥ 2) — implies a comparison or multi-obligation scope.
-    - Long live question (> 200 chars) — nuanced questions tend to need prose polish.
-    - Presence of comparison / remediation keywords.
+    - Three+ article entities (≥ 3) — true multi-article synthesis. R84 raised
+      from ≥ 2 because bare multi-anchor questions (e.g. "What about Articles
+      13 and 14?") deterministic-answer fine and don't need polish.
+    - Long live question (> 350 chars) — genuinely long synthesis questions.
+      R84 raised from > 200 because medium-length obligation questions (200-350
+      chars) were the largest false-fire bucket in the R81-A1 live decomposition
+      (28/60 fires) and deterministic-handle just as well as short ones.
+    - Presence of comparison / remediation keywords (R84-pruned set).
+
+    R84 latency tuning (2026-05-24) — R81-A1 live rep-100 measurement
+    showed production p50 = 18.2 s with Stage-2 firing on 60/100 rows
+    (ON p50 21.4 s vs OFF p50 3.3 s, 6.5× cost). Fire decomposition:
+    28 long_q (> 200 chars), 16 multi_entity (≥ 2), 16 legitimate
+    multi-turn / intent / keyword. R84 tunes thresholds to target the
+    16 legitimate fires; projected post-deploy fire rate ~40-45% / p50
+    ~12-13 s.
     """
     # Multi-turn: the route threads prior turns as "Conversation so far:\n…"
     if "Conversation so far:" in question:
@@ -2858,8 +2878,10 @@ def _needs_stage2_enhancement(
         # Synthesis-heavy intents always benefit from LLM polish
         if query.intent in ("gap_analysis", "cross_framework"):
             return True
-        # Multiple referenced articles → comparison / multi-obligation scope
-        if len(query.entities) >= 2:
+        # Multiple referenced articles → comparison / multi-obligation scope.
+        # R84: raised 2 → 3 so true synthesis triggers polish, not bare
+        # multi-anchor questions.
+        if len(query.entities) >= 3:
             return True
 
     # Isolate the live part of the question (drop history preamble if present)
@@ -2869,7 +2891,9 @@ def _needs_stage2_enhancement(
         else question
     )
 
-    if len(live_q) > 200:
+    # R84: raised 200 → 350 — medium-length obligation questions go
+    # deterministic; only genuinely long synthesis questions polish.
+    if len(live_q) > 350:
         return True
 
     live_lower = live_q.lower()

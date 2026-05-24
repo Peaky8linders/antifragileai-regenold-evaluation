@@ -18,13 +18,24 @@ class GraphRAGSettings(BaseSettings):
 
     api_key: SecretStr | None = None
     model: str = "claude-sonnet-4-6"
-    max_tokens: int = 512
-    """Stage-1/2 polish output token cap. R80.2 default 512 (was 1024).
-    A wire-normalised 3-sentence answer is ~150-200 tokens typical, 400
-    worst-case. Trimming the ceiling cuts the worst-case Sonnet
-    generation tail in the r80-stage2-tunnel run (p95 42s, max 87s)
-    without affecting typical answers. Operators wanting larger answers
-    can override with ``P2P_GRAPH_RAG_MAX_TOKENS=1024``."""
+    max_tokens: int = 384
+    """Stage-1/2 polish output token cap.
+
+    R84 default 384 (was 512 in R80.2, was 1024 pre-R80.2). The
+    ``ANSWER_GENERATE_SYSTEM`` prompt mandates "AT MOST 3 sentences"
+    (since R80.1) — a wire-normalised 3-sentence answer is ~150-200
+    tokens typical, ~280 worst-case. 384 keeps ~80-token headroom for
+    a long 3rd sentence while saving ~2-4 s p95 generation tail vs the
+    R80.2 512 cap on the slow Sonnet generation path the R81-A1 live
+    rep-100 surfaced. Operators wanting larger answers can override
+    with ``P2P_GRAPH_RAG_MAX_TOKENS=512`` (R80.2) or ``=1024`` (pre-R80.2).
+
+    Prior values:
+      * pre-R80.2: 1024 (Sonnet default).
+      * R80.2: reduced 1024 → 512 (cuts worst-case generation tail).
+      * R84: reduced 512 → 384 (further latency trim; zero answer-quality
+        risk since the prompt's 3-sentence cap is well under the new
+        ceiling)."""
 
     temperature: float = 0.0
 
