@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 # Art. 52(4) open-source designation, Art. 53(2) FOSS carve-out,
 # Art. 55 four systemic-risk obligations, Art. 79 market-surveillance
 # procedure).
-KB_VERSION = "2024.1689.v8"
+KB_VERSION = "2024.1689.v9"
 
 
 @dataclass(frozen=True)
@@ -765,8 +765,10 @@ EC_CHECKER_OBLIGATION_MAP: dict[str, dict[str, str]] = {
         "dimension": "risk_mgmt",
         "summary": (
             "Requires a documented, iterative risk-management system across the AI "
-            "system's lifecycle covering known + foreseeable risks, residual-risk "
-            "acceptability, and targeted testing for risk-control verification."
+            "system's lifecycle. Providers must: (a) identify and analyse known and "
+            "foreseeable risks to health, safety, or fundamental rights; (b) estimate "
+            "and evaluate risks emerging during misuse; (c) evaluate post-market monitoring "
+            "data; and (d) adopt targeted mitigation and risk-control measures."
         ),
     },
     "Art. 10": {

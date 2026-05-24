@@ -966,9 +966,19 @@ def normalise_answer_for_regenold(
         low = sentence.lower()
         return ("art." in low) or ("annex" in low) or ("article " in low)
 
+    def _is_augmenter_description(sentence: str) -> bool:
+        pattern = re.compile(
+            r"^\s*(?:Article\s+\d+|Annex\s+[IVXLCDM]+)\s+—\s+",
+            re.IGNORECASE
+        )
+        return bool(pattern.match(sentence))
+
+    has_augmenter_desc = any(_is_augmenter_description(s) for s in capped)
+    effective_cap = int(char_cap * 1.10) if has_augmenter_desc else char_cap
+
     while (
         len(capped) > 1
-        and sum(len(s) for s in capped) + (len(capped) - 1) > char_cap
+        and sum(len(s) for s in capped) + (len(capped) - 1) > effective_cap
     ):
         # Find the longest non-cite sentence; if all sentences cite,
         # stop (we'd rather ship a slightly over-budget answer than

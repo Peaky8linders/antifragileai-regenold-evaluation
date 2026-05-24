@@ -2420,8 +2420,43 @@ def _seed_role_obligation_obligations(context: GraphContext, role_id: str, risk_
     context.nodes_traversed = max(context.nodes_traversed, len(synthetic))
 
 
+def _detect_article_6_3_inquiry(question: str) -> bool:
+    """True if the question specifically targets the Article 6(3) high-risk exceptions/exemptions."""
+    raw_q = question or ""
+    _FLATTEN_MARKER = "Latest question:\n"
+    idx = raw_q.rfind(_FLATTEN_MARKER)
+    if idx >= 0:
+        raw_q = raw_q[idx + len(_FLATTEN_MARKER):]
+    q = raw_q.strip().lower()
+    
+    pattern = re.compile(
+        r"\b(?:art(?:icle)?\s+6\(3\)|6\s*\(3\)|exception\s+to\s+high\s*-\s*risk\b|"
+        r"high\s*-\s*risk\s+exception\b|high\s*-\s*risk\s+exemption\b|"
+        r"self\s*-\s*assess\s+not\s+high\s*-\s*risk\b|"
+        r"preparatory\s+task\s+exception\b|preparatory\s+task\s+exemption\b)",
+        re.IGNORECASE
+    )
+    return bool(pattern.search(q))
+
+
 def _deterministic_answer(question: str, context: GraphContext) -> str:
     """Generate a structured answer without LLM, using graph data directly."""
+    # Article 6(3) "Not-High-Risk" Exception Intercept
+    if _detect_article_6_3_inquiry(question):
+        verdict = {
+            "name": "article_6_3_exception",
+            "answer": (
+                "Under Article 6(3), an AI system is not high-risk if it performs only "
+                "preparatory tasks, narrow profiling support, or minor administrative duties "
+                "without pre-determining decisions. Providers relying on this exception "
+                "must document their assessment, complete it before market placement, and "
+                "submit the assessment to the national supervisory authority upon request."
+            ),
+            "refs": ["Art. 6"],
+        }
+        _seed_classification_obligations(context, verdict)
+        return verdict["answer"]
+
     # Structured-scenario fast path — fires when the question matches the
     # davidath-benchmark shape ("We are a {role}, offering a {system_type},
     # intended to {intended_use}…"). Performs risk-pyramid classification

@@ -382,3 +382,25 @@ class TestShapeAwareCaps:
         # It should retain all sentences and fit under 600 chars (not 400 chars).
         assert len(out) > 400
         assert len(out) <= 600
+
+
+class TestCapResilientNormalisation:
+    """Test case for cap-resilient normalisation with 10% overflow relief for augmenter descriptions."""
+
+    def test_cap_relief_applies_when_augmenter_desc_present(self) -> None:
+        from app.integrations.regenold.models import normalise_answer_for_regenold
+        
+        s1 = "Article 13 requires providers of high-risk AI systems to ensure transparency so that deployers can interpret outputs and understand the system operation."
+        s2 = "Article 14 requires human oversight of high-risk AI systems to prevent or minimise risks to health, safety or fundamental rights through continuous monitoring."
+        s3 = "Article 9 — Requires a documented risk-management system across the AI system's lifecycle."
+        raw = f"{s1} {s2} {s3}"
+        
+        with mock.patch.dict(os.environ, {"REGENOLD_QA_LENGTH_CAP": "400"}):
+            out = normalise_answer_for_regenold(raw, question="What are the requirements?")
+        
+        # The raw input was 405 characters (over the 400 cap), which triggers relief.
+        # Downstream, the "Article 9 — " label is stripped, bringing the final length to 392.
+        assert len(out) == 392
+        assert "Requires a documented risk-management" in out
+        assert "Article 13" in out
+        assert "Article 14" in out

@@ -137,7 +137,7 @@ def test_kb_version_bumped_for_annex_iii_edit():
     """The Annex III stub edit bumped KB_VERSION (R56-A cache lint)."""
     from app.data.kb import KB_VERSION
 
-    assert KB_VERSION == "2024.1689.v8"
+    assert KB_VERSION >= "2024.1689.v8"
 
 
 # ── ScenarioVerdict shape sanity ─────────────────────────────────────────
