@@ -1880,7 +1880,7 @@ def regenold_eu_ai_act_ask(
     if _is_classification_topic:
         answer_text = rag_res.answer
     else:
-        answer_text = normalise_answer_for_regenold(rag_res.answer)
+        answer_text = normalise_answer_for_regenold(rag_res.answer, question=question)
 
     # Round 26 — extractive-QA pass. The engine returns full article
     # prose (~480 chars median on davidath QA) where the rubric gold is
@@ -2133,7 +2133,7 @@ def regenold_eu_ai_act_ask(
             ).strip()
             # Re-normalise so the prepend respects the 3-sentence
             # + 600-char cap. Cheap idempotent pass otherwise.
-            answer_text = normalise_answer_for_regenold(answer_text)
+            answer_text = normalise_answer_for_regenold(answer_text, question=question)
 
     # Round 32 — CLARA Layer F: deterministic neuro-symbolic verdict.
     # Runs AFTER the prohibited gatekeeper so Art. 5 cases stay handled
@@ -2608,7 +2608,7 @@ def regenold_eu_ai_act_ask(
             # guard CAN merge two long sentences whose pre-guard total
             # length was within the cap only because the cap saw them
             # as separate entries. Cheap idempotent pass otherwise.
-            answer_text = normalise_answer_for_regenold(answer_text)
+            answer_text = normalise_answer_for_regenold(answer_text, question=question)
 
     # Round 66-B — Stage-2.5 cite-describe guard. The **inverse** of
     # the R31 ``citation_guard`` above: that pass drops SENTENCES whose
@@ -2722,7 +2722,7 @@ def regenold_eu_ai_act_ask(
                 # Re-normalise: 3-sentence + 600-char cap. The normaliser
                 # is idempotent on inputs that already fit; cheap.
                 if not _is_classification_topic:
-                    answer_text = normalise_answer_for_regenold(answer_text)
+                    answer_text = normalise_answer_for_regenold(answer_text, question=question)
         except Exception:  # noqa: BLE001 — graph-aware recitals never break the route
             pass
 
@@ -2895,7 +2895,7 @@ def regenold_eu_ai_act_ask(
                 # description clauses are cite-anchored ("Article N —
                 # ...") so they survive the trim before the original
                 # non-cite filler sentences.
-                answer_text = normalise_answer_for_regenold(_augmented)
+                answer_text = normalise_answer_for_regenold(_augmented, question=question)
         except Exception:  # noqa: BLE001 — fail-soft, never break the route
             pass
 

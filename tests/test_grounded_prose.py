@@ -17,6 +17,7 @@ invariant (no refusal markers leak through).
 from __future__ import annotations
 
 import re
+from unittest import mock
 
 import pytest
 
@@ -249,3 +250,19 @@ class TestAugmentWithRefDescriptions:
         out = self._augment(answer, ["Not-An-Article", "Random stuff"])
         # Returns original unchanged or slightly extended (skip / fail-open).
         assert out  # non-empty
+
+    def test_inline_replace_mode(self) -> None:
+        """Inline bare or parenthesized citations are replaced with descriptions in-place."""
+        from app.integrations.regenold.grounded_prose import augment_with_ref_descriptions
+        import os
+        
+        answer = "The provider must comply with the requirements (Article 13)."
+        # With replace mode enabled:
+        with mock.patch.dict(os.environ, {"REGENOLD_REF_DESCRIBE_REPLACE": "1"}):
+            out = augment_with_ref_descriptions(answer, ["Article 13"])
+        
+        assert "Article 13 —" in out
+        assert "(Article 13 —" in out
+        # Make sure it replaced inside the parentheses in-place
+        assert out.startswith("The provider must comply with the requirements")
+        assert "Article 13 —" in out

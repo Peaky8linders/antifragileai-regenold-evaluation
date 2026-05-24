@@ -215,7 +215,7 @@ def _topic_keyword_seeds(question: str) -> list[str]:
     return out
 
 
-def _build_prose(refs: list[str]) -> str:
+def _build_prose(refs: list[str], question: str = "") -> str:
     """Build the regulator-voice neutral fallback prose.
 
     Crafted to:
@@ -238,6 +238,12 @@ def _build_prose(refs: list[str]) -> str:
             "Articles 1 and 2 and uses the definitions in Article 3 for "
             "this kind of question."
         )
+
+    try:
+        from app.integrations.regenold.grounded_prose import stitch_grounded_prose
+        return stitch_grounded_prose(refs, question=question)
+    except Exception:
+        pass
 
     # Render the top-3 anchors as "Article 1, Article 2 and Article 3"
     # using user-facing form. Internal "Art. 1" → user-facing "Article 1".
@@ -336,7 +342,7 @@ def zero_retrieval_fallback(
     if not refs:
         refs = list(_DEFAULT_FLOOR)
 
-    prose = _build_prose(refs)
+    prose = _build_prose(refs, question=question)
     return refs, prose
 
 

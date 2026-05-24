@@ -2456,6 +2456,22 @@ def _deterministic_answer(question: str, context: GraphContext) -> str:
             _seed_role_obligation_obligations(context, role_id, risk_id, refs)
             return answer
 
+    is_scenario = classify_scenario_query(question) is not None or bool(re.search(
+        r"\bwe\s+are\s+(?:an?\s+)?(?:provider|deployer|importer|distributor|"
+        r"manufacturer|representative)\b",
+        question,
+        re.IGNORECASE,
+    ))
+    is_qa_shape = not is_scenario
+
+    if is_qa_shape and context.obligations:
+        qa_parts = []
+        for obl in context.obligations[:3]:
+            text = obl.get("text", "N/A").strip()
+            cleaned_text = re.sub(r"^\s*(?:Art\.?|Article|Annex)\s+[IVXLCDM\d]+(?:\([^)]+\))?\s*:\s*", "", text, flags=re.IGNORECASE)
+            qa_parts.append(cleaned_text)
+        return " ".join(qa_parts).strip()
+
     parts: list[str] = []
 
     if context.obligations:

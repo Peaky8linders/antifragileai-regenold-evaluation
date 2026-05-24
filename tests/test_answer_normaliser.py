@@ -343,3 +343,42 @@ class TestWireIntegration:
             out = normalise_answer_for_regenold(raw)
         # Strip disabled — preamble survives the rest of the pipeline.
         assert out.startswith("This question is covered")
+
+
+# ── Shape-Aware caps ──────────────────────────────────────────────────
+
+
+class TestShapeAwareCaps:
+    """R82-B.2 — test shape-aware caps (400 for QA, 600 for Scenario)."""
+
+    def test_qa_shape_applies_400_cap(self) -> None:
+        from app.integrations.regenold.models import (
+            normalise_answer_for_regenold,
+        )
+        # 3 sentences, total length > 400.
+        s1 = "Article 13 requires providers of high-risk systems to ensure transparency so that deployers can interpret outputs and understand the system operation."
+        s2 = "Article 14 requires human oversight of high-risk systems to prevent or minimise risks to health, safety or fundamental rights through continuous monitoring."
+        s3 = "High-risk systems must achieve appropriate levels of cybersecurity, robustness, and accuracy throughout their entire lifecycle."
+        raw = f"{s1} {s2} {s3}"
+        
+        # Test QA shape (default REGENOLD_QA_LENGTH_CAP=400)
+        with mock.patch.dict(os.environ, {"REGENOLD_QA_LENGTH_CAP": "400"}):
+            out = normalise_answer_for_regenold(raw, question="What are transparency requirements?")
+        # It should drop the non-cite sentence to fit under 400 chars.
+        assert len(out) <= 400
+
+    def test_scenario_shape_applies_600_cap(self) -> None:
+        from app.integrations.regenold.models import (
+            normalise_answer_for_regenold,
+        )
+        s1 = "Article 13 requires providers of high-risk systems to ensure transparency so that deployers can interpret outputs and understand the system operation."
+        s2 = "Article 14 requires human oversight of high-risk systems to prevent or minimise risks to health, safety or fundamental rights through continuous monitoring."
+        s3 = "High-risk systems must achieve appropriate levels of cybersecurity, robustness, and accuracy throughout their entire lifecycle."
+        raw = f"{s1} {s2} {s3}"
+        
+        # Test Scenario shape (Question has scenario marker "we are a provider")
+        with mock.patch.dict(os.environ, {"REGENOLD_QA_LENGTH_CAP": "400"}):
+            out = normalise_answer_for_regenold(raw, question="We are a provider of high-risk AI, what should we do?")
+        # It should retain all sentences and fit under 600 chars (not 400 chars).
+        assert len(out) > 400
+        assert len(out) <= 600

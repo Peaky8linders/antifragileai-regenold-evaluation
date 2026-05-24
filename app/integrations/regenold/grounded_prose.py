@@ -289,6 +289,16 @@ def stitch_grounded_prose(
             "for this kind of question."
         )
 
+    # Check if there is any KB match across all references.
+    # If every reference is unknown, return the defensive floor (Article 1, 2, 3).
+    any_kb_match = any(_kb_summary(r, question=question) is not None for r in refs)
+    if not any_kb_match:
+        return (
+            "The EU AI Act (Regulation 2024/1689) applies under "
+            "Articles 1 and 2 and uses the definitions in Article 3 "
+            "for this kind of question."
+        )
+
     # ── Lead sentence: cite the top-3 anchors. ─────────────────────
     lead_refs = refs[:3]
     lead_user_facing = [_user_facing(r) for r in lead_refs]
@@ -305,7 +315,9 @@ def stitch_grounded_prose(
     # budget (~220c) so a 2-ref stitch still fits under
     # MAX_GROUNDED_CHARS=580.
     substance_sentences: list[str] = []
-    for idx, r in enumerate(refs[:_MAX_SUBSTANCE_REFS]):
+    for r in refs:
+        if len(substance_sentences) >= _MAX_SUBSTANCE_REFS:
+            break
         # R63-C — pass the question through so multi-stub _KBEntry
         # (Art. 5, Art. 50, Art. 53, Art. 56) surfaces the matching
         # stub (e.g. "Article 53(2) carve-out" question → Art. 53(2)
@@ -315,6 +327,7 @@ def stitch_grounded_prose(
         summary = _kb_summary(r, question=question)
         if not summary:
             continue
+        idx = len(substance_sentences)
         per_ref_cap = (
             _MAX_LEAD_SUBSTANCE_CHARS if idx == 0 else _MAX_SECOND_SUBSTANCE_CHARS
         )
@@ -333,6 +346,14 @@ def stitch_grounded_prose(
         if any(s[:60].lower() == head for s in substance_sentences):
             continue
         substance_sentences.append(prefixed)
+
+    # If somehow substance_sentences is still empty despite a KB match, fall back to defensive floor.
+    if not substance_sentences:
+        return (
+            "The EU AI Act (Regulation 2024/1689) applies under "
+            "Articles 1 and 2 and uses the definitions in Article 3 "
+            "for this kind of question."
+        )
 
     # ── Assemble + cap. ────────────────────────────────────────────
     pieces = [lead] + substance_sentences
@@ -475,6 +496,14 @@ def augment_with_ref_descriptions(
         return answer
 
     try:
+        import os
+        replace_mode = os.getenv("REGENOLD_REF_DESCRIBE_REPLACE", "1").strip().lower() in (
+            "1",
+            "true",
+            "yes",
+            "on",
+        )
+
         from app.data.kb_search import _tokenize  # noqa: PLC0415
 
         answer_tokens = frozenset(_tokenize(answer))
@@ -494,7 +523,33 @@ def augment_with_ref_descriptions(
             else:
                 continue  # unexpected shape — skip
 
-            if _answer_covers_ref(answer_tokens, internal, answer_text=answer):
+            is_covered = _answer_covers_ref(answer_tokens, internal, answer_text=answer)
+
+            # If replace mode is active, try to replace inline bare citations in-place
+            replaced_inline = False
+            if replace_mode:
+                summary = _kb_summary(internal, question=question)
+                if summary:
+                    clause = _first_clause(summary, max_chars=clause_chars)
+                    if clause:
+                        # 1. Match parenthesized citation: e.g. "(Article 13)" -> "(Article 13 — <clause>)"
+                        parenthesized_pattern = re.compile(r'\(\b' + re.escape(user_ref) + r'\b\)')
+                        # 2. Match bare citation (not already followed by a dash): e.g. "Article 13" -> "Article 13 — <clause>"
+                        bare_pattern = re.compile(r'\b' + re.escape(user_ref) + r'\b(?!\s*—)')
+                        
+                        if parenthesized_pattern.search(answer):
+                            answer = parenthesized_pattern.sub(f"({user_ref} — {clause})", answer, count=1)
+                            clauses_added += 1
+                            replaced_inline = True
+                        elif not is_covered and bare_pattern.search(answer):
+                            answer = bare_pattern.sub(f"{user_ref} — {clause}", answer, count=1)
+                            clauses_added += 1
+                            replaced_inline = True
+
+            if replaced_inline:
+                continue
+
+            if is_covered:
                 continue  # already described — no need to add
 
             summary = _kb_summary(internal, question=question)

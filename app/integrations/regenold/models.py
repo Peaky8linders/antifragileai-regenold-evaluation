@@ -902,7 +902,7 @@ def _hard_truncate_at_clause(text: str, limit: int) -> str:
 
 
 def normalise_answer_for_regenold(
-    text: str, max_sentences: int = MAX_ANSWER_SENTENCES
+    text: str, max_sentences: int = MAX_ANSWER_SENTENCES, question: str = ""
 ) -> str:
     """Full Regenold-spec normalisation pipeline applied to engine output.
 
@@ -923,6 +923,18 @@ def normalise_answer_for_regenold(
     """
     if not text:
         return text
+
+    qa_cap = int(os.getenv("REGENOLD_QA_LENGTH_CAP", "400").strip())
+    is_scenario = False
+    if question:
+        is_scenario = bool(re.search(
+            r"\bwe\s+are\s+(?:an?\s+)?(?:provider|deployer|importer|distributor|"
+            r"manufacturer|representative)\b",
+            question,
+            re.IGNORECASE,
+        ))
+    char_cap = 600 if is_scenario else qa_cap
+
     cleaned = _strip_markdown(text)
     sentences = _split_sentences(cleaned)
     # Drop label-only sentences (``Direct Answer.`` / ``Key Requirements.``).
@@ -945,7 +957,7 @@ def normalise_answer_for_regenold(
     capped = sentences[:max_sentences]
     # Soft char cap: prefer regulator-citation-bearing sentences when
     # we're over budget. Drop the longest sentence that does NOT cite
-    # an article/annex; iterate until ≤ _MAX_ANSWER_CHARS_SOFT OR only
+    # an article/annex; iterate until ≤ char_cap OR only
     # 1 sentence remains. Citation-anchored sentences are load-bearing
     # for the Regenold judge (they carry the regulatory grounding);
     # non-cite sentences usually carry qualifiers / restated context
@@ -956,7 +968,7 @@ def normalise_answer_for_regenold(
 
     while (
         len(capped) > 1
-        and sum(len(s) for s in capped) + (len(capped) - 1) > _MAX_ANSWER_CHARS_SOFT
+        and sum(len(s) for s in capped) + (len(capped) - 1) > char_cap
     ):
         # Find the longest non-cite sentence; if all sentences cite,
         # stop (we'd rather ship a slightly over-budget answer than
@@ -1022,9 +1034,9 @@ def normalise_answer_for_regenold(
     # judge flagged exactly these rows); set REGENOLD_HARD_CHAR_CAP=1
     # for a live representative-100 + judge A/B before defaulting it ON.
     if (
-        len(result) > _MAX_ANSWER_CHARS_SOFT
+        len(result) > char_cap
         and os.getenv("REGENOLD_HARD_CHAR_CAP", "0").strip().lower()
         in ("1", "true", "yes", "on")
     ):
-        result = _hard_truncate_at_clause(result, _MAX_ANSWER_CHARS_SOFT)
+        result = _hard_truncate_at_clause(result, char_cap)
     return result
