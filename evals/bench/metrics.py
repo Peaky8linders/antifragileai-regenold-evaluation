@@ -135,6 +135,16 @@ def answer_correctness_loose(pred: str, gold: str) -> float:
 
     Returns 0.0–1.0. Robust to phrasing differences as long as the
     substantive vocabulary overlaps. Empty predicted answer → 0.0.
+
+    NOTE — "Loose" naming is historical; Jaccard penalises BOTH
+    missing-gold tokens AND extra-pred tokens, so it is actually
+    *stricter* than ``answer_correctness_strict`` (= recall) on any
+    row where |pred| > |gold|. The two-axis decomposition is:
+    ``answer_correctness_precision`` (verbose-direction signal) +
+    ``answer_correctness_strict`` (recall). The competition rubric
+    pins both Loose=Jaccard and Strict=Recall as canonical axes;
+    don't change the formulas — use the new precision / F1 fields
+    (R85-A) to decompose where the gap comes from.
     """
     pt = _tokens(pred)
     gt = _tokens(gold)
@@ -150,16 +160,88 @@ def answer_correctness_loose(pred: str, gold: str) -> float:
 def answer_correctness_strict(pred: str, gold: str) -> float:
     """Fraction of gold-answer tokens present in the prediction.
 
-    Strict because *every* gold token has to appear — but it's per-token
-    fraction rather than binary, so a near-complete answer still scores
-    high. A confidently wrong answer with new tokens that don't match
-    scores low even if it's eloquent.
+    This is **token-recall** — one-sided, doesn't penalise extra
+    pred tokens. Pair with :func:`answer_correctness_precision`
+    (R85-A) for the full 2-D picture.
+
+    A near-complete answer still scores high; a confidently wrong
+    answer with mostly-new tokens scores low.
     """
     pt = _tokens(pred)
     gt = _tokens(gold)
     if not gt:
         return 0.0
     return len(pt & gt) / len(gt)
+
+
+def answer_correctness_precision(pred: str, gold: str) -> float:
+    """Fraction of predicted-answer tokens present in the gold answer.
+
+    Counterpart to :func:`answer_correctness_strict` (which is recall —
+    gold tokens recovered). Precision answers the *other* side of the
+    verbosity coin: "of the tokens we shipped, how many were on-topic?".
+
+    R85-A — added because the existing Loose / Strict pair leaves a
+    one-dimensional view of the gap. Loose = Jaccard penalises BOTH
+    missing-gold AND extra-pred without telling you which direction
+    dominates; Strict only measures recall. Precision plus recall give
+    the full 2-D picture and reproduce Loose / F1 via standard
+    identities.
+
+    Empty prediction → 0.0; empty gold → 0.0 (cannot grade).
+    """
+    pt = _tokens(pred)
+    gt = _tokens(gold)
+    if not gt:
+        return 0.0
+    if not pt:
+        return 0.0
+    return len(pt & gt) / len(pt)
+
+
+def answer_correctness_f1(pred: str, gold: str) -> float:
+    """Symmetric F1 of predicted vs gold answer tokens.
+
+    Standard NLP metric — ``2·P·R / (P+R)`` where P =
+    :func:`answer_correctness_precision`, R =
+    :func:`answer_correctness_strict`. Equivalent to but less
+    length-sensitive than Jaccard (``answer_correctness_loose``); on
+    the same row Jaccard ≤ F1 with equality iff |pred|=|gold|.
+
+    R85-A — added for cross-paper comparability (SQuAD / TriviaQA /
+    legal-domain leaderboards report F1). NOT a competition rubric
+    axis; purely diagnostic.
+
+    Empty prediction or gold → 0.0.
+    """
+    pt = _tokens(pred)
+    gt = _tokens(gold)
+    if not gt or not pt:
+        return 0.0
+    overlap = len(pt & gt)
+    if overlap == 0:
+        return 0.0
+    p = overlap / len(pt)
+    r = overlap / len(gt)
+    return 2 * p * r / (p + r)
+
+
+def pred_gold_token_ratio(pred: str, gold: str) -> float:
+    """|pred| / |gold| token-count ratio.
+
+    Quick per-row diagnostic: ratios > ~1.5 signal verbose answers
+    (which mathematically force Loose < Strict). The aggregate sidecar
+    mean ratio mirrors the existing conciseness axis at a more raw
+    granularity (no quadratic length-ratio penalty applied).
+
+    R85-A. Empty gold → 0.0 (undefined; mirror the other functions'
+    behaviour rather than raise).
+    """
+    pt = _tokens(pred)
+    gt = _tokens(gold)
+    if not gt:
+        return 0.0
+    return len(pt) / len(gt)
 
 
 def answer_correctness_loose_legacy(pred: str, gold: str) -> float:
@@ -398,6 +480,9 @@ class RowScore:
     regulatory_tone: float
     answer_correctness_loose_legacy: float
     answer_correctness_strict_legacy: float
+    answer_correctness_precision: float = 0.0
+    answer_correctness_f1: float = 0.0
+    pred_gold_token_ratio: float = 0.0
     ans_keyword_recall: float | None = None
 
     def to_dict(self) -> dict[str, float | None]:
@@ -412,6 +497,9 @@ class RowScore:
             "regulatory_tone": round(self.regulatory_tone, 4),
             "ans_correctness_loose_legacy": round(self.answer_correctness_loose_legacy, 4),
             "ans_correctness_strict_legacy": round(self.answer_correctness_strict_legacy, 4),
+            "ans_correctness_precision": round(self.answer_correctness_precision, 4),
+            "ans_correctness_f1": round(self.answer_correctness_f1, 4),
+            "pred_gold_token_ratio": round(self.pred_gold_token_ratio, 4),
             "ans_keyword_recall": round(self.ans_keyword_recall, 4) if self.ans_keyword_recall is not None else None,
         }
 
@@ -440,6 +528,9 @@ def score_row(
         regulatory_tone=regulatory_tone(pred_answer),
         answer_correctness_loose_legacy=answer_correctness_loose_legacy(pred_answer, gold_answer),
         answer_correctness_strict_legacy=answer_correctness_strict_legacy(pred_answer, gold_answer),
+        answer_correctness_precision=answer_correctness_precision(pred_answer, gold_answer),
+        answer_correctness_f1=answer_correctness_f1(pred_answer, gold_answer),
+        pred_gold_token_ratio=pred_gold_token_ratio(pred_answer, gold_answer),
         ans_keyword_recall=answer_keyword_recall(pred_answer, expected_keywords),
     )
 
@@ -488,6 +579,9 @@ def aggregate(rows: list[RowScore]) -> dict[str, float]:
         "regulatory_tone": round(s("regulatory_tone") / n, 4),
         "ans_correctness_loose_legacy": round(s("answer_correctness_loose_legacy") / n, 4),
         "ans_correctness_strict_legacy": round(s("answer_correctness_strict_legacy") / n, 4),
+        "ans_correctness_precision": round(s("answer_correctness_precision") / n, 4),
+        "ans_correctness_f1": round(s("answer_correctness_f1") / n, 4),
+        "pred_gold_token_ratio": round(s("pred_gold_token_ratio") / n, 4),
         "latency_p50_ms": round(percentile(latencies, 50), 2),
         "latency_p95_ms": round(percentile(latencies, 95), 2),
         "latency_max_ms": round(max(latencies) if latencies else 0.0, 2),
