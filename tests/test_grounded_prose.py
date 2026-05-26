@@ -256,17 +256,25 @@ class TestAugmentWithRefDescriptions:
         assert out  # non-empty
 
     def test_inline_replace_mode(self) -> None:
-        """Inline bare or parenthesized citations are replaced with descriptions in-place."""
+        """Inline bare or parenthesized citations are replaced with descriptions in-place.
+
+        R90 — the in-place expansion now uses counsel-voice prose:
+        ``(Article 13)`` → ``(Article 13 requires high-risk AI systems...)``
+        rather than the pre-R90 em-dash typographic format.
+        """
         from app.integrations.regenold.grounded_prose import augment_with_ref_descriptions
         import os
-        
+
         answer = "The provider must comply with the requirements (Article 13)."
         # With replace mode enabled:
         with mock.patch.dict(os.environ, {"REGENOLD_REF_DESCRIBE_REPLACE": "1"}):
             out = augment_with_ref_descriptions(answer, ["Article 13"])
-        
-        assert "Article 13 —" in out
-        assert "(Article 13 —" in out
-        # Make sure it replaced inside the parentheses in-place
+
+        # Counsel-voice integration: "Article 13 requires high-risk AI..."
+        # The em-dash typographic format is no longer produced.
+        assert "Article 13 requires" in out, f"counsel-voice prose missing: {out!r}"
+        assert "(Article 13 requires" in out, f"parenthesized expansion not in-place: {out!r}"
+        # Em-dash typographic prefix should NOT appear.
+        assert "Article 13 —" not in out, f"old em-dash format still present: {out!r}"
+        # Verify in-place substitution preserved surrounding context.
         assert out.startswith("The provider must comply with the requirements")
-        assert "Article 13 —" in out

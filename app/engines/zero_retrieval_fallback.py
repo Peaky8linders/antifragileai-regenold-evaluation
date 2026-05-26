@@ -261,10 +261,13 @@ def _build_prose(refs: list[str], question: str = "") -> str:
     else:
         joined = ", ".join(user_facing[:-1]) + " and " + user_facing[-1]
 
+    # R90 — counsel-voice defensive fallback. Pre-R90 used the robotic
+    # "This question is covered by the EU AI Act under ..." opener; the
+    # rewrite frames the operative provisions in legal-counsel prose
+    # without the database-readout feel.
     return (
-        f"This question is covered by the EU AI Act under {joined}. "
-        f"Consult the cited provisions for the operative obligations and "
-        f"definitions that apply to this topic."
+        f"{joined} are the operative provisions of the EU AI Act for this "
+        f"question — consult them for the applicable obligations and definitions."
     )
 
 

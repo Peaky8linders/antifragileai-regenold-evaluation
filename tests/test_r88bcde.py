@@ -406,15 +406,23 @@ class TestR88ESubpointDescriber:
         assert "eight categories" not in out.lower()
 
     def test_no_user_facing_refs_legacy_path(self):
-        """When user_facing_refs is None (legacy callers), behaviour
-        must be byte-identical to the pre-R88-E path.
+        """When user_facing_refs is None (legacy callers), the stitcher
+        still produces a non-empty regulator-voice answer carrying the
+        cited article.
+
+        R90 — pre-R90 also required "EU AI Act" literal in the prose
+        (from the dropped "This question is covered by the EU AI Act
+        under Article X" lead sentence). R90 drops that lead; the
+        Article 5 reference now lands as the sentence subject in the
+        counsel-voice substance prose.
         """
         from app.integrations.regenold.grounded_prose import stitch_grounded_prose
         # Same call without user_facing_refs → falls back to parent stub.
         out_legacy = stitch_grounded_prose(["Art. 5"])
-        # Should still produce a non-empty regulator-voice answer.
+        # Article number must still appear as cite anchor.
         assert "Article 5" in out_legacy
-        assert "EU AI Act" in out_legacy
+        # Non-empty, regulator-voice substance.
+        assert len(out_legacy.strip()) > 80
 
     def test_subpoint_describer_env_off(self, monkeypatch):
         from app.integrations.regenold.grounded_prose import _subpoint_describer_clause

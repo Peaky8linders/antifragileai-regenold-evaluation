@@ -172,10 +172,15 @@ def test_r89a_augmenter_prepends_describer(
         f"R89-A augmenter did not surface {ref} describer for {row}."
         f" Output: {out[:300]!r}"
     )
-    # ref must appear as the prepended prefix
-    assert out.startswith(f"{ref} — "), (
-        f"R89-A augmenter should PREPEND '{ref} — ...' so it survives"
-        f" the 3-sentence cap. Got: {out[:120]!r}"
+    # R90 — ref must appear as the prepended counsel-voice opener.
+    # Both "Article N <verb>..." (KB-stub style) and "Under Article N, ..."
+    # (describer style) are valid counsel-voice forms; either passes.
+    starts_under = out.startswith(f"Under {ref},")
+    starts_kb_verb = out.startswith(f"{ref} ") and not out.startswith(f"{ref} —")
+    assert starts_under or starts_kb_verb, (
+        f"R89-A augmenter should PREPEND counsel-voice prose ('Under {ref}, ...' "
+        f"or '{ref} <verb>...') so it survives the 3-sentence cap. "
+        f"Got: {out[:120]!r}"
     )
     # the keywords must land
     low = out.lower()
@@ -298,9 +303,11 @@ def test_r89a_force_append_env_on_prepends_anyway(monkeypatch) -> None:
         "Impact Assessment before first use."
     )
     out = augment_with_ref_descriptions(base, user_facing_refs=["Article 27"])
-    # Describer must have prepended at sentence position 0.
-    assert out.startswith("Article 27 — "), (
-        f"R89-A env ON: describer should PREPEND. Got: {out[:120]!r}"
+    # R90 — describer must prepend at sentence position 0 in counsel voice
+    # ("Under Article 27, ..." for the describer's noun-phrase shape).
+    assert out.startswith("Under Article 27,") or out.startswith("Article 27 "), (
+        f"R89-A env ON: describer should PREPEND in counsel voice. "
+        f"Got: {out[:120]!r}"
     )
     # And the FRIA acronym must now land in the augmented output.
     assert "FRIA" in out, (
@@ -324,10 +331,14 @@ def test_r89a_sub_point_keys_still_force_append_regardless(monkeypatch) -> None:
     out = augment_with_ref_descriptions(
         base, user_facing_refs=["Article 5.1.f"]
     )
-    # Sub-point describer should still prepend with R88-E force_append.
-    assert out.startswith("Article 5.1.f — "), (
+    # R90 — sub-point describer prepends in counsel voice
+    # ("Under Article 5.1.f, emotion recognition...").
+    assert (
+        out.startswith("Under Article 5.1.f,")
+        or out.startswith("Article 5.1.f ")
+    ), (
         f"R88-E sub-point should force-prepend independent of R89-A "
-        f"env gate. Got: {out[:120]!r}"
+        f"env gate (R90 counsel-voice). Got: {out[:120]!r}"
     )
 
 
