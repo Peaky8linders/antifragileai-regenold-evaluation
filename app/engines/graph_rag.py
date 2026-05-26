@@ -273,6 +273,12 @@ def _openai_wrapper_complete_for_graph_rag(
                 "Re-seed the wrapper's OAuth token by running login.bat. "
                 "Falling back to deterministic for this call.",
             )
+        elif "out of extra usage" in response.error.lower() or "credit balance" in response.error.lower():
+            logger.error(
+                "graph_rag.openai_wrapper_quota_exhausted — LLM quota limits reached: %s. "
+                "Falling back to deterministic for this call.",
+                response.error[:200],
+            )
         else:
             logger.warning(
                 "graph_rag.openai_wrapper_call_failed: %s",
@@ -355,6 +361,12 @@ def _anthropic_complete_for_graph_rag(
         elif "Authentication" in exc_name or "Permission" in exc_name:
             logger.error(
                 "graph_rag.anthropic_auth_failed: %s — check P2P_GRAPH_RAG_API_KEY. "
+                "Falling back to deterministic for this call.",
+                str(exc)[:200],
+            )
+        elif "BadRequestError" in exc_name and "credit balance" in str(exc).lower():
+            logger.error(
+                "graph_rag.anthropic_credit_exhausted: %s — check billing dashboard. "
                 "Falling back to deterministic for this call.",
                 str(exc)[:200],
             )
@@ -2803,6 +2815,8 @@ def _retrieve_from_kb(
                 if idx >= 6:
                     break
                 context.article_info.append({
+                    "id": f"kb-art-{entity}-{pid}",
+                    "obligation_id": f"kb-art-{entity}-{pid}",
                     "article": entity,
                     "paragraph_id": pid,
                     "title": req.get("title", ""),
