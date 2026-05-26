@@ -1020,10 +1020,15 @@ def _engine_cache_key(question: str, system_context: str | None) -> str:
             "REGENOLD_SUBPOINT_DESCRIBER",
         )
     )
-    blob = (
-        f"{KB_VERSION}\n{question}\n{system_context or ''}\n"
-        f"flags:{flag_bits}\nprovider:{provider_bit}\nengine:{engine_flags}"
-    ).encode("utf-8")
+    import json
+    blob = json.dumps([
+        KB_VERSION,
+        question,
+        system_context or "",
+        f"flags:{flag_bits}",
+        f"provider:{provider_bit}",
+        f"engine:{engine_flags}"
+    ]).encode("utf-8")
     return hashlib.sha256(blob).hexdigest()
 
 
