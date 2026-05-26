@@ -222,6 +222,30 @@ def _call_judge_sonnet(prompt: str, timeout_s: float = 30.0) -> dict[str, Any]:
     return _parse_judge_json(resp.text or "")
 
 
+_groq_lock = threading.Lock()
+_groq_last_call_time = 0.0
+
+# Groq free-tier limits (as of 2024-Q4):
+#   llama-3.3-70b-versatile  →  6,000 TPM / 30 RPM
+#   llama-3.1-8b-instant     → 20,000 TPM / 30 RPM   ← default for judge
+# Each judge axis call uses ~300 tokens (system + prompt + completion).
+# 4 axes × 300 ≈ 1,200 tokens/row, so the 70B model is exhausted in ~5 rows.
+# The 8B instant model gives 20k TPM → ~16 rows before a 1-min window resets.
+# With a 4-second inter-call sleep: 15 calls/min × 300 tok = 4,500 TPM < 20k. ✓
+_GROQ_DEFAULT_MODEL = "llama-3.1-8b-instant"
+_GROQ_INTER_REQUEST_SLEEP = 4.0  # seconds — 15 RPM × 300 tok ≈ 4,500 TPM
+
+def _rate_limit_groq() -> None:
+    global _groq_last_call_time
+    with _groq_lock:
+        now = time.monotonic()
+        elapsed = now - _groq_last_call_time
+        delay = _GROQ_INTER_REQUEST_SLEEP - elapsed
+        if delay > 0:
+            time.sleep(delay)
+        _groq_last_call_time = time.monotonic()
+
+
 def _call_judge_groq(prompt: str, timeout_s: float = 30.0) -> dict[str, Any]:
     """Send the judge prompt through the Groq provider.
     
@@ -239,6 +263,9 @@ def _call_judge_groq(prompt: str, timeout_s: float = 30.0) -> dict[str, Any]:
     if not groq_api_key:
         return {"judge_error": "no_api_key: GROQ_API_KEY environment variable is not set."}
         
+    # Enforce thread-safe rate limiting of 30 RPM (2.1s interval) for Groq free tier
+    _rate_limit_groq()
+        
     try:
         provider = _OpenAIWrapperProvider(
             base_url="https://api.groq.com/openai/v1",
@@ -248,7 +275,7 @@ def _call_judge_groq(prompt: str, timeout_s: float = 30.0) -> dict[str, Any]:
     except Exception as exc:  # noqa: BLE001
         return {"judge_error": f"groq_init_failed: {exc}"}
         
-    model = os.environ.get("REGENOLD_DENOISER_MODEL_GROQ", "llama-3.3-70b-versatile")
+    model = os.environ.get("REGENOLD_DENOISER_MODEL_GROQ", _GROQ_DEFAULT_MODEL)
     req = OpenAIWrapperRequest(
         system=_JUDGE_SYSTEM,
         user=prompt,
@@ -387,8 +414,8 @@ def _call_judge_with_retry(
     caller: Callable[[str], dict[str, Any]],
     prompt: str,
     *,
-    max_retries: int = 1,
-    backoff_s: float = 1.0,
+    max_retries: int = 4,
+    backoff_s: float = 4.0,
 ) -> tuple[dict[str, Any], int, list[str]]:
     """Invoke ``caller(prompt)`` and retry once on retryable failures.
 
@@ -622,6 +649,16 @@ def run(
     provider: str = "wrapper",
     out_dir: Path | None = None,
 ) -> dict[str, Any]:
+    # Groq free-tier TPM constraints require sequential evaluation.
+    # Overriding concurrency to 1 prevents parallel bursts that burn the
+    # token budget faster than the 1-minute window can reset.
+    if provider == "groq" and concurrency > 1:
+        print(
+            f"[judge] groq provider: overriding concurrency {concurrency} → 1 "
+            "(free-tier TPM constraints require sequential calls)",
+            flush=True,
+        )
+        concurrency = 1
     started_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     payload = json.loads(bench_sidecar.read_text(encoding="utf-8"))
 
@@ -730,7 +767,10 @@ def main(argv: list[str] | None = None) -> int:
     # cloud rate limits are higher and more stable.
     parser.add_argument(
         "--concurrency", type=int, default=2,
-        help="Number of worker threads (default 2 — tuned for the wrapper's slowapi gate).",
+        help=(
+            "Number of worker threads (default 2 — tuned for the wrapper's slowapi gate). "
+            "Automatically overridden to 1 for --provider groq due to free-tier TPM limits."
+        ),
     )
     # R66-C — Anthropic SDK direct path. Routes each axis call through
     # ``anthropic.Anthropic().messages.create(...)`` instead of the
