@@ -222,6 +222,52 @@ def _call_judge_sonnet(prompt: str, timeout_s: float = 30.0) -> dict[str, Any]:
     return _parse_judge_json(resp.text or "")
 
 
+def _call_judge_groq(prompt: str, timeout_s: float = 30.0) -> dict[str, Any]:
+    """Send the judge prompt through the Groq provider.
+    
+    Tuned to run Llama 3.3 70B for fast, highly robust, and cost-effective grading.
+    """
+    try:
+        from app.llm.openai_wrapper_provider import (  # noqa: PLC0415
+            OpenAIWrapperRequest,
+            _OpenAIWrapperProvider,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return {"judge_error": f"wrapper_unavailable: {exc}"}
+        
+    groq_api_key = os.getenv("GROQ_API_KEY", "").strip()
+    if not groq_api_key:
+        return {"judge_error": "no_api_key: GROQ_API_KEY environment variable is not set."}
+        
+    try:
+        provider = _OpenAIWrapperProvider(
+            base_url="https://api.groq.com/openai/v1",
+            api_key=groq_api_key,
+            timeout=timeout_s,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return {"judge_error": f"groq_init_failed: {exc}"}
+        
+    model = os.environ.get("REGENOLD_DENOISER_MODEL_GROQ", "llama-3.3-70b-versatile")
+    req = OpenAIWrapperRequest(
+        system=_JUDGE_SYSTEM,
+        user=prompt,
+        model=model,
+        max_tokens=400,
+        temperature=0.0,
+        timeout_seconds=timeout_s,
+    )
+    try:
+        resp = provider.complete(req)
+    except Exception as exc:  # noqa: BLE001
+        return {"judge_error": f"call_failed: {exc}"}
+    if resp is None:
+        return {"judge_error": "groq_returned_none"}
+    if resp.error:
+        return {"judge_error": f"groq_error: {resp.error[:160]}"}
+    return _parse_judge_json(resp.text or "")
+
+
 # ── Judge call — Anthropic SDK direct path (R66-C) ──────────────────────
 
 
@@ -403,6 +449,8 @@ def _resolve_caller(provider: str) -> Callable[[str], dict[str, Any]]:
     flag. Defaults to the wrapper path for backwards-compat."""
     if provider == "anthropic":
         return _call_judge_anthropic
+    if provider == "groq":
+        return _call_judge_groq
     # "wrapper" or anything else falls back to the wrapper (historical
     # default) — runner_v2 / bench-runner sidecars produced pre-R66-C
     # all assume the wrapper path is active.
@@ -689,12 +737,13 @@ def main(argv: list[str] | None = None) -> int:
     # local openai_wrapper bridge. Requires ``P2P_GRAPH_RAG_API_KEY``
     # or ``ANTHROPIC_API_KEY`` to be set.
     parser.add_argument(
-        "--provider", choices=("wrapper", "anthropic"), default="wrapper",
+        "--provider", choices=("wrapper", "anthropic", "groq"), default="wrapper",
         help=(
             "Provider for the judge LLM. "
             "'wrapper' (default) routes through the local openai_wrapper bridge. "
             "'anthropic' uses the Anthropic SDK directly (requires "
-            "P2P_GRAPH_RAG_API_KEY or ANTHROPIC_API_KEY)."
+            "P2P_GRAPH_RAG_API_KEY or ANTHROPIC_API_KEY). "
+            "'groq' routes through the Groq provider (requires GROQ_API_KEY)."
         ),
     )
     parser.add_argument(
