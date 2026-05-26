@@ -2882,6 +2882,7 @@ def regenold_eu_ai_act_ask(
         _cacheable = (
             not _stats.get("stage2_call_failed")
             and rag_res.confidence >= _MIN_CACHEABLE_CONFIDENCE
+            and _stats.get("nodes_traversed", 0) > 0
         )
         if _cacheable:
             _ENGINE_CACHE.put(cache_key, rag_res)
