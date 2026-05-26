@@ -1883,6 +1883,14 @@ def _prune_non_anchor_refs(
         m.group(1).upper() for m in _LIVE_ANNEX_RE.finditer(live)
     }
     intent_source = "explicit"
+    
+    if not explicit_article_nums and not explicit_annex_romans and marker in live_question:
+        history_part = live_question.split(marker, 1)[0]
+        explicit_article_nums = {m.group(1) for m in _LIVE_ARTICLE_RE.finditer(history_part)}
+        explicit_annex_romans = {
+            m.group(1).upper() for m in _LIVE_ANNEX_RE.finditer(history_part)
+        }
+
     if not explicit_article_nums and not explicit_annex_romans:
         # Round-20: ask the intent classifier for an implicit anchor.
         intent_articles, intent_annexes, intent_label = _intent_anchor_set(live)
