@@ -2637,10 +2637,10 @@ def _build_question_from_history(messages: list[Any]) -> tuple[str, str | None]:
         if marker_idx >= 0:
             live_part = question[marker_idx:]
             if len(live_part) >= 2000:
-                # Live question alone overflows; keep the marker + tail
-                # of the live question so the boundary still survives.
-                tail_budget = 2000 - len(live_marker)
-                question = live_marker + live_part[len(live_marker):][-tail_budget:]
+                # Live question alone overflows; keep the marker + beginning
+                # of the live question so early anchors survive.
+                head_budget = 2000 - len(live_marker)
+                question = live_marker + live_part[len(live_marker):][:head_budget]
             else:
                 history_budget = 2000 - len(live_part)
                 history_part = question[:marker_idx][-history_budget:]
