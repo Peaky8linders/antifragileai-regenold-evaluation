@@ -2992,6 +2992,21 @@ def classify_conversation(
         content = _get(m, "content")
         if not content:
             continue
+            
+        # Prompt injection check over conversation history
+        text_for_inj = _normalise(content)
+        if _has_injection_pattern(text_for_inj):
+            match = _matches_any(text_for_inj, _INJECTION_PATTERNS)
+            return ConversationVerdict(
+                verdict=ScopeVerdict(
+                    in_scope=False,
+                    reason=ScopeReason.PROMPT_INJECTION,
+                    evidence=f"Prompt-injection pattern matched: {match.group(0)[:60]!r}" if match else "Injection",
+                ),
+                anchor_articles=(),
+                history_unknown_articles=(),
+                live_question=live_text,
+            )
         is_prior_for_rescue = (live_index is None) or (idx < live_index)
         k, u = extract_referenced_articles(content)
         # Unknown refs ALWAYS block (precedence guard) regardless of role
