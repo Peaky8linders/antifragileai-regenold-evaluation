@@ -165,7 +165,7 @@ def _tokenize(text: str) -> list[str]:
             continue
         if len(raw) <= 1:
             continue
-        if raw.isdigit() and len(raw) > 4:
+        if raw.isdigit() and len(raw) != 4:
             continue
         tokens.append(raw)
     return tokens
