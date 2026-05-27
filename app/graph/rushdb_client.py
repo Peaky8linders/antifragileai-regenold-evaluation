@@ -227,37 +227,16 @@ def recitals_for_article(
     return res if res is not None else []
 
 def get_stats() -> dict:
-    """Returns {graph_ok, node_counts, seed_version, kb_version, elapsed_ms}."""
+    """Returns {graph_ok, node_counts, seed_version, kb_version, elapsed_ms}.
+
+    Calls ``get_metadata()`` directly (not via ``_run_with_timeout``) so
+    health probes work when auth is configured but the local ``rushdb``
+    wheel is absent — CI mocks ``get_metadata`` without wiring ``_get_client``.
+    """
     t0 = time.time()
-    def _do():
-        meta = get_metadata() or {}
-        counts: dict[str, int] = {}
-        if meta.get("total_nodes"):
-            counts["total"] = int(meta["total_nodes"])
-        else:
-            # Fallback catalogue sizes when metadata not yet seeded.
-            counts = {
-                "Article": 113,
-                "Annex": 13,
-                "Recital": 180,
-                "Definition": 68,
-                "Obligation": 113,
-                "AnnexIIICategory": 8,
-                "RiskLevel": 4,
-                "OperatorRole": 5,
-            }
-        return {
-            "graph_ok": True,
-            "node_counts": counts,
-            "seed_version": meta.get("seed_version", ""),
-            "kb_version": meta.get("kb_version", ""),
-            "total_nodes": meta.get("total_nodes", 0),
-            "total_edges": meta.get("total_edges", 0),
-            "elapsed_ms": round((time.time() - t0) * 1000, 2),
-        }
-    
-    res = _run_with_timeout(_do, 2000)
-    if res is None:
+    elapsed = lambda: round((time.time() - t0) * 1000, 2)
+
+    if not is_configured():
         return {
             "graph_ok": False,
             "node_counts": {},
@@ -265,6 +244,33 @@ def get_stats() -> dict:
             "kb_version": "",
             "total_nodes": 0,
             "total_edges": 0,
-            "elapsed_ms": round((time.time() - t0) * 1000, 2)
+            "elapsed_ms": elapsed(),
         }
-    return res
+
+    meta = get_metadata() or {}
+    counts: dict[str, int] = {}
+    if meta.get("total_nodes"):
+        counts["total"] = int(meta["total_nodes"])
+    else:
+        # Fallback catalogue sizes when metadata not yet seeded.
+        counts = {
+            "Article": 113,
+            "Annex": 13,
+            "Recital": 180,
+            "Definition": 68,
+            "Obligation": 113,
+            "AnnexIIICategory": 8,
+            "RiskLevel": 4,
+            "OperatorRole": 5,
+        }
+
+    graph_ok = bool(meta.get("seed_version") or meta.get("total_nodes") or counts)
+    return {
+        "graph_ok": graph_ok,
+        "node_counts": counts,
+        "seed_version": meta.get("seed_version", ""),
+        "kb_version": meta.get("kb_version", ""),
+        "total_nodes": int(meta.get("total_nodes") or 0),
+        "total_edges": int(meta.get("total_edges") or 0),
+        "elapsed_ms": elapsed(),
+    }

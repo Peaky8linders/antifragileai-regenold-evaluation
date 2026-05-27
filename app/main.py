@@ -714,6 +714,7 @@ def healthz_graph() -> dict[str, object]:
     from app.data.kb import KB_VERSION
     from app.graph.client import _STATS_LABELS, get_graph_client
 
+    start = _time.perf_counter()
     base: dict[str, object] = {
         "version": settings.version,
         "graph_enabled": False,
@@ -738,7 +739,7 @@ def healthz_graph() -> dict[str, object]:
             base["kb_version"] = stats.get("kb_version", KB_VERSION)
             base["node_counts"] = stats.get("node_counts", {})
             base["edge_counts"] = {"cross_refs_inferred": stats.get("total_edges", 0)}
-            base["elapsed_ms"] = int((_time.perf_counter() - start) * 1000)
+            base["elapsed_ms"] = int(stats.get("elapsed_ms") or (_time.perf_counter() - start) * 1000)
             return base
     except Exception as exc:
         import logging
