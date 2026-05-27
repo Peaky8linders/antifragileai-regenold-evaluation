@@ -1,8 +1,18 @@
 # Neo4j → RushDB Migration Design
 
 **Date:** 2026-05-25  
-**Status:** Approved for post-competition execution  
+**Status:** Implemented on `main` (2026-05-27) — operator cutover pending RushDB credentials on Railway  
 **Author:** Claude (via brainstorming skill)
+
+**Shipped:** `app/graph/rushdb_client.py`, `scripts/seed_rushdb_kb.py`,
+`app/engines/rushdb_hybrid_retrieval.py` (env-gated), `/healthz/graph` RushDB-first,
+`graph_expand_2hop` RushDB path. Operator runbook:
+[`docs/partners/regenold/RUSHDB_RUNBOOK.md`](../../partners/regenold/RUSHDB_RUNBOOK.md).
+
+**Schema note:** Production seeder uses **Article/Annex/Definition** records with
+`content` + AI indexes (not the guide's top-level DOC/CHUNK labels). Hybrid retrieval
+maps guide §3–5 intent/fusion onto Article `content`. Full DOC/CHUNK port is optional
+future work — see [`Hybrid_RAG_Guide.md`](../../partners/regenold/Hybrid_RAG_Guide.md).
 
 ---
 
