@@ -67,13 +67,39 @@ def _run_with_timeout(func: Callable, timeout_ms: int) -> Any:
             logger.error("RushDB query failed: %s", exc)
             return None
 
+_MISSING = object()
+
+
+def _normalize_rushdb_record(record: Any) -> dict:
+    """Map RushDB SDK record objects to plain dicts for health/auto-seed."""
+    if isinstance(record, dict):
+        return record
+    fields = (
+        "id",
+        "seed_version",
+        "kb_version",
+        "seeded_at",
+        "total_nodes",
+        "total_edges",
+    )
+    out: dict[str, Any] = {}
+    raw = getattr(record, "__dict__", None)
+    if isinstance(raw, dict):
+        out.update({k: v for k, v in raw.items() if not str(k).startswith("_")})
+    for key in fields:
+        val = getattr(record, key, _MISSING)
+        if val is not _MISSING and val is not None:
+            out[key] = val
+    return out
+
+
 def get_metadata() -> dict | None:
     """Returns KB_METADATA record or None."""
     def _do():
         client = _get_client()
         res = client.records.find({"labels": ["KB_METADATA"], "limit": 1})
         if res and hasattr(res, "data") and res.data:
-            return res.data[0].__dict__ if hasattr(res.data[0], "__dict__") else res.data[0]
+            return _normalize_rushdb_record(res.data[0])
         return None
     return _run_with_timeout(_do, 2000) # Give metadata a slightly longer timeout on boot
 

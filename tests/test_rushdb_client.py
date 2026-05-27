@@ -134,3 +134,39 @@ class TestRushdbClient:
         assert stats["graph_ok"] is True
         assert stats["total_nodes"] == 505
         assert stats["seed_version"] == "2026-05-25-rushdb-v1"
+
+    def test_get_metadata_normalizes_sdk_record(self, monkeypatch):
+        monkeypatch.setenv("RUSHDB_AUTH_TOKEN", "t")
+
+        class _SdkStyleMetadata:
+            """RushDB SDK records expose fields as attributes, not always in __dict__."""
+
+            __slots__ = ("seed_version", "kb_version", "total_nodes", "total_edges")
+
+            def __init__(self) -> None:
+                self.seed_version = "2026-05-27-rushdb-v2"
+                self.kb_version = "2024.1689.v9"
+                self.total_nodes = 1119
+                self.total_edges = 259
+
+            @property
+            def __dict__(self) -> dict:
+                return {"id": "kb_metadata"}
+
+        meta_obj = _SdkStyleMetadata()
+
+        client = mock.MagicMock()
+        client.records.find.return_value = mock.MagicMock(data=[meta_obj])
+
+        with mock.patch("app.graph.rushdb_client._get_client", return_value=client):
+            from app.graph.rushdb_client import get_metadata
+
+            meta = get_metadata()
+
+        assert meta == {
+            "id": "kb_metadata",
+            "seed_version": "2026-05-27-rushdb-v2",
+            "kb_version": "2024.1689.v9",
+            "total_nodes": 1119,
+            "total_edges": 259,
+        }
