@@ -2045,6 +2045,26 @@ class TestR57AFactPatternMultiTurnRescue:
         if cv.verdict.reason == ScopeReason.OTHER_REGULATION:
             assert cv.in_scope is False
 
+    def test_r57_a_non_ai_negation_after_prior_anchor_stays_refused(self) -> None:
+        """Explicit non-AI live turns must not borrow prior AI Act anchors."""
+        cv = classify_conversation(_scenario(
+            ("user", "What does Article 13 require for transparency?"),
+            ("assistant", "Article 13 governs transparency for high-risk AI."),
+            ("user", "We do not use AI at all."),
+        ))
+        assert cv.in_scope is False
+        assert cv.reason == ScopeReason.CONVERSATIONAL
+
+    def test_r57_a_estate_negation_after_prior_anchor_stays_refused(self) -> None:
+        """Estate / will contexts must not borrow prior AI Act anchors."""
+        cv = classify_conversation(_scenario(
+            ("user", "What does Article 13 require for transparency?"),
+            ("assistant", "Article 13 governs transparency for high-risk AI."),
+            ("user", "How to withdraw a designation from my will?"),
+        ))
+        assert cv.in_scope is False
+        assert cv.reason == ScopeReason.CONVERSATIONAL
+
 
 class TestR57AScopeLeakFixes:
     """R57-A part 2 — close 4 OOS scope-leak baselines identified by

@@ -8,10 +8,11 @@ from __future__ import annotations
 
 import concurrent.futures
 import logging
-import os
 import re
 import time
 from typing import Any, Callable
+
+from app.graph.rushdb_config import create_rushdb_client, is_configured
 
 logger = logging.getLogger(__name__)
 
@@ -29,18 +30,18 @@ def _get_client() -> Any:
     _INIT_ATTEMPTED = True
 
     try:
-        import rushdb
+        import rushdb  # noqa: F401 — gate on package presence
     except ImportError:
         logger.warning("RushDB: rushdb package not installed")
         return None
 
-    auth_token = os.environ.get("RUSHDB_AUTH_TOKEN")
-    if not auth_token:
+    if not is_configured():
         return None
 
     try:
-        _RUSHDB_CLIENT = rushdb.RushDB(auth_token, url="https://api.rushdb.com/api/v1")
-        logger.info("RushDB client initialized.")
+        _RUSHDB_CLIENT = create_rushdb_client()
+        if _RUSHDB_CLIENT is not None:
+            logger.info("RushDB client initialized.")
     except Exception as exc:
         logger.warning("RushDB connection failed: %s", exc)
         _RUSHDB_CLIENT = None
@@ -48,7 +49,7 @@ def _get_client() -> Any:
     return _RUSHDB_CLIENT
 
 def is_enabled() -> bool:
-    """True iff RUSHDB_AUTH_TOKEN is set and rushdb package is importable."""
+    """True iff RushDB auth is configured, package importable, and client connects."""
     return _get_client() is not None
 
 def _run_with_timeout(func: Callable, timeout_ms: int) -> Any:
@@ -230,16 +231,21 @@ def get_stats() -> dict:
     t0 = time.time()
     def _do():
         meta = get_metadata() or {}
-        counts = {
-            "Article": 113,
-            "Annex": 13,
-            "Recital": 180,
-            "Definition": 68,
-            "Obligation": 113,
-            "AnnexIIICategory": 8,
-            "RiskLevel": 4,
-            "OperatorRole": 5
-        }
+        counts: dict[str, int] = {}
+        if meta.get("total_nodes"):
+            counts["total"] = int(meta["total_nodes"])
+        else:
+            # Fallback catalogue sizes when metadata not yet seeded.
+            counts = {
+                "Article": 113,
+                "Annex": 13,
+                "Recital": 180,
+                "Definition": 68,
+                "Obligation": 113,
+                "AnnexIIICategory": 8,
+                "RiskLevel": 4,
+                "OperatorRole": 5,
+            }
         return {
             "graph_ok": True,
             "node_counts": counts,
@@ -247,7 +253,7 @@ def get_stats() -> dict:
             "kb_version": meta.get("kb_version", ""),
             "total_nodes": meta.get("total_nodes", 0),
             "total_edges": meta.get("total_edges", 0),
-            "elapsed_ms": round((time.time() - t0) * 1000, 2)
+            "elapsed_ms": round((time.time() - t0) * 1000, 2),
         }
     
     res = _run_with_timeout(_do, 2000)

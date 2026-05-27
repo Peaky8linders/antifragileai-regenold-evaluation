@@ -28,6 +28,15 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
+from app.data.chapter_summaries import (
+    candidate_chapters_for_query,
+    candidate_sections_for_query,
+)
+from app.data.kb_search import (
+    top_articles_by_relevance,
+    top_articles_by_relevance_in_chapters,
+    top_articles_by_relevance_in_sections,
+)
 from app.engines.scenario_classifier import (
     ScenarioVerdict,
     classify_scenario_query,
@@ -40,6 +49,10 @@ from app.models import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _env_enabled(name: str, default: str = "0") -> bool:
+    return os.getenv(name, default).strip().lower() in ("1", "true", "yes", "on")
 
 
 # ─── Robust JSON extraction for LLM responses ────────────────────────────────
@@ -1508,11 +1521,6 @@ def _deterministic_parse(question: str) -> GraphQuery:
     # zero-precision fallback.
     if not entities:
         try:
-            from app.data.chapter_summaries import candidate_chapters_for_query  # noqa: PLC0415
-            from app.data.kb_search import (  # noqa: PLC0415
-                top_articles_by_relevance,
-                top_articles_by_relevance_in_chapters,
-            )
             # PageIndex-style hierarchical pre-filter: scope BM25 to the
             # 1-2 most likely chapters before searching the full 135-doc
             # corpus. When the query has a clear chapter signal (e.g.
@@ -1528,13 +1536,29 @@ def _deterministic_parse(question: str) -> GraphQuery:
                 question, intent_label=intent
             )
             if candidate_chapters:
-                bm25_hits = top_articles_by_relevance_in_chapters(
-                    question, candidate_chapters, k=5, min_score=1.0
-                )
-                logger.debug(
-                    "chapter_scoped_bm25: chapters=%s hits=%s",
-                    candidate_chapters, bm25_hits,
-                )
+                bm25_hits: list[str] = []
+                if _env_enabled("REGENOLD_SECTION_SCOPED_BM25"):
+                    candidate_sections = candidate_sections_for_query(
+                        question,
+                        chapters=candidate_chapters,
+                        intent_label=intent,
+                    )
+                    if candidate_sections:
+                        bm25_hits = top_articles_by_relevance_in_sections(
+                            question, candidate_sections, k=5, min_score=1.0
+                        )
+                        logger.debug(
+                            "section_scoped_bm25: sections=%s hits=%s",
+                            candidate_sections, bm25_hits,
+                        )
+                if not bm25_hits:
+                    bm25_hits = top_articles_by_relevance_in_chapters(
+                        question, candidate_chapters, k=5, min_score=1.0
+                    )
+                    logger.debug(
+                        "chapter_scoped_bm25: chapters=%s hits=%s",
+                        candidate_chapters, bm25_hits,
+                    )
                 # If the scoped search yields nothing, fall through to
                 # full-corpus BM25 as a safety net.
                 if not bm25_hits:

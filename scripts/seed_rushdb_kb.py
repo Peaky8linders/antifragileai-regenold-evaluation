@@ -263,16 +263,19 @@ def build_payload() -> dict[str, list[dict]]:
 def run_seed(dry_run: bool = False) -> dict:
     """Returns {"status": "ok"|"skip"|"dry_run", "counts": {...}}."""
     try:
-        import rushdb
+        import rushdb  # noqa: F401
     except ImportError:
         return {"status": "error", "error": "rushdb package not installed"}
-        
-    auth_token = os.environ.get("RUSHDB_AUTH_TOKEN")
-    if not auth_token:
-        return {"status": "error", "error": "RUSHDB_AUTH_TOKEN not set"}
+
+    from app.graph.rushdb_config import create_rushdb_client, is_configured
+
+    if not is_configured():
+        return {"status": "error", "error": "RUSHDB_AUTH_TOKEN or RUSHDB_API_KEY not set"}
 
     try:
-        db = rushdb.RushDB(auth_token, url="https://api.rushdb.com/api/v1")
+        db = create_rushdb_client()
+        if db is None:
+            return {"status": "error", "error": "RushDB client could not be created"}
     except Exception as exc:
         return {"status": "error", "error": str(exc)}
 

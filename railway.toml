@@ -111,3 +111,12 @@ REGENOLD_CITE_DESCRIBE_GUARD = "1"
 # GROQ_API_BASE            = "https://api.groq.com/openai/v1"    # default
 # REGENOLD_INTENT_MODEL_GROQ = "llama-3.3-70b-versatile"          # default
 # GROQ_TIMEOUT_SECONDS     = "5"                                  # default
+
+# RushDB graph (Neo4j Aura replacement) — set ONE of:
+#   railway variables --set RUSHDB_AUTH_TOKEN=<token>
+#   railway variables --set RUSHDB_API_KEY=<key>
+# Optional:
+#   RUSHDB_BASE_URL = "https://api.rushdb.com/api/v1"
+# When RushDB auth is set, /healthz/graph and 2-hop expand prefer RushDB;
+# Neo4j remains a fallback when NEO4J_URI is also configured.
+# RUSHDB_AUTH_TOKEN = "<set via railway dashboard>"

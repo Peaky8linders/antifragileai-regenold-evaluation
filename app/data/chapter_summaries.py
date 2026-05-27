@@ -47,6 +47,7 @@ does Chapter X cover?" rather than asking about a specific provision.
 """
 from __future__ import annotations
 
+import os
 from typing import Optional
 
 from app.data.article_existence import ARTICLE_EXISTENCE
@@ -251,6 +252,81 @@ _BROAD_KEYWORD_CHAPTER_MAP: tuple[tuple[str, str], ...] = (
 )
 
 
+# R89-A — section-scoped routing. These markers are deliberately narrower
+# than the chapter markers: the section router fires only after chapter
+# routing has already selected Chapter III or V, then picks the most
+# specific local subdivision for BM25 pre-filtering.
+_SECTION_KEYWORD_MAP: tuple[tuple[str, str, int], ...] = (
+    # Chapter III, section 1 — classification of high-risk systems
+    ("annex iii", "III.1", 2),
+    ("annex 3", "III.1", 2),
+    ("high-risk classification", "III.1", 2),
+    ("high risk classification", "III.1", 2),
+    ("safety component", "III.1", 2),
+    ("high-risk ai system", "III.1", 1),
+    ("high risk ai system", "III.1", 1),
+    # Chapter III, section 2 — technical requirements
+    ("risk management", "III.2", 2),
+    ("data governance", "III.2", 2),
+    ("technical documentation", "III.2", 2),
+    ("record keeping", "III.2", 2),
+    ("logs", "III.2", 2),
+    ("transparency information", "III.2", 2),
+    ("instructions for use", "III.2", 2),
+    ("human oversight", "III.2", 2),
+    ("accuracy robustness", "III.2", 2),
+    ("cybersecurity", "III.2", 2),
+    # Chapter III, section 3 — operator obligations
+    ("provider obligations", "III.3", 2),
+    ("deployer obligations", "III.3", 2),
+    ("importer obligations", "III.3", 2),
+    ("distributor obligations", "III.3", 2),
+    ("authorised representative", "III.3", 2),
+    ("authorized representative", "III.3", 2),
+    ("fundamental rights impact", "III.3", 2),
+    ("fria", "III.3", 2),
+    ("corrective action", "III.3", 2),
+    ("substantial modification", "III.3", 2),
+    ("value chain", "III.3", 2),
+    ("deployers", "III.3", 1),
+    ("deployer", "III.3", 1),
+    ("importers", "III.3", 1),
+    ("importer", "III.3", 1),
+    ("distributors", "III.3", 1),
+    ("distributor", "III.3", 1),
+    # Chapter III, section 4 — notifying authorities / notified bodies
+    ("notifying authority", "III.4", 2),
+    ("notified body", "III.4", 2),
+    ("designating authority", "III.4", 2),
+    ("conformity assessment body", "III.4", 2),
+    # Chapter III, section 5 — standards / conformity / registration
+    ("harmonised standard", "III.5", 2),
+    ("harmonized standard", "III.5", 2),
+    ("conformity assessment", "III.5", 2),
+    ("ce marking", "III.5", 2),
+    ("ce mark", "III.5", 2),
+    ("eu declaration", "III.5", 2),
+    ("certificate", "III.5", 1),
+    ("registration", "III.5", 1),
+    # Chapter V, section 1 — GPAI classification + general obligations
+    ("general-purpose ai model", "V.1", 2),
+    ("general purpose ai model", "V.1", 2),
+    ("training data summary", "V.1", 2),
+    ("copyright", "V.1", 2),
+    ("open-weight", "V.1", 2),
+    ("open weight", "V.1", 2),
+    # Chapter V, section 2 — systemic-risk GPAI duties
+    ("systemic risk", "V.2", 2),
+    ("10^25", "V.2", 2),
+    ("10²⁵", "V.2", 2),
+    ("high-impact capabilities", "V.2", 2),
+    ("model evaluation", "V.2", 2),
+    # Chapter V, section 3 — codes of practice
+    ("code of practice", "V.3", 2),
+    ("codes of practice", "V.3", 2),
+)
+
+
 # ── Hyphen normalisation ─────────────────────────────────────────────────
 #
 # The davidath benchmark ships 90 U+2011 non-breaking hyphens, and AI Act
@@ -277,6 +353,56 @@ _HYPHEN_TABLE = {
 def _fold_hyphens(text: str) -> str:
     """Lowercase, fold every hyphen-family char to a space, collapse runs."""
     return " ".join(text.lower().translate(_HYPHEN_TABLE).split())
+
+
+def _enabled(name: str) -> bool:
+    return os.getenv(name, "0").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _intent_chapter_priors(intent_label: str | None) -> tuple[str, ...]:
+    if not intent_label:
+        return ()
+
+    if _enabled("REGENOLD_CHAPTER_ROUTING_V2"):
+        local_v2: dict[str, tuple[str, ...]] = {
+            "article_lookup": ("I",),
+            "definition": ("I",),
+            "definitional": ("I",),
+            "risk_assessment": ("II", "III"),
+            "risk_classification": ("II", "III"),
+            "obligation_check": ("III",),
+            "role_obligations": ("III",),
+            "compliance_checklist": ("III",),
+            "transparency": ("IV",),
+            "transparency_obligation": ("IV",),
+            "gpai_systemic": ("V",),
+            "sandbox": ("VI",),
+            "incident_reporting": ("IX",),
+            "penalty_inquiry": ("XII",),
+            "timeline_question": ("XIII",),
+            "fria": ("III",),
+            "general_compliance": (),
+            "gap_analysis": (),
+            "cross_framework": (),
+            "comparative": (),
+            "out_of_scope": (),
+            "other": (),
+        }
+        return local_v2.get(intent_label, ())
+
+    local_legacy: dict[str, str] = {
+        "article_lookup":       "I",
+        "risk_assessment":      "III",
+        "obligation_check":     "III",
+        "general_compliance":   "",   # too broad — no chapter signal
+        "gap_analysis":         "",   # too broad — no chapter signal
+        "cross_framework":      "",   # too broad — no chapter signal
+    }
+    local_chapter = local_legacy.get(intent_label, "MISSING")
+    if local_chapter == "MISSING":
+        mapped = _INTENT_CHAPTER_MAP.get(intent_label)
+        return (mapped,) if mapped else ()
+    return (local_chapter,) if local_chapter else ()
 
 
 # ── Public API ───────────────────────────────────────────────────────────
@@ -470,24 +596,7 @@ def candidate_chapters_for_query(
             chapters.add("I")
 
     # 3. Intent-label routing (catches intents the marker scan misses)
-    _LOCAL_INTENT_MAP: dict[str, str] = {
-        "article_lookup":       "I",
-        "risk_assessment":      "III",
-        "obligation_check":     "III",
-        "general_compliance":   "",   # too broad — no chapter signal
-        "gap_analysis":         "",   # too broad — no chapter signal
-        "cross_framework":      "",   # too broad — no chapter signal
-    }
-    if intent_label:
-        # Try the local map first (graph_rag intent labels)
-        local_chapter = _LOCAL_INTENT_MAP.get(intent_label, "MISSING")
-        if local_chapter == "MISSING":
-            # Fall back to chapter_summaries' built-in intent map
-            mapped = _INTENT_CHAPTER_MAP.get(intent_label)
-            if mapped:
-                chapters.add(mapped)
-        elif local_chapter:  # non-empty string → valid chapter
-            chapters.add(local_chapter)
+    chapters.update(_intent_chapter_priors(intent_label))
 
     # 4. Scope guard — too many chapters = uncertain routing
     if len(chapters) >= 4:
@@ -496,6 +605,46 @@ def candidate_chapters_for_query(
     # Discard the empty sentinel (used to signal "no chapter")
     chapters.discard("")
     return sorted(chapters)
+
+
+def candidate_sections_for_query(
+    question: str,
+    *,
+    chapters: list[str] | tuple[str, ...],
+    intent_label: str | None = None,
+) -> list[str]:
+    """Return candidate logical sections within already-selected chapters.
+
+    The section router is intentionally second-stage: callers first choose a
+    chapter with :func:`candidate_chapters_for_query`, then ask this helper for
+    a finer Chapter III / V subdivision. When no precise section signal exists
+    the function returns ``[]`` so callers can keep chapter-scoped BM25.
+    """
+    del intent_label  # reserved for future priors; keyword precision comes first
+    low = _fold_hyphens(question) if question else ""
+    if not low or not chapters:
+        return []
+
+    allowed_chapters = {chapter.split(".", 1)[0] for chapter in chapters}
+    scores: dict[str, int] = {}
+    for keyword, section, weight in _SECTION_KEYWORD_MAP:
+        if section.split(".", 1)[0] not in allowed_chapters:
+            continue
+        if _fold_hyphens(keyword) in low:
+            scores[section] = scores.get(section, 0) + weight
+
+    if not scores:
+        return []
+    best_score = max(scores.values())
+    winners = sorted(
+        section for section, score in scores.items()
+        if score == best_score
+    )
+    # If the same broad query ties three or more sections, scoping is no
+    # longer precise. Let the existing chapter/full BM25 fallback handle it.
+    if len(winners) >= 3:
+        return []
+    return winners
 
 
 def primary_anchors_for_chapter(chapter: str) -> tuple[str, ...]:
@@ -554,6 +703,14 @@ def _self_check() -> None:
             f"_BROAD_KEYWORD_CHAPTER_MAP entry {keyword!r} -> unknown "
             f"chapter {ch!r}"
         )
+    expected_sections = {"III.1", "III.2", "III.3", "III.4", "III.5",
+                         "V.1", "V.2", "V.3"}
+    for keyword, section, weight in _SECTION_KEYWORD_MAP:
+        assert section in expected_sections, (
+            f"_SECTION_KEYWORD_MAP entry {keyword!r} -> unknown section "
+            f"{section!r}"
+        )
+        assert weight > 0, f"_SECTION_KEYWORD_MAP[{keyword!r}] has bad weight"
 
 
 _self_check()
@@ -563,6 +720,7 @@ __all__ = [
     "CHAPTER_SUMMARY",
     "CHAPTER_PRIMARY_ANCHORS",
     "candidate_chapters_for_query",
+    "candidate_sections_for_query",
     "chapter_for_query",
     "summary_for_chapter",
     "primary_anchors_for_chapter",

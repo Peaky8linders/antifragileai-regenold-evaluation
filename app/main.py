@@ -746,7 +746,7 @@ def healthz_graph() -> dict[str, object]:
 
     # ─── Disabled path ────────────────────────────────────────────────────
     if not os.environ.get("NEO4J_URI"):
-        base["detail"] = "NEO4J_URI (or RUSHDB_AUTH_TOKEN) not set"
+        base["detail"] = "NEO4J_URI (or RUSHDB_AUTH_TOKEN / RUSHDB_API_KEY) not set"
         return base
 
     start = _time.perf_counter()

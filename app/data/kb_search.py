@@ -95,6 +95,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 from typing import Literal
 
+from app.data.article_sections import articles_for_sections
 from app.data.kb import EC_CHECKER_OBLIGATION_MAP
 from app.data.ontology import (
     ANNEX_III_REGISTRY,
@@ -109,9 +110,11 @@ from app.data.ontology import (
 # Articles where our hand-curated summary was sparse (Arts. 1, 2, 18,
 # 26, 43-49, 56-60, 70-90 — top miss zones on the davidath benchmark).
 from app.data.eu_ai_act_corpus import (
+    ARTICLE_CHAPTER,
     ARTICLE_FULL_TEXT as _UPSTREAM_FULL_TEXT,
     ART_3_DEFINITIONS as _UPSTREAM_DEFINITIONS,
 )
+from app.engines.entity_extractor import boosted_articles
 
 
 DocSource = Literal["kb", "ontology", "corpus", "definition"]
@@ -964,8 +967,6 @@ def top_articles_by_relevance_in_chapters(
     if not chapters or not question:
         return top_articles_by_relevance(question, k=k, min_score=min_score)
 
-    from app.data.eu_ai_act_corpus import ARTICLE_CHAPTER  # noqa: PLC0415
-
     chapter_set = set(chapters)
 
     # Build the allowed article set from ARTICLE_CHAPTER.
@@ -1030,7 +1031,6 @@ def top_articles_by_relevance_in_chapters(
     # R81-N — same typed-entity boost as the main variant. See the
     # primary :func:`top_articles_by_relevance` for the rationale.
     try:
-        from app.engines.entity_extractor import boosted_articles  # noqa: PLC0415
         entity_boosts = boosted_articles(question)
     except Exception:  # noqa: BLE001
         entity_boosts = {}
@@ -1059,5 +1059,87 @@ def top_articles_by_relevance_in_chapters(
     return sorted_refs[:k]
 
 
+def top_articles_by_relevance_in_sections(
+    question: str,
+    sections: list[str] | tuple[str, ...],
+    *,
+    k: int = 5,
+    min_score: float = 1.0,
+) -> list[str]:
+    """Section-scoped BM25 for the R89-A structural retrieval layer.
+
+    This mirrors :func:`top_articles_by_relevance_in_chapters` but filters
+    candidates by the logical section IDs in
+    :mod:`app.data.article_sections` (for example ``"III.2"`` for
+    high-risk technical requirements). If the filter is empty it falls back
+    to the full-corpus BM25 path, preserving existing behaviour.
+    """
+    if not sections or not question:
+        return top_articles_by_relevance(question, k=k, min_score=min_score)
+
+    allowed_articles = articles_for_sections(tuple(sections))
+    if not allowed_articles:
+        return top_articles_by_relevance(question, k=k, min_score=min_score)
+
+    query_tokens = _tokenize(question)
+    if not query_tokens:
+        return []
+
+    index = _build_index()
+    if not index.docs:
+        return []
+
+    _SOURCE_WEIGHT = {
+        "kb": 1.0,
+        "ontology": 1.0,
+        "corpus": 0.6,
+        "definition": 0.8,
+    }
+    _MIN_SCORE_FACTOR = 0.4
+    _MIN_ABSOLUTE_RESCUE = 0.5
+
+    raw_scores: list[tuple[int, str, float]] = []
+    best_raw = 0.0
+    for doc_idx, article_ref in enumerate(index.article_refs):
+        if article_ref not in allowed_articles:
+            continue
+        raw = _score(index, doc_idx, query_tokens)
+        if raw > best_raw:
+            best_raw = raw
+        raw_scores.append((doc_idx, article_ref, raw))
+
+    if not raw_scores:
+        return top_articles_by_relevance(question, k=k, min_score=min_score)
+
+    relative_floor = (
+        best_raw * _MIN_SCORE_FACTOR
+        if best_raw >= _MIN_ABSOLUTE_RESCUE
+        else float("inf")
+    )
+
+    try:
+        entity_boosts = boosted_articles(question)
+    except Exception:  # noqa: BLE001
+        entity_boosts = {}
+
+    best: dict[str, float] = {}
+    for doc_idx, article_ref, raw in raw_scores:
+        w = _SOURCE_WEIGHT.get(index.sources[doc_idx], 1.0)
+        weighted = raw * w
+        if weighted >= min_score or raw >= relative_floor:
+            entity_b = entity_boosts.get(article_ref, 1.0)
+            ranked = weighted * _confidence_boost(article_ref) * entity_b
+            if article_ref not in best or ranked > best[article_ref]:
+                best[article_ref] = ranked
+
+    sorted_refs = sorted(best, key=lambda r: best[r], reverse=True)
+    return sorted_refs[:k]
+
+
 # Public API
-__all__ = ["top_articles_by_relevance", "top_articles_by_relevance_in_chapters", "relevance_score"]
+__all__ = [
+    "top_articles_by_relevance",
+    "top_articles_by_relevance_in_chapters",
+    "top_articles_by_relevance_in_sections",
+    "relevance_score",
+]

@@ -2166,7 +2166,11 @@ _CREATIVE_CONTENT_IMPERATIVE_RE = re.compile(
 # uses word boundaries on both sides so generic English ("Lebanon",
 # "anion") doesn't substring-match.
 _NON_AI_QUALIFIER_RE = re.compile(
-    r"\bnon[\s-]?ai\b|\bnot\s+(?:an?\s+)?ai\b|\bnot\s+ai[- ]related\b",
+    r"\bnon[\s-]?ai\b"
+    r"|\bnot\s+(?:an?\s+)?ai\b"
+    r"|\bnot\s+ai[- ]related\b"
+    r"|\b(?:do|does|did)\s+not\s+use\s+ai\b"
+    r"|\b(?:don'?t|doesn'?t|didn'?t)\s+use\s+ai\b",
     re.IGNORECASE,
 )
 
@@ -2882,6 +2886,28 @@ def _live_question_borrows_anchor(live_text: str, anchors: tuple[str, ...]) -> b
     return False
 
 
+def _is_explicit_scope_negation_refusal(
+    live_text: str,
+    live_verdict: ScopeVerdict,
+) -> bool:
+    """Whether a conversational refusal came from an explicit R57-A block.
+
+    Most ``CONVERSATIONAL`` refusals are eligible for multi-turn rescue
+    ("What about deployers?"). R57-A added a narrower class of explicit
+    refusal prefilters — creative-output asks, non-AI qualifiers, and
+    estate/will contexts — that must remain final even when prior turns
+    established AI Act anchors.
+    """
+    if live_verdict.reason != ScopeReason.CONVERSATIONAL:
+        return False
+    text = _normalise(live_text or "")
+    return bool(
+        _CREATIVE_CONTENT_IMPERATIVE_RE.search(text)
+        or _NON_AI_QUALIFIER_RE.search(text)
+        or _ESTATE_CONTEXT_RE.search(text)
+    )
+
+
 def classify_conversation(
     messages: list[dict] | list[Any],
 ) -> ConversationVerdict:
@@ -3139,6 +3165,7 @@ def classify_conversation(
     if (
         rescue_anchors
         and live_verdict.reason not in hard_refusal_reasons
+        and not _is_explicit_scope_negation_refusal(live_text, live_verdict)
     ):
         full_refs = derive_anchor_articles_from_keywords(live_text)
         strong_refs = derive_strong_anchor_articles_from_keywords(live_text)
@@ -3171,6 +3198,7 @@ def classify_conversation(
 
     if (
         live_verdict.reason not in hard_refusal_reasons
+        and not _is_explicit_scope_negation_refusal(live_text, live_verdict)
         and _live_question_borrows_anchor(live_text, tuple(rescue_anchors))
     ):
         rescued = ScopeVerdict(
