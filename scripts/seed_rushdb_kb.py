@@ -25,7 +25,24 @@ from app.data.eu_ai_act_tree import _split_paragraphs_article, _split_annex_item
 
 logger = logging.getLogger(__name__)
 
-SEED_VERSION = "2026-05-25-rushdb-v1"
+SEED_VERSION = "2026-05-27-rushdb-v2"
+
+# Hybrid RAG metadata (Hybrid_RAG_Guide.md) — Article/Annex labels, not DOC.
+_HYBRID_REGULATION_META: dict[str, str] = {
+    "sourceType": "regulation",
+    "jurisdiction": "EU",
+    "framework": "EU_AI_ACT",
+    "authority": "official",
+    "version": "2024-06-13",
+    "sourceUrl": "https://ai-act-service-desk.ec.europa.eu/",
+}
+
+_EXPECTED_ARTICLE_COUNT = 113
+_EXPECTED_ANNEX_COUNT = 13
+_EXPECTED_RECITAL_COUNT = 180
+_EXPECTED_DEFINITION_COUNT = 68
+_EXPECTED_OPERATOR_ROLE_COUNT = 5
+_EXPECTED_RISK_LEVEL_COUNT = 4
 
 # Payload bucket keys → RushDB record labels (must match app/graph/rushdb_client.py).
 RUSHDB_LABEL_MAP: dict[str, str] = {
@@ -53,6 +70,7 @@ def _ensure_ai_indexes(db) -> None:
         {"label": "Article", "propertyName": "content"},
         {"label": "Article", "propertyName": "text"},
         {"label": "Annex", "propertyName": "content"},
+        {"label": "Annex", "propertyName": "text"},
         {"label": "Definition", "propertyName": "text"},
     ):
         try:
@@ -138,6 +156,125 @@ def _classify_risk_for_article(num: str) -> str | None:
     if 6 <= n <= 49: return "risk_high"
     return None
 
+
+def _risk_tier_label(risk_id: str | None) -> str | None:
+    """Map internal risk node id to Hybrid_RAG_Guide riskTier string."""
+    if risk_id == "risk_prohibited":
+        return "prohibited"
+    if risk_id == "risk_high":
+        return "high-risk"
+    if risk_id == "risk_limited":
+        return "limited"
+    if risk_id == "risk_minimal":
+        return "minimal"
+    return None
+
+
+def _article_summary_text(ref: str, body: str) -> str:
+    """Prefer KB obligation summary; fall back to opening EUR-Lex prose."""
+    entry = EC_CHECKER_OBLIGATION_MAP.get(ref) or {}
+    summary = str(entry.get("summary") or "").strip()
+    if summary:
+        return summary[:3000]
+    if body:
+        first = re.split(r"(?<=[.!?])\s", body, maxsplit=1)[0]
+        return first.replace("\xa0", " ").strip()[:2000]
+    return ref
+
+
+def validate_payload(payload: dict[str, list[dict]]) -> list[str]:
+    """Return validation errors; empty list means payload is sane."""
+    errors: list[str] = []
+
+    articles = payload.get("ARTICLE", [])
+    annexes = payload.get("ANNEX", [])
+    recitals = payload.get("RECITAL", [])
+    definitions = payload.get("DEFINITION", [])
+    roles = payload.get("OPERATOR_ROLE", [])
+    risks = payload.get("RISK_LEVEL", [])
+
+    if len(articles) != _EXPECTED_ARTICLE_COUNT:
+        errors.append(
+            f"ARTICLE count {len(articles)} != expected {_EXPECTED_ARTICLE_COUNT}"
+        )
+    if len(annexes) != _EXPECTED_ANNEX_COUNT:
+        errors.append(
+            f"ANNEX count {len(annexes)} != expected {_EXPECTED_ANNEX_COUNT}"
+        )
+    if len(recitals) != _EXPECTED_RECITAL_COUNT:
+        errors.append(
+            f"RECITAL count {len(recitals)} != expected {_EXPECTED_RECITAL_COUNT}"
+        )
+    if len(definitions) != _EXPECTED_DEFINITION_COUNT:
+        errors.append(
+            f"DEFINITION count {len(definitions)} != expected {_EXPECTED_DEFINITION_COUNT}"
+        )
+    if len(roles) != _EXPECTED_OPERATOR_ROLE_COUNT:
+        errors.append(
+            f"OPERATOR_ROLE count {len(roles)} != expected {_EXPECTED_OPERATOR_ROLE_COUNT}"
+        )
+    if len(risks) != _EXPECTED_RISK_LEVEL_COUNT:
+        errors.append(
+            f"RISK_LEVEL count {len(risks)} != expected {_EXPECTED_RISK_LEVEL_COUNT}"
+        )
+
+    article_ids = {row["id"] for row in articles}
+    annex_ids = {row["id"] for row in annexes}
+    all_node_ids = article_ids | annex_ids
+    all_node_ids |= {row["id"] for row in recitals}
+    all_node_ids |= {row["id"] for row in definitions}
+    all_node_ids |= {row["id"] for row in payload.get("OBLIGATION", [])}
+    all_node_ids |= {row["id"] for row in payload.get("ANNEX_III_CATEGORY", [])}
+    all_node_ids |= {row["id"] for row in roles}
+    all_node_ids |= {row["id"] for row in risks}
+
+    for row in articles + annexes:
+        for target in row.get("cross_refs") or []:
+            if target not in all_node_ids:
+                errors.append(
+                    f"dangling cross_ref {row['id']!r} -> {target!r}"
+                )
+
+    for ref in sorted(
+        (r for r in ARTICLE_EXISTENCE if r.startswith("Art. ")),
+        key=lambda r: int(_article_number(r)),
+    ):
+        art_id = _article_id(ref)
+        body = ARTICLE_FULL_TEXT.get(ref, "")
+        if not body.strip():
+            errors.append(f"missing ARTICLE_FULL_TEXT for {ref!r}")
+        matched = next((r for r in articles if r["id"] == art_id), None)
+        if matched is None:
+            errors.append(f"ARTICLE_EXISTENCE {ref!r} not in payload")
+        elif matched.get("content") != body.replace("\xa0", " ").strip():
+            if body and len(matched.get("content", "")) < len(body.strip()) - 1:
+                errors.append(
+                    f"truncated content for {ref!r} "
+                    f"({len(matched.get('content', ''))} < {len(body.strip())})"
+                )
+
+    for ref in sorted(r for r in ARTICLE_EXISTENCE if r.startswith("Annex ")):
+        art_id = _article_id(ref)
+        body = ARTICLE_FULL_TEXT.get(ref, "")
+        if not body.strip():
+            errors.append(f"missing ARTICLE_FULL_TEXT for {ref!r}")
+        matched = next((r for r in annexes if r["id"] == art_id), None)
+        if matched is None:
+            errors.append(f"ARTICLE_EXISTENCE {ref!r} not in payload")
+
+    return errors
+
+
+def _self_check() -> None:
+    """Import-time lint: payload must cover full Act + pass validate_payload."""
+    payload = build_payload()
+    errors = validate_payload(payload)
+    if errors:
+        raise RuntimeError(
+            "seed_rushdb_kb payload self-check failed: " + "; ".join(errors[:5])
+        )
+
+
 def build_payload() -> dict[str, list[dict]]:
     """Build the full seed payload from the in-process KB modules."""
     payload: dict[str, list[dict]] = {
@@ -190,17 +327,24 @@ def build_payload() -> dict[str, list[dict]]:
                 "article": num,
             })
             
+        risk_id = _classify_risk_for_article(num)
+        risk_tier = _risk_tier_label(risk_id)
         payload["ARTICLE"].append({
             "id": art_id,
             "number": num,
             "title": _short_title(ref),
-            "text": body[:2000],  # Legacy description length to match Neo4j
-            "content": body[:8000],  # Hybrid RAG semantic index field (Hybrid_RAG_Guide.md)
+            "text": _article_summary_text(ref, body),
+            "content": body.replace("\xa0", " ").strip(),
             "cross_refs": cross_refs,
             "kb_version": KB_VERSION,
             "legal_type": "Article",
             "strict_citation": _ref_to_user_facing(f"Art. {num}"),
+            "article": num,
+            "topic": _short_title(ref).lower(),
+            "appliesTo": ["provider", "deployer"],
+            "riskTier": risk_tier,
             "CHUNK": chunks,
+            **_HYBRID_REGULATION_META,
         })
 
     # Annexes
@@ -228,13 +372,16 @@ def build_payload() -> dict[str, list[dict]]:
             "id": art_id,
             "number": roman,
             "title": _short_title(ref),
-            "text": body[:2000],
-            "content": body[:8000],
+            "text": _article_summary_text(ref, body),
+            "content": body.replace("\xa0", " ").strip(),
             "cross_refs": cross_refs,
             "kb_version": KB_VERSION,
             "legal_type": "Annex",
             "strict_citation": _ref_to_user_facing(f"Annex {roman}"),
+            "article": roman,
+            "topic": _short_title(ref).lower(),
             "CHUNK": chunks,
+            **_HYBRID_REGULATION_META,
         })
 
     # Recitals
@@ -300,8 +447,49 @@ def build_payload() -> dict[str, list[dict]]:
 
     return payload
 
+def _payload_stats(payload: dict[str, list[dict]]) -> dict[str, Any]:
+    counts: dict[str, int] = {}
+    total_nodes = 0
+    total_edges = 0
+    chunk_count = 0
+    for label, rows in payload.items():
+        counts[label] = len(rows)
+        total_nodes += len(rows)
+        for row in rows:
+            if "cross_refs" in row:
+                total_edges += len(row["cross_refs"])
+            chunks = row.get("CHUNK") or []
+            chunk_count += len(chunks)
+            total_nodes += len(chunks)
+    return {
+        "counts": counts,
+        "total_nodes": total_nodes,
+        "total_edges": total_edges,
+        "chunk_count": chunk_count,
+    }
+
+
 def run_seed(dry_run: bool = False) -> dict:
     """Returns {"status": "ok"|"skip"|"dry_run", "counts": {...}}."""
+    payload = build_payload()
+    validation_errors = validate_payload(payload)
+    if validation_errors:
+        return {
+            "status": "error",
+            "error": "payload validation failed",
+            "validation_errors": validation_errors,
+        }
+
+    stats = _payload_stats(payload)
+
+    if dry_run:
+        return {
+            "status": "dry_run",
+            "seed_version": SEED_VERSION,
+            "kb_version": KB_VERSION,
+            **stats,
+        }
+
     try:
         import rushdb  # noqa: F401
     except ImportError:
@@ -329,19 +517,9 @@ def run_seed(dry_run: bool = False) -> dict:
     except Exception as exc:
         logger.warning(f"RushDB metadata check failed: {exc}")
 
-    payload = build_payload()
-    counts = {}
-    total_nodes = 0
-    total_edges = 0
-
-    if dry_run:
-        for label, rows in payload.items():
-            counts[label] = len(rows)
-            total_nodes += len(rows)
-            for row in rows:
-                if "cross_refs" in row: total_edges += len(row["cross_refs"])
-                if "CHUNK" in row: total_nodes += len(row["CHUNK"])
-        return {"status": "dry_run", "counts": counts, "total_nodes": total_nodes, "total_edges": total_edges}
+    counts = dict(stats["counts"])
+    total_nodes = stats["total_nodes"]
+    total_edges = stats["total_edges"]
 
     # Push all record types via db.records.set() (upsert by id).
     for bucket, rows in payload.items():
@@ -355,12 +533,6 @@ def run_seed(dry_run: bool = False) -> dict:
                     label=record_label,
                     data=row,
                 )
-            counts[record_label] = len(rows)
-            total_nodes += len(rows)
-            # Count relations implicitly for stats
-            for row in rows:
-                if "cross_refs" in row: total_edges += len(row["cross_refs"])
-                if "CHUNK" in row: total_nodes += len(row["CHUNK"])
             logger.info("Seeded RushDB label=%s count=%d", record_label, len(rows))
         except Exception as exc:
             logger.error("RushDB error seeding label=%s: %s", record_label, exc)
@@ -388,7 +560,10 @@ def run_seed(dry_run: bool = False) -> dict:
         logger.error(f"RushDB error writing KB_METADATA: {exc}")
         return {"status": "error", "error": str(exc)}
 
-    return {"status": "ok", "counts": counts}
+    return {"status": "ok", "counts": counts, "total_nodes": total_nodes, "total_edges": total_edges}
+
+
+_self_check()
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="seed_rushdb_kb")
