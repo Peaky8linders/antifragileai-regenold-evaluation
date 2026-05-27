@@ -44,3 +44,48 @@ class TestClassifyIntent:
     def test_general_fallback(self):
         intent = rh.classify_query_intent("hello world")
         assert intent["intent"] == "general"
+
+
+class TestRetrieveArticleRefs:
+    def test_retrieve_article_refs_fuses_semantic_and_metadata(self, monkeypatch):
+        from unittest import mock
+
+        # 1. Enable hybrid retrieval
+        monkeypatch.setattr(rh, "is_hybrid_enabled", lambda: True)
+
+        # 2. Setup mock client and mock responses
+        mock_client = mock.MagicMock()
+        monkeypatch.setattr(
+            "app.graph.rushdb_client._get_client",
+            lambda: mock_client,
+        )
+
+        # Mock semantic search returns
+        sem_res = mock.MagicMock()
+        sem_res.data = [
+            mock.MagicMock(label="Article", number="13", id="article_13"),
+            mock.MagicMock(label="Article", number="9", id="article_9"),
+        ]
+        mock_client.ai.search.return_value = sem_res
+
+        # Mock metadata search returns
+        meta_res = mock.MagicMock()
+        meta_res.data = [
+            mock.MagicMock(label="Article", number="9", id="article_9"),  # duplicate
+            mock.MagicMock(label="Annex", number="III", id="annex_III"),
+        ]
+        mock_client.records.find.return_value = meta_res
+
+        # 3. Retrieve
+        refs = rh.retrieve_article_refs("some question", limit=3)
+
+        # 4. Assert
+        # Fuses: semantic first, then metadata. Limit = 3.
+        # "Art. 13" (sem), "Art. 9" (sem), "Annex III" (meta)
+        assert refs == ["Art. 13", "Art. 9", "Annex III"]
+        assert len(refs) == 3
+
+        # Confirm client search and find called
+        mock_client.ai.search.assert_called_once()
+        mock_client.records.find.assert_called_once()
+

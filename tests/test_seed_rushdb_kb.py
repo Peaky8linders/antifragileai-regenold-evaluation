@@ -95,3 +95,53 @@ class TestRushdbPayloadCoverage:
     def test_recital_corpus_matches_recitals_dict(self):
         payload = build_payload()
         assert len(payload["RECITAL"]) == len(RECITALS)
+
+
+class TestRushdbStrictCitation:
+    """Verifies that RushDB payload Articles and Annexes have correct R84-C citation structures."""
+
+    def test_every_article_carries_legal_type(self):
+        payload = build_payload()
+        for node in payload["ARTICLE"]:
+            assert node.get("legal_type") == "Article"
+
+    def test_every_article_carries_strict_citation(self):
+        import re
+        payload = build_payload()
+        for node in payload["ARTICLE"]:
+            sc = node.get("strict_citation")
+            assert sc is not None
+            assert re.match(r"^Article \d+$", sc), f"Malformed strict_citation: {sc!r}"
+
+    def test_every_annex_carries_legal_type(self):
+        payload = build_payload()
+        for node in payload["ANNEX"]:
+            assert node.get("legal_type") == "Annex"
+
+    def test_every_annex_carries_strict_citation(self):
+        import re
+        payload = build_payload()
+        for node in payload["ANNEX"]:
+            sc = node.get("strict_citation")
+            assert sc is not None
+            assert re.match(r"^Annex [IVXLCDM]+$", sc), f"Malformed strict_citation: {sc!r}"
+
+    def test_no_art_dot_prefix(self):
+        payload = build_payload()
+        for node in payload["ARTICLE"]:
+            assert not node["strict_citation"].startswith("Art.")
+
+    def test_no_arabic_annex(self):
+        payload = build_payload()
+        for node in payload["ANNEX"]:
+            sc = node["strict_citation"]
+            tail = sc.removeprefix("Annex ").strip()
+            assert not tail.isdigit()
+
+    def test_no_article_iii_roman(self):
+        payload = build_payload()
+        for node in payload["ARTICLE"]:
+            sc = node["strict_citation"]
+            tail = sc.removeprefix("Article ").strip()
+            assert tail.isdigit()
+
