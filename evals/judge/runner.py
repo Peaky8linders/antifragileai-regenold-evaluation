@@ -414,7 +414,7 @@ def _call_judge_with_retry(
     caller: Callable[[str], dict[str, Any]],
     prompt: str,
     *,
-    max_retries: int = 4,
+    max_retries: int = 1,
     backoff_s: float = 4.0,
 ) -> tuple[dict[str, Any], int, list[str]]:
     """Invoke ``caller(prompt)`` and retry once on retryable failures.

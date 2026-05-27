@@ -27,6 +27,44 @@ logger = logging.getLogger(__name__)
 
 SEED_VERSION = "2026-05-25-rushdb-v1"
 
+# Payload bucket keys → RushDB record labels (must match app/graph/rushdb_client.py).
+RUSHDB_LABEL_MAP: dict[str, str] = {
+    "ARTICLE": "Article",
+    "ANNEX": "Annex",
+    "RECITAL": "Recital",
+    "DEFINITION": "Definition",
+    "OBLIGATION": "Obligation",
+    "ANNEX_III_CATEGORY": "AnnexIIICategory",
+    "RISK_LEVEL": "RiskLevel",
+    "OPERATOR_ROLE": "OperatorRole",
+    "KB_METADATA": "KB_METADATA",
+}
+
+
+def rushdb_label_for_bucket(bucket: str) -> str:
+    return RUSHDB_LABEL_MAP.get(bucket, bucket)
+
+
+def _ensure_ai_indexes(db) -> None:
+    """Create semantic indexes for hybrid retrieval (fail-soft)."""
+    if not hasattr(db, "ai") or not hasattr(db.ai, "indexes"):
+        return
+    for spec in (
+        {"label": "Article", "propertyName": "content"},
+        {"label": "Article", "propertyName": "text"},
+        {"label": "Annex", "propertyName": "content"},
+        {"label": "Definition", "propertyName": "text"},
+    ):
+        try:
+            db.ai.indexes.create(spec)
+            logger.info(
+                "RushDB AI index created label=%s property=%s",
+                spec["label"],
+                spec["propertyName"],
+            )
+        except Exception as exc:  # noqa: BLE001 — index may already exist
+            logger.debug("RushDB AI index skip label=%s: %s", spec.get("label"), exc)
+
 RISK_LEVELS: tuple[dict[str, str], ...] = (
     {
         "id": "risk_prohibited",
@@ -156,7 +194,8 @@ def build_payload() -> dict[str, list[dict]]:
             "id": art_id,
             "number": num,
             "title": _short_title(ref),
-            "text": body[:2000], # Legacy description length to match Neo4j
+            "text": body[:2000],  # Legacy description length to match Neo4j
+            "content": body[:8000],  # Hybrid RAG semantic index field (Hybrid_RAG_Guide.md)
             "cross_refs": cross_refs,
             "kb_version": KB_VERSION,
             "legal_type": "Article",
@@ -190,6 +229,7 @@ def build_payload() -> dict[str, list[dict]]:
             "number": roman,
             "title": _short_title(ref),
             "text": body[:2000],
+            "content": body[:8000],
             "cross_refs": cross_refs,
             "kb_version": KB_VERSION,
             "legal_type": "Annex",
@@ -303,35 +343,39 @@ def run_seed(dry_run: bool = False) -> dict:
                 if "CHUNK" in row: total_nodes += len(row["CHUNK"])
         return {"status": "dry_run", "counts": counts, "total_nodes": total_nodes, "total_edges": total_edges}
 
-    # Push all 9 record types via db.records.create_many()
-    for label, rows in payload.items():
-        if not rows: continue
+    # Push all record types via db.records.set() (upsert by id).
+    for bucket, rows in payload.items():
+        if not rows:
+            continue
+        record_label = rushdb_label_for_bucket(bucket)
         try:
-            # We must use set instead of create_many to upsert by id?
-            # RushDB create_many is not idempotent automatically unless specified.
-            # "Re-seed uses db.records.set() (upsert semantics)"
             for row in rows:
                 db.records.set(
                     id=row["id"],
-                    label=label,
-                    data=row
+                    label=record_label,
+                    data=row,
                 )
-            counts[label] = len(rows)
+            counts[record_label] = len(rows)
             total_nodes += len(rows)
             # Count relations implicitly for stats
             for row in rows:
                 if "cross_refs" in row: total_edges += len(row["cross_refs"])
                 if "CHUNK" in row: total_nodes += len(row["CHUNK"])
-            logger.info(f"Seeded RushDB label={label} count={len(rows)}")
+            logger.info("Seeded RushDB label=%s count=%d", record_label, len(rows))
         except Exception as exc:
-            logger.error(f"RushDB error seeding label={label}: {exc}")
+            logger.error("RushDB error seeding label=%s: %s", record_label, exc)
             return {"status": "error", "error": str(exc)}
+
+    try:
+        _ensure_ai_indexes(db)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("RushDB AI index setup failed (non-fatal): %s", exc)
 
     # Write KB_METADATA
     try:
         db.records.set(
             id="kb_metadata",
-            label="KB_METADATA",
+            label=rushdb_label_for_bucket("KB_METADATA"),
             data={
                 "seed_version": SEED_VERSION,
                 "kb_version": KB_VERSION,
