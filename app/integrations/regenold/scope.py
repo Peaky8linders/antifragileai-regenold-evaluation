@@ -3090,13 +3090,20 @@ def classify_conversation(
     unknowns: list[str] = []
     for idx, m in enumerate(messages):
         role = _get(m, "role")
-        if role == "system":
-            continue
         content = _get(m, "content")
         if not content:
             continue
-            
-        # Prompt injection check over conversation history
+
+        # Prompt injection check over conversation history — Issue #151:
+        # this now ALSO covers ``role == "system"``. System turns are
+        # folded into ``system_context`` by the route's
+        # ``_build_question_from_history`` and forwarded to the engine as
+        # ``GraphRAGRequest.system_description``, so adversarial
+        # instructions in a system message must face the same pre-LLM
+        # injection gate as user / assistant turns. ``_INJECTION_PATTERNS``
+        # fire only on jailbreak / instruction-override intent, so a
+        # legitimate partner system prompt ("Answer EU AI Act questions
+        # for tenant X") is unaffected.
         text_for_inj = _normalise(content)
         if _has_injection_pattern(text_for_inj):
             match = _matches_any(text_for_inj, _INJECTION_PATTERNS)
@@ -3110,6 +3117,13 @@ def classify_conversation(
                 history_unknown_articles=(),
                 live_question=live_text,
             )
+
+        # System turns are untrusted metadata, not conversational
+        # references — they contribute no anchors / unknown-ref blocks.
+        # The injection gate above already ran; skip the anchor
+        # accumulation (which stays user / assistant-gated below).
+        if role == "system":
+            continue
         is_prior_for_rescue = (live_index is None) or (idx < live_index)
         k, u = extract_referenced_articles(content)
         # Unknown refs ALWAYS block (precedence guard) regardless of role
