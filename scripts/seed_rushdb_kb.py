@@ -10,6 +10,7 @@ import os
 import re
 import sys
 from datetime import datetime, timezone
+import json
 from typing import Any
 
 from app.data.article_existence import ARTICLE_EXISTENCE
@@ -343,7 +344,7 @@ def build_payload() -> dict[str, list[dict]]:
             "topic": _short_title(ref).lower(),
             "appliesTo": ["provider", "deployer"],
             "riskTier": risk_tier,
-            "CHUNK": chunks,
+            "CHUNK": json.dumps(chunks),
             **_HYBRID_REGULATION_META,
         })
 
@@ -380,7 +381,7 @@ def build_payload() -> dict[str, list[dict]]:
             "strict_citation": _ref_to_user_facing(f"Annex {roman}"),
             "article": roman,
             "topic": _short_title(ref).lower(),
-            "CHUNK": chunks,
+            "CHUNK": json.dumps(chunks),
             **_HYBRID_REGULATION_META,
         })
 
@@ -528,8 +529,7 @@ def run_seed(dry_run: bool = False) -> dict:
         record_label = rushdb_label_for_bucket(bucket)
         try:
             for row in rows:
-                db.records.set(
-                    id=row["id"],
+                db.records.create(
                     label=record_label,
                     data=row,
                 )
@@ -545,8 +545,7 @@ def run_seed(dry_run: bool = False) -> dict:
 
     # Write KB_METADATA
     try:
-        db.records.set(
-            id="kb_metadata",
+        db.records.create(
             label=rushdb_label_for_bucket("KB_METADATA"),
             data={
                 "seed_version": SEED_VERSION,
