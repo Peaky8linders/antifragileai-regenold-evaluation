@@ -2297,7 +2297,7 @@ def _surface_anchor_citations(
 
 
 def _extract_conversation_anchors(turns: list[Any]) -> str:
-    """Extract article refs, roles, and risk-tier from ALL prior turns.
+    """Extract article refs, roles, and risk-tier from PRIOR USER turns only.
 
     Scans the full list of prior dialogue turns (not just the sliding
     history window) to build a compact "[Context anchors — ...]" line
@@ -2306,14 +2306,27 @@ def _extract_conversation_anchors(turns: list[Any]) -> str:
     to entities established in earlier turns even when those turns fall
     outside the ``_HISTORY_TURNS_TO_INCLUDE`` window.
 
-    Returns an empty string when no anchors are found (single-turn or
-    turns with no recognisable regulatory content).
+    R91 — assistant content is intentionally excluded to prevent
+    client-supplied anchor poisoning of retrieval.  This mirrors the
+    Round-34 P1 security hardening in
+    :func:`app.integrations.regenold.scope.classify_conversation` which
+    restricts rescue-anchor accumulation to prior USER turns; a partner
+    could otherwise craft a fake assistant turn containing fabricated
+    ``Art. N`` citations and steer BM25 ranking against the fabrication.
+
+    Returns an empty string when no anchors are found (single-turn,
+    user turns with no recognisable regulatory content, or a history
+    composed entirely of assistant turns).
     """
     refs_seen: list[str] = []
     roles_seen: list[str] = []
     risk_seen: list[str] = []
 
     for turn in turns:
+        # R91 — only consult USER turns; assistant text is untrusted for
+        # anchor extraction (see docstring).
+        if getattr(turn, "role", "") != "user":
+            continue
         full_text: str = turn.content if turn.content else ""
         text_lower = full_text.lower()
 
@@ -2386,7 +2399,11 @@ _QUERY_DENOISER_SYSTEM = (
     "5. Strip conversational filler and assistant verbosity.\n"
     "6. The rewritten query must be self-contained — a reader with no "
     "conversation context must understand what is being asked.\n"
-    "7. Maximum 200 characters."
+    "7. Maximum 200 characters.\n"
+    "8. If the conversation has a first-person scenario opener "
+    "(\"We are a provider/deployer/importer/distributor/manufacturer/"
+    "representative...\") preserve it verbatim at the start of the "
+    "rewritten query."
 )
 
 
@@ -2507,6 +2524,24 @@ def _rewrite_multiturn_query(
                 provider=provider_name,
             )
             return None
+        # R91 — truncation guard. ``max_tokens=100`` is a tight rewrite
+        # budget; a ``finish_reason="length"`` response means the LLM ran
+        # out of room mid-sentence. A truncated rewrite that passes the
+        # 10 < len <= 500 sanity bounds would otherwise become the
+        # retrieval query, dragging downstream BM25 / dense paths off the
+        # actual intent. Bail to the caller's concatenation fallback.
+        if getattr(resp, "finish_reason", None) == "length":
+            logger.debug(
+                "query_denoiser: response truncated (finish_reason=length)"
+            )
+            record_query_denoiser(
+                fired=False,
+                latency_ms=int(latency_ms),
+                fallback_reason="truncated",
+                model=model,
+                provider=provider_name,
+            )
+            return None
         rewritten = resp.text.strip().strip('"').strip("'")
         # Sanity: if the rewrite is too short or suspiciously long, bail
         if len(rewritten) < 10 or len(rewritten) > 500:
@@ -2613,7 +2648,23 @@ def _build_question_from_history(messages: list[Any]) -> tuple[str, str | None]:
         # rewrite replaces the concatenated history; on failure we fall
         # through to the existing concatenation path — zero-risk.
         denoised = _rewrite_multiturn_query(live_question, history_turns)
-        if denoised is not None:
+        # R91 / Bug 3: preserve scenario shape. If any prior turn (or the
+        # live question) is scenario-shaped but the denoised rewrite
+        # dropped that shape, fall through to the concatenation path
+        # which keeps the original first-person prose in the history
+        # block so downstream scenario gates still fire
+        # (graphrag_expand.should_expand_for_question, R72
+        # _reconcile_references_to_prose guard).
+        _scenario_shape_in_prior = any(
+            _looks_like_scenario_shape(getattr(t, "content", "") or "")
+            for t in history_turns
+        ) or _looks_like_scenario_shape(live_question)
+        _denoised_dropped_shape = (
+            denoised is not None
+            and _scenario_shape_in_prior
+            and not _looks_like_scenario_shape(denoised)
+        )
+        if denoised is not None and not _denoised_dropped_shape:
             anchor_prefix = (anchor_line + "\n") if anchor_line else ""
             question = f"{anchor_prefix}{denoised}"
         else:

@@ -65,6 +65,16 @@ class OpenAIWrapperResponse(BaseModel):
     prompt_tokens: int = 0
     completion_tokens: int = 0
     elapsed_ms: int = 0
+    finish_reason: str | None = None
+    """OpenAI chat-completion ``finish_reason`` from the upstream choice.
+
+    Raw passthrough — common values: ``"stop"`` (natural completion),
+    ``"length"`` (truncated at ``max_tokens``), ``"content_filter"``,
+    ``"tool_calls"``. ``None`` when missing or the call errored before a
+    choice landed. Callers (R91 truncation guard) treat ``"length"`` as
+    a soft failure — a length-truncated rewrite or polish is partial
+    output that must not flow downstream as if it were natural-stop.
+    """
 
 
 # Cap on Retry-After we'll honour. The Regenold latency budget is
@@ -283,6 +293,7 @@ class _OpenAIWrapperProvider:
             payload = response.json()
             choice = payload["choices"][0]
             text = choice["message"]["content"]
+            finish_reason = choice.get("finish_reason")
         except (KeyError, IndexError, TypeError, ValueError) as exc:
             return OpenAIWrapperResponse(
                 error=f"decode_error: {exc!s}"[:200],
@@ -308,6 +319,7 @@ class _OpenAIWrapperProvider:
             prompt_tokens=int(usage.get("prompt_tokens", 0)),
             completion_tokens=int(usage.get("completion_tokens", 0)),
             elapsed_ms=int((time.perf_counter() - start) * 1000),
+            finish_reason=finish_reason,
         )
 
 
