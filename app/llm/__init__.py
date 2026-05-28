@@ -27,7 +27,7 @@ def resolve_provider(
     Sonnet 4.6 via the local ``claude-code-openai-wrapper``.
     """
     value = (env_value or "").strip().lower()
-    if value in {"anthropic", "cli", "openai_wrapper"}:
+    if value in {"anthropic", "cli", "openai_wrapper", "groq"}:
         return value
     if value in {"", "auto"}:
         return default_when_auto

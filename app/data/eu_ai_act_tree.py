@@ -27,7 +27,7 @@ Plus two derivation tables:
 
 * :data:`RISK_TIER_BY_ARTICLE`  — Art./Annex → 7-class risk tier.
 * :data:`TIMELINE_BY_ARTICLE`   — Art./Annex → ISO applicability date
-  (per the Round-27 Digital Omnibus update — see
+  (per Art. 113 rules).
   ``app.data.kb.KB_ENTRIES["Art. 113"]``).
 
 Design notes:
@@ -187,8 +187,8 @@ RISK_TIER_BY_ARTICLE: dict[str, RiskTier] = _build_risk_tier_table()
 
 
 # ──────────────────────────────────────────────────────────────────────────
-# Timeline derivation — Art. 113 phased applicability (Round 27 Digital
-# Omnibus update). Source of truth: app/data/kb.py::KB_ENTRIES["Art. 113"].
+# Timeline derivation — Art. 113 phased applicability.
+# Source of truth: app/data/kb.py::KB_ENTRIES["Art. 113"].
 # ──────────────────────────────────────────────────────────────────────────
 
 
@@ -200,10 +200,8 @@ def _build_timeline_table() -> dict[str, str]:
     * Art. 5 prohibitions                 → ``"2025-02-02"``
     * Art. 4 AI literacy                  → ``"2025-02-02"``
     * GPAI obligations (Art. 51-55)       → ``"2025-08-02"``
-    * Annex III high-risk obligations     → ``"2027-12-02"``
-      (Digital Omnibus 7 May 2026 deferral)
-    * Annex I embedded-product high-risk  → ``"2028-08-02"``
-      (Digital Omnibus 7 May 2026 deferral)
+    * Annex III high-risk obligations     → ``"2026-08-02"``
+    * Annex I embedded-product high-risk  → ``"2027-08-02"``
     * Everything else                     → ``"2026-08-02"`` (general
       Regulation applicability date)
     """
@@ -212,8 +210,8 @@ def _build_timeline_table() -> dict[str, str]:
     GENERAL = "2026-08-02"
     PROHIBITION = "2025-02-02"
     GPAI = "2025-08-02"
-    ANNEX_III_HRAIS = "2027-12-02"
-    ANNEX_I_HRAIS = "2028-08-02"
+    ANNEX_III_HRAIS = "2026-08-02"
+    ANNEX_I_HRAIS = "2027-08-02"
 
     for n in range(1, 114):
         long_key = f"Article {n}"

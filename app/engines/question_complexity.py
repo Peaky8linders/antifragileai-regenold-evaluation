@@ -6,7 +6,7 @@ extended-thinking budget, vs. the default Sonnet 4.6 polish.
 
 Triggers on rubric weak axes the R49 V2 live scorecard surfaced:
 * role_ambiguity (refL 0.20 → 0.57 with R49-C, kw still 0.40)
-* gpai (kw 0.47 — Omnibus thresholds, fine-tune rule)
+* gpai (kw 0.47 — fine-tune rule)
 * borderline_prohibition (refL 0.50, kw 0.20 — Recital 16 carve-outs)
 * conflict (kw 0.17 — two-article reconciliation)
 * multi-turn finals where 3+ prior turns + short coreference

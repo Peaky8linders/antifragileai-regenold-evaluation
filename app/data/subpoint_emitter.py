@@ -56,9 +56,7 @@ SUBPOINT_TOPIC_MAP: tuple[tuple[re.Pattern[str], tuple[tuple[str, float], ...]],
      (("Article 5.1.g", 1.0),)),
     (re.compile(r"\breal[- ]time (?:remote )?biometric identification|live biometric ident", re.I),
      (("Article 5.1.h", 1.0),)),
-    (re.compile(r"\bnudification|non[- ]consensual\s+(?:sexual|intimate|nude)|csam|child sexual abuse", re.I),
-     (("Article 5.1.j", 0.6),  # Omnibus letter not yet finalized — emit ambiguous
-      ("Article 5.1.i", 0.4))),
+
     # Art. 6 / Annex III — high-risk categories
     (re.compile(r"\bcritical infrastructure|water|gas|electricity|heating|transport", re.I),
      (("Annex III.2", 1.0),)),

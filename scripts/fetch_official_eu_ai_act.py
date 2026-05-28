@@ -6,8 +6,7 @@ fetches the **current consolidated HTML** of Regulation (EU) 2024/1689
 (CELEX 32024R1689) directly from EUR-Lex and re-derives the article /
 annex / recital text. The two corpora coexist: Ansvar stays the BM25
 default; this module is the seed surface for the upcoming embeddings
-work and a "freshness" backstop when the Digital Omnibus amendments
-finally merge into the EUR-Lex consolidated text.
+work and a "freshness" backstop.
 
 Pure stdlib only — no pip deps, runs on Windows under py-3.12.
 
@@ -81,18 +80,6 @@ REQUEST_TIMEOUT_S = 60
 # updates that downstream code can surface alongside the original
 # article prose. Update this list whenever a new amendment lands.
 OFFICIAL_UPDATES: list[dict[str, str]] = [
-    {
-        "date": "2026-05-07",
-        "title": "Digital Omnibus political agreement",
-        "summary": (
-            "Council and Parliament reach political agreement on the Digital "
-            "Omnibus package. Annex III high-risk applicability date shifts to "
-            "2 December 2027; Annex I embedded-product to 2 August 2028. SME / "
-            "small mid-cap obligations under Arts. 62-63 broadened to include "
-            "small mid-cap modifiers. Not yet merged into the EUR-Lex "
-            "consolidated text."
-        ),
-    },
     {
         "date": "2025-07-18",
         "title": "Commission GPAI threshold guidelines",
@@ -401,7 +388,7 @@ def render_module(
         Independent counterpart to :mod:`app.data.eu_ai_act_corpus` (which
         pins the Ansvar-Systems snapshot). Both modules coexist: Ansvar
         remains the BM25 default; this one seeds the embeddings surface
-        and tracks Digital-Omnibus-era amendments.
+        and tracks amendments.
 
         Source: Regulation (EU) 2024/1689 (CELEX {CELEX}).
         Fetched: {fetch_date}

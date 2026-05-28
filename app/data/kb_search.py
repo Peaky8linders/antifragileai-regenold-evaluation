@@ -29,7 +29,7 @@ defensively to add 1-2 supplementary entities for richer retrieval.
 
 The typed ontology in :mod:`app.data.ontology` carries rich prose that
 the legacy obligation corpus does NOT: ``Practice.description`` (full
-Art. 5(1)(a)-(h) plus the Omnibus 9th prohibition narrative),
+Art. 5(1)(a)-(h)),
 ``AnnexIIICategory.description + sub_points`` (the eight high-risk
 use-case categories), and ``Phase.description`` (rollout-date prose).
 Before this change those entries were unsearchable — a query like
@@ -267,7 +267,7 @@ def _build_ontology_docs() -> list[tuple[str, DocSource, str]]:
 
     # Phases — keyed by the first article in the phase's articles tuple.
     # Phase descriptions carry the prose for date-shaped queries
-    # ("applicable from", "entry into force", "Digital Omnibus") that
+    # ("applicable from", "entry into force") that
     # neither the keyword map nor the KB summaries cover well.
     for phase in PHASE_REGISTRY.values():
         if not phase.articles:

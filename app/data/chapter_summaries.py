@@ -244,7 +244,7 @@ _BROAD_KEYWORD_CHAPTER_MAP: tuple[tuple[str, str], ...] = (
     ("penalties under the regulation", "XII"),
     ("penalties under the ai act", "XII"),
     # Chapter XIII — final provisions
-    ("digital omnibus", "XIII"),
+
     ("entry into force", "XIII"),
     ("entry-into-force", "XIII"),
     ("staged applicability", "XIII"),
@@ -568,7 +568,7 @@ def candidate_chapters_for_query(
 
         if _hit((
             "entry into force", "entry-into-force", "applicability date",
-            "transitional", "digital omnibus", "phased timeline",
+            "transitional", "phased timeline",
             "staged applicability",
         )):
             chapters.add("XIII")

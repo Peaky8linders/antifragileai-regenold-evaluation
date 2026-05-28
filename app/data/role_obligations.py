@@ -46,73 +46,7 @@ ROLE_AUTHORIZED_REPRESENTATIVE = "authorized_representative"
 ROLE_GPAI_PROVIDER = "gpai_provider"
 ROLE_GPAI_SYSTEMIC_PROVIDER = "gpai_systemic_provider"
 ROLE_EXTRATERRITORIAL_NON_EU = "extraterritorial_non_eu"
-# Round 27 — Digital Omnibus political agreement (7 May 2026) extended
-# the Art. 62/63 SME privileges (simplified QMS, derogated documentation
-# format, reduced sandbox fees) to *small mid-cap* companies — entities
-# above the SME ceiling but below the large-enterprise ceiling per
-# Recommendation 2003/361/EC as amended. Treated as a *modifier* role:
-# inherits the underlying actor obligations (Provider / Deployer / etc.)
-# and overlays the SME-style reliefs.
-#
-# Round 38 — numeric thresholds. The Omnibus political agreement set
-# the SMC ceiling at most 750 employees AND turnover at most €150
-# million. Exposed via ``.description`` / ``.obligations`` attributes
-# on the role id so callers can audit the SMC qualifier without
-# round-tripping through the role-descriptor dict. The constant is
-# still equal to the bare string ``"small_mid_cap"`` so every
-# ``if role == ROLE_SMALL_MID_CAP`` comparison and every dict-key /
-# enum lookup keeps working unchanged.
-class _SmallMidCapRole(str):
-    """``str`` subclass exposing the R38 numeric SMC thresholds.
 
-    Behaves identically to ``"small_mid_cap"`` for ``==`` comparison,
-    dict-key use, hashing, and serialisation. The ``description`` and
-    ``obligations`` attributes carry the human-readable Omnibus
-    agreement text (750 employees / €150 M turnover) for audit + KB
-    consumption.
-    """
-
-    __slots__ = ("description", "obligations")
-
-    description: str
-    obligations: tuple[str, ...]
-
-    def __new__(
-        cls,
-        value: str,
-        *,
-        description: str,
-        obligations: tuple[str, ...] = (),
-    ) -> "_SmallMidCapRole":
-        inst = super().__new__(cls, value)
-        # ``str.__new__`` allocates; we attach the extra metadata via
-        # the slotted attributes here.
-        object.__setattr__(inst, "description", description)
-        object.__setattr__(inst, "obligations", tuple(obligations))
-        return inst
-
-
-ROLE_SMALL_MID_CAP = _SmallMidCapRole(
-    "small_mid_cap",
-    description=(
-        "Small mid-cap (SMC) — Digital Omnibus political agreement (7 May "
-        "2026) extends Art. 62 / 63 SME privileges to organisations with "
-        "at most 750 employees AND turnover at most €150 million. Combines "
-        "the underlying actor's obligations (provider / deployer / etc.) "
-        "with the reduced documentation, fee waiver and sandbox-priority "
-        "treatment otherwise reserved to SMEs."
-    ),
-    obligations=(
-        "Inherits SME privileges originally granted under Art. 62 + "
-        "Art. 63: simplified quality-management documentation appropriate "
-        "to size + market stage (Art. 17(3)); priority access to AI "
-        "regulatory sandboxes with reduced fees; tailored awareness + "
-        "training from the AI Office.",
-        "Modifier role — overlays SME-style reliefs on the entity's "
-        "underlying actor obligations (Provider / Deployer / Importer / "
-        "etc.); does not displace primary duties.",
-    ),
-)
 
 
 # Canonical role list — order matches the obligation hierarchy in §3 of the
@@ -131,7 +65,6 @@ CANONICAL_ROLE_IDS = (
     ROLE_GPAI_PROVIDER,
     ROLE_GPAI_SYSTEMIC_PROVIDER,
     ROLE_EXTRATERRITORIAL_NON_EU,
-    ROLE_SMALL_MID_CAP,
 )
 
 
@@ -407,42 +340,6 @@ ROLE_OBLIGATIONS: list[RoleObligation] = [
             "MSAs may request and access documentation and source code (Art. 74(12)-(13)); Art. 74(5) remote enforcement; Art. 74(11) joint cross-Member-State investigations (lines 1073-1075).",
         ],
     },
-    {
-        "id": ROLE_SMALL_MID_CAP,
-        "label": "Small Mid-Cap Enterprise",
-        "art_3_definition": (
-            "Digital Omnibus on AI (political agreement 7 May 2026) — entity "
-            "above the SME ceiling per Recommendation 2003/361/EC but below "
-            "the large-enterprise threshold; benefits from SME-equivalent "
-            "reliefs under Art. 62/63 and Art. 17(3)."
-        ),
-        "summary": (
-            "Inherits SME privileges originally granted under Art. 62 + "
-            "Art. 63: simplified quality-management documentation appropriate "
-            "to size + market stage (Art. 17(3)); priority access to AI "
-            "regulatory sandboxes with reduced fees; tailored awareness + "
-            "training from the AI Office. As a modifier role, layered on top "
-            "of the underlying actor obligations (Provider / Deployer / "
-            "Importer / etc.) — does not displace primary duties."
-        ),
-        "source": (
-            "Digital Omnibus on AI (political agreement reached 7 May 2026) "
-            "+ Art. 62 + Art. 63 + Art. 17(3)"
-        ),
-        "paper_lines": "Omnibus press release 7 May 2026, paragraph 5",
-        "primary_articles": ["Art. 62", "Art. 63"],
-        "secondary_articles": ["Art. 17", "Art. 57"],
-        "kb_dimensions": ["sme_support", "quality_management", "sandboxes"],
-        "flips_provider_under": [],
-        "notes": [
-            "Modifier role — overlays SME-style reliefs on the entity's "
-            "underlying actor obligations. Same activation logic as the "
-            "extraterritorial_non_eu role.",
-            "Confirmed by the 7 May 2026 political agreement: 'Certain "
-            "privileges for small and medium-sized enterprises are extended "
-            "to small mid-cap companies.'",
-        ],
-    },
 ]
 
 
@@ -550,7 +447,6 @@ __all__ = [
     "ROLE_GPAI_PROVIDER",
     "ROLE_GPAI_SYSTEMIC_PROVIDER",
     "ROLE_EXTRATERRITORIAL_NON_EU",
-    "ROLE_SMALL_MID_CAP",
     "CANONICAL_ROLE_IDS",
     "RoleObligation",
     "ROLE_OBLIGATIONS",

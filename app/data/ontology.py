@@ -15,12 +15,11 @@ single typed source of truth.
 * :class:`RiskClass` — prohibited / high_risk_annex_i / high_risk_annex_iii /
   limited_risk / minimal_risk / gpai / gpai_systemic. The taxonomy
   the regulation uses to gate obligations.
-* :class:`Practice` — each Art. 5(1)(a)..(h) prohibited practice + the
-  Digital Omnibus 9th prohibition (CSAM/NCII) as a first-class entity.
+* :class:`Practice` — each Art. 5(1)(a)..(h) prohibited practice.
 * :class:`AnnexIIICategory` — each of the 8 high-risk use-case
   categories from Annex III.
 * :class:`Phase` — applicability timeline phases (2 Feb 2025, 2 Aug
-  2025, 2 Aug 2026, 2 Aug 2027, Digital Omnibus deferrals).
+  2025, 2 Aug 2026, 2 Aug 2027).
 
 ## Relationship types
 
@@ -110,15 +109,14 @@ class RiskClass(str, Enum):
     GPAI_SYSTEMIC = "gpai_systemic"  # Art. 55 — GPAI with systemic risk
 
 
-# ── Applicability phases (Art. 113 + Digital Omnibus) ────────────────────
+# ── Applicability phases (Art. 113) ────────────────────
 
 
 @dataclass(frozen=True)
 class Phase:
     """One applicability date in the AI Act rollout.
 
-    The Digital Omnibus political agreement (7 May 2026) defers several
-    obligations; we encode the original date plus a ``superseded_by``
+    We encode the original date plus a ``superseded_by``
     pointer to the deferred phase so date-shaped queries can resolve
     "what applies on date X?" deterministically.
     """
@@ -128,7 +126,7 @@ class Phase:
     effective_date: date
     articles: tuple[str, ...]
     description: str
-    superseded_by: Optional[str] = None  # id of a later Phase (Digital Omnibus)
+    superseded_by: Optional[str] = None  # id of a later Phase
 
 
 PHASE_REGISTRY: dict[str, Phase] = {
@@ -171,9 +169,6 @@ PHASE_REGISTRY: dict[str, Phase] = {
             "systems take effect. Deployer obligations under Art. 26, FRIA "
             "under Art. 27, transparency under Arts. 13/50."
         ),
-        # Digital Omnibus defers the Annex III high-risk obligations to
-        # 2 Dec 2027 — see PHASE_REGISTRY["phase_omnibus_2027_12_02"].
-        superseded_by="phase_omnibus_2027_12_02",
     ),
     "phase_2027_08_02": Phase(
         id="phase_2027_08_02",
@@ -186,61 +181,19 @@ PHASE_REGISTRY: dict[str, Phase] = {
             "IVDR, machinery, toys, etc.). The longer runway lets sectoral "
             "conformity-assessment bodies update procedures."
         ),
-        # Digital Omnibus defers this to 2 Aug 2028 in some sectors —
-        # see PHASE_REGISTRY["phase_omnibus_2028_08_02"].
-        superseded_by="phase_omnibus_2028_08_02",
-    ),
-    "phase_omnibus_2026_12_02": Phase(
-        id="phase_omnibus_2026_12_02",
-        label="Digital Omnibus 9th prohibition (CSAM / NCII)",
-        effective_date=date(2026, 12, 2),
-        articles=("Art. 5",),
-        description=(
-            "Pending the Digital Omnibus political agreement of 7 May 2026 "
-            "and formal adoption: adds a 9th prohibition under Article 5 for "
-            "AI systems that generate child sexual abuse material (CSAM) or "
-            "non-consensual intimate imagery. Currently in draft."
-        ),
-    ),
-    "phase_omnibus_2027_12_02": Phase(
-        id="phase_omnibus_2027_12_02",
-        label="Digital Omnibus deferred Annex III high-risk obligations",
-        effective_date=date(2027, 12, 2),
-        articles=("Art. 6", "Art. 8", "Art. 9", "Art. 10", "Art. 11", "Art. 13",
-                  "Art. 14", "Art. 15", "Art. 16", "Art. 17", "Art. 26", "Art. 27",
-                  "Annex III"),
-        description=(
-            "Digital Omnibus (political agreement of 7 May 2026) defers the "
-            "Chapter III Section 2 high-risk obligations for Annex III AI "
-            "systems from 2 August 2026 to 2 December 2027, aligning the "
-            "high-risk runway with harmonised-standard availability and "
-            "notified-body capacity. Supersedes phase_2026_08_02. Not yet "
-            "merged into the EUR-Lex consolidated text."
-        ),
-    ),
-    "phase_omnibus_2028_08_02": Phase(
-        id="phase_omnibus_2028_08_02",
-        label="Digital Omnibus deferred Annex I high-risk obligations",
-        effective_date=date(2028, 8, 2),
-        articles=("Art. 6", "Annex I"),
-        description=(
-            "Digital Omnibus defers Annex I safety-component high-risk "
-            "obligations by 12 months in selected sectors to align with "
-            "sectoral conformity-assessment infrastructure readiness."
-        ),
     ),
 }
 
 
-# ── Practices (Art. 5 prohibited practices + Omnibus additions) ──────────
+# ── Practices (Art. 5 prohibited practices) ──────────
 
 
 @dataclass(frozen=True)
 class Practice:
-    """One prohibited practice under Art. 5 (or Omnibus extension).
+    """One prohibited practice under Art. 5.
 
     Each instance is addressable as a sub-paragraph node (Art. 5(1)(a)
-    through (h), plus the proposed 9th paragraph for CSAM/NCII). Carries
+    through (h)). Carries
     the practice description, the exact citation chain, exception
     contexts (workplace-only narrowing, medical-safety carve-out, etc.),
     and the verdict-template prose used by the classification path.
@@ -438,25 +391,6 @@ PRACTICE_REGISTRY: dict[str, Practice] = {
         keywords=("real-time biometric", "real time biometric",
                   "real-time remote biometric", "biometric identification",
                   "rbi in public", "remote biometric identification"),
-    ),
-    "omnibus_csam_ncii": Practice(
-        id="omnibus_csam_ncii",
-        sub_paragraph="5.1.i",  # proposed 9th paragraph
-        short_name="AI-generated CSAM / non-consensual intimate imagery (Omnibus)",
-        description=(
-            "Pending Digital Omnibus adoption (political agreement 7 May 2026): "
-            "AI systems specifically intended to generate or modify content "
-            "constituting child sexual abuse material (CSAM) or non-consensual "
-            "intimate imagery of natural persons. Captured by Member State "
-            "criminal law and the AI Act's Art. 50 transparency duty for "
-            "synthetic content until the Omnibus takes effect."
-        ),
-        citation=("Art. 5",),
-        exceptions=(),
-        effective_phase="phase_omnibus_2026_12_02",
-        keywords=("csam", "ai-generated csam", "ai csam", "nudification",
-                  "non-consensual intimate", "non consensual intimate",
-                  "intimate imagery"),
     ),
 }
 

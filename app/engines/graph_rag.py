@@ -784,11 +784,7 @@ _CROSS_TURN_RULES: tuple[tuple[str, str, str], ...] = (
     ("article 99", "startup", "Art. 99"),
     ("article 99", "sme", "Art. 99"),
     ("€35m", "startup", "Art. 99"),
-    # mt_v2_019: "And for Annex I (medical devices etc.) embedded systems?"
-    # prior context established Dec 2027 dates for Digital Omnibus
-    ("december 2027", "annex i", "Art. 113"),
-    ("digital omnibus", "annex i", "Art. 113"),
-    ("annex iii", "annex i embedded", "Art. 113"),
+
 )
 
 # Module-level constant: keyword -> article anchor map used by
@@ -1200,16 +1196,7 @@ _KEYWORD_ENTITY_MAP: tuple[tuple[str, str], ...] = (
     ("eu ai database", "Annex VIII"),
     ("registered in the eu", "Annex VIII"),
     ("information must be registered", "Annex VIII"),
-    # Digital Omnibus (May 2026 political agreement)
-    ("digital omnibus", "Art. 113"),
-    ("2 december 2027", "Art. 113"),
-    ("2 august 2028", "Art. 113"),
-    # New prohibited categories under Digital Omnibus
-    ("ai-generated csam", "Art. 5"),
-    ("ai csam", "Art. 5"),
-    ("non-consensual intimate", "Art. 5"),
-    ("nudification", "Art. 5"),
-    ("intimate imagery", "Art. 5"),
+
     # Definitions (Art. 3)
     ("serious incident", "Art. 3"),
     ("definition of serious incident", "Art. 3"),
@@ -1999,28 +1986,7 @@ _CLASSIFICATION_TOPICS: list[dict] = [
         ),
         "refs": ["Art. 5", "Annex III"],
     },
-    # ── Omnibus prohibitions (CSAM / non-consensual intimate imagery) ─
-    {
-        "name": "omnibus_csam",
-        "patterns": [
-            re.compile(
-                r"\b(csam|child\s+sexual|child\s+pornography|nudification)",
-                re.IGNORECASE,
-            ),
-            re.compile(
-                r"\b(non[-\s]consensual|deepfake)\s+[\w\s\-,]{0,30}?intimate",
-                re.IGNORECASE,
-            ),
-        ],
-        "answer": (
-            "Generating AI child sexual abuse material (CSAM) or non-consensual intimate "
-            "imagery is prohibited under Article 5 once the Digital Omnibus political "
-            "agreement of 7 May 2026 takes effect (currently scheduled for 2 December 2026). "
-            "Until then the conduct is captured by national criminal law and the AI Act's "
-            "Article 50 transparency obligation for synthetic content."
-        ),
-        "refs": ["Art. 5", "Art. 50"],
-    },
+
     # ── Annex III(2) — critical infrastructure ────────────────────────
     {
         "name": "critical_infrastructure",

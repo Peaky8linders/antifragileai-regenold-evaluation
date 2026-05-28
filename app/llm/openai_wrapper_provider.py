@@ -353,6 +353,14 @@ _GROQ_SINGLETON: _OpenAIWrapperProvider | None = None
 _GROQ_SINGLETON_LOCK = threading.Lock()
 
 
+def is_groq_provider_enabled() -> bool:
+    """True iff general Groq provider is enabled.
+    
+    Requires GROQ_API_KEY.
+    """
+    return bool(os.getenv("GROQ_API_KEY", "").strip())
+
+
 def is_groq_intent_provider_enabled() -> bool:
     """True iff Stage-0 intent should route to Groq.
 
@@ -366,17 +374,17 @@ def is_groq_intent_provider_enabled() -> bool:
     )
     if provider_choice != "groq":
         return False
-    return bool(os.getenv("GROQ_API_KEY", "").strip())
+    return is_groq_provider_enabled()
 
 
-def get_groq_intent_provider() -> _OpenAIWrapperProvider:
+def get_groq_provider() -> _OpenAIWrapperProvider:
     """Return the process-wide pooled Groq provider.
 
     Same double-checked-locking shape as the default singleton. Reads
     ``GROQ_API_BASE`` (default ``https://api.groq.com/openai/v1``) and
-    ``GROQ_API_KEY`` at first construction. The 5 s default timeout
-    matches the intent classifier's fast-fail posture — operators with
-    a different SLA can override via ``GROQ_TIMEOUT_SECONDS``.
+    ``GROQ_API_KEY`` at first construction. The 60 s default timeout
+    matches Stage-2 needs — intent fast-fail posture uses per-request 
+    timeout overrides.
     """
     global _GROQ_SINGLETON
     if _GROQ_SINGLETON is None:
@@ -388,10 +396,12 @@ def get_groq_intent_provider() -> _OpenAIWrapperProvider:
                         or _GROQ_DEFAULT_BASE
                     ),
                     api_key=os.getenv("GROQ_API_KEY", ""),
-                    timeout=float(os.getenv("GROQ_TIMEOUT_SECONDS", "5")),
+                    timeout=float(os.getenv("GROQ_TIMEOUT_SECONDS", "60")),
                 )
     return _GROQ_SINGLETON
 
+
+get_groq_intent_provider = get_groq_provider
 
 def _reset_groq_singleton_for_tests() -> None:
     """Reset the Groq singleton. Test-only — not part of the public API."""

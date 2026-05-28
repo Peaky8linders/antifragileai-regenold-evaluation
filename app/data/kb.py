@@ -22,8 +22,7 @@ from dataclasses import dataclass, field
 # without bumping the string — the deep-code-review (R54.1) caught
 # this as a cache+seed staleness bug. R54.1 fixes that by bumping v2
 # → v3 to invalidate both surfaces. R57-B bumps v3 → v4 for the R57
-# KB coverage audit additions (Art. 5 sub-point carve-outs, Art. 6
-# Omnibus deferral, Art. 13 Art. 26(11) carry-over, Art. 14 two-
+# Art. 13 Art. 26(11) carry-over, Art. 14 two-
 # person rule scope, Art. 22 mandate tasks, Art. 26 carve-outs,
 # Art. 52(4) open-source designation, Art. 53(2) FOSS carve-out,
 # Art. 55 four systemic-risk obligations, Art. 79 market-surveillance
@@ -434,7 +433,7 @@ class _KBEntry(dict):
         joined ``summary`` when no stub clearly wins.
 
         R63-C — specificity-aware selection for multi-stub entries
-        (Art. 5 has 6 stubs, Art. 50 has 2, Art. 53 has 3, Art. 56
+        (Art. 5 has 6 stubs, Art. 53 has 3, Art. 56
         has 2). Downstream prose stitchers (``grounded_prose``) clip
         the joined summary to ~400 chars and only ever surface stub
         #0 even when the question explicitly asks about a later
@@ -620,8 +619,6 @@ _SPECIFICITY_MARKERS: tuple[str, ...] = (
     # Codes of practice (Art. 56)
     "code of practice", "codes of practice",
     "signatory", "signatories",
-    # Nudification / CSAM (Art. 5 Digital Omnibus addition)
-    "nudification", "csam", "non-consensual",
 )
 
 
@@ -669,15 +666,6 @@ EC_CHECKER_OBLIGATION_MAP: dict[str, dict[str, str]] = {
                 "accessible spaces by law enforcement (narrow exceptions). "
                 "Art. 5(5) lets Member States impose stricter national laws "
                 "on remote biometric ID."
-            ),
-            (
-                "Art. 5: Digital Omnibus political agreement (7 May 2026) "
-                "added a new sub-paragraph to Art. 5(1) prohibiting AI "
-                "systems that generate non-consensual sexual or intimate "
-                "content and child sexual abuse material ('nudification' "
-                "apps and CSAM generators). Applies 2 December 2026. "
-                "Maximum fine €35 M or 7 % of global turnover under "
-                "Art. 99."
             ),
             (
                 "Art. 5(1)(c) carve-out: the social-scoring prohibition "
@@ -753,12 +741,7 @@ EC_CHECKER_OBLIGATION_MAP: dict[str, dict[str, str]] = {
         "summary": (
             "Classifies an AI system as high-risk when it is intended as a safety "
             "component of a product covered by Annex I, or falls into one of the "
-            "eight Annex III use cases. Per the Digital Omnibus political "
-            "agreement (7 May 2026), Annex III high-risk applicability is "
-            "deferred to 2 December 2027 (originally 2 August 2026), and Annex I "
-            "embedded-product high-risk applicability is deferred to 2 August "
-            "2028, to allow harmonised standards and AI Office guidelines to "
-            "land first."
+            "eight Annex III use cases."
         ),
     },
     "Art. 9": {
@@ -872,25 +855,16 @@ EC_CHECKER_OBLIGATION_MAP: dict[str, dict[str, str]] = {
             "human-oversight measures, and complaints workflows."
         ),
     },
-    "Art. 50": _KBEntry(
-        dimension="transparency",
-        stubs=(
-            (
-                "Art. 50: Transparency obligations: AI systems interacting "
-                "with natural persons must disclose their AI nature; "
-                "emotion-recognition + biometric-categorisation systems must "
-                "inform exposed persons; deepfakes and AI-generated content "
-                "must be labelled."
-            ),
-            (
-                "Art. 50(2): Generative-AI output watermarking — the base "
-                "Regulation set the obligation in force from 2 August 2026. "
-                "The May 2026 Digital Omnibus political agreement defers "
-                "this to 2 December 2026 (4-month grace). Both dates are "
-                "operative for transitional questions."
-            ),
+    "Art. 50": {
+        "dimension": "transparency",
+        "summary": (
+            "Art. 50: Transparency obligations: AI systems interacting "
+            "with natural persons must disclose their AI nature; "
+            "emotion-recognition + biometric-categorisation systems must "
+            "inform exposed persons; deepfakes and AI-generated content "
+            "must be labelled."
         ),
-    ),
+    },
     "Art. 53": _KBEntry(
         dimension="tech_docs",
         stubs=(
@@ -1153,10 +1127,7 @@ EC_CHECKER_OBLIGATION_MAP: dict[str, dict[str, str]] = {
             "one-third threshold the downstream modifier does NOT become a "
             "new provider; original-provider obligations remain with the "
             "upstream actor and the downstream actor stays in its prior role "
-            "(deployer / integrator). Small mid-cap "
-            "entities (per the Digital Omnibus 7 May 2026 political agreement) "
-            "now qualify for the Art. 62/63 SME-tier compliance simplifications "
-            "when they take on a new-provider role under this Article."
+            "(deployer / integrator)."
         ),
     },
     # ─── Title III: Conformity, CE marking, registration (Arts. 43, 47-49) ───
@@ -1400,13 +1371,9 @@ EC_CHECKER_OBLIGATION_MAP: dict[str, dict[str, str]] = {
             "Entry into force + application (Regulation 2024/1689): in force "
             "1 August 2024; prohibitions (Art. 5) + AI literacy (Art. 4) from "
             "2 February 2025; GPAI obligations (Chapter V) from 2 August 2025; "
-            "general application from 2 August 2026; pre-existing high-risk "
-            "for public-authority use from 2 August 2030. Digital Omnibus on "
-            "AI (political agreement reached 7 May 2026 between Parliament + "
-            "Council) defers Annex III high-risk obligations to 2 December "
-            "2027 and Annex I embedded-product obligations to 2 August 2028 "
-            "to allow harmonised standards + AI Office guidelines to land "
-            "first; remaining provisions unchanged."
+            "general application from 2 August 2026; Annex I embedded-product "
+            "obligations from 2 August 2027; pre-existing high-risk "
+            "for public-authority use from 2 August 2030."
         ),
     },
     # ─── Additional Annexes ──────────────────────────────────────────────────
@@ -1593,14 +1560,13 @@ EC_CHECKER_OBLIGATION_MAP: dict[str, dict[str, str]] = {
             "SMEs), specific awareness + training activities, dedicated "
             "communication channels, fee reductions for conformity "
             "assessment + database registration proportionate to size + "
-            "market stage. (Digital Omnibus political agreement of 7 May "
-            "2026 extends these privileges to 'small mid-cap' enterprises.)"
+            "market stage."
         ),
     },
     "Art. 63": {
         "dimension": "governance",
         "summary": (
-            "Derogations for SMEs (and post-Omnibus small mid-caps): "
+            "Derogations for SMEs: "
             "simplified compliance with Art. 17 quality-management-system "
             "obligations in a manner appropriate to size + market stage, "
             "without compromising the level of protection or compliance "

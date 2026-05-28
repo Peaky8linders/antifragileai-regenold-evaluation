@@ -313,17 +313,25 @@ def answer_conciseness(pred: str, gold: str) -> float:
 # ── 4+5: Reference correctness ───────────────────────────────────────────
 
 
-def _gold_ref_set(relevant_article: int | list[int] | None) -> set[str]:
+def _gold_ref_set(relevant_article: int | list[int] | list[str] | None) -> set[str]:
     """Normalise the gold reference field across QA + scenarios shapes.
 
     * qa_pairs.json: ``relevant_article`` is an int.
     * scenarios.json: ``related_articles`` is a list[int].
+    * gemini-code-*.json: expected_refs is a list[str].
     """
     if relevant_article is None:
         return set()
     if isinstance(relevant_article, int):
         return {f"Article {relevant_article}"}
     if isinstance(relevant_article, list):
+        if len(relevant_article) > 0 and isinstance(relevant_article[0], str):
+            out = set()
+            for r in relevant_article:
+                if not r: continue
+                h = article_head(r)
+                if h: out.add(h)
+            return out
         return {f"Article {int(a)}" for a in relevant_article if a is not None}
     return set()
 

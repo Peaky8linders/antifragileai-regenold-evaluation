@@ -124,14 +124,6 @@ _PRACTICE_NOUNS: Final[tuple[str, ...]] = (
     "biometric identification",
     "rbi in public",
     "remote biometric identification",
-    # Omnibus 9th prohibition — CSAM / NCII
-    "csam",
-    "ai-generated csam",
-    "ai csam",
-    "nudification",
-    "non-consensual intimate",
-    "non consensual intimate",
-    "intimate imagery",
 )
 
 

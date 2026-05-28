@@ -128,29 +128,7 @@ _MAX_SECOND_SUBSTANCE_CHARS: int = 220
 # over the full set of user-facing refs the route is about to ship.
 # Used by ``_subpoint_describer_clause`` after a flat-table miss.
 _ART_CONDITIONAL_DESCRIBERS: dict[str, tuple] = {
-    # Art. 113 Omnibus-deferral angle. r87-v2-live mt_v2_019: live
-    # turn "And for Annex I (medical devices etc.) embedded systems?"
-    # after the assistant established the Annex III applicability
-    # frame. Gold keyword: "2 August 2028" (the Digital Omnibus
-    # Annex I deferral). The Art. 113 base KB stub leads with the
-    # pre-Omnibus entry-into-force dates (sentence 1, 311 chars),
-    # pushing the Omnibus-deferral sentence past the 400-char
-    # describer budget. This conditional describer fires when the
-    # ref set carries Art. 113 + any Annex ref (the R88-D shape) —
-    # NOT on generic "when does the AI Act apply?" questions where
-    # the pre-Omnibus dates remain the right answer.
-    "Article 113": (
-        lambda urefs: any(
-            (r or "").startswith("Annex ") for r in urefs
-        ),
-        (
-            "Per the Digital Omnibus political agreement (7 May 2026), "
-            "Annex III high-risk obligations apply from 2 December 2027 "
-            "and Annex I embedded-product obligations from 2 August 2028; "
-            "general application remained 2 August 2026 for the rest of "
-            "the Regulation"
-        ),
-    ),
+
     # R89-A — Art 50 cumulative-with-Art 13. mt_v2_010 gold kw: both,
     # cumulative, apply. Predicate: fires ONLY when Art 13 is also in
     # the cited ref set. Per E&EC F2 finding, an unconditional
@@ -442,9 +420,8 @@ def _subpoint_describer_clause(
 
     1. The conditional :data:`_ART_CONDITIONAL_DESCRIBERS` table FIRST
        — when ``all_user_facing_refs`` is provided AND the per-entry
-       predicate fires, the conditional clause wins. Examples: the
-       Art 113 Omnibus-deferral angle (fires only when an Annex ref
-       co-appears) and the Art 50 cumulative-with-Art-13 angle (fires
+       predicate fires, the conditional clause wins. Example: the
+       Art 50 cumulative-with-Art-13 angle (fires
        only when Art 13 co-appears).
     2. The flat :data:`_ART_SUBPOINT_DESCRIBERS` table as fallback —
        always-fire sub-point describers (Art. 5.1.f/g/h) plus the
@@ -814,8 +791,8 @@ def stitch_grounded_prose(
             if not uref:
                 continue
             # Pass the full ref-set so conditional describers
-            # (Art. 113 Omnibus angle) can decide based on co-presence
-            # of other anchors (Annex ref → Omnibus fires).
+            # can decide based on co-presence
+            # of other anchors.
             clause = _subpoint_describer_clause(uref, urefs_list)
             if not clause:
                 continue
@@ -1119,8 +1096,7 @@ def augment_with_ref_descriptions(
 
             # R88-E — sub-point describer fast path. When the user-facing
             # ref is a known sub-point (Article 5.1.f/g/h, etc.) OR a
-            # conditional describer fires (Art. 113 Omnibus angle when
-            # an Annex ref co-appears), prefer the hand-tuned describer.
+            # conditional describer fires, prefer the hand-tuned describer.
             subpoint_clause = _subpoint_describer_clause(
                 s, list(user_facing_refs)
             )
@@ -1132,9 +1108,9 @@ def augment_with_ref_descriptions(
             #     not the sub-point's specific substance (e.g. answer
             #     mentions "Article 5" generically but the gold keyword
             #     is "judicial authorization" → only in Art. 5.1.h);
-            #   * conditional describers (Art. 113 Omnibus angle):
+            #   * conditional describers:
             #     the parent KB stub leads with the wrong dates;
-            #     the describer carries the rubric-scored Omnibus
+            #     the describer carries the rubric-scored
             #     deferral substance.
             # Pre-R88-E this gate was ``s != internal_as_user_facing``
             # which missed the conditional-describer path because the
