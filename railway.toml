@@ -54,15 +54,13 @@ REGENOLD_R89A_FORCE_APPEND = "1"
 # Targets the LLM-as-Judge ``refs`` axis where the judge fails a row
 # whose prose never substantively describes a cited Article.
 #
-# Default ON post-R66 cumulative bench: the full 476-row davidath
-# scorecard with the guard ON measured **rubric-positive** —
-# RefLoose held flat at 0.565, RefStrict +0.0055 (0.4427 → 0.4482),
-# RefConciseness +0.0059 (0.4087 → 0.4146), no regressions on Ans
-# Strict / tone / multi-turn coherence. The expected judge-axis lift
-# (every dropped ref is one less prose-mismatch failure) is on top
-# of the davidath positive. Disable with:
-#   railway variables --set REGENOLD_CITE_DESCRIBE_GUARD=0
-REGENOLD_CITE_DESCRIBE_GUARD = "1"
+# R90 (2026-05-28): DISABLED — live competition bench confirmed −0.21 ref_loose
+# regression (0.44 → 0.22) when this guard ran against the regenold benchmark.
+# The guard was calibrated against the internal davidath rubric where it was
+# rubric-positive; it is net-negative on the competition evaluation set because
+# the token-overlap threshold over-prunes refs in dense multi-article answers.
+# Re-enable with: railway variables --set REGENOLD_CITE_DESCRIBE_GUARD=1
+REGENOLD_CITE_DESCRIBE_GUARD = "0"
 
 # Round 80.2 — Stage-2 LLM polish + latency knobs are now CODE
 # DEFAULTS, not railway.toml overrides. The R80.1 round added them
