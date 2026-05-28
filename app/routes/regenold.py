@@ -923,13 +923,31 @@ def _apply_assistant_anchor_inheritance(
     return injected + out
 
 
-def _engine_cache_key(question: str, system_context: str | None) -> str:
+def _engine_cache_key(
+    question: str,
+    system_context: str | None,
+    history_turn_count: int = 0,
+) -> str:
     """Sha256-hash of the engine input fingerprint.
 
     Includes the KB version so a redeploy with a new corpus
     invalidates the whole cache implicitly — different KB version
     means different deterministic output, so reusing the old cached
     answer would be a stale hit.
+
+    Issue #150 — folds in ``history_turn_count``. The route forwards
+    this into the engine via ``GraphRAGRequest(history_turn_count=...)``,
+    where ``is_complex_question`` keys the Stage-2 complex-model /
+    extended-thinking routing on the ``>= 3`` short-coreferent branch —
+    so it flips ``GraphRAGResponse.answer``. Without it in the key, a
+    multi-turn follow-up whose rewritten ``question`` text collides with
+    a cached single-turn entry (the R86 query de-noiser rewrites
+    follow-ups into standalone Wh-style queries that can match a prior
+    single-turn ask) would serve the single-turn, non-complex-routed
+    answer and never re-run the engine. Same R30/R56/R79 doctrine: ANY
+    input that flips engine behaviour must be in the key. Defaults to 0
+    (single-turn) so the legacy 2-arg call is byte-identical to an
+    explicit depth-0 key.
 
     Round 31 — folds the dense-rerank + citation-guard env flags into
     the key so a runtime flip (operator turns
@@ -1027,7 +1045,8 @@ def _engine_cache_key(question: str, system_context: str | None) -> str:
         system_context or "",
         f"flags:{flag_bits}",
         f"provider:{provider_bit}",
-        f"engine:{engine_flags}"
+        f"engine:{engine_flags}",
+        f"history:{int(history_turn_count)}",
     ]).encode("utf-8")
     return hashlib.sha256(blob).hexdigest()
 
@@ -2928,7 +2947,12 @@ def regenold_eu_ai_act_ask(
     # signals the failure so the next ask retries Stage-2. Drift /
     # "Stage-2 not needed" / "wrapper disabled" are deterministic
     # outcomes and remain cacheable.
-    cache_key = _engine_cache_key(question, system_context)
+    # Issue #150 — fold the conversation depth into the cache identity.
+    # ``_history_turn_count`` gates the engine's Stage-2 complex-question
+    # routing (``is_complex_question``), so it must be part of the key or
+    # a denoised multi-turn follow-up could collide with a cached
+    # single-turn answer and skip that routing.
+    cache_key = _engine_cache_key(question, system_context, _history_turn_count)
     rag_res = _ENGINE_CACHE.get(cache_key)
     _trace_cache_hit(rag_res is not None)
     if rag_res is None:
