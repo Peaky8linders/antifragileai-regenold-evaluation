@@ -283,10 +283,14 @@ def run_wire(
             post_json_with_retry,
         )
 
+        _ASK_PATH = "/api/v1/regenold/eu-ai-act/ask"
+        # Accept either a full URL (with path already) or a bare base URL.
+        _full_url = endpoint if _ASK_PATH in endpoint else endpoint.rstrip("/") + _ASK_PATH
+
         def _asker(messages: list[dict[str, str]]):
             body, latency, status, _err, _att, _retried = (
                 post_json_with_retry(
-                    endpoint, messages, api_key, timeout=180.0,
+                    _full_url, messages, api_key, timeout=180.0,
                 )
             )
             return body, latency, status

@@ -2918,13 +2918,46 @@ def _needs_stage2_enhancement(
     context: GraphContext,  # noqa: ARG001 — reserved for future richness checks
     query: "GraphQuery | None" = None,
 ) -> bool:
-    return True
+    """Return True when the question is complex enough to benefit from Stage-2 polish.
+
+    Fires on any of:
+    - Multi-turn context embedded by the route (``"Conversation so far:"`` prefix).
+    - Complex intents: gap_analysis, cross_framework (require synthesis across
+      multiple obligations/frameworks, not just single-article lookup).
+    - Three+ article entities (≥ 3) — true multi-article synthesis. R84 raised
+      from ≥ 2 because bare multi-anchor questions (e.g. "What about Articles
+      13 and 14?") deterministic-answer fine and don't need polish.
+    - Long live question (> 350 chars) — genuinely long synthesis questions.
+    - Presence of comparison / remediation keywords (R84-pruned set).
+    """
+    # Multi-turn: the route threads prior turns as "Conversation so far:\n…"
+    if "Conversation so far:" in question:
+        return True
+
+    if query is not None:
+        # Synthesis-heavy intents always benefit from LLM polish
+        if query.intent in ("gap_analysis", "cross_framework"):
+            return True
+        # Multiple referenced articles → comparison / multi-obligation scope.
+        if len(query.entities) >= 3:
+            return True
+
+    # Isolate the live part of the question (drop history preamble if present)
+    live_q = (
+        question.split("Latest question:", 1)[-1].strip()
+        if "Latest question:" in question
+        else question
+    )
+
+    if len(live_q) > 350:
+        return True
 
     live_lower = live_q.lower()
     if any(kw in live_lower for kw in _COMPLEX_QUESTION_KEYWORDS):
         return True
 
     return False
+
 
 
 def _build_context_references_block(context: GraphContext) -> str:

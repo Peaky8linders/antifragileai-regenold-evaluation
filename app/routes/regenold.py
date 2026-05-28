@@ -4141,6 +4141,13 @@ def regenold_eu_ai_act_ask(
         retrieval_path != "no_match"
         and references
         and answer_text
+        # R90 — skip when Stage-2 polish landed. Stage-2 rewrites KG prose
+        # into natural language whose BM25 token overlap with KB summaries
+        # is lower, causing the guard to falsely prune valid references.
+        # The guard was designed for deterministic Stage-1 answers only.
+        # Live bench (2026-05-28) confirmed −0.21 ref_loose regression
+        # (0.44 → 0.22) when the guard ran against Sonnet-polished prose.
+        and not (getattr(rag_res, "graph_stats", {}) or {}).get("stage2_landed")
     ):
         try:
             from app.integrations.regenold.cite_describe_guard import (  # noqa: PLC0415
