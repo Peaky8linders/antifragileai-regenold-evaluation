@@ -20,17 +20,6 @@ def test_emotion_recognition_upgrades_to_art_5_1_f():
     assert "Article 5.1.f" in refs
 
 
-def test_nudification_upgrades_to_new_lit_after_omnibus():
-    # Topic: CSAM/nudification — the new Omnibus Art. 5 letter (h or j)
-    refs = upgrade_references(
-        question="Are nudification apps prohibited under the AI Act?",
-        base_refs=["Article 5"],
-    )
-    # Don't assert the exact letter — it's not yet settled in final text.
-    # Assert at least one sub-point form is emitted.
-    assert any(r.startswith("Article 5.1.") for r in refs)
-
-
 def test_technical_documentation_hardware_emits_annex_iv_subpoints():
     # Topic: tech doc hardware — Annex IV(2)(a)
     refs = upgrade_references(

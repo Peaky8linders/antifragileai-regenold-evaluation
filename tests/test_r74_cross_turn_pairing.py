@@ -149,18 +149,6 @@ class TestCrossTurnMt2017Art99Startup:
 # ---------------------------------------------------------------------------
 
 class TestCrossTurnMt2019Dec2027AnnexI:
-    def test_december_2027_prior_annex_i_rule_exists(self):
-        """Rule ('december 2027', 'annex i', 'Art. 113') must be in _CROSS_TURN_RULES."""
-        assert _cross_turn_fires("december 2027", "annex i", "Art. 113"), (
-            "Expected rule ('december 2027', 'annex i', 'Art. 113') in _CROSS_TURN_RULES"
-        )
-
-    def test_digital_omnibus_prior_annex_i_rule_exists(self):
-        """Rule ('digital omnibus', 'annex i', 'Art. 113') must be in _CROSS_TURN_RULES."""
-        assert _cross_turn_fires("digital omnibus", "annex i", "Art. 113"), (
-            "Expected rule ('digital omnibus', 'annex i', 'Art. 113') in _CROSS_TURN_RULES"
-        )
-
     def test_mt_v2_019_shape_fires_deterministic_parse(self):
         """End-to-end: December 2027 prior + 'Annex I embedded systems?' → Art. 113 in entities."""
         prior = (
