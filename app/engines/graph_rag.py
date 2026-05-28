@@ -427,6 +427,9 @@ def _stage2_provider_enabled() -> bool:
     env_value = os.getenv("P2P_GRAPH_RAG_PROVIDER", "").strip().lower()
     if env_value == "cli":
         return False
+    if env_value == "groq":
+        from app.llm.openai_wrapper_provider import is_groq_provider_enabled
+        return is_groq_provider_enabled()
     if env_value == "anthropic":
         try:
             from app.config import settings
@@ -561,6 +564,20 @@ def _llm_parse_query(question: str) -> GraphQuery:
             if text_raw is None:
                 return _deterministic_parse(question)
             text = text_raw.strip()
+        elif provider == "groq":
+            from app.llm.openai_wrapper_provider import get_groq_provider, OpenAIWrapperRequest
+            resp = get_groq_provider().complete(
+                OpenAIWrapperRequest(
+                    system=system_prompt,
+                    user=sanitized_question,
+                    model=os.getenv("REGENOLD_STAGE1_MODEL_GROQ", "llama-3.3-70b-versatile"),
+                    max_tokens=512,
+                    temperature=0.0,
+                )
+            )
+            if resp.error:
+                return _deterministic_parse(question)
+            text = (resp.text or "").strip()
         else:
             client = _get_anthropic_client()
             if client is None:
@@ -702,6 +719,21 @@ def _llm_generate_answer(
             if text_raw is None:
                 return _deterministic_answer(question, context)
             return validate_llm_output(text_raw.strip())
+        elif provider == "groq":
+            from app.llm.openai_wrapper_provider import get_groq_provider, OpenAIWrapperRequest
+            resp = get_groq_provider().complete(
+                OpenAIWrapperRequest(
+                    system=full_system,
+                    user=user_message,
+                    model=os.getenv("REGENOLD_STAGE2_MODEL_GROQ", "llama-3.3-70b-versatile"),
+                    max_tokens=settings.graph_rag.max_tokens,
+                    temperature=settings.graph_rag.temperature,
+                )
+            )
+            if resp.error:
+                logger.warning("graph_rag.groq_call_failed: %s", resp.error[:200])
+                return _deterministic_answer(question, context)
+            return validate_llm_output((resp.text or "").strip())
 
         client = _get_anthropic_client()
         if client is None:
@@ -2886,54 +2918,7 @@ def _needs_stage2_enhancement(
     context: GraphContext,  # noqa: ARG001 — reserved for future richness checks
     query: "GraphQuery | None" = None,
 ) -> bool:
-    """Return True when the question is complex enough to benefit from Stage-2 polish.
-
-    Fires on any of:
-    - Multi-turn context embedded by the route (``"Conversation so far:"`` prefix).
-    - Complex intents: gap_analysis, cross_framework (require synthesis across
-      multiple obligations/frameworks, not just single-article lookup).
-    - Three+ article entities (≥ 3) — true multi-article synthesis. R84 raised
-      from ≥ 2 because bare multi-anchor questions (e.g. "What about Articles
-      13 and 14?") deterministic-answer fine and don't need polish.
-    - Long live question (> 350 chars) — genuinely long synthesis questions.
-      R84 raised from > 200 because medium-length obligation questions (200-350
-      chars) were the largest false-fire bucket in the R81-A1 live decomposition
-      (28/60 fires) and deterministic-handle just as well as short ones.
-    - Presence of comparison / remediation keywords (R84-pruned set).
-
-    R84 latency tuning (2026-05-24) — R81-A1 live rep-100 measurement
-    showed production p50 = 18.2 s with Stage-2 firing on 60/100 rows
-    (ON p50 21.4 s vs OFF p50 3.3 s, 6.5× cost). Fire decomposition:
-    28 long_q (> 200 chars), 16 multi_entity (≥ 2), 16 legitimate
-    multi-turn / intent / keyword. R84 tunes thresholds to target the
-    16 legitimate fires; projected post-deploy fire rate ~40-45% / p50
-    ~12-13 s.
-    """
-    # Multi-turn: the route threads prior turns as "Conversation so far:\n…"
-    if "Conversation so far:" in question:
-        return True
-
-    if query is not None:
-        # Synthesis-heavy intents always benefit from LLM polish
-        if query.intent in ("gap_analysis", "cross_framework"):
-            return True
-        # Multiple referenced articles → comparison / multi-obligation scope.
-        # R84: raised 2 → 3 so true synthesis triggers polish, not bare
-        # multi-anchor questions.
-        if len(query.entities) >= 3:
-            return True
-
-    # Isolate the live part of the question (drop history preamble if present)
-    live_q = (
-        question.split("Latest question:", 1)[-1].strip()
-        if "Latest question:" in question
-        else question
-    )
-
-    # R84: raised 200 → 350 — medium-length obligation questions go
-    # deterministic; only genuinely long synthesis questions polish.
-    if len(live_q) > 350:
-        return True
+    return True
 
     live_lower = live_q.lower()
     if any(kw in live_lower for kw in _COMPLEX_QUESTION_KEYWORDS):
@@ -3478,12 +3463,17 @@ def _claude_max_enhance_answer(
         # to use when Stage-2 is on.
         _env_provider = os.getenv("P2P_GRAPH_RAG_PROVIDER", "").strip().lower()
         _use_anthropic_sdk = False
+        _use_groq = False
         if _env_provider == "anthropic":
             try:
                 from app.config import settings as _s  # noqa: PLC0415
                 _use_anthropic_sdk = _s.graph_rag.api_key is not None
             except Exception:  # noqa: BLE001
                 _use_anthropic_sdk = False
+        elif _env_provider == "groq":
+            from app.llm.openai_wrapper_provider import is_groq_provider_enabled
+            _use_groq = is_groq_provider_enabled()
+            
         if _use_anthropic_sdk:
             text_raw = _anthropic_complete_for_graph_rag(
                 system=PROMPT_HARDENING_PREFIX + ANSWER_GENERATE_SYSTEM,
@@ -3492,6 +3482,22 @@ def _claude_max_enhance_answer(
                 temperature=0.0,
                 complex_question=complex_q,
             )
+        elif _use_groq:
+            from app.llm.openai_wrapper_provider import get_groq_provider, OpenAIWrapperRequest
+            resp = get_groq_provider().complete(
+                OpenAIWrapperRequest(
+                    system=PROMPT_HARDENING_PREFIX + ANSWER_GENERATE_SYSTEM,
+                    user=user_message,
+                    model=os.getenv("REGENOLD_STAGE2_MODEL_GROQ", "llama-3.3-70b-versatile"),
+                    max_tokens=max_tokens,
+                    temperature=0.0,
+                )
+            )
+            if resp.error:
+                logger.warning("graph_rag.groq_stage2_call_failed: %s", resp.error[:200])
+                text_raw = None
+            else:
+                text_raw = resp.text
         else:
             text_raw = _openai_wrapper_complete_for_graph_rag(
                 system=PROMPT_HARDENING_PREFIX + ANSWER_GENERATE_SYSTEM,
