@@ -213,3 +213,16 @@ The proposals don't compose orthogonally — Proposal 3 changes what Sonnet emit
 | 4. Deployer Graph-Hop | YES, static-map variant (uncommitted) | LOW — additive, never displaces winners | **Ship with #1**, no extra cost |
 
 The work-in-flight already implements three of the four. The fourth (asyncio) doesn't survive a critical-path audit — the real latency move is the Groq Stage-2 swap already documented in [`.planning/R81-MODEL-RESEARCH.md`](.planning/R81-MODEL-RESEARCH.md) as R81-G.
+  
+## 6 - RushDB Live Evaluation Metrics  
+  
+The following metrics were captured after fully seeding the live RushDB instance:  
+  
+`  
+OVERALL: 276/276 passed (100.0%%)  
+DIFF vs regenold_results_no_orphan.json: no scenario flipped (PASS/FAIL parity)  
+QUALITY: ref_format=276/276 (100%%) | sentence_cap=276/276 (100%%) | refs_within_max=276/276 (100%%)  
+LATENCY: p50=5ms | p95=13ms | max=3849ms  
+RISK_F1 (n=18): prohibited=1.00 | high_risk=1.00 | refusal=0.56 | macro=0.85  
+RETRIEVAL (n=25): P=0.64 | R=1.00 | F1=0.73  
+` 
