@@ -1408,8 +1408,13 @@ class TestR531CArticleExistenceForNewKeywords:
             "individualised risk assessment",
             "individualized risk assessment",
             # Digital Omnibus / Commission Guidelines
-            "omnibus agreement",
-            "omnibus political agreement",
+            # R92 — "omnibus agreement" / "omnibus political agreement"
+            # mappings to Art. 113 were REMOVED (Omnibus content stripped
+            # from the KB in 2a755d7; the adversarial "Under the Digital
+            # Omnibus…" distractor was dragging Art. 113 entry-into-force
+            # boilerplate into ~33% of answers). The GPAI-threshold +
+            # fine-tune compounds below stay — they anchor real GPAI
+            # provisions, not entry-into-force prose.
             "one-third fine-tune",
             "one third fine-tune",
             "one-third fine tune",

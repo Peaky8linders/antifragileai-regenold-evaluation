@@ -1881,10 +1881,15 @@ KEYWORD_TO_ARTICLE: dict[str, str] = {
     "eu ai database": "Annex VIII",
     "information must be registered": "Annex VIII",
     "registered in the eu ai database": "Annex VIII",
-    # Digital Omnibus (May 2026 political agreement)
-    "digital omnibus": "Art. 113",
-    "2 december 2027": "Art. 113",
-    "2 august 2028": "Art. 113",
+    # Digital Omnibus — R92: the Omnibus→Art. 113 keyword mappings were
+    # REMOVED. The Omnibus content was stripped from the KB (commit
+    # 2a755d7), so mapping the adversarial "Under the Digital Omnibus…"
+    # distractor to Art. 113 only dragged entry-into-force boilerplate
+    # into ~33% of answers (live + deterministic 110-row Omnibus probe:
+    # 21-36/110 rows wrongly cited Art. 113 when only 1 gold IS 113),
+    # polluting Ans/Ref conciseness and displacing the real answer.
+    # "digital omnibus" stays in _AI_ACT_ANCHORS (keeps the underlying
+    # question in-scope) but no longer anchors any article.
     "ai-generated csam": "Art. 5",
     "ai csam": "Art. 5",
     "non-consensual intimate": "Art. 5",
@@ -1937,11 +1942,11 @@ KEYWORD_TO_ARTICLE: dict[str, str] = {
     "medical devices exemption": "Art. 5",
     "individualised risk assessment": "Art. 5",
     "individualized risk assessment": "Art. 5",
-    # Digital Omnibus / Commission Guidelines → Art. 51 / Art. 25 /
-    # Art. 113. "digital omnibus" already maps to Art. 113 (R9 era);
-    # the other Omnibus / GPAI-threshold compounds are added here.
-    "omnibus agreement": "Art. 113",
-    "omnibus political agreement": "Art. 113",
+    # Digital Omnibus / Commission Guidelines → Art. 51 / Art. 25.
+    # R92: "omnibus agreement" / "omnibus political agreement" → Art. 113
+    # mappings REMOVED (see the de-pollution note above). The GPAI
+    # threshold + fine-tune compounds below stay — they anchor real
+    # GPAI provisions, not the entry-into-force boilerplate.
     "one-third fine-tune": "Art. 25",
     "one third fine-tune": "Art. 25",
     "one-third fine tune": "Art. 25",
