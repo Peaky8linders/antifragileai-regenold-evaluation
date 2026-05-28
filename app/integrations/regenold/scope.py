@@ -2693,8 +2693,10 @@ def _format_neighbour_articles(unknown: tuple[str, ...]) -> str:
             key=lambda n: abs(n - num),
         )[:2]
         if candidates:
+            # R92 — wire-format compliance: emit "Article N" (not "Art. N")
+            # in answer prose per the competition citation format.
             suggestions.append(
-                "Art. " + " or Art. ".join(str(n) for n in candidates)
+                "Article " + " or Article ".join(str(n) for n in candidates)
             )
             break  # One Article suggestion is enough
     if not suggestions:
@@ -2709,7 +2711,10 @@ def refusal_copy_for(verdict: ScopeVerdict) -> str:
     partner what the issue is so they can fix the request.
     """
     if verdict.reason == ScopeReason.NON_EXISTENT_ARTICLE:
-        bad = ", ".join(verdict.unknown_articles)
+        # R92 — echo the invalid ref in wire-format ("Article 200", not
+        # "Art. 200") per the competition citation format. Annex forms
+        # ("Annex XX") are already compliant and untouched by the replace.
+        bad = ", ".join(verdict.unknown_articles).replace("Art. ", "Article ")
         # The regulation has 113 numbered articles + 13 Annexes (I-XIII).
         suggestion = _format_neighbour_articles(verdict.unknown_articles)
         return (
@@ -2725,7 +2730,7 @@ def refusal_copy_for(verdict: ScopeVerdict) -> str:
         return (
             "This question is about a regulation outside the EU AI Act. "
             "This assistant answers EU AI Act questions only (Regulation 2024/1689). "
-            "Please rephrase with a specific Art. reference (e.g. \"Art. 13\") or compliance dimension."
+            "Please rephrase with a specific Article reference (e.g. \"Article 13\") or compliance dimension."
         )
 
     if verdict.reason == ScopeReason.NEAR_OOS:
@@ -2757,22 +2762,22 @@ def refusal_copy_for(verdict: ScopeVerdict) -> str:
         # R55-A — third-person regulator voice (no first-person pronouns).
         return (
             "This assistant answers EU AI Act questions only (Regulation 2024/1689). "
-            "Please ask a regulatory question — for example, \"What does Art. 13 require?\" "
-            "or \"What are the deployer obligations under Art. 26?\"."
+            "Please ask a regulatory question — for example, \"What does Article 13 require?\" "
+            "or \"What are the deployer obligations under Article 26?\"."
         )
 
     if verdict.reason == ScopeReason.CONVERSATIONAL:
         # R55-A — third-person regulator voice (no first-person pronouns).
         return (
             "This assistant answers EU AI Act questions only (Regulation 2024/1689). "
-            "Try a regulatory question, for example: \"What does Art. 13 require for transparency?\" "
-            "or \"What are the deployer obligations under Art. 26?\"."
+            "Try a regulatory question, for example: \"What does Article 13 require for transparency?\" "
+            "or \"What are the deployer obligations under Article 26?\"."
         )
 
     if verdict.reason == ScopeReason.EMPTY_OR_NONSENSE:
         return (
             "No matching obligation found in the EU AI Act for this question. "
-            "Try rephrasing with a specific article reference (e.g. \"Art. 13\"), "
+            "Try rephrasing with a specific article reference (e.g. \"Article 13\"), "
             "a risk level (e.g. \"high-risk\"), or a compliance dimension "
             "(e.g. \"transparency\")."
         )

@@ -929,9 +929,11 @@ def test_normalise_drops_meta_leak_sentences() -> None:
     # The middle sentence (with "graph context") is gone.
     assert "graph context" not in out.lower()
     assert "while" not in out.lower() or "while the graph" not in out.lower()
-    # Surrounding clean sentences survive.
+    # Surrounding clean sentences survive. R92 — the wire citation-form
+    # enforcer normalises "Art. 26(5)" → "Article 26(5)" in prose.
     assert "Article 26 imposes deployer obligations." in out
-    assert "Art. 26(5)" in out
+    assert "Article 26(5)" in out
+    assert "Art. 26(5)" not in out
 
 
 def test_normalise_strips_direct_answer_label_marker() -> None:
