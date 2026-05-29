@@ -2375,9 +2375,15 @@ def _describes_regulated_ai_use(text: str) -> bool:
 # (lower severity / broader phrasing). The validator's high-severity
 # tier blocks the heavy artillery; this layer is the last-mile mop-up.
 _INJECTION_PATTERNS: tuple[re.Pattern, ...] = (
-    re.compile(r"\bignore\s+(?:all\s+|the\s+|your\s+|previous\s+|prior\s+)?(?:instructions|prompts|rules|restrictions|safety|guidelines|guardrails|filters|limits|constraints)\b",
+    # Qualifier group is ``*`` (zero-or-more), not ``?`` (zero-or-one), so
+    # STACKED qualifiers match — the canonical jailbreak "ignore ALL
+    # PREVIOUS instructions" (two qualifiers) slipped through the old
+    # single-qualifier ``?`` form. ``*`` over a finite alternation that
+    # never overlaps the trailing noun group is ReDoS-safe (linear:
+    # 5000 stacked qualifiers ≈ 1.5 ms).
+    re.compile(r"\bignore\s+(?:(?:all|the|your|previous|prior)\s+)*(?:instructions|prompts|rules|restrictions|safety|guidelines|guardrails|filters|limits|constraints)\b",
                re.IGNORECASE),
-    re.compile(r"\bdisregard\s+(?:all\s+|the\s+|your\s+|previous\s+)?(?:instructions?|restrictions?|rules?)\b",
+    re.compile(r"\bdisregard\s+(?:(?:all|the|your|previous)\s+)*(?:instructions?|restrictions?|rules?)\b",
                re.IGNORECASE),
     re.compile(r"\b(?:print|reveal|show|tell|output)\s+(?:me\s+)?(?:the\s+|your\s+)?system\s+prompt\b",
                re.IGNORECASE),
