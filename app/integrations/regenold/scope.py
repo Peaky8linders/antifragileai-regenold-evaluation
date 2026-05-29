@@ -1849,6 +1849,21 @@ KEYWORD_TO_ARTICLE: dict[str, str] = {
     "transitional provision": "Art. 111",
     "pre-existing high-risk": "Art. 111",
     "pre-existing ai system": "Art. 111",
+    # R94 — Article 111 grandfathering / transition phrasing. "Placed on
+    # the market" / "put into service" are EU-regulatory terms of art;
+    # combined with "before" they unambiguously denote the Art. 111
+    # transition rule for systems already on the market (the user's
+    # MedTech "before 2 August 2026" example). OOS-safe (the R34 probe
+    # set carries none of these multi-word product-law phrases).
+    "placed on the market before": "Art. 111",
+    "put into service before": "Art. 111",
+    "already placed on the market": "Art. 111",
+    "already been placed on the market": "Art. 111",
+    "already put into service": "Art. 111",
+    "systems already placed": "Art. 111",
+    "before 2 august 2026": "Art. 111",
+    "before august 2, 2026": "Art. 111",
+    "before august 2 2026": "Art. 111",
     "review of the regulation": "Art. 112",
     "review the eu ai act": "Art. 112",
     "review of the eu ai act": "Art. 112",

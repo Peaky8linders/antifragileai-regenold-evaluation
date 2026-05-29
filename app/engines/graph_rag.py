@@ -1211,6 +1211,13 @@ _KEYWORD_ENTITY_MAP: tuple[tuple[str, str], ...] = (
     # Transition + review (Arts. 111, 112)
     ("transitional provision", "Art. 111"),
     ("pre-existing high-risk", "Art. 111"),
+    # R94 — Article 111 grandfathering / transition phrasing (the user's
+    # MedTech "placed on the market before 2 August 2026" example).
+    ("placed on the market before", "Art. 111"),
+    ("put into service before", "Art. 111"),
+    ("already placed on the market", "Art. 111"),
+    ("already put into service", "Art. 111"),
+    ("systems already placed", "Art. 111"),
     ("review of the regulation", "Art. 112"),
     ("evaluation of the regulation", "Art. 112"),
     ("commission review", "Art. 112"),

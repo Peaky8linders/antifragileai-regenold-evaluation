@@ -376,17 +376,30 @@ def is_groq_provider_enabled() -> bool:
 def is_groq_intent_provider_enabled() -> bool:
     """True iff Stage-0 intent should route to Groq.
 
-    Requires BOTH ``REGENOLD_INTENT_PROVIDER=groq`` AND a non-empty
-    ``GROQ_API_KEY``. If only one is set, returns False so the intent
-    classifier falls back to the existing wrapper path (no surprise
-    silent disablement).
+    R94 — Groq Llama 3.3 70B is the **default** Stage-0 intent provider
+    (replacing Claude Haiku via the wrapper). A non-empty ``GROQ_API_KEY``
+    is always required. Selection on top of that:
+
+    * ``REGENOLD_INTENT_PROVIDER=groq``  → Groq (explicit).
+    * ``REGENOLD_INTENT_PROVIDER`` unset → Groq (R94 default, because a
+      key is present).
+    * ``REGENOLD_INTENT_PROVIDER=<other>`` (``wrapper`` / ``haiku`` /
+      ``openai_wrapper`` / ``anthropic`` / ``cli``) → NOT Groq — explicit
+      opt-out routes Stage-0 back to the wrapper/Haiku path.
+
+    Without a ``GROQ_API_KEY`` this always returns False, so the
+    historical wrapper/Haiku path is preserved — and the davidath
+    TestClient bench (no ``GROQ_API_KEY`` in env) stays byte-identical.
     """
+    if not is_groq_provider_enabled():
+        return False
     provider_choice = (
         os.getenv("REGENOLD_INTENT_PROVIDER", "").strip().lower()
     )
-    if provider_choice != "groq":
-        return False
-    return is_groq_provider_enabled()
+    if provider_choice in ("", "groq"):
+        return True
+    # Explicit non-groq choice opts back out to the wrapper path.
+    return False
 
 
 def get_groq_provider() -> _OpenAIWrapperProvider:

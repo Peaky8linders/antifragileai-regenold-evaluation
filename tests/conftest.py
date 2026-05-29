@@ -153,3 +153,33 @@ def _reset_r89a_force_append_env(monkeypatch):
     """
     monkeypatch.delenv("REGENOLD_R89A_FORCE_APPEND", raising=False)
     yield
+
+
+# R94 (2026-05-29) — verbatim exact-text answers ship as the route DEFAULT
+# (``REGENOLD_VERBATIM_ANSWER`` on): when a request resolves to references,
+# the wire ``answer`` is replaced with the VERBATIM EUR-Lex text of the
+# cited provisions (sub-point-resolved), per the user's "exact text, no
+# reformulations, drop caps" directive. The modules below predate R94 and
+# pin the underlying answer-ASSEMBLY contract — classification verdicts,
+# the 3-sentence / 600-char cap conformance gates, role-obligation prose,
+# the refusal/short-circuit gates — which still runs BENEATH the verbatim
+# presentation layer. The verbatim default itself is validated end-to-end
+# in ``tests/test_r94_verbatim.py``. Disable verbatim for these modules so
+# their assertions exercise the layer they were written for.
+_R94_VERBATIM_OFF_MODULES = (
+    "test_classification_verdicts",
+    "test_regenold_integration",
+    "test_regenold_scope",
+    "test_retrieval_upgrades",
+    "test_route_round_36_fixes",
+)
+
+
+@pytest.fixture(autouse=True)
+def _r94_pin_verbatim_off(request, monkeypatch):
+    """Pin verbatim mode OFF for the legacy answer-assembly test modules."""
+    mod = getattr(request, "module", None)
+    name = getattr(mod, "__name__", "") if mod is not None else ""
+    if any(name.endswith(m) for m in _R94_VERBATIM_OFF_MODULES):
+        monkeypatch.setenv("REGENOLD_VERBATIM_ANSWER", "0")
+    yield

@@ -43,8 +43,18 @@ def _reset() -> None:
 # ── is_groq_intent_provider_enabled ──────────────────────────────────────────
 
 
-def test_groq_disabled_when_provider_var_missing(monkeypatch) -> None:
+def test_groq_default_on_when_key_present_provider_unset(monkeypatch) -> None:
+    """R94 — Groq is the DEFAULT Stage-0 provider when a key is present
+    and ``REGENOLD_INTENT_PROVIDER`` is unset (was False pre-R94)."""
     monkeypatch.delenv("REGENOLD_INTENT_PROVIDER", raising=False)
+    monkeypatch.setenv("GROQ_API_KEY", "gsk_test")
+    assert owp.is_groq_intent_provider_enabled() is True
+
+
+def test_groq_disabled_when_explicit_wrapper_optout(monkeypatch) -> None:
+    """R94 — an explicit non-groq provider opts back out to the wrapper
+    path even when a Groq key is present."""
+    monkeypatch.setenv("REGENOLD_INTENT_PROVIDER", "wrapper")
     monkeypatch.setenv("GROQ_API_KEY", "gsk_test")
     assert owp.is_groq_intent_provider_enabled() is False
 
@@ -119,6 +129,9 @@ def test_resolve_picks_wrapper_when_only_wrapper_configured(monkeypatch) -> None
     monkeypatch.setenv("OPENAI_API_BASE", "http://127.0.0.1:8000/v1")
     monkeypatch.setenv("OPENAI_API_KEY", "dummy")
     monkeypatch.delenv("REGENOLD_INTENT_PROVIDER", raising=False)
+    # R94 — "only wrapper configured" means no Groq key; otherwise the
+    # R94 default would route Stage-0 to Groq.
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
     selection = ic._resolve_intent_provider()
     assert selection is not None
     provider, model = selection
