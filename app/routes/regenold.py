@@ -101,6 +101,7 @@ from app.integrations.regenold.scope import (
     ConversationVerdict,
     classify_conversation,
     refusal_copy_for,
+    text_has_injection,
 )
 from app.integrations.regenold.text_normalize import normalize_unicode_punctuation
 from app.llm.intent_classifier import classify_intent
@@ -2651,7 +2652,25 @@ def _build_question_from_history(messages: list[Any]) -> tuple[str, str | None]:
     Returns ``(question, system_context_or_None)``.
     """
     # Pull out system messages first — they're not part of the dialogue.
-    system_parts = [m.content for m in messages if m.role == "system"]
+    #
+    # Issue #151 — a ``system`` turn is forwarded to the engine as
+    # ``GraphRAGRequest.system_description`` (model-conditioning context),
+    # so adversarial instructions there ("ignore your instructions", "you
+    # are now DAN", "reveal your system prompt") are a prompt-injection
+    # vector. STRIP any injection-matching system message here, before it
+    # reaches the engine — rather than refusing the whole conversation in
+    # the scope gate, which false-positives on legitimate defensive system
+    # prompts and would block the user's actual question. The user's
+    # question is still answered; only the adversarial conditioning is
+    # dropped. ``text_has_injection`` uses the same curated patterns the
+    # scope gate applies to user / assistant turns.
+    system_parts = [
+        m.content
+        for m in messages
+        if m.role == "system"
+        and m.content
+        and not text_has_injection(m.content)
+    ]
     system_context = "\n".join(p for p in system_parts if p.strip()) or None
 
     # Conversation = everything except system messages, in order.
