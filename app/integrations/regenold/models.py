@@ -133,6 +133,7 @@ class RegenoldAskResponse(BaseModel):
         "no_match",
         "zero_retrieval_fallback",
         "consistency_guard",
+        "verbatim_exact_text",
         None,
     ] | None = Field(
         default=None,

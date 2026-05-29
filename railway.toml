@@ -104,13 +104,28 @@ REGENOLD_CITE_DESCRIBE_GUARD = "0"
 #   railway variables --set P2P_GRAPH_RAG_MAX_TOKENS=1024
 #   railway variables --set P2P_GRAPH_RAG_COMPLEX_THINKING_TOKENS=2500
 
-# Round 52 — Stage-0 intent classifier provider selection.
+# Round 52 / Round 94 — Stage-0 intent classifier provider selection.
 #
-# Default ("" or "wrapper" semantics): Haiku 4.5 via the Claude Max
-# wrapper (existing behaviour). Set to "groq" to route Stage-0 through
-# Groq's serverless Llama 3.3 70B endpoint instead. Requires
-# ``GROQ_API_KEY`` to be ALSO set; if the key is missing, the classifier
-# falls back to the wrapper (no surprise silent disablement).
+# R94: Groq Llama 3.3 70B is now the DEFAULT Stage-0 provider whenever
+# ``GROQ_API_KEY`` is set — provision the key and Stage-0 routes to Groq
+# automatically (no REGENOLD_INTENT_PROVIDER needed):
+#   railway variables --set GROQ_API_KEY=gsk_...
+# To force the historical Haiku-via-wrapper path even with a key present:
+#   railway variables --set REGENOLD_INTENT_PROVIDER=wrapper
+# Without a GROQ_API_KEY the wrapper/Haiku path is preserved. NOTE: the
+# free Groq tier has a 100K tokens-per-DAY cap; bulk evals exhaust it and
+# every 429 falls back cleanly to deterministic narrowing — use a paid
+# tier for sustained production volume.
+#
+# (Legacy R52 framing): set to "groq" to route Stage-0 through Groq's
+# serverless Llama 3.3 70B endpoint. Requires ``GROQ_API_KEY`` to be ALSO
+# set; if the key is missing, the classifier falls back to the wrapper
+# (no surprise silent disablement).
+#
+# R94 — verbatim exact-text answer mode is a CODE default (ON): the wire
+# answer quotes the verbatim EUR-Lex text of cited provisions. Disable
+# (revert to concise summary prose) with:
+#   railway variables --set REGENOLD_VERBATIM_ANSWER=0
 #
 # Why this exists: planning a Claude Max → Claude Pro downgrade. Pro's
 # tighter rate limits would throttle the wrapper, so the cheapest
