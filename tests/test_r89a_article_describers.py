@@ -375,19 +375,25 @@ def test_r89a_review_fix_f2_art50_cumulativity_conditional(monkeypatch) -> None:
 
 def test_r89a_review_fix_lc1_conditional_check_order(monkeypatch) -> None:
     """L&C-1: a conditional-table entry must take precedence over
-    the dot-heuristic. Verify by direct membership: Article 113 is
+    the dot-heuristic. Verify by direct membership: Article 50 is
     keyed in _ART_CONDITIONAL_DESCRIBERS but its key has no dot
     (so `is_subpoint_key` was always False for it). With the fix,
     `is_conditional_key` is checked FIRST, so the order is
     authoritative even if a future conditional key DID have a dot.
+
+    R92 — the former "Article 113" conditional describer (Digital
+    Omnibus deferral dates) was removed with the Omnibus content in
+    commit 2a755d7. "Article 50" is now the canonical no-dot
+    conditional key exercising this precedence path.
     """
     from app.integrations.regenold.grounded_prose import (
         _ART_CONDITIONAL_DESCRIBERS,
     )
 
-    # Confirm both conditional keys we care about are in the table.
-    assert "Article 113" in _ART_CONDITIONAL_DESCRIBERS
+    # A no-dot conditional key must be present to exercise the precedence
+    # path (conditional-key check before the dot-heuristic).
     assert "Article 50" in _ART_CONDITIONAL_DESCRIBERS
+    assert "." not in "Article 50"  # the key genuinely has no dot
 
 
 def test_r89a_review_fix_lc2_paragraph_only_key_not_subpoint() -> None:

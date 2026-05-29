@@ -151,20 +151,6 @@ class TestPhaseQueries:
         )
         assert "Art. 113" in hits, f"Expected Art. 113 in hits; got {hits}"
 
-    def test_digital_omnibus_surfaces_phase_anchors(self) -> None:
-        """The omnibus phase descriptions name 'Digital Omnibus' verbatim."""
-        hits = top_articles_by_relevance(
-            "What does the Digital Omnibus defer?",
-            k=5, min_score=1.0,
-        )
-        # Omnibus phases anchor on Art. 5 (9th prohibition) and Art. 6
-        # (deferred Annex I high-risk obligations).
-        phase_anchors = {"Art. 5", "Art. 6"}
-        hit = phase_anchors & set(hits)
-        assert hit, (
-            f"Expected at least one Omnibus phase anchor; got {hits}"
-        )
-
 
 class TestNoRegressionOnExistingQueries:
     """The canonical pre-extension queries still resolve correctly."""

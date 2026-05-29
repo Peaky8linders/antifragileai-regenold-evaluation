@@ -216,15 +216,6 @@ class TestTimeline:
                 f"Art. {n} should be 2025-08-02"
             )
 
-    def test_annex_iii_omnibus_deferred_date(self):
-        # Digital Omnibus political agreement 7 May 2026 — Annex III
-        # high-risk to 2 December 2027 (was Aug 2026).
-        assert TIMELINE_BY_ARTICLE["Annex III"] == "2027-12-02"
-
-    def test_annex_i_omnibus_deferred_date(self):
-        # Digital Omnibus — Annex I embedded-product to 2 August 2028.
-        assert TIMELINE_BY_ARTICLE["Annex I"] == "2028-08-02"
-
     def test_general_application_date_default(self):
         # Art. 6 itself applies on the general date (its OBLIGATIONS are
         # tied to Annex III, but the classification article is general).

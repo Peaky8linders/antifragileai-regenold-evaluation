@@ -298,6 +298,23 @@ def _openai_wrapper_complete_for_graph_rag(
                 response.error[:200],
             )
         return None
+    # R91 — truncation guard. ``finish_reason="length"`` means the model
+    # hit the ``max_tokens`` ceiling before naturally stopping; the text
+    # is partial output (often mid-sentence, often missing the trailing
+    # cited Article descriptions). Returning truncated polish text would
+    # set ``stage2_landed=True``, which triggers the R72
+    # ``_reconcile_references_to_prose`` pass to PRUNE references not
+    # described in the (truncated) prose — silently dropping valid
+    # citations. Treat as a soft failure so the caller falls back to the
+    # deterministic KG draft (``stage2_used=False`` → R72 no-op).
+    if getattr(response, "finish_reason", None) == "length":
+        logger.warning(
+            "graph_rag.openai_wrapper_truncated — finish_reason=length "
+            "(model=%s, completion_tokens=%d) — falling back to deterministic.",
+            response.model,
+            response.completion_tokens,
+        )
+        return None
     return response.text
 
 
@@ -398,6 +415,19 @@ def _anthropic_complete_for_graph_rag(
         text = getattr(block, "text", "") or ""
     except Exception as exc:  # noqa: BLE001
         logger.warning("graph_rag.anthropic_response_parse_failed: %s", str(exc)[:200])
+        return None
+    # R91 — truncation guard. Anthropic SDK returns ``stop_reason`` of
+    # ``"end_turn"`` (natural), ``"max_tokens"`` (truncated), ``"stop_sequence"``,
+    # ``"tool_use"``. A ``"max_tokens"`` polish is partial output and must
+    # not become the shipped answer — see the openai_wrapper companion
+    # comment above for the R72 reconciliation interaction.
+    stop_reason = getattr(response, "stop_reason", None)
+    if stop_reason == "max_tokens":
+        logger.warning(
+            "graph_rag.anthropic_truncated — stop_reason=max_tokens "
+            "(model=%s) — falling back to deterministic.",
+            model,
+        )
         return None
     return text
 
@@ -3494,6 +3524,18 @@ def _claude_max_enhance_answer(
             )
             if resp.error:
                 logger.warning("graph_rag.groq_stage2_call_failed: %s", resp.error[:200])
+                text_raw = None
+            elif getattr(resp, "finish_reason", None) == "length":
+                # R91 — truncation guard, mirrors the wrapper / SDK
+                # paths. A truncated Stage-2 polish would set
+                # ``stage2_landed=True`` and trigger R72 reference
+                # reconciliation against partial prose, silently
+                # pruning valid citations.
+                logger.warning(
+                    "graph_rag.groq_stage2_truncated — finish_reason=length "
+                    "(completion_tokens=%d) — falling back to deterministic.",
+                    resp.completion_tokens,
+                )
                 text_raw = None
             else:
                 text_raw = resp.text

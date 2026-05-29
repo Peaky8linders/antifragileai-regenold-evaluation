@@ -659,7 +659,15 @@ def healthz_llm() -> dict[str, object]:
             return base
         import time as _time
         start = _time.perf_counter()
+        client = None
         try:
+            # Issue #131 — close the client after the probe. The Anthropic
+            # SDK is httpx-backed; constructing one per ``/healthz/llm``
+            # request without closing leaks the connection pool + file
+            # descriptors on every health check. The ``finally`` below
+            # guarantees ``close()`` on both the success and exception
+            # paths; the guarded call keeps the probe robust if a client
+            # (mock / older SDK) lacks ``close()``.
             client = anthropic.Anthropic(
                 api_key=api_key.get_secret_value(),
                 timeout=10.0,
@@ -675,6 +683,13 @@ def healthz_llm() -> dict[str, object]:
             )[:200]
             base["elapsed_ms"] = int((_time.perf_counter() - start) * 1000)
             return base
+        finally:
+            # Issue #131 — always release the httpx-backed connection pool.
+            if client is not None:
+                try:
+                    client.close()
+                except Exception:  # noqa: BLE001 — cleanup must never raise
+                    pass
         base["llm_ok"] = True
         base["detail"] = "ok"
         base["elapsed_ms"] = int((_time.perf_counter() - start) * 1000)

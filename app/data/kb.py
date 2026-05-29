@@ -27,7 +27,7 @@ from dataclasses import dataclass, field
 # Art. 52(4) open-source designation, Art. 53(2) FOSS carve-out,
 # Art. 55 four systemic-risk obligations, Art. 79 market-surveillance
 # procedure).
-KB_VERSION = "2024.1689.v9"
+KB_VERSION = "2024.1689.v10"
 
 
 @dataclass(frozen=True)

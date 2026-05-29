@@ -396,7 +396,9 @@ class TestRefusalCopy:
             unknown_articles=("Art. 200",),
         )
         out = refusal_copy_for(v)
-        assert "Art. 200" in out
+        # R92 — echoed in spec "Article N" form, never "Art. N".
+        assert "Article 200" in out
+        assert "Art. 200" not in out
         assert "113" in out  # The valid upper bound is mentioned
         # Did-you-mean suggestion based on closest valid neighbours
         assert "Did you mean" in out
@@ -419,7 +421,10 @@ class TestRefusalCopy:
         )
         out = refusal_copy_for(v)
         assert "EU AI Act" in out
-        assert "Art. 13" in out  # Concrete example phrasing for the user
+        # R92 — wire-format compliance: refusal prose must use the spec
+        # "Article N" citation form, never "Art. N".
+        assert "Article 13" in out  # Concrete example phrasing for the user
+        assert "Art. 13" not in out
 
     def test_prompt_injection_copy(self) -> None:
         v = ScopeVerdict(
@@ -436,6 +441,34 @@ class TestRefusalCopy:
         v = ScopeVerdict(in_scope=True, reason=ScopeReason.IN_SCOPE)
         assert refusal_copy_for(v) == ""
 
+    def test_no_refusal_copy_uses_forbidden_art_form(self) -> None:
+        """R92 — competition wire-format enforcement.
+
+        The official rules require citations as "Article N" (Arabic) /
+        "Annex R" (Roman). The forbidden "Art. N" short form must never
+        appear in any refusal answer prose shipped on the wire. This
+        guard sweeps every ScopeReason branch (including the
+        non-existent-article echo + neighbour suggestion).
+        """
+        import re
+
+        forbidden = re.compile(r"\bArt\.\s*\d")
+        for reason in ScopeReason:
+            if reason == ScopeReason.IN_SCOPE:
+                continue
+            v = ScopeVerdict(
+                in_scope=False,
+                reason=reason,
+                evidence="",
+                unknown_articles=("Art. 200", "Annex XX"),
+                near_oos_framework="dsa",
+            )
+            out = refusal_copy_for(v)
+            assert not forbidden.search(out), (
+                f"refusal copy for {reason!r} emits forbidden 'Art. N' "
+                f"form (must be 'Article N'): {out!r}"
+            )
+
     def test_neighbours_for_low_article(self) -> None:
         """Closest-neighbour suggestion clamps at the catalog boundary."""
         v = ScopeVerdict(
@@ -445,7 +478,9 @@ class TestRefusalCopy:
             unknown_articles=("Art. 999",),
         )
         out = refusal_copy_for(v)
-        assert "Art. 999" in out
+        # R92 — echoed in spec "Article N" form, never "Art. N".
+        assert "Article 999" in out
+        assert "Art. 999" not in out
         # Suggestion should mention numbers in the valid 1-113 range.
         assert "Did you mean" in out
 
@@ -479,8 +514,10 @@ class TestRouteScopeRefusal:
         assert r.status_code == 200
         body = r.json()
         assert body["references"] == []
-        # Refusal mentions the bad ref + the valid upper bound.
-        assert "Art. 200" in body["answer"]
+        # Refusal mentions the bad ref + the valid upper bound. R92 —
+        # echoed in spec "Article N" form (never "Art. N") on the wire.
+        assert "Article 200" in body["answer"]
+        assert "Art. 200" not in body["answer"]
         assert "113" in body["answer"]
 
     def test_conversational_refuses(self) -> None:
@@ -1408,8 +1445,13 @@ class TestR531CArticleExistenceForNewKeywords:
             "individualised risk assessment",
             "individualized risk assessment",
             # Digital Omnibus / Commission Guidelines
-            "omnibus agreement",
-            "omnibus political agreement",
+            # R92 — "omnibus agreement" / "omnibus political agreement"
+            # mappings to Art. 113 were REMOVED (Omnibus content stripped
+            # from the KB in 2a755d7; the adversarial "Under the Digital
+            # Omnibus…" distractor was dragging Art. 113 entry-into-force
+            # boilerplate into ~33% of answers). The GPAI-threshold +
+            # fine-tune compounds below stay — they anchor real GPAI
+            # provisions, not entry-into-force prose.
             "one-third fine-tune",
             "one third fine-tune",
             "one-third fine tune",

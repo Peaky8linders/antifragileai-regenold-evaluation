@@ -141,48 +141,44 @@ def test_art5_generic_prohibited_practices_returns_joined() -> None:
 
 
 # ──────────────────────────────────────────────────────────────────
-# _KBEntry.select_best_stub — Art. 50 (2 stubs)
+# Art. 50 — single plain-dict stub (post Digital-Omnibus removal)
 # ──────────────────────────────────────────────────────────────────
+#
+# The Art. 50(2) watermarking stub (and its Digital-Omnibus deferral
+# dates) was removed in ``chore: remove Digital Omnibus references``.
+# Art. 50 is now a single plain ``dict`` entry, not a multi-stub
+# ``_KBEntry``, so there is no per-paragraph selection to exercise.
+# These tests pin the post-removal shape: ``_kb_summary`` returns the
+# single transparency summary regardless of the question (mirrors the
+# Art. 6 plain-dict pass-through invariant).
 
 
-def test_art50_watermark_question_picks_watermark_stub() -> None:
-    """Watermarking question must surface the Art. 50(2) stub
-    (watermarking deadlines), not the general transparency stub."""
+def test_art50_is_plain_dict_single_stub() -> None:
+    """Post Digital-Omnibus removal, Art. 50 is a single plain dict —
+    NOT a multi-stub _KBEntry — so it carries no select_best_stub."""
     entry = EC_CHECKER_OBLIGATION_MAP["Art. 50"]
-    assert isinstance(entry, _KBEntry)
-    q = "When does the AI watermarking obligation apply?"
-    stub = entry.select_best_stub(q)
-    low = stub.lower()
-    assert "watermark" in low
-    assert "2026" in low  # the deadline year is in the watermark stub
-
-
-def test_art50_truly_broad_question_returns_joined() -> None:
-    """A broad question with no specificity marker AND no clear
-    token-overlap winner returns the joined summary."""
-    entry = EC_CHECKER_OBLIGATION_MAP["Art. 50"]
-    # Question mentions neither watermark (stub 1 specificity) nor
-    # transparency / labelling (stub 0 lead tokens) — pure broad.
-    q = "Tell me about Article 50."
-    stub = entry.select_best_stub(q)
-    assert stub == entry["summary"]
-
-
-def test_art50_transparency_question_picks_lead_stub() -> None:
-    """A question explicitly about ``transparency obligations``
-    correctly favors the lead stub (which IS the transparency stub).
-    This is the desired behaviour — the question signals which
-    sub-paragraph it wants."""
-    entry = EC_CHECKER_OBLIGATION_MAP["Art. 50"]
-    q = "What transparency obligations does Article 50 impose?"
-    stub = entry.select_best_stub(q)
-    low = stub.lower()
-    # Lead-stub specifics: emotion-recognition + biometric-cat
-    # + deepfake labelling.
+    assert not isinstance(entry, _KBEntry)
+    assert isinstance(entry, dict)
+    low = entry["summary"].lower()
+    # The transparency substance is the only stub now.
     assert "transparency obligations" in low
     assert "labelled" in low or "deepfake" in low
-    # NOT the watermark stub.
+    # The watermarking deferral dates are gone (removal is intentional).
     assert "2 august 2026" not in low
+    assert "watermark" not in low
+
+
+def test_art50_kb_summary_passes_question_through_safely() -> None:
+    """``_kb_summary("Art. 50", question=...)`` returns the single
+    transparency summary regardless of question — Art. 50 is a plain
+    dict, so the ``question`` parameter has no selection effect."""
+    s1 = _kb_summary("Art. 50")
+    s2 = _kb_summary("Art. 50", question="When does AI watermarking apply?")
+    s3 = _kb_summary("Art. 50", question="What transparency obligations apply?")
+    assert s1 == s2 == s3
+    assert s1 is not None
+    low = s1.lower()
+    assert "transparency obligations" in low
 
 
 # ──────────────────────────────────────────────────────────────────

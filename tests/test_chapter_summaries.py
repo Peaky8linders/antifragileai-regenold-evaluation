@@ -207,12 +207,6 @@ class TestChapterForQueryBroadKeywords:
         assert chapter_for_query("What is the maximum fine?") == "XII"
         assert chapter_for_query("administrative fines under the AI Act") == "XII"
 
-    def test_digital_omnibus_routes_to_xiii(self):
-        from app.data.chapter_summaries import chapter_for_query
-        assert chapter_for_query(
-            "What does the Digital Omnibus change?"
-        ) == "XIII"
-
     def test_entry_into_force_routes_to_xiii(self):
         from app.data.chapter_summaries import chapter_for_query
         assert chapter_for_query("When is the entry into force?") == "XIII"

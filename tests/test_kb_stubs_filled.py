@@ -106,17 +106,6 @@ class TestR532OmnibusStubContent:
             f"GPAI downstream-provider classification. Summary: {summary!r}"
         )
 
-    def test_art_25_mentions_small_mid_cap_modifier(self) -> None:
-        """Art. 25 stub must surface the small-mid-cap modifier extension
-        from the Digital Omnibus 7 May 2026 political agreement (Art. 62/63
-        SME-tier privileges now apply to small mid-cap entities)."""
-        summary_lower = EC_CHECKER_OBLIGATION_MAP["Art. 25"]["summary"].lower()
-        assert "small mid-cap" in summary_lower or "small mid cap" in summary_lower, (
-            f"Art. 25 stub missing the small-mid-cap modifier from "
-            f"Digital Omnibus. Summary: "
-            f"{EC_CHECKER_OBLIGATION_MAP['Art. 25']['summary']!r}"
-        )
-
     def test_art_25_anchors_one_third_rule_to_art_51(self) -> None:
         """The Art. 25 one-third rule depends on Art. 51's threshold
         definitions — the stub should cross-reference Art. 51 so the
@@ -158,21 +147,6 @@ class TestR532OmnibusStubContent:
         assert "10^23" in summary or "10²³" in summary, (
             f"Art. 51 stub lost the 10^23 FLOPs Commission-Guidelines "
             f"threshold. Summary: {summary!r}"
-        )
-
-    def test_art_113_still_has_omnibus_dates(self) -> None:
-        """Pre-existing R27 invariant: Art. 113 carries the Digital Omnibus
-        7 May 2026 dates (Annex III high-risk → 2 December 2027; Annex I
-        embedded-product → 2 August 2028). Pinned here against silent drop.
-        """
-        summary = EC_CHECKER_OBLIGATION_MAP["Art. 113"]["summary"]
-        assert "2 December 2027" in summary, (
-            f"Art. 113 stub lost the Annex III high-risk Omnibus date. "
-            f"Summary: {summary!r}"
-        )
-        assert "2 August 2028" in summary, (
-            f"Art. 113 stub lost the Annex I embedded-product Omnibus date. "
-            f"Summary: {summary!r}"
         )
 
 
@@ -301,20 +275,6 @@ class TestR57BCoverageAuditStubs:
         )
         assert len(summary) > 400, (
             f"Art. 79 too thin ({len(summary)} chars). Summary: {summary!r}"
-        )
-
-    def test_art_6_omnibus_deferral_context(self) -> None:
-        """Art. 6 must surface Digital Omnibus dates."""
-        summary = EC_CHECKER_OBLIGATION_MAP["Art. 6"]["summary"]
-        lower = summary.lower()
-        assert "2 December 2027" in summary or "2 december 2027" in lower, (
-            f"Art. 6 missing 2 December 2027. Summary: {summary!r}"
-        )
-        assert "2 August 2028" in summary or "2 august 2028" in lower, (
-            f"Art. 6 missing 2 August 2028. Summary: {summary!r}"
-        )
-        assert "omnibus" in lower, (
-            f"Art. 6 missing 'Digital Omnibus'. Summary: {summary!r}"
         )
 
     def test_art_53_open_weights_carve_out_full(self) -> None:

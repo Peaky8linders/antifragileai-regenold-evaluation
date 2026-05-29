@@ -856,6 +856,43 @@ def _truncate_to_sentences(text: str, max_sentences: int = MAX_ANSWER_SENTENCES)
 # ── Pipeline composition ────────────────────────────────────────────────
 
 
+# R92 — wire citation-form enforcement. The official competition rules
+# require references as "Article N" (Arabic) / "Annex R" (Roman). The
+# answer PROSE must match that voice — the rules' own GOOD exemplars
+# write "Article 13", never the "Art. 13" short form. The R76/R92 live
+# measurement found 66/110 polished + 74/200 deterministic answers
+# emitting "Art. N" in prose (sourced from KB stubs + Stage-2 drift),
+# inconsistent with the spec voice + CLAUDE.md hard rule #1 ("never emit
+# Art. 13 on the wire"). This is the final, source-agnostic backstop —
+# it normalises the answer string only; the `references` list is built
+# separately via refs.to_user_facing and is already compliant.
+#
+# "Arts." → "Articles" runs first (it's a superstring of "Art."). Both
+# require a following digit (lookahead) so we never touch "Article"
+# itself, nor words like "part"/"start" (the \b before "Art" fails
+# inside them). Sub-points in prose (e.g. "Art. 13(3)") keep their
+# parenthetical form — the no-paren rule applies only to the references
+# list, and the rules' GOOD prose exemplar uses "Article 13(3)".
+# IGNORECASE handles lowercase drift ("art. 13"); the \b + digit
+# lookahead keeps "part."/"start."/"Article" itself safe, and the
+# replacement is always the legal-voice capitalised "Article"/"Articles".
+_PROSE_ARTS_PLURAL_RE = re.compile(r"\bArts\.?\s*(?=\d)", re.IGNORECASE)
+_PROSE_ART_SINGULAR_RE = re.compile(r"\bArt\.?\s*(?=\d)", re.IGNORECASE)
+
+
+def _normalise_prose_citation_form(text: str) -> str:
+    """Rewrite ``Art. N`` / ``Arts. N`` → ``Article N`` / ``Articles N``.
+
+    Operates on answer prose only. Idempotent (``Article``/``Articles``
+    contain no ``Art.``+digit pattern). Fail-soft via the caller's gate.
+    """
+    if not text:
+        return text
+    text = _PROSE_ARTS_PLURAL_RE.sub("Articles ", text)
+    text = _PROSE_ART_SINGULAR_RE.sub("Article ", text)
+    return text
+
+
 def _hard_truncate_at_clause(text: str, limit: int) -> str:
     """Truncate ``text`` to ≤ ``limit`` chars at the latest clean boundary.
 
@@ -1025,6 +1062,18 @@ def normalise_answer_for_regenold(
         "on",
     ):
         result = strip_preamble_templates(result)
+
+    # R92 — wire citation-form enforcement (default ON). Normalise any
+    # "Art. N" / "Arts. N" in the answer prose to the spec "Article N" /
+    # "Articles N" form. Source-agnostic backstop covering KB-stub prose
+    # + Stage-2 drift. Set REGENOLD_CITATION_FORM=0 to disable.
+    if os.getenv("REGENOLD_CITATION_FORM", "1").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    ):
+        result = _normalise_prose_citation_form(result)
 
     # R78 — hard char-cap backstop. The soft-cap loop above is
     # sentence-granular and cite-anchor-preserving: it cannot trim a

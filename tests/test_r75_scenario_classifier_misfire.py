@@ -134,10 +134,19 @@ def test_annex_iii_stub_carries_termination_and_fundamental():
 
 
 def test_kb_version_bumped_for_annex_iii_edit():
-    """The Annex III stub edit bumped KB_VERSION (R56-A cache lint)."""
+    """The Annex III stub edit bumped KB_VERSION (R56-A cache lint).
+
+    R92 — compare the trailing ``vN`` NUMERICALLY. The prior string
+    comparison (``KB_VERSION >= "2024.1689.v8"``) broke at the v9→v10
+    transition because lexically ``"v10" < "v8"`` (``'1' < '8'``).
+    """
+    import re
+
     from app.data.kb import KB_VERSION
 
-    assert KB_VERSION >= "2024.1689.v8"
+    m = re.search(r"\.v(\d+)$", KB_VERSION)
+    assert m is not None, f"unexpected KB_VERSION shape: {KB_VERSION!r}"
+    assert int(m.group(1)) >= 8
 
 
 # ── ScenarioVerdict shape sanity ─────────────────────────────────────────
