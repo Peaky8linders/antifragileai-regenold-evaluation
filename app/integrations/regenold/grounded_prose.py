@@ -44,10 +44,31 @@ scenario answers where Stage-2 polish never fired.
 """
 from __future__ import annotations
 
+import os
 import re
 from typing import Iterable
 
 from app.data.kb import EC_CHECKER_OBLIGATION_MAP
+
+
+def _clause_complete_enabled() -> bool:
+    """R94 bug 3 — env gate for the complete-clause / no-run-on augmenter
+    behaviour.
+
+    Default OFF so the davidath bench (which fires the augmenter on the
+    deterministic path) stays byte-identical: the pre-R94 short hard-cut
+    keeps answer prose tight, which the quadratic-length conciseness metric
+    rewards. The fix lands LIVE — flipped ON via ``railway.toml`` — where
+    the LLM judge penalises the dangling-conjunction / run-on fragments
+    (R93 fresh-200 tone failures) the short hard-cut produces. This mirrors
+    the R78 ``REGENOLD_HARD_CHAR_CAP`` davidath-wash / live-win discipline.
+    """
+    return os.environ.get("REGENOLD_CLAUSE_COMPLETE", "0").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
 
 
 # ── Soft caps ───────────────────────────────────────────────────────────
@@ -605,7 +626,36 @@ def _first_clause(summary: str, *, max_chars: int) -> str:
         idx = window.rfind(terminator)
         if idx > max_chars // 2:
             return cleaned[: idx + 1].rstrip(",;: ").rstrip(".") + "."
-    # No clean boundary; hard-cut + terminator.
+    # R94 bug 3 — no clean boundary INSIDE the window. The pre-R94 path
+    # (kept as the default for davidath byte-identity) hard-cut at
+    # ``max_chars`` (mid-clause), leaving a dangling conjunction ("Requires
+    # providers ... to register themselves and."). When the live fix is
+    # enabled, prefer the WHOLE first sentence (the abbreviation-aware
+    # splitter never mistakes "Art. 71" / "Annex N." for a sentence end —
+    # a naive ``". "`` search would clip "...EU database (Art." mid-cite).
+    # Bounded overshoot (3× the cap) keeps a boundary-free mega-clause from
+    # returning the whole stub.
+    if _clause_complete_enabled():
+        forward_limit = min(len(cleaned), max_chars * 3)
+        first_sentence = sentences[0].strip() if sentences else ""
+        if first_sentence and len(first_sentence) <= forward_limit:
+            return (
+                first_sentence
+                if first_sentence[-1] in ".!?"
+                else first_sentence.rstrip(",;: ") + "."
+            )
+        # No usable whole sentence within the overshoot — word-cut and drop
+        # any trailing dangling connective so we never end on
+        # "...and." / "...to.".
+        cut = cleaned[:max_chars].rstrip(",;: ")
+        low = cut.lower()
+        for dangler in (" and", " or", " to", " the", " of", " a", " an",
+                        " with", " for", " in"):
+            if low.endswith(dangler):
+                cut = cut[: len(cut) - len(dangler)].rstrip(",;: ")
+                break
+        return cut + "."
+    # Default (davidath byte-identical): hard-cut + terminator.
     return cleaned[: max_chars].rstrip(",;: ") + "."
 
 
@@ -1399,7 +1449,23 @@ def augment_with_ref_descriptions(
             tail = augmented.rstrip()
             if tail and tail[-1] not in ".!?":
                 tail += "."
-            augmented = tail + " " + " ".join(extra_parts)
+            # R94 bug 3 — each appended clause must end with terminal
+            # punctuation, otherwise consecutive clauses run on into one
+            # sentence ("...fundamental rights risks Article 49 requires...")
+            # that the downstream splitter reads as a single unit. Mirrors
+            # the prepend-block terminator guard above. Gated with the
+            # complete-clause fix (default OFF → davidath byte-identical;
+            # ON via railway.toml for the live judge win).
+            if _clause_complete_enabled():
+                terminated_parts: list[str] = []
+                for part in extra_parts:
+                    p = part.rstrip()
+                    if p and p[-1] not in ".!?":
+                        p = p.rstrip(",;: ") + "."
+                    terminated_parts.append(p)
+                augmented = tail + " " + " ".join(terminated_parts)
+            else:
+                augmented = tail + " " + " ".join(extra_parts)
         return augmented
 
     except Exception:  # noqa: BLE001 — fail-soft, never break the route

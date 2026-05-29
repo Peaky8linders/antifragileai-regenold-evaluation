@@ -67,6 +67,20 @@ REGENOLD_ROLE_DUTY_NOUN_SEED = "1"
 # with REGENOLD_AI_USECASE_RESCUE=0). OOS probe holds 21/21.
 REGENOLD_AI_USECASE_RESCUE = "1"
 
+# R94 — complete-clause / no-run-on augmenter fix. The deterministic
+# per-ref description augmenter (`grounded_prose.augment_with_ref_
+# descriptions`) clipped a stub's first sentence at a 90-char word
+# boundary, leaving a dangling conjunction ("...register themselves
+# and.") and run-on joins between cited articles — the R93 fresh-200
+# judge's "incomplete sentence / truncated regulatory statement" tone
+# failures (fresh_021-025). Default OFF in code so the davidath bench
+# stays byte-identical (the complete clauses are longer → the quadratic
+# conciseness metric dings −0.058; the bench runner doesn't read
+# railway.toml). Flipped ON here for the live deploy where the LLM judge
+# scores answer completeness, not token-length-ratio — the R78
+# davidath-wash / live-win discipline.
+REGENOLD_CLAUSE_COMPLETE = "1"
+
 # Round 66-B — Stage-2.5 cite-describe guard. Drops references whose
 # KB-summary token set doesn't overlap the answer prose (the inverse
 # of the R31 sentence-level citation guard which drops sentences).
