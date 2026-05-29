@@ -1671,6 +1671,148 @@ def _reemit_parents_for_subpoints(refs: list[str]) -> list[str]:
     return out + appended
 
 
+# ── R95-P0 — over-citation noise-anchor suppression ─────────────────────
+#
+# The R94 fresh-200 + r94-live over-citation analysis (122 live rows,
+# 65 missing ≥1 gold) found THREE "phantom" anchors dragging the judge
+# refs axis (0.37, the dominant weak axis): Art. 6 ×29, Art. 3 ×13,
+# Art. 51 ×11 surfaced as NON-gold citations the answer prose never
+# describes ("Article N cited but never described"). Root cause: the
+# BM25 fallback + R81 entity-boost over-surface broad topic anchors —
+# "high-risk AI system" → Art. 6 bleed, Art. 3 definitions noise,
+# Art. 51 GPAI bleed — on questions where they are NOT the subject.
+#
+# R90 proved post-hoc cite-describe pruning is rubric-NEGATIVE on the
+# competition bench (−0.21 ref_loose). R95 instead tightens the SOURCE:
+# drop a broad anchor from the candidate list ONLY when the question
+# lacks that anchor's topic signal AND a more-specific topic/operator
+# article is also present (so a genuinely broad question — "what is a
+# high-risk AI system?" — keeps Art. 6). Each drop is gated so the
+# anchor survives whenever it is plausibly the gold:
+#   * Art. 3 (definitions)    — kept on definitional questions.
+#   * Art. 51 (GPAI systemic) — kept on GPAI / FLOPs / value-chain qns.
+#   * Art. 6 (HRAIS class.)   — kept on classification questions OR when
+#     it leads the scope anchors.
+#   * Art. 5 (prohibitions)   — kept on prohibition questions; demoted
+#     on transparency/disclosure shapes that surfaced the RBI prohibition
+#     by BM25 bleed (R95-P1 transparency_disclosure → Art. 50).
+#
+# QA-only (the caller gates on ``not _is_scenario_question`` — scenarios
+# want the full multi-article role×risk matrix). Floor-protected: never
+# empties the candidate list. Env-gated REGENOLD_NOISE_SUPPRESS
+# (default ON; ``=0`` reproduces the pre-R95 candidate set).
+_NOISE_DEFINITIONAL_RE = re.compile(
+    r"\b(?:what\s+is|what\s+are|what\s+does|defined?|defines|definition|"
+    r"meaning\s+of|how\s+is\s+\w+\s+defined|who\s+is\s+considered|"
+    r"what\s+counts\s+as|terms?\s+mean)\b",
+    re.IGNORECASE,
+)
+_NOISE_GPAI_SIGNALS: tuple[str, ...] = (
+    "gpai", "general-purpose ai", "general purpose ai",
+    "general-purpose model", "general purpose model", "foundation model",
+    "systemic risk", "flop", "10^25", "10^23", "10²⁵",
+    "10²³", "fine-tune", "fine tune", "value chain",
+    "training compute", "downstream provider", "compute threshold",
+    "open-weight", "open weight",
+)
+_NOISE_PROHIBITION_SIGNALS: tuple[str, ...] = (
+    "prohibit", "banned", "forbidden", "not allowed", "permitted",
+    "allowed", "social scoring", "subliminal", "manipulat", "exploit",
+    "biometric categoris", "biometric categoriz", "real-time biometric",
+    "real time biometric", "remote biometric", "emotion recognition",
+    "predictive policing", "untargeted scraping",
+    "facial recognition database", "carve-out", "carve out", "exception",
+)
+_NOISE_HIGHRISK_SIGNALS: tuple[str, ...] = (
+    "high-risk classif", "high risk classif", "classified as high",
+    "classified high-risk", "is it high-risk", "is it high risk",
+    "annex iii", "annex 3", "qualify as high", "qualifies as high",
+    "what makes", "when is an ai system high", "considered high-risk",
+    "considered high risk",
+)
+# A "broad" anchor is one of these four; a more-specific article is any
+# Article ref outside this set + the Art. 1/2 purpose/scope floor.
+_NOISE_BROAD_BASES = {"3", "5", "6", "51"}
+_NOISE_FLOOR_BASES = {"1", "2"}
+
+
+def _suppress_noise_anchors(
+    candidates: list[str],
+    question: str,
+    scope_anchor_wire: set[str],
+) -> list[str]:
+    """R95-P0 — drop phantom broad anchors (Art. 3/5/6/51) on QA.
+
+    Pure function. Returns a new list; never mutates ``candidates`` and
+    never empties it (the R16 finding: an over-broad answer beats an
+    empty one). See the module-level comment block above for the gating
+    rationale.
+    """
+    if not candidates:
+        return candidates
+    if (
+        os.getenv("REGENOLD_NOISE_SUPPRESS", "1").strip().lower()
+        not in ("1", "true", "yes", "on")
+    ):
+        return list(candidates)
+    q = (question or "").lower()
+    definitional = (
+        bool(_NOISE_DEFINITIONAL_RE.search(q)) or "Article 3" in scope_anchor_wire
+    )
+    gpai = (
+        any(t in q for t in _NOISE_GPAI_SIGNALS) or "Article 51" in scope_anchor_wire
+    )
+    prohibition = (
+        any(t in q for t in _NOISE_PROHIBITION_SIGNALS)
+        or "Article 5" in scope_anchor_wire
+    )
+    high_risk = (
+        any(t in q for t in _NOISE_HIGHRISK_SIGNALS) or "Article 6" in scope_anchor_wire
+    )
+
+    def _base(ref: str) -> str | None:
+        if ref.startswith("Article "):
+            return ref[len("Article "):].split(".")[0]
+        return None
+
+    bases = [_base(c) for c in candidates]
+    more_specific_present = any(
+        b is not None
+        and b not in _NOISE_BROAD_BASES
+        and b not in _NOISE_FLOOR_BASES
+        for b in bases
+    )
+    # Demotion is only safe when a real topic article survives to carry
+    # the answer — otherwise we'd strip the only anchor the question has.
+    if not more_specific_present:
+        return list(candidates)
+
+    drop: set[str] = set()
+    for c, b in zip(candidates, bases):
+        if b == "3" and not definitional:
+            drop.add(c)
+        elif b == "51" and not gpai:
+            drop.add(c)
+        elif b == "6" and not high_risk:
+            drop.add(c)
+        elif b == "5" and not prohibition:
+            drop.add(c)
+
+    if not drop:
+        return list(candidates)
+    survivors = [c for c in candidates if c not in drop]
+    if not survivors:
+        return list(candidates)  # floor — never empty
+    try:
+        from app.integrations.regenold.reasoning_trace import (  # noqa: PLC0415
+            record_note,
+        )
+        record_note("noise_suppress_dropped=" + ",".join(sorted(drop))[:80])
+    except Exception:  # noqa: BLE001 — fail-soft on trace
+        pass
+    return survivors
+
+
 def _collapse_parent_refs(refs: list[str]) -> list[str]:
     """Drop parent references when a more-specific child is also present.
 
@@ -3763,6 +3905,25 @@ def regenold_eu_ai_act_ask(
     # ``high-risk`` → Art. 6). Two QA-only passes use that signal; both
     # leave SCENARIO questions untouched (their multi-article gold —
     # davidath avg 9.8 — wants the full role×risk matrix).
+    # R95-P0 — drop phantom broad anchors (Art. 3/5/6/51) on QA shapes
+    # before the scope-front pass + budget cut. Floor-protected,
+    # env-gated REGENOLD_NOISE_SUPPRESS. Scenarios are untouched (they
+    # want the full multi-article role×risk matrix). Signal detection
+    # uses ``live_user_message`` (the raw final turn) so prior-turn
+    # topic keywords can't keep/drop the wrong anchor on a multi-turn
+    # final (mirrors the R71 anchor-bleed discipline).
+    if not _is_scenario_question:
+        _scope_wire_for_noise: set[str] = set()
+        for _a in scope.anchor_articles or []:
+            _w = reference_from_article_ref(_a)
+            if _w:
+                _scope_wire_for_noise.add(_w)
+        candidates = _suppress_noise_anchors(
+            candidates,
+            live_user_message or question,
+            _scope_wire_for_noise,
+        )
+
     if not _is_scenario_question and scope.anchor_articles:
         _scope_front: list[str] = []
         for _anchor in scope.anchor_articles:

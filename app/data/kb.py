@@ -27,7 +27,7 @@ from dataclasses import dataclass, field
 # Art. 52(4) open-source designation, Art. 53(2) FOSS carve-out,
 # Art. 55 four systemic-risk obligations, Art. 79 market-surveillance
 # procedure).
-KB_VERSION = "2024.1689.v10"
+KB_VERSION = "2024.1689.v11"
 
 
 @dataclass(frozen=True)
@@ -664,8 +664,12 @@ EC_CHECKER_OBLIGATION_MAP: dict[str, dict[str, str]] = {
                 "sexual orientation; "
                 "(h) real-time remote biometric identification in publicly "
                 "accessible spaces by law enforcement (narrow exceptions). "
-                "Art. 5(5) lets Member States impose stricter national laws "
-                "on remote biometric ID."
+                "Real-time remote biometric identification by law enforcement "
+                "is prohibited under Article 5 save for narrow, exhaustively-"
+                "listed law-enforcement exceptions that each require prior "
+                "judicial or administrative authorisation; under Article 5(5) "
+                "Member States may enable those exceptions in national law and "
+                "may set stricter national rules."
             ),
             (
                 "Art. 5(1)(c) carve-out: the social-scoring prohibition "
@@ -1196,12 +1200,12 @@ EC_CHECKER_OBLIGATION_MAP: dict[str, dict[str, str]] = {
             "systemic-risk ex officio (or following an Art. 90 scientific-"
             "panel qualified alert) on the Annex XIII criteria, independent "
             "of the Art. 51(1)(a) compute threshold. Reassessment requests "
-            "are permitted at the earliest 6 months after designation. The "
+            "may be submitted at the earliest 6 months after designation. The "
             "2-week pre-training notification obligation is especially "
             "important for open-source models per Recital 112 — once weights "
             "are released publicly, downstream compliance measures become "
-            "harder to implement, so providers planning open-source releases "
-            "must engage with the AI Office before training completes."
+            "harder to implement, so open-source model providers must "
+            "engage with the AI Office before training completes."
         ),
     },
     "Art. 54": {
