@@ -12,7 +12,11 @@ import re
 import time
 from typing import Any, Callable
 
-from app.graph.rushdb_config import create_rushdb_client, is_configured
+from app.graph.rushdb_config import (
+    create_rushdb_client,
+    is_configured,
+    rushdb_backend_selected,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +53,16 @@ def _get_client() -> Any:
     return _RUSHDB_CLIENT
 
 def is_enabled() -> bool:
-    """True iff RushDB auth is configured, package importable, and client connects."""
+    """True iff RushDB is the selected backend, auth is configured, the
+    package is importable, and the client connects.
+
+    R98 — gated on :func:`rushdb_backend_selected`. With the default
+    ``REGENOLD_GRAPH_BACKEND=neo4j`` this short-circuits to ``False``
+    before any SDK init, so the engine takes the Neo4j Aura path even
+    when ``RUSHDB_AUTH_TOKEN`` is still set in the environment.
+    """
+    if not rushdb_backend_selected():
+        return False
     return _get_client() is not None
 
 def _run_with_timeout(func: Callable, timeout_ms: int) -> Any:

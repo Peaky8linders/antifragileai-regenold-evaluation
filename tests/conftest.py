@@ -183,3 +183,37 @@ def _r94_pin_verbatim_off(request, monkeypatch):
     if any(name.endswith(m) for m in _R94_VERBATIM_OFF_MODULES):
         monkeypatch.setenv("REGENOLD_VERBATIM_ANSWER", "0")
     yield
+
+
+# R98 (2026-05-30) — RushDB is now OPT-IN. The 2026-05-25 RushDB migration
+# hit RushDB's free-trial limits, so Neo4j Aura is the default graph
+# backend again and every RushDB surface is gated behind
+# ``REGENOLD_GRAPH_BACKEND=rushdb`` (see
+# app/graph/rushdb_config.py::rushdb_backend_selected). The RushDB-specific
+# suites still exercise the dormant RushDB code paths, so they opt in here;
+# every other test runs under the default neo4j backend (RushDB inert),
+# which is exactly what production now does.
+_RUSHDB_OPT_IN_MODULES = frozenset(
+    {
+        "test_rushdb_client",
+        "test_rushdb_auto_seed",
+        "test_rushdb_hybrid_retrieval",
+        "test_seed_rushdb_kb",
+    }
+)
+
+
+@pytest.fixture(autouse=True)
+def _rushdb_backend_opt_in(request, monkeypatch):
+    """Select the RushDB backend for the RushDB-specific suites only.
+
+    ``test_healthz_graph`` is intentionally excluded: it monkeypatches
+    ``rushdb_client.is_enabled`` directly (replacing the function), so it
+    bypasses the backend gate and doesn't need the opt-in.
+    """
+    mod = getattr(request, "module", None)
+    name = getattr(mod, "__name__", "") if mod is not None else ""
+    stem = name.rsplit(".", 1)[-1]
+    if stem in _RUSHDB_OPT_IN_MODULES:
+        monkeypatch.setenv("REGENOLD_GRAPH_BACKEND", "rushdb")
+    yield

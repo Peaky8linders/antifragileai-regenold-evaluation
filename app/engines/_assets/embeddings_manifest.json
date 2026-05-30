@@ -9,13 +9,13 @@
   "min_df": 2,
   "min_sent_tokens": 3,
   "sha256_hashes": {
-    "article_sentences_embed.npy": "5a4184f04d76e7ce7471b8ea404f07f344a3f1af9b8940b92fbfbff4e1a451e3",
+    "article_sentences_embed.npy": "46b4d5f13f241028a0b4453941c7bbfd4d55408fa8a97683eb2d6e6ca52d971a",
     "article_sentences_meta.json": "b4252326791ed87d73738e2754a0fe7fcecf965b45ffaeba7b60d8fcabbf30f0",
-    "embed_svd_model.npy": "b37700ce2ce222ae4f7c475dda98a4becd24224569a3925d5ce124429bff327c",
-    "embed_vocab.json": "01d34990852fa2e259d848ccd3f95063215f7b3e459b072147f5cc1c8de60c2a"
+    "embed_svd_model.npy": "c30c1f9edaa43c4eafac36be63183da88d17894a9b11c07d8f8bf9db98af6328",
+    "embed_vocab.json": "d80b6db94b715c76fc07214de3e029676deaab533df2cb7392b51817b2f0fa12"
   },
   "total_sentences": 919,
   "vector_dim": 128,
   "version": "1.0",
-  "vocab_size": 1767
+  "vocab_size": 1661
 }

@@ -15,6 +15,14 @@ restartPolicyMaxRetries = 3
 # regresses on it.
 REGENOLD_GRAPH_2HOP = "1"
 
+# R98 — graph backend selector. Neo4j Aura is the durable graph backend
+# again (the 2026-05-25 RushDB migration hit RushDB's free-trial limits).
+# This var is the master switch: "neo4j" (default) keeps every RushDB
+# surface inert even if RUSHDB_AUTH_TOKEN is still present; "rushdb"
+# re-enables the RushDB dual-path. The Neo4j Aura creds (NEO4J_URI /
+# NEO4J_USERNAME / NEO4J_PASSWORD) live in the Railway dashboard.
+REGENOLD_GRAPH_BACKEND = "neo4j"
+
 # Auto-seed Neo4j on boot when NEO4J_URI is set. Default ON — operators
 # who want to manage the graph manually can disable with
 # ``railway variables --set NEO4J_AUTO_SEED=0``.
@@ -213,11 +221,15 @@ REGENOLD_CITE_DESCRIBE_GUARD = "0"
 # REGENOLD_INTENT_MODEL_GROQ = "llama-3.3-70b-versatile"          # default
 # GROQ_TIMEOUT_SECONDS     = "5"                                  # default
 
-# RushDB graph (Neo4j Aura replacement) — set ONE of:
-#   railway variables --set RUSHDB_AUTH_TOKEN=<token>
-#   railway variables --set RUSHDB_API_KEY=<key>
+# RushDB graph — OPT-IN ONLY since R98 (it hit free-trial limits, so
+# Neo4j Aura is the default backend again). To re-enable the RushDB
+# dual-path you must set BOTH:
+#   railway variables --set REGENOLD_GRAPH_BACKEND=rushdb
+#   railway variables --set RUSHDB_AUTH_TOKEN=<token>   (or RUSHDB_API_KEY=<key>)
 # Optional:
 #   RUSHDB_BASE_URL = "https://api.rushdb.com/api/v1"
-# When RushDB auth is set, /healthz/graph and 2-hop expand prefer RushDB;
-# Neo4j remains a fallback when NEO4J_URI is also configured.
+#   REGENOLD_RUSHDB_HYBRID = "1"   (per-request hybrid retrieval; also
+#                                    requires REGENOLD_GRAPH_BACKEND=rushdb)
+# With REGENOLD_GRAPH_BACKEND=neo4j (default), /healthz/graph and 2-hop
+# expand use Neo4j Aura and every RushDB surface is inert.
 # RUSHDB_AUTH_TOKEN = "<set via railway dashboard>"

@@ -169,6 +169,26 @@ PHASE_REGISTRY: dict[str, Phase] = {
             "systems take effect. Deployer obligations under Art. 26, FRIA "
             "under Art. 27, transparency under Arts. 13/50."
         ),
+        # Digital Omnibus political agreement (7 May 2026) deferred Annex III
+        # high-risk obligations from 2 Aug 2026 → 2 Dec 2027.
+        superseded_by="phase_omnibus_2027_12_02",
+    ),
+    "phase_omnibus_2027_12_02": Phase(
+        id="phase_omnibus_2027_12_02",
+        label="High-risk AI obligations (Annex III — Digital Omnibus deferred date)",
+        effective_date=date(2027, 12, 2),
+        articles=("Art. 6", "Art. 8", "Art. 9", "Art. 10", "Art. 11", "Art. 13",
+                  "Art. 14", "Art. 15", "Art. 16", "Art. 17", "Art. 26", "Art. 27",
+                  "Annex III"),
+        description=(
+            "Digital Omnibus (political agreement 7 May 2026) deferred the "
+            "original 2 August 2026 Annex III high-risk deadline to "
+            "2 December 2027. Full Chapter III Section 2 obligations for "
+            "Annex III high-risk AI systems, deployer duties (Art. 26), "
+            "FRIA (Art. 27), and transparency (Arts. 13/50) take effect on "
+            "this date. See Art. 113 and OFFICIAL_UPDATES in "
+            "app.data.official_eu_ai_act."
+        ),
     ),
     "phase_2027_08_02": Phase(
         id="phase_2027_08_02",
@@ -180,6 +200,24 @@ PHASE_REGISTRY: dict[str, Phase] = {
             "product regulated by Annex I harmonisation legislation (MDR, "
             "IVDR, machinery, toys, etc.). The longer runway lets sectoral "
             "conformity-assessment bodies update procedures."
+        ),
+        # Digital Omnibus political agreement (7 May 2026) deferred Annex I
+        # embedded-product obligations from 2 Aug 2027 → 2 Aug 2028.
+        superseded_by="phase_omnibus_2028_08_02",
+    ),
+    "phase_omnibus_2028_08_02": Phase(
+        id="phase_omnibus_2028_08_02",
+        label="High-risk AI obligations (Annex I — Digital Omnibus deferred date)",
+        effective_date=date(2028, 8, 2),
+        articles=("Art. 6", "Annex I"),
+        description=(
+            "Digital Omnibus (political agreement 7 May 2026) deferred the "
+            "original 2 August 2027 Annex I safety-component deadline to "
+            "2 August 2028. Full high-risk obligations for AI as a safety "
+            "component of a product regulated by Annex I harmonisation "
+            "legislation (MDR, IVDR, machinery, toys, etc.) take effect on "
+            "this date. See Art. 113 and OFFICIAL_UPDATES in "
+            "app.data.official_eu_ai_act."
         ),
     ),
 }
