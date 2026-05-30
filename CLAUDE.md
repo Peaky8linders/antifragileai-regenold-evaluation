@@ -4899,7 +4899,16 @@ the Sonnet polish).
 | davidath bench (476) | RefL **0.5502** / RefS **0.4766** / Ans Strict **0.277** / Tone **1.0** / multi-turn **20/20 coherent** — parity with R97 (graph is BM25-saturated; backend swap is bench-neutral by design) |
 | `evals.regenold.runner` (276-scenario local) | **246/255 (96.5%)** — ref_format 255/255, refs_within_max 255/255, retrieval F1 0.95 |
 | OOS probe (`runner_v2 --local --probe-oos --label X`) | **21/21**, 0 scope leaks |
-| paper-v3 local (fresh, paper-grounded) | runs clean (numbers above) |
+| paper-v3 LOCAL (fresh, paper-grounded, deterministic) | single-turn refL **0.592** / refS 0.567 / kw 0.40 · tricky refL **0.610** / refS 0.556 / kw 0.433 · multi-turn refL 0.319 / refS 0.219 · tone **1.0** everywhere · 0 HTTP failures |
+| paper-v3 LIVE (Railway, Sonnet Stage-2) | single-turn refL **0.54** / refS 0.558 / kw 0.35 · tricky refL 0.435 / refS 0.439 / kw 0.333 · multi-turn refL **0.347** / refS 0.281 / kw **0.306** / coherence 0.083 · tone **1.0** · 0 HTTP failures · p50 single 0.6s / multi 24.9s |
+
+Paper-v3 = 20 single-turn + 20 tricky/nuanced + 12 multi-turn questions
+generated from the davidath benchmark paper across all four risk tiers. The
+LIVE multi-turn kw recall (0.306) beats LOCAL (0.167) — that's the Stage-2
+Sonnet lift the deterministic local path can't show; multi-turn coherence stays
+low (0.08) because the V3 multi-turn set is deliberately hard (role flips,
+risk re-classification across turns) and Stage-2 only fires on a subset. Tone
+holds at 1.0 on every axis, local and live.
 
 The 9 `evals.regenold.runner` failures are **pre-existing** failure shapes
 independent of the backend switch: risk-classification verdict-word misses
