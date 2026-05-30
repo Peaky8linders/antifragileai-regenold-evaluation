@@ -4812,6 +4812,111 @@ new KB stubs, definitions index, manual xrefs, longest-match role
 detection, smallest-cover pass) are de-overfitted from the 3 PDF example
 questions.
 
+## Round 98 — Graph backend switch-back: RushDB → Neo4j Aura (2026-05-30)
+
+User directive: RushDB (the 2026-05-25 migration target) kept hitting its
+**free-trial limits** in production. R98 switches the durable graph backend
+back to the **Neo4j Aura** instance whose `NEO4J_URI` / `NEO4J_USERNAME` (or
+`NEO4J_USER`) / `NEO4J_PASSWORD` live in Railway. The RushDB code stays in the
+tree but is now **opt-in only**.
+
+### The master selector
+
+* **`app/graph/rushdb_config.py`** — new `graph_backend()` +
+  `rushdb_backend_selected()`. `REGENOLD_GRAPH_BACKEND` (default `neo4j`,
+  added to `railway.toml [deploy.envs]`) is the single switch. Unrecognised
+  values fall back to `neo4j`.
+* **`app/graph/rushdb_client.py::is_enabled()`** and
+  **`app/engines/rushdb_hybrid_retrieval.py::is_hybrid_enabled()`** now
+  short-circuit to `False` unless `REGENOLD_GRAPH_BACKEND=rushdb`. So with the
+  default, **every RushDB surface is inert even if `RUSHDB_AUTH_TOKEN` is
+  still set** — 2-hop expand, definition/recital lookup, hybrid retrieval,
+  boot auto-seed (`main._maybe_auto_seed_rushdb`), and the `/healthz/graph`
+  RushDB-first probe all defer to the Neo4j path. To re-enable RushDB later,
+  set BOTH `REGENOLD_GRAPH_BACKEND=rushdb` and `RUSHDB_AUTH_TOKEN`.
+* **`app/graph/config.py::GraphSettings.username`** now reads **either**
+  `NEO4J_USERNAME` or `NEO4J_USER` (via `AliasChoices`) — the user's Railway
+  var is named "user"; Aura's default username is `neo4j`. `NEO4J_PASSWORD` is
+  the load-bearing credential.
+
+### Test wiring
+
+`tests/conftest.py` adds an autouse `_rushdb_backend_opt_in` fixture: the four
+RushDB-specific suites (`test_rushdb_client`, `test_rushdb_auto_seed`,
+`test_rushdb_hybrid_retrieval`, `test_seed_rushdb_kb`) opt into
+`REGENOLD_GRAPH_BACKEND=rushdb` so they still exercise the dormant RushDB
+paths; every other test runs under the default `neo4j` backend (RushDB inert)
+— exactly what production now does. `test_healthz_graph` monkeypatches
+`rushdb_client.is_enabled` directly, so it bypasses the gate and needs no
+opt-in.
+
+### Semantic layer + indexes rebuilt
+
+Rebuilt the Windows-buildable retrieval assets and re-verified full EU AI Act
+coverage:
+* `scripts/build_turboquant_precomputed.py` → 279 non-definition docs (was
+  stale at 277 from an old 345-doc BM25 snapshot; the rebuild matches the
+  current 347-doc index).
+* `scripts/build_embeddings_index.py` → 919 sentences, 128-D SVD; all 4 asset
+  SHA-256s match `embeddings_manifest.json`.
+* Coverage confirmed: **BM25 + turboquant + embeddings each cover 113/113
+  articles + 13/13 annexes**, `DEFINITION_REGISTRY` 68/68 Art. 3 definitions,
+  `eu_ai_act_tree.build_tree()` 1,412 nodes. No missing IDs.
+* `vector_index` (turbovec) stays Linux-only — unbuilt on Windows by design.
+
+### Ontology / taxonomy audit
+
+Parallel-agent audit found the registries correct + complete (Practice 8/8
+Art. 5 bans, AnnexIIICategory 8/8, role→article mappings all correct,
+zero dangling refs vs `ARTICLE_EXISTENCE`). One real gap fixed:
+`PHASE_REGISTRY` was missing the Digital Omnibus deferral phases on this
+branch — added `phase_omnibus_2027_12_02` (Annex III high-risk → 2 Dec 2027)
++ `phase_omnibus_2028_08_02` (Annex I → 2 Aug 2028) with `superseded_by`
+wiring. `KB_VERSION` untouched (no `EC_CHECKER_OBLIGATION_MAP` change).
+
+### Fresh paper-grounded eval set
+
+Generated a new probe set from the **davidath benchmark paper**
+(arXiv:2603.09435, the four-tier risk pyramid: prohibited→Art.5,
+high-risk→Art.6+Annex III, limited→Arts.50&10, minimal→residual):
+* `evals/regenold/scenarios_paper_singleturn_v3.py` (20 items, all 4 tiers)
+* `evals/regenold/scenarios_paper_tricky_v3.py` (20 nuanced/decision-boundary)
+* `evals/regenold/scenarios_paper_multiturn_v3.py` (12 × 3–5-turn)
+* `evals/regenold/run_paper_v3.py` (standalone runner; delegates scoring to
+  the `runner_v2` rubric helpers — `--local` deterministic / `--endpoint`
+  live) + `validate_paper_v3.py`.
+All 92 expected refs resolve in `ARTICLE_EXISTENCE`. Local deterministic run:
+single-turn refL 0.762 / refS 0.640, tricky refL 0.610 / refS 0.556,
+multi-turn refL 0.319 / refS 0.219, tone 1.0 everywhere (kw recall + multi-turn
+coherence are the live-only Stage-2 lift — deterministic TestClient never fires
+the Sonnet polish).
+
+### R98 — verification gates (all green)
+
+| Gate | Result |
+| ---- | ------ |
+| Full `pytest` suite | **3210 passed + 1 pre-existing skip** |
+| davidath bench (476) | RefL **0.5502** / RefS **0.4766** / Ans Strict **0.277** / Tone **1.0** / multi-turn **20/20 coherent** — parity with R97 (graph is BM25-saturated; backend swap is bench-neutral by design) |
+| `evals.regenold.runner` (276-scenario local) | **246/255 (96.5%)** — ref_format 255/255, refs_within_max 255/255, retrieval F1 0.95 |
+| OOS probe (`runner_v2 --local --probe-oos --label X`) | **21/21**, 0 scope leaks |
+| paper-v3 local (fresh, paper-grounded) | runs clean (numbers above) |
+
+The 9 `evals.regenold.runner` failures are **pre-existing** failure shapes
+independent of the backend switch: risk-classification verdict-word misses
+(engine cites the right Annex III / Art. 6 anchor but doesn't emit the explicit
+"high-risk" verdict on the deterministic path — that verdict lift is the
+live-only Stage-2 contribution) plus 3 deep multi-turn sub-point shifts.
+
+### Live production state (post-push)
+
+`/healthz/graph` → `graph_ok=true`, `detail="ok"` (Neo4j path, NOT
+`"ok (rushdb)"`); `/healthz/llm` → `provider=openai_wrapper`, `llm_ok=true`,
+`model=claude-sonnet-4-6`. **Operational note:** the live Aura graph carries
+~20× duplicate nodes (Article ≈2793 vs expected 113) from repeated seed runs
+that accumulated across `kb_version` bumps — `graph_ok` is True and the 2-hop
+path is existence-gated + additive so duplicates can't pollute the wire, but a
+`scripts/seed_neo4j_kb.py --clear` re-seed would tidy the instance.
+
 ## Non-goals / things to skip
 
 - ~~Vector embeddings / dense retrieval~~ → **Round 31 added a
