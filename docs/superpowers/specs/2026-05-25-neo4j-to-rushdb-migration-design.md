@@ -1,8 +1,32 @@
 # Neo4j → RushDB Migration Design
 
 **Date:** 2026-05-25  
-**Status:** Implemented on `main` (2026-05-27) — operator cutover pending RushDB credentials on Railway  
+**Status:** ⛔ **REVERTED 2026-05-30 (R98).** RushDB hit its free-trial
+limits in production, so the durable graph backend was switched back to
+**Neo4j Aura**. The RushDB code remains in the tree but is now **opt-in
+only** behind `REGENOLD_GRAPH_BACKEND=rushdb` (default `neo4j`). See the
+R98 note below before re-enabling RushDB.  
 **Author:** Claude (via brainstorming skill)
+
+> ## R98 reversion (2026-05-30)
+>
+> RushDB's free trial throttled production traffic. The switch-back:
+>
+> * `app/graph/rushdb_config.py` gains `graph_backend()` +
+>   `rushdb_backend_selected()` — the master selector, default `neo4j`.
+> * `rushdb_client.is_enabled()` and `rushdb_hybrid_retrieval.is_hybrid_enabled()`
+>   short-circuit to `False` unless `REGENOLD_GRAPH_BACKEND=rushdb`, so the
+>   2-hop expand / definition-lookup / recital / hybrid / boot-auto-seed
+>   surfaces are inert even with `RUSHDB_AUTH_TOKEN` present.
+> * `app/graph/config.py::GraphSettings.username` now accepts **both**
+>   `NEO4J_USERNAME` and `NEO4J_USER` (Aura default `neo4j`).
+> * `railway.toml` ships `REGENOLD_GRAPH_BACKEND = "neo4j"`.
+> * Neo4j Aura creds (`NEO4J_URI` / `NEO4J_USERNAME`|`NEO4J_USER` /
+>   `NEO4J_PASSWORD`) live in the Railway dashboard; the Neo4j auto-seed
+>   boot hook + `/healthz/graph` Neo4j path are the active surfaces again.
+>
+> To re-enable RushDB later: set `REGENOLD_GRAPH_BACKEND=rushdb` **and**
+> `RUSHDB_AUTH_TOKEN` on Railway, then redeploy.
 
 **Shipped:** `app/graph/rushdb_client.py`, `scripts/seed_rushdb_kb.py`,
 `app/engines/rushdb_hybrid_retrieval.py` (env-gated), `/healthz/graph` RushDB-first,

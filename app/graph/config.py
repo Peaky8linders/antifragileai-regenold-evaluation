@@ -12,7 +12,7 @@ schema so a future operator can drop in Neo4j with a one-file env-var swap.
 
 from __future__ import annotations
 
-from pydantic import SecretStr
+from pydantic import AliasChoices, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -30,7 +30,18 @@ class GraphSettings(BaseSettings):
 
     enabled: bool = False
     uri: str = "bolt://localhost:7687"
-    username: str = "neo4j"
+    # R98 — accept BOTH ``NEO4J_USERNAME`` (the env_prefix default) and
+    # ``NEO4J_USER`` (what the seeder CLI sets and what many Neo4j Aura
+    # deploys / Railway dashboards use). The user's Railway instance names
+    # the var "user", so without the alias the client would silently fall
+    # back to the "neo4j" default. Aura's default username IS "neo4j" so
+    # the practical blast radius is small, but the alias removes the
+    # ambiguity. ``validation_alias`` bypasses ``env_prefix`` for this
+    # field, so both full env-var names are listed explicitly.
+    username: str = Field(
+        default="neo4j",
+        validation_alias=AliasChoices("NEO4J_USERNAME", "NEO4J_USER"),
+    )
     password: SecretStr = SecretStr("")  # Set via NEO4J_PASSWORD env var
     database: str = "neo4j"
     max_connection_pool_size: int = 50
