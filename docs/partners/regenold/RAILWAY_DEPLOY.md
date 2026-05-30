@@ -58,17 +58,25 @@ Boot log (Railway): `regenold.startup provider=...` unless `REGENOLD_SKIP_STARTU
 
 Root `railway.toml` sets start command, healthcheck path, and default `[deploy.envs]`. **Dashboard service variables override** `[deploy.envs]` — see R80.2 notes in `CLAUDE.md`.
 
-## RushDB graph (Neo4j replacement)
+## Graph backend (R98: Neo4j Aura is default again)
 
-Set **`RUSHDB_AUTH_TOKEN`** or **`RUSHDB_API_KEY`** on the Railway service
-(optional **`RUSHDB_BASE_URL`**). After redeploy, `/healthz/graph` should
-report `"detail": "ok (rushdb)"` when RushDB is primary.
+The durable graph backend reverted from RushDB to **Neo4j Aura** in R98
+(2026-05-30) — RushDB hit its free-trial limits. The selector is
+**`REGENOLD_GRAPH_BACKEND`** (default `neo4j`, set in `railway.toml`):
 
-Full cutover steps, hybrid retrieval flag, and Neo4j sunset checklist:
+* `neo4j` (default) — uses the Neo4j Aura instance. Set on the Railway
+  service: **`NEO4J_URI`**, **`NEO4J_PASSWORD`**, and
+  **`NEO4J_USERNAME`** *or* **`NEO4J_USER`** (the client reads either;
+  Aura's default username is `neo4j`). Boot auto-seed + `/healthz/graph`
+  use the Neo4j path. Every RushDB surface is **inert even if
+  `RUSHDB_AUTH_TOKEN` is still set**.
+* `rushdb` — re-enables the RushDB dual-path. Requires BOTH
+  `REGENOLD_GRAPH_BACKEND=rushdb` AND `RUSHDB_AUTH_TOKEN` (or
+  `RUSHDB_API_KEY`; optional `RUSHDB_BASE_URL`). Then `/healthz/graph`
+  reports `"detail": "ok (rushdb)"`.
+
+Legacy RushDB cutover steps + hybrid-retrieval flag:
 [`RUSHDB_RUNBOOK.md`](RUSHDB_RUNBOOK.md).
-
-Until RushDB auth is set, production continues to use **Neo4j** when
-`NEO4J_URI` is configured (current production state).
 
 ## Anthropic / wrapper paths
 
