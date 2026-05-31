@@ -3327,6 +3327,7 @@ def regenold_eu_ai_act_ask(
         and not _is_scenario_shape
         and not _is_multiturn
         and not _is_classification_topic
+        and not _stage2_landed
     ):
         extracted = _try_extractive_answer(
             question=question,
