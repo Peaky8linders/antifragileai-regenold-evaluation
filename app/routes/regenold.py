@@ -4670,6 +4670,60 @@ def regenold_eu_ai_act_ask(
     # whole point of routing it to the LLM. When Stage-2 was skipped or
     # fell back (drift / contradiction / wrapper failure), ``_stage2_landed``
     # is False and verbatim applies as the safe deterministic fallback.
+    # Component D — Post-Polish Grounding Guard
+    if (
+        _stage2_landed
+        and answer_text
+        and references
+        and retrieval_path != "no_match"
+    ):
+        try:
+            import re
+            # Extract cited articles/annexes in polished prose
+            prose_citations = set()
+            for match in re.finditer(r"\b(Article|Art\.|Annex)\s+([IVXLCDM\d]+)\b", answer_text, re.IGNORECASE):
+                prefix = match.group(1).lower()
+                num = match.group(2).strip()
+                if prefix.startswith("art"):
+                    try:
+                        num_int = int(num)
+                        prose_citations.add(f"Article {num_int}")
+                    except ValueError:
+                        prose_citations.add(f"Article {num}")
+                elif prefix.startswith("annex"):
+                    prose_citations.add(f"Annex {num.upper()}")
+            
+            # Extract references bases (standardizing to e.g. "Article 16", "Annex III")
+            reference_bases = set()
+            for ref in references:
+                parts = str(ref).split(".")
+                if parts:
+                    reference_bases.add(parts[0].strip())
+            
+            # Verify if every prose citation matches a base in reference_bases
+            has_hallucination = False
+            bad_citation = None
+            for cite in prose_citations:
+                if cite not in reference_bases:
+                    has_hallucination = True
+                    bad_citation = cite
+                    break
+            
+            if has_hallucination:
+                logger.warning(
+                    "Component D Grounding Guard: Stage-2 polished prose cited %s "
+                    "which is not in retrieved references bases %s. Falling back to Stage-1 deterministic answer.",
+                    bad_citation, reference_bases
+                )
+                _kg = getattr(rag_res, "kg_answer", "") or ""
+                if _kg:
+                    answer_text = normalise_answer_for_regenold(_kg, question=question)
+                    _stage2_landed = False
+                    if hasattr(rag_res, "graph_stats") and isinstance(rag_res.graph_stats, dict):
+                        rag_res.graph_stats["stage2_landed"] = False
+        except Exception as exc:
+            logger.warning("Component D Grounding Guard failed: %s", exc, exc_info=True)
+
     if (
         os.getenv("REGENOLD_VERBATIM_ANSWER", "1").strip().lower()
         in ("1", "true", "yes", "on")

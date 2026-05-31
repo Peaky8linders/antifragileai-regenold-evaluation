@@ -567,6 +567,8 @@ class GraphContext:
     # is a healthy zero-hit response).
     degraded: bool = False
     xrefs: list[str] = field(default_factory=list)
+    semantically_relevant_statements: list[str] = field(default_factory=list)
+    referenced_annexes_and_recitals: list[dict] = field(default_factory=list)
 
 
 # ─── LLM Integration ────────────────────────────────────────────────────────
@@ -728,6 +730,21 @@ def _llm_generate_answer(
                 + "\n".join(
                     f"- [{t.get('id', 'N/A')}] {t.get('text', '')} (blocked by gap)"
                     for t in context.transitive_deps[:10]
+                )
+            )
+
+        if getattr(context, "semantically_relevant_statements", None):
+            context_parts.append(
+                f"\nSEMANTICALLY RELEVANT STATEMENTS (AtomicFacts):\n"
+                + "\n".join(f"- {s}" for s in context.semantically_relevant_statements)
+            )
+
+        if getattr(context, "referenced_annexes_and_recitals", None):
+            context_parts.append(
+                f"\nREFERENCED ANNEXES AND RECITALS (Queue):\n"
+                + "\n".join(
+                    f"- [{r['ref']}] {r['text']}"
+                    for r in context.referenced_annexes_and_recitals
                 )
             )
 
@@ -2786,7 +2803,100 @@ def _retrieve_from_graph(
             if kb_context.obligations or kb_context.article_info:
                 context = kb_context
 
+    _populate_semantic_statements(context, query.raw_question)
+    _expand_referenced_annexes_and_recitals(context)
     return context
+
+
+def _populate_semantic_statements(context: GraphContext, question: str) -> None:
+    """Populate semantically_relevant_statements in context from sentence embedding index."""
+    try:
+        from app.engines.embeddings_index import (
+            is_available as _emb_available,
+            query as _emb_query,
+        )
+        if _emb_available():
+            env_flag = os.getenv("REGENOLD_EMBEDDINGS_INDEX", "1").strip().lower()
+            if env_flag in ("1", "true", "yes", "on"):
+                try:
+                    threshold = float(os.getenv("REGENOLD_REF_SEM_THRESHOLD", "0.45"))
+                except Exception:
+                    threshold = 0.45
+                hits = _emb_query(question or "", top_k=5, threshold=threshold)
+                context.semantically_relevant_statements = [
+                    f"[{h.article_ref}] {h.text}" for h in hits
+                ]
+    except Exception as exc:
+        logger.debug("Failed to populate semantically_relevant_statements: %s", exc)
+
+
+def _expand_referenced_annexes_and_recitals(context: GraphContext) -> None:
+    """Parse primary retrieved context for referenced Annexes and Recitals and append them to context."""
+    import re
+    from app.data.kb import EC_CHECKER_OBLIGATION_MAP
+    from app.data.eu_ai_act_corpus import RECITALS
+
+    annex_pat = re.compile(r"\bAnnex\s+([IVXLCDM]+)\b", re.IGNORECASE)
+    recital_pat = re.compile(r"\bRecital\s+(\d+)\b", re.IGNORECASE)
+
+    extracted_annexes = []
+    extracted_recitals = []
+
+    # Collect text from all obligations and article_info
+    texts_to_scan = []
+    for obl in context.obligations:
+        texts_to_scan.append(obl.get("text", ""))
+    for info in context.article_info:
+        texts_to_scan.append(info.get("text", ""))
+
+    full_scan_text = " ".join(texts_to_scan)
+
+    # Extract Annexes
+    for match in annex_pat.finditer(full_scan_text):
+        annex_roman = match.group(1).upper()
+        annex_key = f"Annex {annex_roman}"
+        if annex_key not in extracted_annexes:
+            extracted_annexes.append(annex_key)
+
+    # Extract Recitals
+    for match in recital_pat.finditer(full_scan_text):
+        rec_num = int(match.group(1))
+        if rec_num not in extracted_recitals:
+            extracted_recitals.append(rec_num)
+
+    # Resolve Annexes (capped at 2)
+    resolved_count_annex = 0
+    for annex in extracted_annexes:
+        if resolved_count_annex >= 2:
+            break
+        # Check if already retrieved as a primary obligation to avoid duplication
+        already_present = any(o.get("article") == annex for o in context.obligations)
+        if already_present:
+            continue
+        mapping = EC_CHECKER_OBLIGATION_MAP.get(annex)
+        if mapping:
+            context.referenced_annexes_and_recitals.append({
+                "id": f"ref-annex-{annex}",
+                "type": "Annex",
+                "ref": annex,
+                "text": mapping.get("summary", ""),
+            })
+            resolved_count_annex += 1
+
+    # Resolve Recitals (capped at 3)
+    resolved_count_recital = 0
+    for rec_num in extracted_recitals:
+        if resolved_count_recital >= 3:
+            break
+        rec_text = RECITALS.get(rec_num)
+        if rec_text:
+            context.referenced_annexes_and_recitals.append({
+                "id": f"ref-recital-{rec_num}",
+                "type": "Recital",
+                "ref": f"Recital {rec_num}",
+                "text": rec_text,
+            })
+            resolved_count_recital += 1
 
 
 def _retrieve_from_kb(
@@ -2937,6 +3047,8 @@ def _retrieve_from_kb(
         + len(context.dimension_info)
         + len(context.article_info)
     )
+    _populate_semantic_statements(context, query.raw_question)
+    _expand_referenced_annexes_and_recitals(context)
     return context
 
 
@@ -3828,6 +3940,7 @@ def ask_compliance_question(request: GraphRAGRequest) -> GraphRAGResponse:
     )
 
     # Stage 1 + 2 — Generate
+    kg_answer = _deterministic_answer(request.question, context)
     answer_text, stage2_used = _two_stage_generate(
         request.question, context, query, request.system_description,
         history_turn_count=getattr(request, "history_turn_count", 1) or 1,
@@ -3916,6 +4029,7 @@ def ask_compliance_question(request: GraphRAGRequest) -> GraphRAGResponse:
             # R72.1 the key was never set, so both silently saw False.
             "stage2_landed": bool(stage2_used),
         },
+        kg_answer=kg_answer,
     )
 
 

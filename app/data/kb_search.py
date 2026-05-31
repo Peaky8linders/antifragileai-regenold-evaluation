@@ -630,6 +630,31 @@ def top_articles_by_relevance(
         entity_boosts = {}
         _ents_for_injection = None
 
+    # Component A — Embeddings sentence-index SVD query at the beginning
+    emb_hits = []
+    high_sim_articles = set()
+    try:
+        from app.engines.embeddings_index import (  # noqa: PLC0415
+            is_available as _emb_available,
+            query as _emb_query,
+        )
+        if _emb_available():
+            env_flag = os.getenv("REGENOLD_EMBEDDINGS_INDEX", "1").strip().lower()
+            if env_flag in ("1", "true", "yes", "on"):
+                # Retrieve sentence hits once
+                emb_hits = _emb_query(question, top_k=k * 4, threshold=0.15)
+                for hit in emb_hits:
+                    if hit.similarity >= 0.50:
+                        ref = hit.article_ref
+                        if ref:
+                            if ref.startswith("Article "):
+                                internal = "Art. " + ref[len("Article "):]
+                            else:
+                                internal = ref
+                            high_sim_articles.add(internal)
+    except Exception:  # noqa: BLE001 — fail-soft
+        pass
+
     best: dict[str, float] = {}
     for doc_idx, article_ref, raw in raw_scores:
         # Keep candidates that clear EITHER the absolute floor OR the
@@ -647,7 +672,24 @@ def top_articles_by_relevance(
         # admission filter, so it cannot change which articles are
         # admitted — only their ranking.
         entity_b = entity_boosts.get(article_ref, 1.0)
-        s = raw * weight * boost * entity_b
+
+        # Component A — Embeddings sentence-level high-similarity boost (20% priority boost)
+        emb_boost = 1.20 if article_ref in high_sim_articles else 1.0
+
+        # Component B — Prevent role/context drift by damping mismatched role articles
+        role_drift_penalty = 1.0
+        if _ents_for_injection and len(_ents_for_injection.get("role", [])) == 1:
+            query_role_art = f"Art. {_ents_for_injection['role'][0][1]}"
+            known_role_articles = {"Art. 16", "Art. 26", "Art. 23", "Art. 24", "Art. 22", "Art. 28", "Art. 74", "Art. 64"}
+            if article_ref in known_role_articles and article_ref != query_role_art:
+                role_drift_penalty = 0.50  # 50% penalty to prevent role drift
+
+        # Component B — Additive lexical boost for extracted concepts
+        additive_lexical_boost = 0.0
+        if article_ref in entity_boosts:
+            additive_lexical_boost = 0.5
+
+        s = raw * weight * boost * entity_b * emb_boost * role_drift_penalty + additive_lexical_boost
         prev = best.get(article_ref)
         if prev is None or s > prev:
             best[article_ref] = s
@@ -738,45 +780,27 @@ def top_articles_by_relevance(
     # gated REGENOLD_EMBEDDINGS_INDEX=1 (default ON when assets are
     # present; the asset-presence check inside ``is_available`` makes
     # this a no-op on stripped installs).
-    try:
-        from app.engines.embeddings_index import (  # noqa: PLC0415
-            is_available as _emb_available,
-            query as _emb_query,
-        )
-    except Exception:  # noqa: BLE001 — module guards its own import
-        return fused
-    if not _emb_available():
-        return fused
-    env_flag = os.getenv("REGENOLD_EMBEDDINGS_INDEX", "1").strip().lower()
-    if env_flag not in ("1", "true", "yes", "on"):
-        return fused
-    try:
-        emb_hits = _emb_query(question, top_k=k * 4, threshold=0.15)
-    except Exception:  # noqa: BLE001 — never 500 the route
-        return fused
-    if not emb_hits:
-        return fused
-    # Aggregate sentence hits → article-level candidates, max sim per article.
-    article_max: dict[str, float] = {}
-    for hit in emb_hits:
-        ref = hit.article_ref
-        if not ref:
-            continue
-        # Normalise to internal BM25 key shape (e.g. "Article 6" → "Art. 6").
-        if ref.startswith("Article "):
-            internal = "Art. " + ref[len("Article "):]
-        elif ref.startswith("Annex "):
-            internal = ref  # already in internal form
-        else:
-            internal = ref
-        prev = article_max.get(internal, -1.0)
-        if hit.similarity > prev:
-            article_max[internal] = hit.similarity
-    emb_refs = sorted(article_max.items(), key=lambda t: t[1], reverse=True)
-    if not emb_refs:
-        return fused
-    # R69 — RRF when REGENOLD_RRF_FUSION is on, else additive fill.
-    fused = _fuse_dense(fused, emb_refs, k, bm25_scores=best)
+    if emb_hits:
+        # Aggregate sentence hits → article-level candidates, max sim per article.
+        article_max: dict[str, float] = {}
+        for hit in emb_hits:
+            ref = hit.article_ref
+            if not ref:
+                continue
+            # Normalise to internal BM25 key shape (e.g. "Article 6" → "Art. 6").
+            if ref.startswith("Article "):
+                internal = "Art. " + ref[len("Article "):]
+            elif ref.startswith("Annex "):
+                internal = ref  # already in internal form
+            else:
+                internal = ref
+            prev = article_max.get(internal, -1.0)
+            if hit.similarity > prev:
+                article_max[internal] = hit.similarity
+        emb_refs = sorted(article_max.items(), key=lambda t: t[1], reverse=True)
+        if emb_refs:
+            # R69 — RRF when REGENOLD_RRF_FUSION is on, else additive fill.
+            fused = _fuse_dense(fused, emb_refs, k, bm25_scores=best)
 
     # RushDB hybrid retrieval (Hybrid_RAG_Guide.md): intent + semantic +
     # metadata parallel search on Article/Annex ``content`` fields.
