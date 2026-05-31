@@ -62,3 +62,4 @@ class GraphRAGResponse(BaseModel):
     reasoning_trace: list[str] = Field(default_factory=list)
     suggested_followups: list[str] = Field(default_factory=list)
     graph_stats: dict = Field(default_factory=dict)
+    kg_answer: str = ""
