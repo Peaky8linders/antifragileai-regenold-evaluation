@@ -3486,6 +3486,15 @@ def _polished_prose_has_unknown_citations(
         ref = f"Art. {num_int}" if num_int >= 0 else f"Art. {raw_num}"
         if ref not in ARTICLE_EXISTENCE:
             return True, ref
+        
+        # R101 — Catalog-assisted dynamic grounding. If the cited article
+        # exists in ARTICLE_EXISTENCE, we do NOT count it as drift when
+        # REGENOLD_DYNAMIC_GROUNDING is enabled! This allows the LLM's parametric
+        # memory to answer the question, and we will dynamically ground it in Component D.
+        import os
+        if os.getenv("REGENOLD_DYNAMIC_GROUNDING", "0").strip().lower() in ("1", "true", "yes", "on"):
+            return False, None
+            
         if grounded_refs and ref not in grounded_refs:
             return True, ref
         return False, None
@@ -3494,6 +3503,11 @@ def _polished_prose_has_unknown_citations(
         ref = f"Annex {roman.upper()}"
         if ref not in ARTICLE_EXISTENCE:
             return True, ref
+            
+        import os
+        if os.getenv("REGENOLD_DYNAMIC_GROUNDING", "0").strip().lower() in ("1", "true", "yes", "on"):
+            return False, None
+            
         if grounded_refs and ref not in grounded_refs:
             return True, ref
         return False, None

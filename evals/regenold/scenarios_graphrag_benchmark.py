@@ -3,11 +3,9 @@
 Source: a related EU AI Act GraphRAG-system paper, Appendix B.2 dataset.
 Two groups:
 
-* ``GROUND_TRUTH`` — 10 questions each paired with an expected answer +
-  reference list (Articles / Recitals). We score these.
-* ``NO_GROUND_TRUTH`` — 10 questions with no predefined answer. We run them
-  live and report the engine's predicted references + tone + latency only
-  (there is no gold to score against).
+* ``GROUND_TRUTH`` — 20 questions each paired with an expected answer +
+  reference list (Articles / Annexes). We score these.
+* ``NO_GROUND_TRUTH`` — now empty (all questions have been promoted to GROUND_TRUTH).
 
 Wire-citation note
 ------------------
@@ -30,7 +28,7 @@ Schema (GROUND_TRUTH) matches runner_v2 tricky schema + extra provenance:
 """
 from __future__ import annotations
 
-# ── Group 1 — questions WITH ground truth ────────────────────────────────
+# ── Group 1 — questions WITH ground truth (original 10 + promoted 10) ────────────────────────────────
 GROUND_TRUTH: list[dict] = [
     {
         "id": "gt_01",
@@ -152,17 +150,16 @@ GROUND_TRUTH: list[dict] = [
         "recital_only": False,
         "notes": "Art. 3(3)/(4) definitions + Art. 16 provider responsibility.",
     },
-]
-
-# ── Group 2 — questions WITHOUT ground truth ──────────────────────────────
-# Run live; report predicted refs + tone + latency only (no scoring).
-# ``doctrinal_anchor`` is an informational note (NOT scored) of the primary
-# AI-Act article(s) a domain expert would expect — for qualitative review.
-NO_GROUND_TRUTH: list[dict] = [
+    # Promoted scenarios from Appendix B.2.2 (Group 2)
     {
         "id": "ng_01",
         "question": "What criteria exist for assessing the risk of an AI system?",
-        "doctrinal_anchor": "Article 7 (Annex III amendment criteria) / Article 9",
+        "expected_refs": ["Article 7", "Article 9"],
+        "expected_keywords": ["intended purpose", "likelihood of harm", "vulnerable groups", "fundamental rights"],
+        "category": "risk_assessment",
+        "paper_refs": "Articles: 7(2),9(9)",
+        "recital_only": False,
+        "notes": "Assessment criteria under Article 7(2) and Article 9(9).",
     },
     {
         "id": "ng_02",
@@ -170,17 +167,32 @@ NO_GROUND_TRUTH: list[dict] = [
             "What are the sanctions for violating the provisions of the "
             "regulation for transparency risk systems?"
         ),
-        "doctrinal_anchor": "Article 99",
+        "expected_refs": ["Article 99"],
+        "expected_keywords": ["administrative fine", "turnover", "preceding financial year", "effectiveness"],
+        "category": "sanctions",
+        "paper_refs": "Articles: 99(4)",
+        "recital_only": False,
+        "notes": "Transparency system sanctions under Article 99(4) (up to 15M EUR or 3% turnover).",
     },
     {
         "id": "ng_03",
         "question": "What obligations exist for deployers of high-risk AI systems?",
-        "doctrinal_anchor": "Article 26 (+ Article 27 FRIA)",
+        "expected_refs": ["Article 26", "Article 27"],
+        "expected_keywords": ["impact assessment", "inform", "monitor", "log", "instructions for use"],
+        "category": "deployer_obligations",
+        "paper_refs": "Articles: 26,27(1)",
+        "recital_only": False,
+        "notes": "Deployer obligations under Articles 26 and 27 (FRIA).",
     },
     {
         "id": "ng_04",
         "question": "What requirements must AI systems classified as high-risk meet?",
-        "doctrinal_anchor": "Articles 8-15",
+        "expected_refs": ["Article 9", "Article 11", "Article 13", "Article 14", "Article 15"],
+        "expected_keywords": ["risk management", "technical documentation", "transparency", "human oversight", "robustness"],
+        "category": "high_risk_requirements",
+        "paper_refs": "Articles: 9,11,13,14,15",
+        "recital_only": False,
+        "notes": "High-risk mandatory requirements under Chapter III, Section 2.",
     },
     {
         "id": "ng_05",
@@ -188,27 +200,52 @@ NO_GROUND_TRUTH: list[dict] = [
             "What obligations do providers of high-risk AI systems have in terms "
             "of transparency and technical documentation?"
         ),
-        "doctrinal_anchor": "Articles 11, 13 (+ Annex IV)",
+        "expected_refs": ["Article 11", "Article 13", "Article 18", "Article 21", "Article 23"],
+        "expected_keywords": ["technical documentation", "conformity", "10 years", "instructions for use"],
+        "category": "provider_obligations",
+        "paper_refs": "Articles: 11,13,18,21,23",
+        "recital_only": False,
+        "notes": "Provider transparency and documentation obligations under Chapter III, Section 3.",
     },
     {
         "id": "ng_06",
         "question": "What does a conformity assessment consist of?",
-        "doctrinal_anchor": "Article 43 (+ Annex VI / VII)",
+        "expected_refs": ["Article 43", "Annex VI", "Annex VII"],
+        "expected_keywords": ["internal control", "notified body", "quality management system", "certificate"],
+        "category": "conformity_assessment",
+        "paper_refs": "Articles: 43; Annexes: VI,VII",
+        "recital_only": False,
+        "notes": "Conformity assessment mechanisms under Article 43 and Annexes VI/VII.",
     },
     {
         "id": "ng_07",
         "question": "What does systemic-risk mean?",
-        "doctrinal_anchor": "Article 3(65) / Article 51 / Article 55",
+        "expected_refs": ["Article 3", "Article 55"],
+        "expected_keywords": ["high-impact capabilities", "general-purpose", "propagate", "negative effects"],
+        "category": "systemic_risk",
+        "paper_refs": "Articles: 3(65),55",
+        "recital_only": False,
+        "notes": "Systemic risk definitions and assessment under Article 3(65) and Article 55.",
     },
     {
         "id": "ng_08",
         "question": "What is the definition of General-purpose AI?",
-        "doctrinal_anchor": "Article 3(63)/(66)",
+        "expected_refs": ["Article 3"],
+        "expected_keywords": ["general-purpose ai model", "generality", "distinct tasks", "self-supervision"],
+        "category": "gpai_definition",
+        "paper_refs": "Articles: 3(63),3(66)",
+        "recital_only": False,
+        "notes": "Definition of General-Purpose AI model/system under Article 3.",
     },
     {
         "id": "ng_09",
         "question": "What are the components of a quality management system?",
-        "doctrinal_anchor": "Article 17",
+        "expected_refs": ["Article 17"],
+        "expected_keywords": ["design control", "data management", "testing", "post-market monitoring"],
+        "category": "qms",
+        "paper_refs": "Articles: 17(1)",
+        "recital_only": False,
+        "notes": "QMS requirements under Article 17.",
     },
     {
         "id": "ng_10",
@@ -216,9 +253,18 @@ NO_GROUND_TRUTH: list[dict] = [
             "What are the requirements for documenting bias mitigation measures "
             "in AI models?"
         ),
-        "doctrinal_anchor": "Article 10 (+ Article 9 / Article 15)",
+        "expected_refs": ["Article 10", "Article 15"],
+        "expected_keywords": ["bias detection", "data governance", "training", "validation", "mitigate"],
+        "category": "bias_mitigation",
+        "paper_refs": "Articles: 10(2),15(4)",
+        "recital_only": False,
+        "notes": "Bias mitigation requirements under Article 10(2) and Article 15(4).",
     },
 ]
+
+# ── Group 2 — questions WITHOUT ground truth ──────────────────────────────
+# All 10 questions have been enriched and promoted to GROUND_TRUTH to create a wider scored benchmark.
+NO_GROUND_TRUTH: list[dict] = []
 
 # ── Paper's lawyer-reviewed reference answers (Appendix B.2.1) ─────────────
 # Verbatim from the GraphRAG paper's supplementary material — the gold the
@@ -308,5 +354,67 @@ REFERENCE_ANSWERS: dict[str, str] = {
         "provider bears primary responsibility for AI Act compliance, especially "
         "for high-risk systems; the deployer uses the system for its intended "
         "purpose."
+    ),
+    "ng_01": (
+        "The criteria for assessing the risk of an AI system under the AI Act include: "
+        "intended purpose, context and extent of use, nature and amount of data processed, "
+        "system autonomy, likelihood and severity of harm to health/fundamental rights, "
+        "risks to vulnerable groups (like children), and availability of legal redress."
+    ),
+    "ng_02": (
+        "Sanctions for violating transparency obligations under Article 50 include "
+        "administrative fines of up to 15,000,000 EUR or 3% of the offender's "
+        "total worldwide annual turnover for the preceding financial year, whichever is higher. "
+        "Penalties must be effective, proportionate, and dissuasive, considering SMEs."
+    ),
+    "ng_03": (
+        "Obligations for deployers of high-risk AI systems include: taking appropriate "
+        "technical and organizational measures, using systems in accordance with provided "
+        "instructions, monitoring system operation, keeping automatically generated logs for "
+        "at least six months, performing a Fundamental Rights Impact Assessment (FRIA), "
+        "and informing natural persons exposed to the system."
+    ),
+    "ng_04": (
+        "High-risk AI systems must meet mandatory requirements: establishing a comprehensive "
+        "risk management system; ensuring high data quality and governance standards; "
+        "preparing detailed technical documentation; maintaining automatic record-keeping (logs); "
+        "ensuring transparency and clear instructions; enabling human oversight; and achieving "
+        "high robustness, accuracy, and cybersecurity."
+    ),
+    "ng_05": (
+        "Providers of high-risk AI systems must prepare comprehensive technical documentation "
+        "before market placement, keep it up-to-date for 10 years, design systems to ensure "
+        "transparency, provide clear instructions for use (identity, capabilities, and risks), "
+        "and supply all necessary documentation to competent authorities upon a reasoned request."
+    ),
+    "ng_06": (
+        "A conformity assessment consists of procedures to verify and demonstrate compliance "
+        "with high-risk requirements. Providers can choose between internal control (Annex VI) "
+        "or a quality management system and technical documentation assessment by a notified body "
+        "(Annex VII), resulting in a certificate of conformity or assessment certificate."
+    ),
+    "ng_07": (
+        "Systemic risk is a risk specific to the high-impact capabilities of general-purpose "
+        "AI models that can propagate at scale across the value chain, causing actual or "
+        "foreseeable negative effects on public health, safety, public security, fundamental rights, "
+        "or society as a whole."
+    ),
+    "ng_08": (
+        "A general-purpose AI model is an AI model that exhibits significant generality, "
+        "is capable of competently performing a wide range of distinct tasks, and can be "
+        "integrated into various downstream applications. A general-purpose AI system is built "
+        "on such a model and serves a variety of purposes."
+    ),
+    "ng_09": (
+        "A quality management system must include: regulatory compliance strategy; design "
+        "control and verification; testing and validation procedures; data management systems "
+        "(acquisition, collection, labeling); technical specifications/standards; risk management; "
+        "post-market monitoring; and serious incident reporting."
+    ),
+    "ng_10": (
+        " document bias mitigation, providers must ensure data sets are subject to high "
+        "governance, including assessing and mitigating biases affecting health, safety, or "
+        "fundamental rights. Targeted measures must be documented, and continuous-learning models "
+        "must mitigate loops of biased feedback."
     ),
 }

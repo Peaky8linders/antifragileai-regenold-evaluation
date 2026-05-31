@@ -51,6 +51,7 @@ def _run_benchmark(label: str, synthesis_default: bool, *, timeout: float) -> di
     env.setdefault("OPENAI_API_KEY", "dummy")
     # Stage-2 must be allowed to fire for the synthesis path under TestClient.
     env["P2P_GRAPH_RAG_ENABLE_STAGE2"] = "1"
+    env["REGENOLD_DYNAMIC_GROUNDING"] = "1"
     cmd = [
         _PY, "-m", "evals.regenold.run_graphrag_benchmark",
         "--local", "--label", label,

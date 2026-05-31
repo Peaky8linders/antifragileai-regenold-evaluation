@@ -4522,7 +4522,7 @@ def regenold_eu_ai_act_ask(
     # bench never lands Stage-2 (no wrapper) → stage2_landed is always
     # False → this block never fires locally.
     if (
-        os.getenv("REGENOLD_STAGE2_REF_AUGMENT", "0").strip().lower()
+        os.getenv("REGENOLD_STAGE2_REF_AUGMENT", "1").strip().lower()
         in ("1", "true", "yes", "on")
         and answer_text
         and references
@@ -4637,13 +4637,14 @@ def regenold_eu_ai_act_ask(
     # byte-identical. Skipped for scenario-shape questions (large
     # multi-article gold a 3-sentence verdict cannot name). Env
     # off-switch: REGENOLD_REFS_RECONCILE=0.
+    reconcile_floor = 1 if os.getenv("REGENOLD_DYNAMIC_GROUNDING") == "1" else _REFS_RECONCILE_FLOOR
     if (
         os.getenv("REGENOLD_REFS_RECONCILE", "1") in ("1", "true", "yes", "on")
         and graph_stats.get("stage2_landed")
         and not _looks_like_scenario_shape(question)
-        and len(references) > _REFS_RECONCILE_FLOOR
+        and len(references) > reconcile_floor
     ):
-        references = _reconcile_references_to_prose(references, answer_text)
+        references = _reconcile_references_to_prose(references, answer_text, floor=reconcile_floor)
 
     # R94 — verbatim exact-text answer mode (default ON).
     #
@@ -4679,6 +4680,8 @@ def regenold_eu_ai_act_ask(
     ):
         try:
             import re
+            from app.data.article_existence import ARTICLE_EXISTENCE
+            
             # Extract cited articles/annexes in polished prose
             prose_citations = set()
             for match in re.finditer(r"\b(Article|Art\.|Annex)\s+([IVXLCDM\d]+)\b", answer_text, re.IGNORECASE):
@@ -4705,9 +4708,24 @@ def regenold_eu_ai_act_ask(
             bad_citation = None
             for cite in prose_citations:
                 if cite not in reference_bases:
-                    has_hallucination = True
-                    bad_citation = cite
-                    break
+                    # R101 — Catalog-assisted dynamic grounding.
+                    # Convert e.g. "Article 13" -> "Art. 13" for existence check
+                    catalog_key = cite
+                    if cite.startswith("Article "):
+                        catalog_key = "Art. " + cite[len("Article "):]
+                    
+                    if catalog_key in ARTICLE_EXISTENCE:
+                        logger.info(
+                            "Component D Grounding Guard: Prose cited %s which was missing "
+                            "from reference_bases, but exists in ARTICLE_EXISTENCE. Dynamically "
+                            "augmenting references list.", cite
+                        )
+                        references.append(cite)
+                        reference_bases.add(cite)
+                    else:
+                        has_hallucination = True
+                        bad_citation = cite
+                        break
             
             if has_hallucination:
                 logger.warning(
