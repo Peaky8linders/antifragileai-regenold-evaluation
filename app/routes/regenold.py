@@ -275,82 +275,87 @@ _MIN_CACHEABLE_CONFIDENCE = 0.3
 # latency for no rubric lift, (b) precision-first hand-curation
 # guarantees no R47-A-style orphan-pull pathology. Strictly additive,
 # appended AFTER the BM25 winners — never displaces a winner.
-_DEPLOYER_HOP_MAP: dict[str, list[str]] = {
+_ONTOLOGY_HOP_MAP: dict[str, list[str]] = {
+    # Deployer -> Provider obligations
     "Article 26":   ["Article 13", "Article 14", "Article 9"],
     "Article 27":   ["Article 6", "Annex III"],
     "Article 50":   ["Article 52"],
     "Article 26.5": ["Article 13", "Article 14", "Article 9"],
+    
+    # Provider Obligations (Section 3)
+    "Article 16":   ["Article 11", "Article 13", "Article 17", "Article 18", "Article 21", "Article 23"],
+    
+    # High-Risk Requirements (Section 2)
+    "Article 8":    ["Article 9", "Article 11", "Article 13", "Article 14", "Article 15"],
+    "Article 9":    ["Article 11", "Article 13", "Article 14", "Article 15"],
+    "Article 10":   ["Article 15"],  # bias mitigation -> accuracy/robustness
+
+    # Medical Classification / Prohibitions
+    "Annex III":    ["Article 6", "Article 5", "Annex I"],
+    "Annex III.5":  ["Article 6", "Article 5", "Annex I"],
 }
-_DEPLOYER_HOP_MAX_INJECT = 3
+_ONTOLOGY_HOP_MAX_INJECT = 4
 
 
-def _apply_deployer_hop(
+def _apply_ontology_hops(
     candidates: list[str],
     intent_label: str,
     question: str,
 ) -> list[str]:
-    """Append deployer→provider hop targets when the query is deployer-shaped.
-
-    Returns a NEW list — never mutates ``candidates``. Triggering rules
-    (calibrated by R86 davidath A/B; the first cut also fired on the
-    literal substring ``deployer`` which over-cited 339 scenario rows
-    whose gold cites only Art. 26 — Ref Loose regressed −0.008):
-
-    1. Intent classifier label contains ``deployer``, OR
-    2. ``intent_label == "role_obligations"``, OR
-    3. The question is a DEFINITIONAL deployer-obligations question —
-       a Wh-shape ("what are the obligations of deployers", "how do
-       deployers comply") that is NOT a scenario opener
-       ("We are a deployer of …" → scenario shape, single-anchor gold).
-
-    On the davidath bench TestClient has no LLM provider, so the intent
-    classifier returns ``None`` and only rule 3 can fire — and rule 3
-    excludes the scenario shape. On the live deployment Groq/wrapper
-    feed the intent classifier with real labels and rules 1+2 carry the
-    full deployer detection.
-
-    Capped at ``_DEPLOYER_HOP_MAX_INJECT`` (3) hop targets to bound
-    over-citation. Env-gated ``REGENOLD_DEPLOYER_HOP`` — set ``=0`` to
-    disable.
-    """
-    if os.environ.get("REGENOLD_DEPLOYER_HOP", "1") == "0":
+    """Append ontology structural targets (Section-level requirements, roles)."""
+    if os.environ.get("REGENOLD_ONTOLOGY_HOP", "1") == "0":
         return list(candidates)
 
     label_low = (intent_label or "").lower()
-    is_deployer_intent = ("deployer" in label_low) or label_low == "role_obligations"
-
-    # Rule 3 — definitional Wh-shape, NOT a scenario opener. Scenarios
-    # like "We are a deployer of a high-risk CV-screening AI." have
-    # single-anchor gold (typically Art. 26 alone); injecting Art. 9/
-    # 13/14 pollutes precision. Definitional questions like "What are
-    # the obligations of deployers?" benefit from the hop because gold
-    # legitimately spans the provider-side dependencies.
-    is_definitional_deployer = False
     q_low = (question or "").lower().lstrip()
-    if "deployer" in q_low:
-        scenario_starts = (
-            "we are", "we're", "our company", "our firm", "our organisation",
-            "our organization", "i am a", "i'm a", "as a deployer",
-        )
-        if not q_low.startswith(scenario_starts):
-            # Wh-shape OR ends with '?' (definitional pattern)
-            wh_starts = ("what", "how", "when", "who", "why", "which", "where")
-            if q_low.startswith(wh_starts) or q_low.rstrip().endswith("?"):
-                is_definitional_deployer = True
+    
+    # Evaluate triggers for different semantic structures
+    is_deployer = ("deployer" in label_low) or (label_low == "role_obligations")
+    is_provider = ("provider" in label_low) or (label_low == "role_obligations")
+    is_requirements = ("requirements" in label_low) or ("requirements" in q_low)
+    is_medical = any(kw in q_low for kw in ("medical", "doctor", "patient", "clinical", "surgery"))
 
-    if not (is_deployer_intent or is_definitional_deployer):
+    # Wh-shape definitions (broad scope questions)
+    wh_starts = ("what", "how", "when", "who", "why", "which", "where")
+    is_wh_question = q_low.startswith(wh_starts) or q_low.rstrip().endswith("?")
+    
+    scenario_starts = (
+        "we are", "we're", "our company", "our firm", "our organisation",
+        "our organization", "i am a", "i'm a", "as a "
+    )
+    is_scenario = q_low.startswith(scenario_starts)
+
+    # Active context flags
+    should_hop = False
+    
+    # Trigger 1: Deployer/Provider obligations
+    if is_wh_question and not is_scenario:
+        if "deployer" in q_low or is_deployer:
+            should_hop = True
+        if "provider" in q_low or is_provider:
+            should_hop = True
+            
+    # Trigger 2: Requirements list
+    if is_requirements and is_wh_question and not is_scenario:
+        should_hop = True
+
+    # Trigger 3: Medical categorization/prohibitions
+    if is_medical:
+        should_hop = True
+
+    if not should_hop:
         return list(candidates)
 
     injected: list[str] = []
     seen = set(candidates)
     for cand in candidates:
-        for hop_target in _DEPLOYER_HOP_MAP.get(cand, []):
+        for hop_target in _ONTOLOGY_HOP_MAP.get(cand, []):
             if hop_target in seen or hop_target in injected:
                 continue
             injected.append(hop_target)
-            if len(injected) >= _DEPLOYER_HOP_MAX_INJECT:
+            if len(injected) >= _ONTOLOGY_HOP_MAX_INJECT:
                 break
-        if len(injected) >= _DEPLOYER_HOP_MAX_INJECT:
+        if len(injected) >= _ONTOLOGY_HOP_MAX_INJECT:
             break
     return list(candidates) + injected
 
@@ -3473,6 +3478,7 @@ def regenold_eu_ai_act_ask(
         _boost_intent_res = _classify_intent_cached(question)
     except Exception:  # noqa: BLE001 — defensive (never let intent 500 the route)
         _boost_intent_res = None
+    
     try:
         candidates = boost_for_intent(candidates, _boost_intent_res)
     except Exception:  # noqa: BLE001 — defensive
@@ -3489,18 +3495,7 @@ def regenold_eu_ai_act_ask(
     except Exception:  # noqa: BLE001 — fail-soft, must not 500 the route
         pass
 
-    # R86-D — Deployer 1-hop expansion. See ``_apply_deployer_hop``
-    # docstring for the rationale + edge curation.
-    try:
-        _intent_label_for_hop = (
-            getattr(_boost_intent_res, "intent", "") or ""
-            if _boost_intent_res is not None else ""
-        )
-        candidates = _apply_deployer_hop(
-            candidates, _intent_label_for_hop, question
-        )
-    except Exception:  # noqa: BLE001 — fail-soft, must not 500 the route
-        pass
+    # Removed duplicate ontology hop
 
     # R88-A — assistant-turn anchor inheritance. r87-v2-live multi-turn
     # coherence regressed because BM25 didn't elevate the [Context
@@ -4114,6 +4109,22 @@ def regenold_eu_ai_act_ask(
         
         if _filtered_cands:
             candidates = _filtered_cands
+
+    # R104 — Ontology 1-hop expansion. See ``_apply_ontology_hops``.
+    try:
+        _intent_label_for_hop = (
+            getattr(_boost_intent_res, "intent", "") or ""
+            if _boost_intent_res is not None else ""
+        )
+        candidates = _apply_ontology_hops(
+            candidates, _intent_label_for_hop, question
+        )
+    except Exception:  # noqa: BLE001 — fail-soft
+        pass
+
+    # R104 — Expand max refs if ontology hops occurred so injected targets survive
+    if os.getenv("REGENOLD_ONTOLOGY_HOP", "1") != "0":
+        _effective_max_refs = max(_effective_max_refs, 7)
 
     references: list[str] = candidates[:_effective_max_refs]
 
