@@ -260,6 +260,78 @@ GROUND_TRUTH: list[dict] = [
         "recital_only": False,
         "notes": "Bias mitigation requirements under Article 10(2) and Article 15(4).",
     },
+    # ── PDF Example Questions ─────────────────────────────
+    {
+        "id": "gt_11",
+        "question": "Does the technical documentation of a high-risk AI system require to provide specifications regarding the required hardware?",
+        "expected_refs": ["Article 11", "Annex IV"],
+        "expected_keywords": ["technical documentation", "hardware", "computing resources", "architecture"],
+        "category": "hardware_specs",
+        "paper_refs": "Articles: 11; Annexes: IV",
+        "recital_only": False,
+        "notes": "PDF Example 1. Art. 11 + Annex IV hardware specs.",
+    },
+    {
+        "id": "gt_12",
+        "question": "Are AI systems intended for emotion recognition from biometric data always prohibited?",
+        "expected_refs": ["Article 5"],
+        "expected_keywords": ["workplace", "educational", "medical", "safety", "not always prohibited"],
+        "category": "emotion_recognition",
+        "paper_refs": "Articles: 5",
+        "recital_only": False,
+        "notes": "PDF Example 2. Art. 5 prohibitions and exceptions.",
+    },
+    {
+        "id": "gt_13",
+        "question": "Is an AI that transcribes doctor–patient conversations prohibited? Or is it high-risk as per the use cases of Annex III of the AI Act?",
+        "expected_refs": ["Article 5", "Article 6", "Annex I", "Annex III"],
+        "expected_keywords": ["not prohibited", "medical device", "safety component", "MDR", "general purpose"],
+        "category": "transcription_classification",
+        "paper_refs": "Articles: 5,6; Annexes: I,III",
+        "recital_only": False,
+        "notes": "PDF Example 3. Not prohibited under Art. 5; high-risk under Art. 6/Annex I if medical device.",
+    },
+    # ── MedTech / Life Sciences Scenarios ──────────────────
+    {
+        "id": "med_01",
+        "question": "We are a medical device manufacturer building an AI system to analyze X-rays to detect tumors. Is this system classified as high-risk, and what conformity assessment is required?",
+        "expected_refs": ["Article 6", "Article 43", "Annex I"],
+        "expected_keywords": ["medical device", "safety component", "Annex I", "third-party", "conformity assessment"],
+        "category": "medtech_high_risk",
+        "paper_refs": "Articles: 6,43; Annexes: I",
+        "recital_only": False,
+        "notes": "Medical Imaging Device classification and conformity.",
+    },
+    {
+        "id": "med_02",
+        "question": "Can a hospital use an AI system to sort patients based on their biometric data to determine priority for an experimental clinical trial?",
+        "expected_refs": ["Article 5", "Article 6", "Annex III"],
+        "expected_keywords": ["healthcare", "essential services", "biometric categorization", "high-risk", "triage"],
+        "category": "medtech_triage",
+        "paper_refs": "Articles: 5,6; Annexes: III",
+        "recital_only": False,
+        "notes": "Clinical Trial Patient Triage.",
+    },
+    {
+        "id": "med_03",
+        "question": "Our life sciences startup developed a general-purpose AI model trained on massive amounts of genomic data. What transparency obligations apply to us?",
+        "expected_refs": ["Article 50", "Article 53"],
+        "expected_keywords": ["general-purpose AI model", "transparency", "copyright", "summary of training data", "technical documentation"],
+        "category": "lifesciences_gpai",
+        "paper_refs": "Articles: 50,53",
+        "recital_only": False,
+        "notes": "Genomic LLM transparency obligations.",
+    },
+    {
+        "id": "med_04",
+        "question": "We are a university lab developing an AI model exclusively for scientific research and development into new life science drugs. Does the AI Act apply to our model before it is released to the market?",
+        "expected_refs": ["Article 2"],
+        "expected_keywords": ["scientific research", "development", "exempt", "does not apply"],
+        "category": "lifesciences_research",
+        "paper_refs": "Articles: 2",
+        "recital_only": False,
+        "notes": "AI in Medical Research (Exemption).",
+    },
 ]
 
 # ── Group 2 — questions WITHOUT ground truth ──────────────────────────────
@@ -416,5 +488,43 @@ REFERENCE_ANSWERS: dict[str, str] = {
         "governance, including assessing and mitigating biases affecting health, safety, or "
         "fundamental rights. Targeted measures must be documented, and continuous-learning models "
         "must mitigate loops of biased feedback."
+    ),
+    "gt_11": (
+        "Yes. Article 11 requires high-risk systems to have technical documentation. Annex IV "
+        "specifies that this documentation must include a general description of the system, "
+        "including its architecture and the specifications of required hardware and computing resources."
+    ),
+    "gt_12": (
+        "No, they are not always prohibited. Under Article 5, they are specifically prohibited when "
+        "used in the workplace or educational institutions, unless they are installed or used for "
+        "medical or safety reasons."
+    ),
+    "gt_13": (
+        "It is not inherently prohibited under Article 5. Whether it is high-risk depends on its "
+        "exact classification. While it is not explicitly listed in Annex III as high-risk, if the "
+        "transcription system is intended to be used as a medical device (or a safety component of one) "
+        "covered by EU harmonisation legislation (Annex I, e.g., the Medical Device Regulation) and "
+        "requires a third-party conformity assessment, it is classified as high-risk under Article 6. "
+        "Otherwise, basic transcription is minimal/limited risk."
+    ),
+    "med_01": (
+        "Yes, it is high-risk under Article 6 because it is a safety component of a product covered "
+        "by Annex I (Medical Devices) and requires third-party conformity assessment. The conformity "
+        "assessment must follow the requirements under Article 43."
+    ),
+    "med_02": (
+        "It is not explicitly prohibited unless it uses biometric categorization to deduce protected "
+        "traits (Article 5). However, systems used to evaluate or classify natural persons for access "
+        "to essential healthcare services or triage are classified as high-risk under Annex III."
+    ),
+    "med_03": (
+        "As a provider of a general-purpose AI model, you must fulfill Article 53 obligations, which "
+        "include providing technical documentation, honoring EU copyright law, and publishing a "
+        "sufficiently detailed summary of the content used for training the model."
+    ),
+    "med_04": (
+        "Under Article 2, the AI Act does not apply to AI systems or models specifically developed "
+        "and put into service for the sole purpose of scientific research and development. Therefore, "
+        "pre-market research activities are generally exempt."
     ),
 }
