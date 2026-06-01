@@ -332,6 +332,36 @@ GROUND_TRUTH: list[dict] = [
         "recital_only": False,
         "notes": "AI in Medical Research (Exemption).",
     },
+    {
+        "id": "med_05",
+        "question": "We are developing a generative AI chatbot that will be deployed on a hospital website to answer general patient queries. What transparency obligations apply?",
+        "expected_refs": ["Article 50"],
+        "expected_keywords": ["interact", "natural persons", "informed", "chatbot", "transparency"],
+        "category": "medtech_chatbot",
+        "paper_refs": "Articles: 50",
+        "recital_only": False,
+        "notes": "Patient chatbot transparency.",
+    },
+    {
+        "id": "med_06",
+        "question": "A pharmaceutical company wants to use an AI system to monitor the emotions and stress levels of their manufacturing line workers to improve efficiency. Is this allowed?",
+        "expected_refs": ["Article 5"],
+        "expected_keywords": ["emotion recognition", "workplace", "prohibited", "employees"],
+        "category": "medtech_emotion_workplace",
+        "paper_refs": "Articles: 5",
+        "recital_only": False,
+        "notes": "Emotion recognition in workplace prohibition.",
+    },
+    {
+        "id": "med_07",
+        "question": "Is an AI system intended to be used as a safety component in robotic surgery considered high-risk under the AI Act?",
+        "expected_refs": ["Article 6", "Annex I"],
+        "expected_keywords": ["safety component", "medical device", "Annex I", "high-risk"],
+        "category": "medtech_robotic_surgery",
+        "paper_refs": "Articles: 6; Annexes: I",
+        "recital_only": False,
+        "notes": "Robotic surgery safety component (MDR).",
+    },
 ]
 
 # ── Group 2 — questions WITHOUT ground truth ──────────────────────────────
