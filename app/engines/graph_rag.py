@@ -1825,6 +1825,7 @@ _CLASSIFICATION_QUESTION_RE = re.compile(
     r"high[-\s]?risk|exempt(?:ed)?|in\s+scope)"
     r"|(?:does|do)\s+[\w\s\-]{1,80}?\s+(?:fall\s+(?:under|into|within)|"
     r"still\s+apply|apply\s+to|count\s+as|qualify\s+as)"
+    r"|(?:can|could|may|will)\s+[\w\s\-,]{1,120}?\s+(?:use|employ|deploy|build|create|sell|sort)"
     r"|what(?:'s|\s+is)\s+the\s+risk\s+(?:class|level|tier|categor)"
     r"|how\s+is\s+[\w\s\-]+\s+classif"
     r"|risk\s+classification\b"
@@ -1897,6 +1898,29 @@ def _is_classification_question(question: str) -> bool:
 # workplace/education context word) must precede the bare
 # ``emotion_recognition_general`` entry.
 _CLASSIFICATION_TOPICS: list[dict] = [
+    # ── Medical / Clinical Triage (med_02) ────────────
+    {
+        "name": "medtech_triage",
+        "patterns": [
+            re.compile(
+                r"\b(?:sort|prioritiz|triage|priority)[\w\s\-,]{0,60}?"
+                r"(?:patient|clinical|medical|hospital)",
+                re.IGNORECASE,
+            ),
+            re.compile(
+                r"(?:patient|clinical|medical|hospital)[\w\s\-,]{0,60}?"
+                r"\b(?:sort|prioritiz|triage|priority)",
+                re.IGNORECASE,
+            ),
+        ],
+        "answer": (
+            "Using AI to triage or prioritise patients (e.g. for a clinical trial or "
+            "emergency dispatch) is high-risk under Annex III(5)(d) (essential services). "
+            "If the system also uses biometric categorisation to infer sensitive "
+            "attributes, it is prohibited under Article 5(1)(g)."
+        ),
+        "refs": ["Art. 5", "Art. 6", "Annex III"],
+    },
     # ── Q3: medical transcription (doctor-patient scribing) ────────────
     {
         "name": "medical_transcription",

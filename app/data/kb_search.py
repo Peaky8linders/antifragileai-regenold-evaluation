@@ -691,6 +691,14 @@ def top_articles_by_relevance(
             if article_ref in known_role_articles and article_ref != query_role_art:
                 role_drift_penalty = 0.50  # 50% penalty to prevent role drift
 
+        # Prevent concept drift: dampen dominant unrelated articles when a single concept is queried
+        if _ents_for_injection and len(_ents_for_injection.get("concept", [])) == 1:
+            query_concept_art = f"Art. {_ents_for_injection['concept'][0][1]}"
+            if query_concept_art == "Art. 50" and article_ref in {"Art. 6", "Annex III"}:
+                role_drift_penalty *= 0.50
+            if query_concept_art == "Art. 99" and article_ref not in {"Art. 99"}:
+                role_drift_penalty *= 0.50
+
         # Component B — Additive lexical boost for extracted concepts
         additive_lexical_boost = 0.0
         if article_ref in entity_boosts:

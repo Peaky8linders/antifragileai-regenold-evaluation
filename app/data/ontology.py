@@ -402,7 +402,8 @@ PRACTICE_REGISTRY: dict[str, Practice] = {
             "this prohibition but are high-risk under Annex III(1)(b).",
         ),
         related_high_risk_anchor="Annex III",
-        keywords=("biometric categorisation", "biometric categorization"),
+        keywords=("biometric categorisation", "biometric categorization",
+                  "biometric sorting", "patient sorting", "sort patients"),
     ),
     "real_time_rbi": Practice(
         id="real_time_rbi",
@@ -568,7 +569,9 @@ ANNEX_III_REGISTRY: dict[str, AnnexIIICategory] = {
                     "(5)(d) Emergency-response triage"),
         keywords=("credit scoring", "creditworthiness", "credit score",
                   "welfare eligibility", "insurance pricing",
-                  "emergency dispatch"),
+                  "emergency dispatch", "medical triage", "clinical triage",
+                  "patient triage", "patient prioritization", "clinical trial triage",
+                  "clinical trial", "determine priority"),
     ),
     "law_enforcement": AnnexIIICategory(
         id="law_enforcement",

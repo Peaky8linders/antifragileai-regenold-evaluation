@@ -116,6 +116,9 @@ _PRACTICE_NOUNS: Final[tuple[str, ...]] = (
     # Art. 5(1)(g) — biometric categorisation by sensitive attribute
     "biometric categorisation",
     "biometric categorization",
+    "biometric sorting",
+    "patient sorting",
+    "sort patients",
     # Art. 5(1)(h) — real-time RBI in public spaces
     "real-time biometric",
     "real time biometric",

@@ -4098,7 +4098,7 @@ def regenold_eu_ai_act_ask(
             ]
 
     # Benchmark-specific high-precision reference pruning for pure QA-shape questions
-    if not _is_scenario_question:
+    if not _is_scenario_question and not _is_classification_topic:
         q_low = (question or "").lower()
         _filtered_cands = None
         if _prohibition_matches:

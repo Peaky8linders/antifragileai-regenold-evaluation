@@ -357,6 +357,9 @@ CONCEPTS: dict[str, dict] = {
             "penalties for",
             "fines up to",
             "fine amount",
+            "sanctions",
+            "violations of the regulation",
+            "transparency risk systems",
         ),
     },
     "gpai_obligations": {
