@@ -488,6 +488,8 @@ def select_answer_sentence(
         return None
 
     qtype = classify_question(question)
+    if qtype == "list":
+        max_sentence_chars = max(max_sentence_chars, 4000)
     affinity_re = _answer_affinity_pattern(qtype)
     apply_affinity = affinity_re is not None and affinity_re.pattern != "^$"
 
