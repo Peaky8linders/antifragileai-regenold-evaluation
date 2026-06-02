@@ -3030,6 +3030,9 @@ def _live_question_borrows_anchor(live_text: str, anchors: tuple[str, ...]) -> b
         return False
 
     low = live_text.lower()
+    # Strip common conversational fillers at the start so they don't break
+    # the startswith() checks below (e.g. "ok i was asking..." should match "i ").
+    low = re.sub(r'^(?:ok|okay|alright|well|yes|no|yeah|right)\b[\s,]*', '', low)
 
     # Strong markers — fire regardless of question length. These are
     # specific enough that "what if we re-train" / "how often" / "are

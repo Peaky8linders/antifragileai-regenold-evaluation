@@ -3904,9 +3904,9 @@ def _claude_max_enhance_answer(
         if is_general_classification:
             user_message += (
                 f"BACKGROUND RISK FRAMEWORK:\n{kg_answer}\n\n"
-                "The user is asking a general classification question about a specific AI system. "
-                "Provide a professional, custom legal analysis of the system described in the question against the EU AI Act risk tiers. "
-                "Evaluate whether it falls under prohibited practices (Article 5), high-risk (Article 6, Annex I, Annex III), or limited/minimal risk (Article 50). "
+                "The user is asking a classification question about a specific AI system use-case. "
+                "Provide a professional, custom legal analysis of whether this specific system falls under prohibited practices (Article 5), high-risk (Article 6, Annex I, Annex III), or limited/minimal risk (Article 50). "
+                "Apply logical deduction: if the system's described purpose (e.g., logging administrative data) clearly does not meet the strict definitions of prohibited or high-risk practices in the references, explicitly state that it does not trigger those classifications. "
                 "Do NOT use a prefabricated or generic response. Tailor your answer strictly to the user's specific use case. "
                 "Cite only articles and annexes from the EU AI ACT REFERENCES block.\n"
             )
