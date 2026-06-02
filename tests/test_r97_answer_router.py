@@ -246,9 +246,24 @@ class TestConfidenceFloorRouterAware:
         mock_wrapper = self._run(_MULTI_TURN_Q, 2, monkeypatch)
         mock_wrapper.assert_called_once()
 
-    def test_single_turn_complex_blocked_by_high_floor(self, monkeypatch) -> None:
-        """conf 0.35 < single-turn floor 0.5 → Stage-2 skipped."""
+    def test_single_turn_complex_bypasses_floor(self, monkeypatch) -> None:
+        """force-stage2 — a COMPLEX single-turn question fires Stage-2 even
+        when confidence (0.35) is below the single-turn floor (0.5).
+
+        Per the 'always Stage-2 for complex/reasoning' directive (and the
+        ``force_stage2`` path it added), a complex question intentionally
+        bypasses the R87-E confidence gate so it always reaches the
+        complex-model (Opus 4.8) polish. Previously this row asserted the
+        floor blocked it — that pre-force-stage2 contract is obsolete.
+        """
         mock_wrapper = self._run(_CONFLICT_Q, 1, monkeypatch)
+        mock_wrapper.assert_called_once()
+
+    def test_single_turn_simple_blocked_by_high_floor(self, monkeypatch) -> None:
+        """A NON-complex single-turn question with conf 0.35 < floor 0.5 is
+        still skipped — the floor governs the non-forced path (force_stage2
+        only bypasses it for complex/reasoning questions)."""
+        mock_wrapper = self._run(_SIMPLE_Q, 1, monkeypatch)
         mock_wrapper.assert_not_called()
 
 

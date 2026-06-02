@@ -124,6 +124,51 @@ _SHORT_COREFERENT_RE = re.compile(
 )
 
 
+# Multi-phrase / multi-question signal (user directive, 2026-06-02): an
+# input that bundles MORE THAN ONE phrase or question warrants the
+# complex-model (Opus 4.8) reasoning path, not a single Sonnet pass.
+# Canonical example — "Can a system be deployed that tracks patient weight
+# OR is it high risk according to Article 5?" — bundles a deployment-
+# permission clause AND a risk-classification clause; answering it well
+# means reasoning about BOTH, which the single-pass polish does poorly
+# (it latched onto "Article 5" and recited the prohibited-practices list).
+#
+# A clause verb so the coordination test only fires on TWO independent
+# verb-led clauses ("can X be deployed … or is it …"), not on a noun
+# coordination inside one clause ("providers and deployers").
+# NB: deliberately excludes ``deploy*`` — it would match the NOUN
+# "deployer(s)" in a noun coordination ("providers and deployers") and
+# mis-fire. The patient-weight example coordinates "can … or is", so the
+# modal/copula verbs below are sufficient.
+_CLAUSE_VERB = (
+    r"(?:is|are|was|were|can|could|may|might|do|does|did|should|"
+    r"would|will|shall|must|has|have|need|count|qualif\w*|fall|apply)"
+)
+_MULTI_CLAUSE_RE = re.compile(
+    rf"\b{_CLAUSE_VERB}\b.{{3,}}?\b(?:or|and|versus|vs\.?)\b\s+"
+    rf"(?:(?:the|a|an|it|they|we|this|that|i|you|one)\s+)?{_CLAUSE_VERB}\b",
+    re.IGNORECASE,
+)
+
+
+def _is_multi_phrase(scan_text: str) -> bool:
+    """True when the input bundles more than one phrase / question.
+
+    Three signals, conservative so a normal single-clause question does
+    NOT trip it:
+      * two or more explicit questions (``?`` count ≥ 2);
+      * two or more substantive sentences (≥ 4 words each);
+      * one sentence coordinating two verb-led clauses via ``or`` / ``and``
+        (``_MULTI_CLAUSE_RE``) — the patient-weight example.
+    """
+    if scan_text.count("?") >= 2:
+        return True
+    segments = [s for s in re.split(r"[.!?]+", scan_text) if len(s.split()) >= 4]
+    if len(segments) >= 2:
+        return True
+    return bool(_MULTI_CLAUSE_RE.search(scan_text))
+
+
 # ── Public API ──────────────────────────────────────────────────────────
 
 
@@ -181,6 +226,13 @@ def is_complex_question(question: str, history_turn_count: int = 1) -> bool:
     if _CONFLICT_RE.search(scan_text):
         return True
     if _CROSS_FRAMEWORK_RE.search(scan_text):
+        return True
+    # Multi-phrase / multi-question input (user directive 2026-06-02):
+    # bundling more than one phrase or question warrants the complex
+    # (Opus 4.8) reasoning path. Fixes the patient-weight question, which
+    # coordinated a deployment-permission clause and a risk-classification
+    # clause via "or".
+    if _is_multi_phrase(scan_text):
         return True
     # Multi-turn short coreferent — only fires when both signals are
     # present (history depth + short coref shape).

@@ -186,3 +186,64 @@ class TestFlattenMarkerStripping:
         accidentally fire complexity on a malformed prompt)."""
         flattened = self._FLATTEN_PREFIX + "   \n"
         assert not is_complex_question(flattened, history_turn_count=4)
+
+
+class TestMultiPhraseFires:
+    """User directive (2026-06-02): an input that bundles MORE THAN ONE
+    phrase or question warrants the complex-model (Opus 4.8) reasoning
+    path, not a single Sonnet pass.
+
+    Motivating bug — "Can a system be deployed that tracks patient weight
+    or is it high risk according to Article 5 of the AI Act" coordinated a
+    deployment-permission clause and a risk-classification clause via
+    "or"; the single pass latched onto "Article 5" and recited the
+    prohibited-practices list instead of answering the risk question.
+    """
+
+    @pytest.mark.parametrize(
+        "question",
+        [
+            # The canonical live bug — two verb-led clauses via "or".
+            "Can a system be deployed that tracks patient weight or is it "
+            "high risk according to Article 5 of the AI Act",
+            # Two clauses via "or".
+            "Is our chatbot high-risk, or does Annex III apply?",
+            # Two explicit questions.
+            "Are AI systems used for hiring high-risk? What obligations "
+            "apply?",
+            # Two substantive sentences (no question marks).
+            "We deploy an AI résumé screener. Tell me the obligations and "
+            "whether it is high-risk.",
+        ],
+    )
+    def test_multi_phrase_fires(self, question: str) -> None:
+        assert is_complex_question(question), (
+            f"Multi-phrase question not classified complex: {question!r}"
+        )
+
+    @pytest.mark.parametrize(
+        "question",
+        [
+            # Noun coordination inside ONE clause must NOT fire.
+            "What are the obligations of providers and deployers?",
+            # Single clause, single question.
+            "What does Article 13 require?",
+            "Is emotion recognition always prohibited under the AI Act?",
+            # A single clause that merely contains 'and' joining nouns.
+            "What are the transparency and documentation duties for "
+            "high-risk systems?",
+        ],
+    )
+    def test_single_phrase_does_not_fire_via_multi_phrase(
+        self, question: str
+    ) -> None:
+        # NB: "Is emotion recognition always prohibited" DOES fire via the
+        # borderline-prohibition signal; exclude that confound by testing
+        # the multi-phrase helper directly.
+        from app.engines.question_complexity import _is_multi_phrase
+
+        live = question
+        assert not _is_multi_phrase(live), (
+            f"Single-phrase question tripped the multi-phrase signal: "
+            f"{question!r}"
+        )
