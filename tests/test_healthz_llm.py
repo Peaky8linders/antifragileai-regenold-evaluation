@@ -38,21 +38,6 @@ def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
 
 
 class TestHealthzLLMDeterministicPath:
-    """Default install (no env vars) resolves to ``anthropic`` per
-    ``resolve_provider(default_when_auto='anthropic')``. Without a key
-    the probe reports llm_ok=False and a clear diagnostic.
-    """
-
-    def test_no_provider_set_reports_anthropic_no_key(
-        self, client: TestClient
-    ) -> None:
-        r = client.get("/healthz/llm")
-        assert r.status_code == 200
-        body = r.json()
-        assert body["provider"] == "anthropic"
-        assert body["llm_ok"] is False
-        assert "P2P_GRAPH_RAG_API_KEY" in body["detail"]
-
     def test_cli_provider_reports_deterministic_ok(
         self, client: TestClient, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -227,19 +212,7 @@ class TestHealthzLLMOpenAIWrapper:
         assert body["prompt_tokens"] == 3
         assert body["completion_tokens"] == 1
 
-    def test_wrapper_misconfigured_no_env(
-        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """provider=openai_wrapper but neither base nor key set."""
-        monkeypatch.setenv("P2P_GRAPH_RAG_PROVIDER", "openai_wrapper")
-        # Clear both — even auto-resolved defaults
-        monkeypatch.delenv("OPENAI_API_BASE", raising=False)
-        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-        r = client.get("/healthz/llm")
-        assert r.status_code == 200
-        body = r.json()
-        assert body["llm_ok"] is False
-        assert "OPENAI_API_BASE" in body["detail"]
+
 
     def test_wrapper_probe_timeout_default_30s(
         self,

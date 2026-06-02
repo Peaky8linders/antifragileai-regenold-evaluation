@@ -90,13 +90,13 @@ def _r77_enable_stage2_polish(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 class TestStage2ProviderGate:
-    def test_no_provider_set_disables_stage2(
+    def test_no_provider_set_enables_stage2_via_wrapper(
         self, reset_anthropic_env, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Default (unset) provider resolves to ``anthropic`` but with no key →
-        Stage-2 disabled."""
+        """Default (unset) provider now resolves to ``openai_wrapper``, which is
+        enabled by default → Stage-2 enabled."""
         from app.engines.graph_rag import _stage2_provider_enabled
-        assert _stage2_provider_enabled() is False
+        assert _stage2_provider_enabled() is True
 
     def test_cli_provider_disables_stage2(
         self, reset_anthropic_env, monkeypatch: pytest.MonkeyPatch

@@ -196,7 +196,7 @@ def test_r93_duration_answer_survives_augmenter() -> None:
     )
     assert r.status_code == 200, r.json()
     answer = (r.json().get("answer") or "").lower()
-    assert "six months" in answer, answer
+    assert "six months" in answer or "6 months" in answer, answer
 
 
 def test_p0_reference_validation_filters_hallucinated_articles() -> None:

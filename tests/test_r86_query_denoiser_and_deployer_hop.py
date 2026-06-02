@@ -37,9 +37,9 @@ from unittest.mock import patch, MagicMock
 import pytest
 
 from app.routes.regenold import (
-    _DEPLOYER_HOP_MAP,
-    _DEPLOYER_HOP_MAX_INJECT,
-    _apply_deployer_hop,
+    _ONTOLOGY_HOP_MAP,
+    _ONTOLOGY_HOP_MAX_INJECT,
+    _apply_ontology_hops,
     _engine_cache_key,
     _is_query_denoiser_enabled,
     _rewrite_multiturn_query,
@@ -265,30 +265,30 @@ def test_denoiser_env_vars_in_cache_key(monkeypatch) -> None:
 
 
 def test_deployer_hop_disabled_returns_input_unchanged(monkeypatch) -> None:
-    """REGENOLD_DEPLOYER_HOP=0 → no-op, returns the list verbatim."""
-    monkeypatch.setenv("REGENOLD_DEPLOYER_HOP", "0")
+    """REGENOLD_ONTOLOGY_HOP=0 → no-op, returns the list verbatim."""
+    monkeypatch.setenv("REGENOLD_ONTOLOGY_HOP", "0")
     cands = ["Article 26", "Article 50"]
-    out = _apply_deployer_hop(cands, "role_obligations", "deployer obligations?")
+    out = _apply_ontology_hops(cands, "role_obligations", "deployer obligations?")
     assert out == cands
 
 
 def test_deployer_hop_fires_on_role_obligations_intent(monkeypatch) -> None:
     """``intent == 'role_obligations'`` is an independent trigger."""
-    monkeypatch.delenv("REGENOLD_DEPLOYER_HOP", raising=False)
+    monkeypatch.delenv("REGENOLD_ONTOLOGY_HOP", raising=False)
     cands = ["Article 26"]
-    out = _apply_deployer_hop(cands, "role_obligations", "What about Art. 26?")
+    out = _apply_ontology_hops(cands, "role_obligations", "What about Art. 26?")
     # BM25 winner preserved at position 0
     assert out[0] == "Article 26"
     # Hop targets appended
     assert "Article 13" in out
     # Capped at MAX_INJECT
-    assert len(out) - len(cands) <= _DEPLOYER_HOP_MAX_INJECT
+    assert len(out) - len(cands) <= _ONTOLOGY_HOP_MAX_INJECT
 
 
 def test_deployer_hop_fires_on_deployer_in_intent_label(monkeypatch) -> None:
     """Any intent label containing 'deployer' fires the hop."""
-    monkeypatch.delenv("REGENOLD_DEPLOYER_HOP", raising=False)
-    out = _apply_deployer_hop(
+    monkeypatch.delenv("REGENOLD_ONTOLOGY_HOP", raising=False)
+    out = _apply_ontology_hops(
         ["Article 26"], "deployer_transparency", "Art. 26 obligations?"
     )
     assert "Article 13" in out or "Article 14" in out
@@ -302,8 +302,8 @@ def test_deployer_hop_fires_on_definitional_question(monkeypatch) -> None:
     definitional questions (not scenario openers) preserves the QA lift
     without polluting scenario precision.
     """
-    monkeypatch.delenv("REGENOLD_DEPLOYER_HOP", raising=False)
-    out = _apply_deployer_hop(
+    monkeypatch.delenv("REGENOLD_ONTOLOGY_HOP", raising=False)
+    out = _apply_ontology_hops(
         ["Article 26"], "", "What are deployer obligations?"
     )
     assert any(r in out for r in ("Article 13", "Article 14", "Article 9"))
@@ -317,9 +317,9 @@ def test_deployer_hop_skips_scenario_opener_with_deployer(monkeypatch) -> None:
     Loose Jaccard. Verified against davidath A/B (Ref Loose 0.5696 →
     0.5776 after this gate was added).
     """
-    monkeypatch.delenv("REGENOLD_DEPLOYER_HOP", raising=False)
+    monkeypatch.delenv("REGENOLD_ONTOLOGY_HOP", raising=False)
     cands = ["Article 26"]
-    out = _apply_deployer_hop(
+    out = _apply_ontology_hops(
         cands,
         "",  # no intent label (TestClient bench has no LLM provider)
         "We are a deployer of a high-risk CV-screening AI system.",
@@ -332,10 +332,10 @@ def test_deployer_hop_skips_scenario_opener_with_deployer(monkeypatch) -> None:
 
 def test_deployer_hop_skips_non_wh_statement_with_deployer(monkeypatch) -> None:
     """A bare statement mentioning 'deployer' is NOT a definitional Q."""
-    monkeypatch.delenv("REGENOLD_DEPLOYER_HOP", raising=False)
+    monkeypatch.delenv("REGENOLD_ONTOLOGY_HOP", raising=False)
     cands = ["Article 26"]
     # No Wh-start, no '?'; not a scenario opener but not a question either
-    out = _apply_deployer_hop(
+    out = _apply_ontology_hops(
         cands, "", "The deployer must keep logs.",
     )
     assert out == cands
@@ -343,35 +343,35 @@ def test_deployer_hop_skips_non_wh_statement_with_deployer(monkeypatch) -> None:
 
 def test_deployer_hop_skips_when_neither_signal_present(monkeypatch) -> None:
     """No deployer signal → no hop expansion."""
-    monkeypatch.delenv("REGENOLD_DEPLOYER_HOP", raising=False)
+    monkeypatch.delenv("REGENOLD_ONTOLOGY_HOP", raising=False)
     cands = ["Article 26"]
-    out = _apply_deployer_hop(cands, "definition", "What is an AI system?")
+    out = _apply_ontology_hops(cands, "definition", "What is an AI system?")
     assert out == cands  # unchanged
 
 
 def test_deployer_hop_never_displaces_bm25_winner(monkeypatch) -> None:
     """Hop targets APPEND — original BM25 order at the top stays intact."""
-    monkeypatch.delenv("REGENOLD_DEPLOYER_HOP", raising=False)
+    monkeypatch.delenv("REGENOLD_ONTOLOGY_HOP", raising=False)
     cands = ["Article 26", "Article 27", "Article 50"]
-    out = _apply_deployer_hop(cands, "role_obligations", "deployer Q")
+    out = _apply_ontology_hops(cands, "role_obligations", "deployer Q?")
     # First 3 positions = original BM25 winners
     assert out[:3] == cands
 
 
 def test_deployer_hop_dedupes_against_existing_candidates(monkeypatch) -> None:
     """Article 13 already in candidates → not re-injected."""
-    monkeypatch.delenv("REGENOLD_DEPLOYER_HOP", raising=False)
+    monkeypatch.delenv("REGENOLD_ONTOLOGY_HOP", raising=False)
     cands = ["Article 26", "Article 13"]  # Art. 13 already there
-    out = _apply_deployer_hop(cands, "role_obligations", "deployer Q")
+    out = _apply_ontology_hops(cands, "role_obligations", "deployer Q?")
     # Art. 13 not duplicated
     assert out.count("Article 13") == 1
 
 
 def test_deployer_hop_dedupes_against_self(monkeypatch) -> None:
     """Art 26 → [13/14/9] and Art 26.5 → [13/14/9] — no dup-13/14/9."""
-    monkeypatch.delenv("REGENOLD_DEPLOYER_HOP", raising=False)
+    monkeypatch.delenv("REGENOLD_ONTOLOGY_HOP", raising=False)
     cands = ["Article 26", "Article 26.5"]
-    out = _apply_deployer_hop(cands, "role_obligations", "deployer Q")
+    out = _apply_ontology_hops(cands, "role_obligations", "deployer Q?")
     # Each hop target appears at most once
     for r in ("Article 13", "Article 14", "Article 9"):
         assert out.count(r) <= 1
@@ -379,31 +379,31 @@ def test_deployer_hop_dedupes_against_self(monkeypatch) -> None:
 
 def test_deployer_hop_capped_at_max_inject(monkeypatch) -> None:
     """Cap protects against over-citation; mirrors R47 budget trade-off."""
-    monkeypatch.delenv("REGENOLD_DEPLOYER_HOP", raising=False)
+    monkeypatch.delenv("REGENOLD_ONTOLOGY_HOP", raising=False)
     # All 3 deployer roots present → 6 unique hop targets available,
     # but the cap holds the total injection to MAX_INJECT (3).
     cands = ["Article 26", "Article 27", "Article 50"]
-    out = _apply_deployer_hop(cands, "role_obligations", "deployer Q")
+    out = _apply_ontology_hops(cands, "role_obligations", "deployer Q?")
     added = len(out) - len(cands)
-    assert added <= _DEPLOYER_HOP_MAX_INJECT
+    assert added <= _ONTOLOGY_HOP_MAX_INJECT
 
 
 def test_deployer_hop_returns_new_list_not_mutated(monkeypatch) -> None:
     """Must not mutate the input list — downstream callers may iterate it."""
-    monkeypatch.delenv("REGENOLD_DEPLOYER_HOP", raising=False)
+    monkeypatch.delenv("REGENOLD_ONTOLOGY_HOP", raising=False)
     cands = ["Article 26"]
     cands_id_before = id(cands)
     cands_snapshot = list(cands)
-    out = _apply_deployer_hop(cands, "role_obligations", "deployer Q")
+    out = _apply_ontology_hops(cands, "role_obligations", "deployer Q?")
     assert cands == cands_snapshot          # unchanged
     assert id(out) != cands_id_before        # genuinely a new list
 
 
 def test_deployer_hop_env_var_in_cache_key(monkeypatch) -> None:
-    """Flipping REGENOLD_DEPLOYER_HOP must produce a distinct cache key."""
-    monkeypatch.setenv("REGENOLD_DEPLOYER_HOP", "1")
+    """Flipping REGENOLD_ONTOLOGY_HOP must produce a distinct cache key."""
+    monkeypatch.setenv("REGENOLD_ONTOLOGY_HOP", "1")
     key_on = _engine_cache_key("deployer obligations?", None)
-    monkeypatch.setenv("REGENOLD_DEPLOYER_HOP", "0")
+    monkeypatch.setenv("REGENOLD_ONTOLOGY_HOP", "0")
     key_off = _engine_cache_key("deployer obligations?", None)
     assert key_on != key_off
 
@@ -417,9 +417,9 @@ def test_deployer_hop_map_endpoints_are_well_shaped() -> None:
     """
     import re
     art_re = re.compile(r"^Article\s+\d+(\.\d+)?$")
-    annex_re = re.compile(r"^Annex\s+[IVXLCDM]+$")
-    for src, targets in _DEPLOYER_HOP_MAP.items():
-        assert art_re.match(src), f"bad source key {src!r}"
+    annex_re = re.compile(r"^Annex\s+[IVXLCDM]+(?:\.\d+)?$")
+    for src, targets in _ONTOLOGY_HOP_MAP.items():
+        assert art_re.match(src) or annex_re.match(src), f"bad source key {src!r}"
         assert isinstance(targets, list) and targets, f"empty targets for {src!r}"
         for t in targets:
             assert art_re.match(t) or annex_re.match(t), f"bad target {t!r}"

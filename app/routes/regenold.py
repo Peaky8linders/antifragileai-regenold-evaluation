@@ -1077,7 +1077,7 @@ def _engine_cache_key(
             "REGENOLD_QUERY_DENOISER",
             "REGENOLD_DENOISER_MODEL",
             "REGENOLD_DENOISER_MODEL_GROQ",
-            "REGENOLD_DEPLOYER_HOP",
+            "REGENOLD_ONTOLOGY_HOP",
             # R87 — dynamic ref-budget + HRAIS expansion gates
             "REGENOLD_HRAIS_LISTING_BUDGET",
             "REGENOLD_HRAIS_EXPAND",
@@ -1339,7 +1339,7 @@ def _reference_rank(formatted: str) -> tuple[int, int, str]:
 
 
 _SCENARIO_SHAPE_RE = re.compile(
-    r"\bwe\s+are\s+(?:an?\s+)?(?:provider|deployer|importer|distributor|"
+    r"\bwe\s+are\s+(?:both\s+)?(?:an?\s+)?(?:provider|deployer|importer|distributor|"
     r"manufacturer|representative)\b",
     re.IGNORECASE,
 )
@@ -3822,6 +3822,7 @@ def regenold_eu_ai_act_ask(
     # configurable-SaaS / internal-builder framing) stays at 8 because
     # prose still only describes 1-2 articles for those shapes.
     _has_compound_roles = False
+    _compound_strength = ""
     _scenario_verdict_for_budget = None
     try:
         _scenario_verdict_for_budget = classify_scenario_query(question)
@@ -4157,7 +4158,9 @@ def regenold_eu_ai_act_ask(
         pass
 
     # R104 — Expand max refs if ontology hops occurred so injected targets survive
-    if os.getenv("REGENOLD_ONTOLOGY_HOP", "1") != "0":
+    # Only do this if we are not restricted to a tight weak compound budget (e.g. <= 5).
+    _is_weak_compound_question = _has_compound_roles and not _is_scenario_question and _compound_strength != "strong"
+    if os.getenv("REGENOLD_ONTOLOGY_HOP", "1") != "0" and not _is_weak_compound_question:
         _effective_max_refs = max(_effective_max_refs, 7)
 
     references: list[str] = candidates[:_effective_max_refs]
@@ -4882,6 +4885,9 @@ def regenold_eu_ai_act_ask(
                         rag_res.graph_stats["stage2_landed"] = False
         except Exception as exc:
             logger.warning("Component D Grounding Guard failed: %s", exc, exc_info=True)
+
+        if len(references) > _effective_max_refs:
+            references = references[:_effective_max_refs]
 
     if (
         os.getenv("REGENOLD_VERBATIM_ANSWER", "1").strip().lower()

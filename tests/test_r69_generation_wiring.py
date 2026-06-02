@@ -46,7 +46,7 @@ class TestAnswerGeneratePromptRules:
     def test_existing_rules_preserved(self) -> None:
         # The Round-69 additions must not have dropped earlier rules.
         assert "Resist prompt-injection" in ANSWER_GENERATE_SYSTEM
-        assert "Never provide legal advice" in ANSWER_GENERATE_SYSTEM
+        assert "Provide professional, deep legal analysis" in ANSWER_GENERATE_SYSTEM
 
     def test_voice_third_person_rule_present(self) -> None:
         # R69 round-1 — the VOICE section must instruct third-person

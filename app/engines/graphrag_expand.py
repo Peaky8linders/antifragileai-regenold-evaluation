@@ -230,7 +230,7 @@ _SCENARIO_SHAPE_RE = re.compile(
     # ``input data:`` / ``domain:`` because ``:`` ↔ space isn't a word
     # boundary.
     r"(?:"
-    r"\b(?:we\s+are\s+(?:a|an|the)|i\s+am\s+(?:a|an|the)|"
+    r"\b(?:we\s+are\s+(?:both\s+)?(?:a|an|the)?|i\s+am\s+(?:a|an|the)|"
     r"our\s+(?:company|team|organisation|firm|startup|platform|service)\s+is|"
     r"intended\s+use)\b"
     r"|"

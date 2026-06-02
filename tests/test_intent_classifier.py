@@ -30,9 +30,9 @@ def _reset() -> None:
 
 
 def test_classifier_returns_none_when_wrapper_disabled(monkeypatch) -> None:
-    """No ``OPENAI_API_BASE`` / ``OPENAI_API_KEY`` → instant ``None``."""
-    monkeypatch.delenv("OPENAI_API_BASE", raising=False)
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    """Wrapper explicitly disabled -> instant None."""
+    import app.llm.intent_classifier
+    monkeypatch.setattr(app.llm.intent_classifier, "is_openai_wrapper_enabled", lambda: False)
     assert not ic.is_intent_enabled()
     assert ic.classify_intent("What does Art. 13 require?") is None
 

@@ -116,13 +116,16 @@ def test_groq_singleton_independent_of_wrapper_singleton(monkeypatch) -> None:
 # ── _resolve_intent_provider ─────────────────────────────────────────────────
 
 
-def test_resolve_returns_none_when_no_provider_configured(monkeypatch) -> None:
+def test_resolve_returns_wrapper_when_no_provider_configured(monkeypatch) -> None:
     monkeypatch.delenv("OPENAI_API_BASE", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("REGENOLD_INTENT_PROVIDER", raising=False)
     monkeypatch.delenv("GROQ_API_KEY", raising=False)
-    assert ic._resolve_intent_provider() is None
-    assert ic.is_intent_enabled() is False
+    # With openai_wrapper_enabled returning True unconditionally, it resolves to wrapper
+    provider, model = ic._resolve_intent_provider()
+    from app.llm.openai_wrapper_provider import _OpenAIWrapperProvider
+    assert isinstance(provider, _OpenAIWrapperProvider)
+    assert ic.is_intent_enabled() is True
 
 
 def test_resolve_picks_wrapper_when_only_wrapper_configured(monkeypatch) -> None:

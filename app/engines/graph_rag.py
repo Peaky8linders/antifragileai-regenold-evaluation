@@ -3815,6 +3815,7 @@ def _claude_max_enhance_answer(
     system_description: str | None = None,
     history_turn_count: int = 1,
     is_general_classification: bool = False,
+    force_provider: str | None = None,
 ) -> str | None:
     """Stage-2: polish the KG-grounded answer via the Claude Max proxy.
 
@@ -3969,7 +3970,7 @@ def _claude_max_enhance_answer(
         # The Stage-2 gate (:func:`_stage2_provider_enabled`) handles the
         # final on/off decision; this branch just picks WHICH call shape
         # to use when Stage-2 is on.
-        _env_provider = os.getenv("P2P_GRAPH_RAG_PROVIDER", "").strip().lower()
+        _env_provider = force_provider or os.getenv("P2P_GRAPH_RAG_PROVIDER", "").strip().lower()
         _use_anthropic_sdk = False
         _use_groq = False
         if _env_provider == "anthropic":
@@ -4198,11 +4199,30 @@ def _two_stage_generate(
         is_general_classification=_general_classification_verdict(question) is not None,
     )
     if enhanced is None:
+        try:
+            from app.llm.openai_wrapper_provider import is_groq_provider_enabled
+            if is_groq_provider_enabled() and os.getenv("P2P_GRAPH_RAG_PROVIDER", "").strip().lower() != "groq":
+                try:
+                    from app.integrations.regenold.reasoning_trace import record_note
+                    record_note("stage2_primary_failed_fallback_groq")
+                except Exception:
+                    pass
+                enhanced = _claude_max_enhance_answer(
+                    question=question,
+                    kg_answer=kg_answer,
+                    context=context,
+                    system_description=system_description,
+                    history_turn_count=history_turn_count,
+                    is_general_classification=_general_classification_verdict(question) is not None,
+                    force_provider="groq",
+                )
+        except Exception:
+            pass
+
+    if enhanced is None:
         # Wrapper call failed (network error, timeout, 429, wrapper auth
-        # error, etc.). Mark this on the context so the route knows NOT
-        # to cache this response — the failure is transient, and caching
-        # the kg_answer here would block Stage-2 retry for the lifetime
-        # of the cache entry.
+        # dead, or structural truncation). Fall back to the deterministic
+        # Stage-1 answer.
         context.stage2_call_failed = True
         return kg_answer, False
 

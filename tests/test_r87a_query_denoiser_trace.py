@@ -67,6 +67,8 @@ def test_records_no_provider_fallback(monkeypatch, trace) -> None:
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("REGENOLD_INTENT_PROVIDER", raising=False)
     monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    import app.llm.openai_wrapper_provider
+    monkeypatch.setattr(app.llm.openai_wrapper_provider, "is_openai_wrapper_enabled", lambda: False)
 
     _rewrite_multiturn_query("any?", [_mk_msg("user", "prior")])
     assert trace.query_denoiser == {
