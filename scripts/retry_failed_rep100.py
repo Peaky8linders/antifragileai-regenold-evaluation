@@ -10,7 +10,7 @@ Usage:
     py -3.12 scripts/retry_failed_rep100.py \
         --sidecar evals/bench/results/representative-100-r81-a1-live.json \
         --endpoint "https://...up.railway.app/api/v1/regenold/eu-ai-act/ask" \
-        --api-key dk5mhZqpDYhbhz-h5QNUrachCY2Eknz2nOKRwoRT-dE
+        --api-key OJ5kcypdluICC-I3FxeEZ-3fKE-Rflc3cqu1Ku1pr5I
 """
 from __future__ import annotations
 

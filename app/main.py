@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 try:
     resolve_provider(
         os.getenv("P2P_GRAPH_RAG_PROVIDER"),
-        default_when_auto="anthropic",
+        default_when_auto="openai_wrapper",
     )
 except ValueError as _exc:
     raise RuntimeError(
@@ -85,12 +85,12 @@ def _log_llm_provider_status() -> None:
         return
     provider_label = resolve_provider(
         os.getenv("P2P_GRAPH_RAG_PROVIDER"),
-        default_when_auto="anthropic",
+        default_when_auto="openai_wrapper",
     )
     if provider_label == "openai_wrapper":
         base = (
             os.getenv("OPENAI_API_BASE", "").strip()
-            or "http://127.0.0.1:8000/v1"
+            or "https://wrapper.antifragile-ai.net/v1"
         )
         logger.info(
             "regenold.startup provider=openai_wrapper endpoint=%s "
@@ -558,7 +558,7 @@ def healthz_llm() -> dict[str, object]:
 
     provider_label = resolve_provider(
         os.getenv("P2P_GRAPH_RAG_PROVIDER"),
-        default_when_auto="anthropic",
+        default_when_auto="openai_wrapper",
     )
 
     base: dict[str, object] = {
