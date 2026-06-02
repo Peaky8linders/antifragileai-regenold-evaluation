@@ -1333,10 +1333,13 @@ def augment_with_ref_descriptions(
             #    hypothetical R63-C-style `Article 53.2` paragraph
             #    reference would otherwise force-append unconditionally,
             #    bypassing the R89-A env gate by accident.
-            is_conditional_key = (
-                subpoint_clause is not None
-                and s in _ART_CONDITIONAL_DESCRIBERS
-            )
+            is_conditional_key = False
+            if subpoint_clause is not None and s in _ART_CONDITIONAL_DESCRIBERS:
+                try:
+                    trigger, _ = _ART_CONDITIONAL_DESCRIBERS[s]
+                    is_conditional_key = bool(trigger(list(user_facing_refs)))
+                except Exception:
+                    pass
             is_subpoint_key = (
                 subpoint_clause is not None
                 and not is_conditional_key
