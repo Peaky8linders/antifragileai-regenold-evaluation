@@ -57,3 +57,4 @@ _aireg_*.parquet
 # audit scratch dir + stray node deps (this is a Python repo)
 _audit/
 node_modules/
+.gstack/

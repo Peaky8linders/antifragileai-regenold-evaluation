@@ -626,6 +626,7 @@ class GraphContext:
     xrefs: list[str] = field(default_factory=list)
     semantically_relevant_statements: list[str] = field(default_factory=list)
     referenced_annexes_and_recitals: list[dict] = field(default_factory=list)
+    web_search_results: list[str] = field(default_factory=list)
 
 
 # ─── LLM Integration ────────────────────────────────────────────────────────
@@ -3893,6 +3894,13 @@ def _claude_max_enhance_answer(
             except Exception:  # noqa: BLE001 — never let xref context 500 Stage-2
                 pass
 
+        if getattr(context, "web_search_results", None):
+            user_message += (
+                "WEB SEARCH RESULTS (Supplementary Use-Case Context):\n"
+                + "\n\n".join(context.web_search_results)
+                + "\n\n"
+            )
+
         if is_general_classification:
             user_message += (
                 f"BACKGROUND RISK FRAMEWORK:\n{kg_answer}\n\n"
@@ -4189,6 +4197,19 @@ def _two_stage_generate(
             except Exception:  # noqa: BLE001 — fail-soft on trace
                 pass
             return kg_answer, False
+
+    if force_stage2:
+        _ctx_conf = _compute_confidence(context)
+        if _ctx_conf < _stage2_min_conf:
+            try:
+                from app.engines.web_search import perform_web_search
+                from app.integrations.regenold.reasoning_trace import record_note
+                results = perform_web_search(question)
+                if results:
+                    context.web_search_results = results
+                    record_note(f"stage2_supplemental_web_search_triggered={len(results)}")
+            except Exception:
+                pass
 
     enhanced = _claude_max_enhance_answer(
         question=question,
