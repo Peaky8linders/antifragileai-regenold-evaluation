@@ -4259,7 +4259,7 @@ def _two_stage_generate(
     drifted, bad_ref = _polished_prose_has_unknown_citations(enhanced, context)
     if drifted:
         logger.warning(
-            "stage2_drift_detected: prose cites %s (not in catalog) — "
+            "stage2_drift_detected: prose cites %s (not in catalog or ungrounded) — "
             "falling back to kg_answer",
             bad_ref,
         )
