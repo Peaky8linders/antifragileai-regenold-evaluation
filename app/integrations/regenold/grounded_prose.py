@@ -647,7 +647,12 @@ def _first_clause(summary: str, *, max_chars: int) -> str:
         # No usable whole sentence within the overshoot — word-cut and drop
         # any trailing dangling connective so we never end on
         # "...and." / "...to.".
-        cut = cleaned[:max_chars].rstrip(",;: ")
+        cut = cleaned[:max_chars]
+        if max_chars < len(cleaned) and cleaned[max_chars] != ' ':
+            ws = cut.rfind(" ")
+            if ws > 0:
+                cut = cut[:ws]
+        cut = cut.rstrip(",;: ")
         low = cut.lower()
         for dangler in (" and", " or", " to", " the", " of", " a", " an",
                         " with", " for", " in"):
@@ -1372,7 +1377,7 @@ def augment_with_ref_descriptions(
                         #    only when there's no em-dash / lowercase verb already.
                         bare_pattern = re.compile(r'\b' + re.escape(user_ref) + r'\b(?!\s*(?:—|requires|mandates|prohibits|classifies|establishes|lays|specifies|grants))')
 
-                        if parenthesized_pattern.search(answer):
+                        if not is_covered and parenthesized_pattern.search(answer):
                             answer = parenthesized_pattern.sub(f"({natural})", answer, count=1)
                             clauses_added += 1
                             replaced_inline = True
