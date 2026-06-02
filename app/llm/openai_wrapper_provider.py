@@ -102,14 +102,10 @@ def _parse_retry_after(header_value: str | None) -> float:
 
 
 def is_openai_wrapper_enabled() -> bool:
-    """The wrapper is enabled when any non-empty base URL OR a non-default
-    OPENAI_API_KEY is present. We don't network-probe at import time —
-    callers will hit ``error`` on a missing endpoint.
+    """The wrapper is enabled by default. We default to the Cloudflare named
+    tunnel for the Claude Max subscription path.
     """
-    return bool(
-        os.getenv("OPENAI_API_BASE", "").strip()
-        or os.getenv("OPENAI_API_KEY", "").strip()
-    )
+    return True
 
 
 class _OpenAIWrapperProvider:
@@ -131,7 +127,7 @@ class _OpenAIWrapperProvider:
     ) -> None:
         self._base_url = (
             (base_url or os.getenv("OPENAI_API_BASE", "")).strip().rstrip("/")
-            or "http://127.0.0.1:8000/v1"
+            or "https://wrapper.antifragile-ai.net/v1"
         )
         self._api_key = api_key or os.getenv("OPENAI_API_KEY", "dummy")
         # 60 s default — Claude Sonnet 4.6 Stage-2 polish through the

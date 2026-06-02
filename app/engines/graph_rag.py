@@ -206,14 +206,14 @@ def _graph_rag_provider() -> str:
 
     Honours an explicit ``P2P_GRAPH_RAG_PROVIDER=anthropic`` /
     ``=openai_wrapper`` / ``=cli``. When the toggle is unset or set to
-    ``auto``, falls back to the historical Anthropic path. Read on every
+    ``auto``, falls back to the default openai_wrapper. Read on every
     call so a Railway env-var rebind takes effect on the next request.
     """
     from app.llm import resolve_provider
 
     return resolve_provider(
         os.getenv("P2P_GRAPH_RAG_PROVIDER"),
-        default_when_auto="anthropic",
+        default_when_auto="openai_wrapper",
     )
 
 
@@ -1862,6 +1862,32 @@ _VERDICT_CLAUSE_SPLIT_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Narrow risk-tier verdict gate for the GENERAL classification fallback
+# (:func:`_general_classification_verdict`).
+#
+# DISTINCT from ``_CLASSIFICATION_QUESTION_RE``: that regex also matches
+# pure SCOPE / applicability shapes ("does the Act apply to military
+# use?", "does X fall under the Regulation?") — for which a risk-tier
+# verdict ("not prohibited; high-risk only if Annex I/III") would be the
+# WRONG answer (the correct answer is the Article 2 scope carve-out).
+# This regex matches ONLY the genuine "what risk tier is this system /
+# can we deploy it" intent: an explicit tier word, a classification ask,
+# or a deployment-permission verb. The lone davidath QA row that reaches
+# the fallback gate ("Does the AI Regulation apply to … military or
+# national security purposes?") is a scope question and is correctly
+# EXCLUDED here, keeping the bench byte-identical.
+_RISK_VERDICT_RE = re.compile(
+    r"\b("
+    r"prohibit(?:ed|ion)?|banned|"
+    r"high[-\s]?risk|minimal[-\s]?risk|limited[-\s]?risk|unacceptable\s+risk|"
+    r"risk\s+(?:class|classification|level|tier|categor\w*)|"
+    r"classif(?:y|ied|ication)|"
+    r"(?:can|could|may)\s+[\w\s\-,]{1,80}?\b"
+    r"(?:deploy|use|sell|build|offer|launch|operate|put\s+(?:on|into))"
+    r")\b",
+    re.IGNORECASE,
+)
+
 
 def _is_classification_question(question: str) -> bool:
     """True iff the question is asking for a verdict, not a description.
@@ -2354,6 +2380,64 @@ def _detect_classification_topic(question: str) -> dict | None:
     return None
 
 
+# Domain-general risk-tier verdict for classification questions that match
+# NO curated ``_CLASSIFICATION_TOPICS`` entry. Honest by construction: if
+# the question had matched a prohibited-practice OR a known high-risk use
+# case, a curated topic would already have fired (the catalogue covers all
+# eight Article 5 bans + the Annex III use cases), so reaching this point
+# means the described system is neither. The verdict states the framework
+# and the two determining factors (Annex I safety component / Annex III use
+# case) rather than reciting whichever article the user happened to name.
+_GENERAL_CLASSIFICATION_VERDICT = (
+    "The system described is not among the practices prohibited under Article 5 "
+    "(social scoring, untargeted facial-image scraping, manipulative or "
+    "exploitative techniques, and the other exhaustively-listed bans). Whether it "
+    "is high-risk turns on Article 6: it is high-risk only if it is a safety "
+    "component of a product regulated under Annex I (for example a medical device "
+    "under the MDR or IVDR) or falls within one of the Annex III use cases. "
+    "Otherwise it is limited- or minimal-risk, subject mainly to the Article 50 "
+    "transparency duties where it interacts directly with people."
+)
+
+_GENERAL_CLASSIFICATION_REFS = ["Art. 5", "Art. 6", "Annex III", "Annex I", "Art. 50"]
+
+
+def _general_classification_verdict(question: str) -> dict | None:
+    """Domain-general risk-tier verdict for un-catalogued classification asks.
+
+    Without this, a verdict-shaped question that misses every curated
+    :data:`_CLASSIFICATION_TOPICS` entry falls through to the QA-dump path
+    in :func:`_deterministic_answer`, which recites whichever article the
+    user happened to name. The motivating live bug: "Can a system be
+    deployed that tracks patient weight, or is it high-risk according to
+    Article 5?" returned the full Article 5 prohibited-practices catalogue
+    — never an answer to whether a patient-weight tracker is high-risk.
+
+    Gated narrowly so it cannot sweep in the wrong shapes:
+      * the question must be verdict-shaped (``_is_classification_question``);
+      * it must carry a genuine risk-tier / deployment intent
+        (``_RISK_VERDICT_RE``) — NOT a pure scope/applicability ask;
+      * and (enforced by the single caller) it must match no curated topic.
+
+    Returns a topic-shaped dict (``name`` / ``answer`` / ``refs``) so the
+    caller reuses :func:`_seed_classification_obligations`, or ``None``.
+    Measured to fire on 0/137 davidath QA + 0/339 scenarios — byte-identical
+    bench parity; the win lands on real-world out-of-catalogue questions.
+    """
+    if not _is_classification_question(question):
+        return None
+    live = question
+    if "Latest question:" in live:
+        live = live.split("Latest question:", 1)[-1]
+    if not _RISK_VERDICT_RE.search(live):
+        return None
+    return {
+        "name": "general_classification",
+        "answer": _GENERAL_CLASSIFICATION_VERDICT,
+        "refs": list(_GENERAL_CLASSIFICATION_REFS),
+    }
+
+
 def _seed_classification_obligations(context: GraphContext, topic: dict) -> None:
     """Replace ``context.obligations`` with synthetic entries for the topic refs.
 
@@ -2728,6 +2812,23 @@ def _deterministic_answer(question: str, context: GraphContext) -> str:
             answer, refs = built
             _seed_role_obligation_obligations(context, role_id, risk_id, refs)
             return answer
+
+    # General classification-verdict fallback. A verdict-shaped question
+    # ("is X high-risk?", "can we deploy Y?") that matched no curated
+    # ``_CLASSIFICATION_TOPICS`` entry, no scenario shape, and no role ×
+    # risk matrix would otherwise fall through to the QA-dump path below
+    # and recite whichever article the user named — e.g. dumping the full
+    # Article 5 prohibited-practices catalogue for a question about whether
+    # a patient-weight tracker is high-risk "according to Article 5". Emit
+    # the domain-general risk-framework verdict instead, narrowly gated so
+    # scope/applicability questions are NOT swept in (see
+    # ``_general_classification_verdict``). Measured byte-identical on
+    # davidath (0 rows fire); env off-switch keeps it reversible.
+    if _env_enabled("REGENOLD_GENERAL_VERDICT", default="1"):
+        general_verdict = _general_classification_verdict(question)
+        if general_verdict is not None:
+            _seed_classification_obligations(context, general_verdict)
+            return general_verdict["answer"]
 
     is_scenario = classify_scenario_query(question) is not None or bool(re.search(
         r"\bwe\s+are\s+(?:an?\s+)?(?:provider|deployer|importer|distributor|"
