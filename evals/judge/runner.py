@@ -58,6 +58,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
+from dotenv import load_dotenv
+load_dotenv()
+
 from evals.judge.prompts import AXES, render
 
 # ── Article-summary lookup (for the refs-faithfulness prompt) ───────────
@@ -233,7 +236,7 @@ _groq_last_call_time = 0.0
 # The 8B instant model gives 20k TPM → ~16 rows before a 1-min window resets.
 # With a 4-second inter-call sleep: 15 calls/min × 300 tok = 4,500 TPM < 20k. ✓
 _GROQ_DEFAULT_MODEL = "llama-3.1-8b-instant"
-_GROQ_INTER_REQUEST_SLEEP = 4.0  # seconds — 15 RPM × 300 tok ≈ 4,500 TPM
+_GROQ_INTER_REQUEST_SLEEP = 2.0  # seconds — 30 RPM × 300 tok ≈ 9,000 TPM
 
 def _rate_limit_groq() -> None:
     global _groq_last_call_time
@@ -508,6 +511,20 @@ def _judge_row(
             result["_attempts"] = attempts
             result["_retried_errors"] = retried_errors
             row_retries[axis] = retried_errors
+            
+        if axis == "correctness" and not result.get("judge_error"):
+            try:
+                c = int(result.get("correct", 0))
+                i = int(result.get("incorrect", 0))
+                m = int(result.get("missing", 0))
+                total = c + i + m
+                if total > 0:
+                    result["factual_score"] = round(c / total, 4)
+                else:
+                    result["factual_score"] = 0.0
+            except (ValueError, TypeError):
+                result["factual_score"] = 0.0
+
         verdicts[axis] = result
     return {
         "id": row.get("id"),
@@ -571,6 +588,9 @@ def _aggregate_judge(rows: list[dict[str, Any]]) -> dict[str, Any]:
         fails = 0
         errors = 0
         modes: dict[str, int] = {}
+        sum_factual_score = 0.0
+        factual_score_count = 0
+
         for r in rows:
             v = (r.get("verdicts") or {}).get(axis) or {}
             if v.get("judge_error"):
@@ -585,6 +605,11 @@ def _aggregate_judge(rows: list[dict[str, Any]]) -> dict[str, Any]:
                 modes[mode] = modes.get(mode, 0) + 1
             else:
                 errors += 1
+                
+            if axis == "correctness" and "factual_score" in v:
+                sum_factual_score += v["factual_score"]
+                factual_score_count += 1
+
         # Top-N failure modes for the per-axis report
         top_modes = sorted(modes.items(), key=lambda kv: -kv[1])[:10]
         per_axis[axis] = {
@@ -595,6 +620,11 @@ def _aggregate_judge(rows: list[dict[str, Any]]) -> dict[str, Any]:
             "pass_rate": round(passes / total, 4) if total else 0.0,
             "top_failure_modes": top_modes,
         }
+        
+        if axis == "correctness":
+            mean_factual = round(sum_factual_score / factual_score_count, 4) if factual_score_count else 0.0
+            per_axis[axis]["mean_factual_score"] = mean_factual
+
     return per_axis
 
 
@@ -663,9 +693,9 @@ def run(
     payload = json.loads(bench_sidecar.read_text(encoding="utf-8"))
 
     # Flatten rows from the V2 sidecar (tricky + multiturn) OR the davidath
-    # sidecar (qa + scenarios). We handle both shapes.
+    # sidecar (qa + scenarios) OR the GraphRAG-sidecar (ground_truth + no_ground_truth). We handle all shapes.
     rows: list[dict[str, Any]] = []
-    for bucket_key in ("tricky", "multiturn", "qa", "scenarios", "rows"):
+    for bucket_key in ("tricky", "multiturn", "qa", "scenarios", "rows", "ground_truth", "no_ground_truth"):
         bucket = payload.get(bucket_key)
         if isinstance(bucket, dict):
             rows.extend(bucket.get("rows") or [])
@@ -740,6 +770,8 @@ def _format(summary: dict[str, Any]) -> str:
             f"error={a.get('error', 0)} "
             f"pass_rate={a.get('pass_rate', 0.0)}"
         )
+        if "mean_factual_score" in a:
+            out.append(f"  mean_factual_score={a['mean_factual_score']}")
         top = a.get("top_failure_modes") or []
         if top:
             out.append("  top failure modes:")

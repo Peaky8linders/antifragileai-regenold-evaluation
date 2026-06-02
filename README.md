@@ -2,7 +2,13 @@
 
 Grounded EU AI Act Q&A — a FastAPI service that answers regulatory questions with verifiable Article / Annex references against EUR-Lex 2024/1689 and the May 2026 Digital Omnibus political agreement.
 
+It mounts both the partner integration endpoint (`/api/v1/regenold/eu-ai-act/ask`) and a human-facing interactive compliance chat assistant UI called **Lexy** at the root path (`/`).
+
+---
+
 ## Architecture
+
+The service implements a hybrid, additive neuro-symbolic retrieval and generation pipeline. The entire system is designed to be fail-soft: if downstream graph databases or LLMs are unreachable or error out, the pipeline automatically falls back to an ultra-fast deterministic rule-based path to guarantee high-availability answers.
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
@@ -89,16 +95,27 @@ Grounded EU AI Act Q&A — a FastAPI service that answers regulatory questions w
                   └─────────────────────┘
 ```
 
-The deterministic path always lands an answer; the LLM polish is opportunistic. The route never 500s on a downed LLM, a degraded Neo4j connection, or a missing graph asset — every external dependency is fail-soft with a deterministic substitute.
+### Core Pipeline Stages
 
-## Wire contract
+1. **Scope Gate (`app/integrations/regenold/scope.py`)**: Protects the system from prompt injections and filters out-of-regulation prompts. It uses prior-turn anchors and coreference rescue, ensuring out-of-scope refusals are never flipped.
+2. **Query De-Noiser (`app/routes/regenold.py`)**: Rewrites multi-turn conversation logs into a dense standalone search query under 1.0s, eliminating conversational bloat and keeping term-frequency metrics sharp.
+3. **Intent Classifier (`app/llm/intent_classifier.py`)**: Classifies incoming questions into an 8-way deterministic shape (e.g. DEFINITION, BOOLEAN, SCENARIO) to drive length budgets and response templates.
+4. **Additive Retrieval (`app/data/kb_search.py`)**: Combines lexical BM25 with typed-entity Named Entity Recognition (NER), SVD-128 dense TF-IDF recall, and Neo4j PageRank / PathRAG cross-reference expansions.
+5. **Neuro-Symbolic Engine (`app/engines/graph_rag.py`)**: Integrates a deterministic Stage-1 parser with the CLARA logical engine (processing 37 boolean compliance tags) and gates prohibited practices (Art. 5). A Stage-2 LLM pass provides final professional polish and verbatim citation alignment.
+6. **Post-Engine Refinement (`app/routes/regenold.py`)**: Deduplicates hierarchical references, applies tone and style guards, strips preambles, and serves answers from a confidence-gated LRU cache.
 
+---
+
+## Wire Contract
+
+### Request
 ```bash
-curl -X POST https://<host>/api/v1/regenold/eu-ai-act/ask \
+curl -X POST http://localhost:8002/api/v1/regenold/eu-ai-act/ask \
   -H "Content-Type: application/json" \
   -d '{"messages":[{"role":"user","content":"What does Art. 13 require?"}]}'
 ```
 
+### Response
 ```json
 {
   "answer": "Article 13(1) requires high-risk AI providers to design their systems to be sufficiently transparent for deployers to understand the system's output and use it appropriately. Article 13(2) requires accompanying instructions for use that include the provider's identity, the system's intended purpose, its capabilities and limitations, expected lifetime, and necessary maintenance.",
@@ -107,80 +124,118 @@ curl -X POST https://<host>/api/v1/regenold/eu-ai-act/ask \
 }
 ```
 
-References are strict: `Article N(.subpoint)*` (Arabic) or `Annex X(.subpoint)*` (Roman). Validated by `_ARTICLE_OUTPUT_RE` / `_ANNEX_OUTPUT_RE` in [`app/integrations/regenold/models.py`](app/integrations/regenold/models.py).
+*Note: Append `?include_reasoning=true` to the URL to receive a full step-by-step diagnostic trace in the `reasoning` block.*
 
-Append `?include_reasoning=true` to surface a structured reasoning trace (scope verdict, anchors used, retrieval path, Stage-2 polish state, engine confidence, cache hit) — useful for audit, debugging, and the LLM-as-judge harness.
+---
 
-## Engine modes
+## Local Setup and Running the UI
 
-| Mode | Behaviour | Use case |
-|---|---|---|
-| Deterministic | Pure rule-based, sub-10 ms p50 | Default; always available; never fails |
-| Anthropic SDK direct | Stage-1 + Stage-2 polish via the Anthropic API | Pro-tier production deploys |
-| Claude Max wrapper | Stage-2 polish via local `claude-code-openai-wrapper` | Development; Max-subscription production |
-| Groq Stage-0 / De-noiser | Llama 3.3 70B for intent + multi-turn query rewrite | Cost-optimised always-on |
+Follow these steps to set up the codebase and run the Lexy compliance interface locally.
 
-The active mode is resolved per request — the route falls back to the next-best mode on any provider error.
-
-## Performance posture
-
-| Surface | Coverage |
-|---|---|
-| EU AI Act articles | 113 / 113 (EUR-Lex full prose) |
-| Annexes | 13 / 13 |
-| Recitals | 180 |
-| Art. 3 definitions | 68 |
-| KB obligation stubs | 126 / 126 (no placeholders) |
-| Typed cross-reference edges | 351 (Neo4j) |
-| Test suite | 2700+ unit tests + 1 skip |
-| Davidath benchmark | 476 items (137 QA + 339 scenarios) |
-| Out-of-scope regression set | 21 / 21 hard refusals preserved |
-
-The system has been measured against four benchmarks: the davidath EU AI Act benchmark, the AIReg-Bench HRAIS subset, the Stanford CRFM AIR-Bench `eu_mandatory` subset, and an internal V2 probe of tricky / multi-turn / out-of-scope shapes. The deterministic pipeline saturates BM25 recall on the davidath corpus; quality lifts on paraphrased and multi-turn queries come from the LLM-driven Stage-0 (intent + query rewrite) and Stage-2 (polish) paths.
-
-## Quick start
-
-```powershell
-# Python 3.12+
+### Step 1: Environment and Virtualenv
+The service requires Python 3.12+. Set up a virtual environment:
+```bash
+# Windows
 py -3.12 -m venv .venv
-.venv\Scripts\python.exe -m pip install -e .
+.venv\Scripts\activate
 
-# Run (deterministic mode — no LLM required)
-.venv\Scripts\python.exe -m uvicorn app.main:app --reload --port 8002
-
-# Full test suite
-.venv\Scripts\python.exe -m pytest -q
-
-# Reproducible competition benchmark (476 items)
-.venv\Scripts\python.exe -m evals.bench.runner --label baseline
-
-# Out-of-scope regression probe (21 hardened refusal shapes)
-.venv\Scripts\python.exe -m evals.regenold.runner_v2 --local --probe-oos --label oos
-
-# Local scenario suite (276 categorised scenarios)
-.venv\Scripts\python.exe -m evals.regenold.runner
+# macOS / Linux
+python3.12 -m venv .venv
+source .venv/bin/activate
 ```
 
-## Where to look
+### Step 2: Install Dependencies
+Install the package and all engine requirements in editable mode:
+```bash
+pip install -e .
+```
 
-| Concern | Module |
+### Step 3: Configure Environment Variables
+Copy the template and adjust env variables as needed. The pipeline uses environment keys like `P2P_GRAPH_RAG_PROVIDER` to resolve LLM calls, falling back gracefully to the offline deterministic path if none are configured.
+```bash
+cp .env.example .env
+```
+
+### Step 4: Run the UI and API locally
+Launch the development server with `uvicorn`:
+```bash
+python -m uvicorn app.main:app --reload --port 8002
+```
+
+Once running:
+- **Interactive Web UI (Lexy)**: Open `http://localhost:8002/` in your browser. This serves the premium chat-assistant dashboard which persists your custom configuration client-side in `localStorage`.
+- **API Endpoint**: Accessible at `http://localhost:8002/api/v1/regenold/eu-ai-act/ask`.
+- **Interactive API Documentation**: Reachable at `http://localhost:8002/docs`.
+- **Health Probes**: `/healthz` for basic uptime, `/healthz/llm` for downstream model checks, and `/healthz/graph` for database stats.
+
+---
+
+## Evaluation and Benchmarks
+
+The system is continuously scored against official benchmarks using token-overlap and LLM-as-a-judge factual consistency evaluations.
+
+### 1. GraphRAG-Paper Benchmark (n=30 Ground Truth)
+This benchmark includes medtech scenarios (e.g. robotic surgery, patient triage) and advanced PDF examples.
+
+| Axis | r103-live | Baseline | Improvement |
+| --- | ---: | ---: | ---: |
+| **Ref. Correctness (Loose)** | **0.946** | 0.500 | **+0.446** |
+| **Ref. Correctness (Strict)** | **0.649** | 0.420 | **+0.229** |
+| **Keyword Recall** | **0.580** | 0.130 | **+0.450** |
+| **Regulatory Tone** | **1.000** | 1.000 | *Stable (Perfect)* |
+| **Refusal Rate** | **0.000** | 0.000 | *Stable (Perfect)* |
+| **Latency p50** | **20.5 s** | — | — |
+
+### 2. Representative 100 Benchmark (r103-live)
+A 100-row stratified live evaluation drawn from the 476-row competition benchmark:
+
+- **Factual Accuracy (LLM Judge Pass Rate)**: **0.6500** (65% of evaluated rows passed strict correctness criteria)
+- **Factual Consistency Score (LLM Judge Mean)**: **0.7554** (Factual consistency ratio: `correct / (correct + incorrect + missing)`)
+- **Reference Accuracy (LLM Judge Pass Rate)**: **0.7800** (78% of evaluated rows cited highly accurate provisions)
+- **Regulatory Tone (LLM Judge Pass Rate)**: **0.5400** (54% of evaluated rows satisfied strict tone compliance)
+- **Conciseness (LLM Judge Pass Rate)**: **0.0000** (0% of evaluated rows satisfied length bounds due to verbatim provisions and detailed obligation stubs)
+- **Ref. Correctness (Loose, Token overlap)**: **0.6150**
+- **Ref. Correctness (Strict, Token overlap)**: **0.5729**
+- **Ref. Conciseness (Token overlap)**: **0.5614**
+- **Ans. Correctness (Strict, Token overlap)**: **0.2681** (Jaccard overlap baseline)
+- **Latency p50**: **18.2 s**
+
+### Running Evals Locally
+
+You can execute the automated evaluation and check progress locally using the following scripts:
+
+```bash
+# Run the reproducible 476-item competition benchmark
+python -m evals.bench.runner --label baseline
+
+# Run the out-of-scope regression check (21 hard refusal probes)
+python -m evals.regenold.runner_v2 --local --probe-oos --label oos
+
+# Run the local scenario suite (276 categorized medtech & general scenarios)
+python -m evals.regenold.runner
+
+# Run the LLM-as-a-judge factual consistency runner
+python -m evals.judge.runner --bench-sidecar evals/bench/results/representative-100-r103-live.json --label r103-live-factual
+```
+
+---
+
+## Where to Look
+
+| Feature | Module |
 |---|---|
-| Wire contract + models | [`app/integrations/regenold/models.py`](app/integrations/regenold/models.py) |
-| Route + post-engine pipeline | [`app/routes/regenold.py`](app/routes/regenold.py) |
-| Scope gate | [`app/integrations/regenold/scope.py`](app/integrations/regenold/scope.py) |
-| Engine + Stage-1/2 | [`app/engines/graph_rag.py`](app/engines/graph_rag.py) |
-| BM25 + entity-aware retrieval | [`app/data/kb_search.py`](app/data/kb_search.py), [`app/engines/entity_extractor.py`](app/engines/entity_extractor.py) |
-| Dense embeddings + reranking | [`app/engines/embeddings_index.py`](app/engines/embeddings_index.py), [`app/engines/turboquant_index.py`](app/engines/turboquant_index.py) |
-| Neo4j PPR + PathRAG | [`app/engines/graph_ppr.py`](app/engines/graph_ppr.py), [`app/engines/path_rag.py`](app/engines/path_rag.py) |
-| CLARA neuro-symbolic verdict | [`app/engines/clara_logic.py`](app/engines/clara_logic.py) |
-| Scenario classifier | [`app/engines/scenario_classifier.py`](app/engines/scenario_classifier.py) |
-| Sub-point emitter | [`app/data/subpoint_emitter.py`](app/data/subpoint_emitter.py) |
-| Tone guard + preamble strip | [`app/integrations/regenold/tone_guard.py`](app/integrations/regenold/tone_guard.py), [`app/integrations/regenold/answer_normaliser.py`](app/integrations/regenold/answer_normaliser.py) |
-| KB (113 articles + 13 annexes) | [`app/data/kb.py`](app/data/kb.py), [`app/data/article_existence.py`](app/data/article_existence.py) |
-| Audit chain | [`app/evidence/store.py`](app/evidence/store.py) |
-| Evaluation harnesses | [`evals/bench/`](evals/bench/), [`evals/regenold/`](evals/regenold/), [`evals/judge/`](evals/judge/) |
-| Partner-facing docs | [`docs/partners/regenold/`](docs/partners/regenold/) |
-| Change history | [`CHANGELOG.md`](CHANGELOG.md), [`CLAUDE.md`](CLAUDE.md) |
+| API Contract & Models | [`app/integrations/regenold/models.py`](app/integrations/regenold/models.py) |
+| Route Handling | [`app/routes/regenold.py`](app/routes/regenold.py) |
+| Scope & Refusal Gates | [`app/integrations/regenold/scope.py`](app/integrations/regenold/scope.py) |
+| Web UI Interface | [`app/web_ui.py`](app/web_ui.py) |
+| GraphRAG Engine | [`app/engines/graph_rag.py`](app/engines/graph_rag.py) |
+| Additive KB Search | [`app/data/kb_search.py`](app/data/kb_search.py) |
+| Neo4j PPR & PathRAG | [`app/engines/graph_ppr.py`](app/engines/graph_ppr.py), [`app/engines/path_rag.py`](app/engines/path_rag.py) |
+| Tone & Style Normalizers | [`app/integrations/regenold/tone_guard.py`](app/integrations/regenold/tone_guard.py), [`app/integrations/regenold/answer_normaliser.py`](app/integrations/regenold/answer_normaliser.py) |
+| Knowledge Base Data | [`app/data/kb.py`](app/data/kb.py) |
+| Evaluation Harnesses | [`evals/bench/`](evals/bench/), [`evals/judge/`](evals/judge/) |
+
+---
 
 ## License
 
