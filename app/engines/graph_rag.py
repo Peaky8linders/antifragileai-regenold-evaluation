@@ -3814,6 +3814,7 @@ def _claude_max_enhance_answer(
     context: GraphContext | None = None,
     system_description: str | None = None,
     history_turn_count: int = 1,
+    is_general_classification: bool = False,
 ) -> str | None:
     """Stage-2: polish the KG-grounded answer via the Claude Max proxy.
 
@@ -3891,24 +3892,34 @@ def _claude_max_enhance_answer(
             except Exception:  # noqa: BLE001 — never let xref context 500 Stage-2
                 pass
 
-        user_message += (
-            f"KNOWLEDGE GRAPH ANSWER (draft):\n{kg_answer}\n\n"
-            "Refine the knowledge-graph draft above into a clear, concise "
-            "compliance response. Cite only articles, annexes and "
-            "obligations that appear in the EU AI ACT REFERENCES block, "
-            "and make sure every article or annex you cite is described "
-            "in the prose — state in a few words what it requires, never "
-            "cite a bare number. Lead with a DIRECT verdict (for a yes/no or "
-            "either/or question, the first clause states the answer — 'Not "
-            "always', 'Only when …', 'Yes, when …' — then the conditions). "
-            "For a practice restricted only in certain contexts, state both "
-            "the prohibited context AND its treatment elsewhere (high-risk "
-            "under Article 6 / Annex III, or Article 50 transparency), and "
-            "name any carve-out explicitly. AT MOST 4 sentences, preferring 3 "
-            "when they fully answer; use a 4th only for a distinct substantive "
-            "point (a complementary risk tier, an exception, or a "
-            "cross-reference), never filler."
-        )
+        if is_general_classification:
+            user_message += (
+                f"BACKGROUND RISK FRAMEWORK:\n{kg_answer}\n\n"
+                "The user is asking a general classification question about a specific AI system. "
+                "Provide a professional, custom legal analysis of the system described in the question against the EU AI Act risk tiers. "
+                "Evaluate whether it falls under prohibited practices (Article 5), high-risk (Article 6, Annex I, Annex III), or limited/minimal risk (Article 50). "
+                "Do NOT use a prefabricated or generic response. Tailor your answer strictly to the user's specific use case. "
+                "Cite only articles and annexes from the EU AI ACT REFERENCES block.\n"
+            )
+        else:
+            user_message += (
+                f"KNOWLEDGE GRAPH ANSWER (draft):\n{kg_answer}\n\n"
+                "Refine the knowledge-graph draft above into a clear, concise "
+                "compliance response. Cite only articles, annexes and "
+                "obligations that appear in the EU AI ACT REFERENCES block, "
+                "and make sure every article or annex you cite is described "
+                "in the prose — state in a few words what it requires, never "
+                "cite a bare number. Lead with a DIRECT verdict (for a yes/no or "
+                "either/or question, the first clause states the answer — 'Not "
+                "always', 'Only when …', 'Yes, when …' — then the conditions). "
+                "For a practice restricted only in certain contexts, state both "
+                "the prohibited context AND its treatment elsewhere (high-risk "
+                "under Article 6 / Annex III, or Article 50 transparency), and "
+                "name any carve-out explicitly. AT MOST 4 sentences, preferring 3 "
+                "when they fully answer; use a 4th only for a distinct substantive "
+                "point (a complementary risk tier, an exception, or a "
+                "cross-reference), never filler."
+            )
         try:
             max_tokens = settings.graph_rag.max_tokens
         except Exception:  # noqa: BLE001
@@ -3917,8 +3928,16 @@ def _claude_max_enhance_answer(
         # R51 — complex-question routing. The complexity gate runs on
         # the live question + history depth. When it fires AND the
         # deploy has wired ``GraphRAGSettings.complex_model`` (e.g.
-        # ``claude-opus-4-7``) or ``complex_thinking_tokens``, the
+        # ``claude-opus-4-8``) or ``complex_thinking_tokens``, the
         # wrapper call uses those for THIS polish call only.
+        #
+        # User directive (2026-06-02): route to the complex model (Opus
+        # 4.8) when reasoning is requested via parameters, OR the question
+        # is complex, OR it bundles more than one phrase/question. The
+        # latter two are handled inside ``is_complex_question`` (it now
+        # carries the multi-phrase signal); the reasoning-requested signal
+        # is detected here via the active reasoning-trace ContextVar
+        # (``?include_reasoning=true`` activates it for the request).
         try:
             from app.engines.question_complexity import (  # noqa: PLC0415
                 is_complex_question,
@@ -3926,6 +3945,15 @@ def _claude_max_enhance_answer(
             complex_q = is_complex_question(question, history_turn_count)
         except Exception:  # noqa: BLE001
             complex_q = False
+        if not complex_q:
+            try:
+                from app.integrations.regenold.reasoning_trace import (  # noqa: PLC0415
+                    current as _current_trace,
+                )
+                if _current_trace() is not None:
+                    complex_q = True
+            except Exception:  # noqa: BLE001 — fail-soft; reasoning signal is optional
+                pass
 
         # R56 — Stage-2 provider routing. The historical
         # ``_claude_max_enhance_answer`` name is preserved for back-compat;
@@ -4056,59 +4084,60 @@ def _two_stage_generate(
     """
     kg_answer = _deterministic_answer(question, context)
 
+    force_stage2 = False
+    try:
+        from app.engines.question_complexity import is_complex_question  # noqa: PLC0415
+        if is_complex_question(question, history_turn_count):
+            force_stage2 = True
+    except Exception:  # noqa: BLE001
+        pass
+    
+    if not force_stage2:
+        try:
+            from app.integrations.regenold.reasoning_trace import current as _current_trace  # noqa: PLC0415
+            if _current_trace() is not None:
+                force_stage2 = True
+        except Exception:  # noqa: BLE001
+            pass
+
     # Classification-verdict short-circuit fired inside _deterministic_answer.
-    # Stage-2 polish would rephrase the verdict and risk diluting the binary
-    # "prohibited / high-risk / not categorical" answer the rubric scores
-    # against. Detect the same signal here and skip Stage-2 unconditionally —
-    # the curated verdict prose is already 1-4 sentences of plain language.
-    if _detect_classification_topic(question) is not None:
+    if not force_stage2 and _detect_classification_topic(question) is not None:
         return kg_answer, False
 
-    # R77 — Stage-2 polish is OFF by default. The deterministic Stage-1
-    # answer measured strictly better on every LLM-judge axis + latency
-    # in the R76 live representative-100 run. See _stage2_polish_enabled.
+    # R77 — Stage-2 polish is OFF by default.
     if not _stage2_polish_enabled():
         return kg_answer, False
 
     # R56 — accept EITHER the Max wrapper OR the Anthropic SDK direct
-    # path. The Pro-tier downgrade needs the latter to keep Stage-2
-    # polish working when the wrapper's quota tightens.
     if not _stage2_provider_enabled():
         return kg_answer, False
 
-    # R97 — adaptive routing. Under verbatim mode (default ON), the route
-    # ships verbatim EUR-Lex text and discards Stage-2 prose UNLESS the
-    # router selects SYNTHESIS — in which case the route keeps the
-    # synthesised answer (its verbatim overwrite is gated on
-    # ``stage2_landed``). The router selects SYNTHESIS for multi-turn /
-    # nuanced questions the verbatim dump cannot answer. Outside verbatim
-    # mode, preserve the historical ``_needs_stage2_enhancement`` gate
-    # byte-for-byte.
     _route_multi_turn = False
-    from app.engines.answer_router import (  # noqa: PLC0415
-        answer_router_enabled,
-        select_answer_mode,
-        verbatim_enabled,
-    )
-    if verbatim_enabled():
-        if not answer_router_enabled():
-            # REGENOLD_ANSWER_ROUTER=0 → exact R96 behaviour (verbatim
-            # never runs Stage-2). This is the A/B baseline + rollback.
+    if not force_stage2:
+        from app.engines.answer_router import (  # noqa: PLC0415
+            answer_router_enabled,
+            select_answer_mode,
+            verbatim_enabled,
+        )
+        if verbatim_enabled():
+            if not answer_router_enabled():
+                # REGENOLD_ANSWER_ROUTER=0 → exact R96 behaviour (verbatim
+                # never runs Stage-2). This is the A/B baseline + rollback.
+                return kg_answer, False
+            _decision = select_answer_mode(question, query=query,
+                                           history_turn_count=history_turn_count)
+            if not _decision.is_synthesis:
+                return kg_answer, False
+            _route_multi_turn = _decision.reason == "multi_turn"
+            try:
+                from app.integrations.regenold.reasoning_trace import (  # noqa: PLC0415
+                    record_note,
+                )
+                record_note(f"answer_route=synthesis:{_decision.reason}")
+            except Exception:  # noqa: BLE001 — fail-soft on trace
+                pass
+        elif not _needs_stage2_enhancement(question, context, query):
             return kg_answer, False
-        _decision = select_answer_mode(question, query=query,
-                                       history_turn_count=history_turn_count)
-        if not _decision.is_synthesis:
-            return kg_answer, False
-        _route_multi_turn = _decision.reason == "multi_turn"
-        try:
-            from app.integrations.regenold.reasoning_trace import (  # noqa: PLC0415
-                record_note,
-            )
-            record_note(f"answer_route=synthesis:{_decision.reason}")
-        except Exception:  # noqa: BLE001 — fail-soft on trace
-            pass
-    elif not _needs_stage2_enhancement(question, context, query):
-        return kg_answer, False
 
     # R87-E — confidence-gated Stage-2 skip.
     #
@@ -4146,7 +4175,7 @@ def _two_stage_generate(
         except ValueError:
             _mt_floor = 0.3
         _stage2_min_conf = min(_stage2_min_conf, _mt_floor)
-    if _stage2_min_conf > 0.0:
+    if _stage2_min_conf > 0.0 and not force_stage2:
         _ctx_conf = _compute_confidence(context)
         if _ctx_conf < _stage2_min_conf:
             try:
@@ -4166,6 +4195,7 @@ def _two_stage_generate(
         context=context,
         system_description=system_description,
         history_turn_count=history_turn_count,
+        is_general_classification=_general_classification_verdict(question) is not None,
     )
     if enhanced is None:
         # Wrapper call failed (network error, timeout, 429, wrapper auth
