@@ -1207,8 +1207,17 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         // throw in private-browsing / sandboxed iframes.
         const API_KEY_STORAGE = 'regenold_api_key';
         try {
-            const savedKey = localStorage.getItem(API_KEY_STORAGE);
-            if (savedKey) cfgApiKey.value = savedKey;
+            const urlParams = new URLSearchParams(window.location.search);
+            const keyParam = urlParams.get('key');
+            if (keyParam) {
+                cfgApiKey.value = keyParam.trim();
+                localStorage.setItem(API_KEY_STORAGE, keyParam.trim());
+                // Clean URL query parameters to avoid showing the key in address bar
+                window.history.replaceState({}, document.title, window.location.pathname);
+            } else {
+                const savedKey = localStorage.getItem(API_KEY_STORAGE);
+                if (savedKey) cfgApiKey.value = savedKey;
+            }
         } catch (e) { /* localStorage unavailable — field stays empty */ }
         cfgApiKey.addEventListener('change', () => {
             try { localStorage.setItem(API_KEY_STORAGE, cfgApiKey.value.trim()); } catch (e) {}
@@ -1364,15 +1373,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
             // Prepare Request parameters
             const apiKey = cfgApiKey.value.trim();
-            if (!apiKey) {
-                typingRow.parentNode.removeChild(typingRow);
-                appendMessage('assistant', '🔑 **API key required.** Paste your `X-Regenold-Api-Key` into the config field (left panel) to query the live endpoint. It is stored only in this browser.');
-                isProcessing = false;
-                btnSend.disabled = false;
-                userInput.focus();
-                return;
+            if (apiKey) {
+                try { localStorage.setItem(API_KEY_STORAGE, apiKey); } catch (e) {}
             }
-            try { localStorage.setItem(API_KEY_STORAGE, apiKey); } catch (e) {}
             const reasoningOpt = optReasoning.checked;
             const telemetryOpt = optTelemetry.checked;
 
@@ -1383,12 +1386,15 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             if (params.length > 0) url += '?' + params.join('&');
 
             try {
+                const headers = {
+                    'Content-Type': 'application/json'
+                };
+                if (apiKey) {
+                    headers['X-Regenold-Api-Key'] = apiKey;
+                }
                 const response = await fetch(url, {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Regenold-Api-Key': apiKey
-                    },
+                    headers: headers,
                     body: JSON.stringify({
                         messages: messages.map(m => ({ role: m.role, content: m.content }))
                     })

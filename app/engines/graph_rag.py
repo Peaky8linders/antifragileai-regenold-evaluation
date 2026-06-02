@@ -2438,6 +2438,36 @@ def _general_classification_verdict(question: str) -> dict | None:
     }
 
 
+def general_classification_verdict_refs(question: str) -> tuple[str, ...]:
+    """The general-verdict refs IFF :func:`_deterministic_answer` would emit
+    the general classification verdict for ``question``.
+
+    Runs the SAME early-out gate sequence as ``_deterministic_answer``
+    (Article 6(3) intercept → scenario fast-path → curated topic → role ×
+    risk matrix → general verdict) so the route and the engine never
+    diverge on whether the verdict fires. The route uses this to protect the
+    verdict's authoritative refs from R19 explicit-anchor pruning — a user
+    who names "Article 5" should not collapse the verdict's Art. 6 / Annex
+    III high-risk-classification citations down to Article 5. Returns ``()``
+    when the verdict would not fire (so the route protection is a strict
+    no-op on every other answer path, including all davidath rows).
+    """
+    if not _env_enabled("REGENOLD_GENERAL_VERDICT", default="1"):
+        return ()
+    if _detect_article_6_3_inquiry(question):
+        return ()
+    if classify_scenario_query(question) is not None:
+        return ()
+    if _detect_classification_topic(question) is not None:
+        return ()
+    if _detect_role_obligation_query(question) is not None:
+        return ()
+    verdict = _general_classification_verdict(question)
+    if verdict is None:
+        return ()
+    return tuple(verdict["refs"])
+
+
 def _seed_classification_obligations(context: GraphContext, topic: dict) -> None:
     """Replace ``context.obligations`` with synthetic entries for the topic refs.
 

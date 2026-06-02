@@ -3572,6 +3572,31 @@ def regenold_eu_ai_act_ask(
     except Exception:  # noqa: BLE001 — fail-soft, must not 500 the route
         pass
 
+    # General classification verdict — protect its authoritative refs from
+    # the R19 explicit-anchor pruner. When the engine emits the domain-
+    # general risk-tier verdict (a verdict-shaped question matching no
+    # curated topic / scenario / role path), its Art. 5 / Art. 6 / Annex
+    # III / Annex I / Art. 50 citations ARE the answer's load-bearing refs.
+    # Without protection, a question that names "Article 5" ("is a patient-
+    # weight tracker high-risk according to Article 5?") would have the
+    # pruner collapse the set to just Article 5 — the same "only picks up
+    # Art. 5" symptom the verdict was built to fix. The gate is identical to
+    # the engine's, so this fires on 0 davidath rows (byte-identical bench);
+    # protected_seeds only PRESERVE refs already in the candidate set, never
+    # add, so it is a strict no-op on every other path.
+    try:
+        from app.engines.graph_rag import (  # noqa: PLC0415
+            general_classification_verdict_refs,
+        )
+        for _gv_ref in general_classification_verdict_refs(
+            live_user_message or question
+        ):
+            _gv_user = reference_from_article_ref(_gv_ref)
+            if _gv_user and _gv_user not in _r88_protected_seeds:
+                _r88_protected_seeds.append(_gv_user)
+    except Exception:  # noqa: BLE001 — fail-soft, must not 500 the route
+        pass
+
     # Surface conversation anchors (e.g. ``Art. 5`` / ``Annex IV``
     # explicitly mentioned in the live question or a prior turn) when
     # the engine missed them — the deterministic-fallback path emits
