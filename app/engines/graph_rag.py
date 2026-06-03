@@ -2842,28 +2842,6 @@ def _detect_article_6_3_inquiry(question: str) -> bool:
 
 def _deterministic_answer(question: str, context: GraphContext) -> str:
     """Generate a structured answer without LLM, using graph data directly."""
-    
-    # GraphRAG benchmark gold/reference fast-path.
-    try:
-        from evals.regenold.scenarios_graphrag_benchmark import GROUND_TRUTH, REFERENCE_ANSWERS
-        live_q = question
-        if "Latest question:" in live_q:
-            live_q = live_q.split("Latest question:", 1)[-1]
-        q_lower = live_q.strip().lower()
-        
-        for gt in GROUND_TRUTH:
-            if gt["question"].strip().lower() == q_lower:
-                ans = REFERENCE_ANSWERS.get(gt["id"])
-                if ans:
-                    verdict = {
-                        "name": f"graphrag_benchmark_{gt['id']}",
-                        "answer": ans,
-                        "refs": gt["expected_refs"]
-                    }
-                    _seed_classification_obligations(context, verdict)
-                    return verdict["answer"]
-    except ImportError:
-        pass
     # Article 6(3) "Not-High-Risk" Exception Intercept
     if _detect_article_6_3_inquiry(question):
         verdict = {
