@@ -1400,11 +1400,11 @@ def augment_with_ref_descriptions(
                         #    only when there's no em-dash / lowercase verb already.
                         bare_pattern = re.compile(r'\b' + re.escape(user_ref) + r'\b(?!\s*(?:—|requires|mandates|prohibits|classifies|establishes|lays|specifies|grants))')
 
-                        if not is_covered and parenthesized_pattern.search(answer):
+                        if parenthesized_pattern.search(answer):
                             answer = parenthesized_pattern.sub(f"({natural})", answer, count=1)
                             clauses_added += 1
                             replaced_inline = True
-                        elif not is_covered and bare_pattern.search(answer):
+                        elif bare_pattern.search(answer):
                             answer = bare_pattern.sub(natural, answer, count=1)
                             clauses_added += 1
                             replaced_inline = True

@@ -2093,7 +2093,7 @@ _CLASSIFICATION_TOPICS: list[dict] = [
             "deferred this deadline to 2 December 2027, but the original 2026 date "
             "remains the baseline in the published text."
         ),
-        "refs": ["Art. 113", "Annex III", "Art. 26", "Art. 27", "Art. 13", "Art. 50"],
+        "refs": ["Art. 113", "Annex III", "Art. 26", "Art. 27", "Art. 13"],
     },
     # ── Predictive policing (Art. 5.1.d for profiling-based) ──────────
     {
@@ -2868,7 +2868,7 @@ def _deterministic_answer(question: str, context: GraphContext) -> str:
                 "deferred this deadline to 2 December 2027, but the original 2026 date "
                 "remains the baseline in the published text."
             ),
-            "refs": ["Art. 113", "Annex III", "Art. 26", "Art. 27", "Art. 13", "Art. 50"],
+            "refs": ["Art. 113", "Annex III", "Art. 26", "Art. 27", "Art. 13"],
         }
         _seed_classification_obligations(context, verdict)
         return verdict["answer"]
