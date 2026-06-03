@@ -157,40 +157,40 @@ SUGGESTED_QUESTIONS = [
 
 CYPHER_TEMPLATES = {
     "obligations_for_risk_level": (
-        "MATCH (o:Obligation)-[:APPLIES_AT]->(r:RiskLevel {{id: $risk_level}}) "
+        "MATCH (o:Obligation)-[:APPLIES_AT]->(r:RiskLevel {id: $risk_level}) "
         "RETURN o.id AS id, o.text AS text, o.article_ref AS article, "
         "o.paragraph_ref AS paragraph ORDER BY o.article_ref"
     ),
     "obligations_for_article": (
-        "MATCH (a:Article {{id: $article_id}})-[:REQUIRES]->(o:Obligation) "
+        "MATCH (a:Article {id: $article_id})-[:REQUIRES]->(o:Obligation) "
         "RETURN o.id AS id, o.text AS text, o.article_ref AS article, "
         "o.paragraph_ref AS paragraph"
     ),
     "questions_for_dimension": (
-        "MATCH (q:Question)-[:BELONGS_TO]->(d:Dimension {{id: $dimension_id}}) "
+        "MATCH (q:Question)-[:BELONGS_TO]->(d:Dimension {id: $dimension_id}) "
         "RETURN q.id AS id, q.text AS text, q.weight AS weight"
     ),
     "gap_chain": (
-        "MATCH (o:Obligation {{id: $obligation_id}})"
+        "MATCH (o:Obligation {id: $obligation_id})"
         "<-[:ASSESSES]-(q:Question) "
         "OPTIONAL MATCH (t:RoadmapTask)-[:REMEDIATES]->(q) "
         "RETURN o.text AS obligation, q.id AS question_id, q.text AS question, "
         "t.task AS remediation, t.priority AS priority"
     ),
     "cross_framework_for_question": (
-        "MATCH (q:Question {{id: $question_id}}) "
+        "MATCH (q:Question {id: $question_id}) "
         "OPTIONAL MATCH (q)-[:MAPS_TO_NIST]->(n:NISTSubcategory) "
         "OPTIONAL MATCH (q)-[:MAPS_TO_ISO]->(c:ISOClause) "
         "RETURN q.id AS qid, collect(DISTINCT n.id) AS nist_refs, "
         "collect(DISTINCT c.id) AS iso_refs"
     ),
     "transitive_dependencies": (
-        "MATCH (o:Obligation {{id: $obligation_id}})"
+        "MATCH (o:Obligation {id: $obligation_id})"
         "-[:PREREQUISITE_FOR*1..3]->(d:Obligation) "
         "RETURN d.id AS id, d.text AS text, d.article_ref AS article"
     ),
     "dimension_summary": (
-        "MATCH (d:Dimension {{id: $dimension_id}}) "
+        "MATCH (d:Dimension {id: $dimension_id}) "
         "OPTIONAL MATCH (q:Question)-[:BELONGS_TO]->(d) "
         "OPTIONAL MATCH (q)-[:ASSESSES]->(o:Obligation) "
         "RETURN d.id AS dim_id, d.name AS dim_name, "

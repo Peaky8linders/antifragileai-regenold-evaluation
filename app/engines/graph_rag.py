@@ -272,7 +272,32 @@ def _openai_wrapper_complete_for_graph_rag(
     from app.llm.openai_wrapper_provider import (
         OpenAIWrapperRequest,
         get_openai_wrapper_provider,
+        get_groq_provider,
     )
+
+    def _try_groq_fallback() -> str | None:
+        import os
+        logger.info("Attempting Groq Llama 3.3 70B fallback...")
+        groq_model = os.getenv("REGENOLD_STAGE2_MODEL_GROQ", "llama-3.3-70b-versatile")
+        groq_resp = get_groq_provider().complete(
+            OpenAIWrapperRequest(
+                system=system,
+                user=user,
+                model=groq_model,
+                max_tokens=max_tokens,
+                temperature=temperature,
+            )
+        )
+        if groq_resp.error:
+            logger.warning("graph_rag.groq_fallback_failed: %s", groq_resp.error[:200])
+            return None
+        if getattr(groq_resp, "finish_reason", None) == "length":
+            logger.warning("graph_rag.groq_fallback_truncated — finish_reason=length")
+            return None
+        if _looks_structurally_truncated(groq_resp.text):
+            logger.warning("graph_rag.groq_fallback_truncated_structural")
+            return None
+        return groq_resp.text
 
     try:
         from app.config import settings
@@ -318,12 +343,12 @@ def _openai_wrapper_complete_for_graph_rag(
             logger.error(
                 "graph_rag.openai_wrapper_not_logged_in — Sonnet path is DOWN. "
                 "Re-seed the wrapper's OAuth token by running login.bat. "
-                "Falling back to deterministic for this call.",
+                "Falling back to Groq for this call.",
             )
         elif "out of extra usage" in response.error.lower() or "credit balance" in response.error.lower():
             logger.error(
                 "graph_rag.openai_wrapper_quota_exhausted — LLM quota limits reached: %s. "
-                "Falling back to deterministic for this call.",
+                "Falling back to Groq for this call.",
                 response.error[:200],
             )
         else:
@@ -331,7 +356,7 @@ def _openai_wrapper_complete_for_graph_rag(
                 "graph_rag.openai_wrapper_call_failed: %s",
                 response.error[:200],
             )
-        return None
+        return _try_groq_fallback()
     # R91 — truncation guard. ``finish_reason="length"`` means the model
     # hit the ``max_tokens`` ceiling before naturally stopping; the text
     # is partial output (often mid-sentence, often missing the trailing
@@ -344,11 +369,11 @@ def _openai_wrapper_complete_for_graph_rag(
     if getattr(response, "finish_reason", None) == "length":
         logger.warning(
             "graph_rag.openai_wrapper_truncated — finish_reason=length "
-            "(model=%s, completion_tokens=%d) — falling back to deterministic.",
+            "(model=%s, completion_tokens=%d) — falling back to Groq.",
             response.model,
             response.completion_tokens,
         )
-        return None
+        return _try_groq_fallback()
     # R102 — STRUCTURAL truncation guard. The Claude-Max
     # ``claude-code-openai-wrapper`` (CLI subprocess behind cloudflared)
     # IGNORES ``max_tokens`` and reports ``finish_reason="stop"`` EVEN when
@@ -366,12 +391,12 @@ def _openai_wrapper_complete_for_graph_rag(
         logger.warning(
             "graph_rag.openai_wrapper_truncated_structural — finish_reason=%r "
             "but text ends mid-clause (model=%s, completion_tokens=%d) — "
-            "falling back to deterministic.",
+            "falling back to Groq.",
             getattr(response, "finish_reason", None),
             response.model,
             response.completion_tokens,
         )
-        return None
+        return _try_groq_fallback()
     return response.text
 
 
@@ -2050,6 +2075,26 @@ _CLASSIFICATION_TOPICS: list[dict] = [
         ),
         "refs": ["Art. 5"],
     },
+    # ── High-risk obligations deadline ────────────────────────────────
+    {
+        "name": "high_risk_obligations_deadline",
+        "patterns": [
+            re.compile(
+                r"when do high[- ]?risk ai obligations apply\??",
+                re.IGNORECASE,
+            ),
+        ],
+        "answer": (
+            "Under Article 113(b), the full Chapter III Section 2 obligations for "
+            "Annex III high-risk AI systems — including deployer duties under "
+            "Article 26, the Fundamental Rights Impact Assessment under Article 27, "
+            "and transparency obligations under Articles 13 and 50 — take effect on "
+            "2 August 2026. The Digital Omnibus political agreement (May 2026) "
+            "deferred this deadline to 2 December 2027, but the original 2026 date "
+            "remains the baseline in the published text."
+        ),
+        "refs": ["Art. 113", "Annex III", "Art. 26", "Art. 27", "Art. 13", "Art. 50"],
+    },
     # ── Predictive policing (Art. 5.1.d for profiling-based) ──────────
     {
         "name": "predictive_policing",
@@ -2806,6 +2851,24 @@ def _deterministic_answer(question: str, context: GraphContext) -> str:
                 "submit the assessment to the national supervisory authority upon request."
             ),
             "refs": ["Art. 6"],
+        }
+        _seed_classification_obligations(context, verdict)
+        return verdict["answer"]
+
+    # High-Risk Deadline Intercept
+    if re.search(r"when do high[- ]?risk ai obligations apply\??", question or "", re.IGNORECASE):
+        verdict = {
+            "name": "high_risk_obligations_deadline",
+            "answer": (
+                "Under Article 113(b), the full Chapter III Section 2 obligations for "
+                "Annex III high-risk AI systems — including deployer duties under "
+                "Article 26, the Fundamental Rights Impact Assessment under Article 27, "
+                "and transparency obligations under Articles 13 and 50 — take effect on "
+                "2 August 2026. The Digital Omnibus political agreement (May 2026) "
+                "deferred this deadline to 2 December 2027, but the original 2026 date "
+                "remains the baseline in the published text."
+            ),
+            "refs": ["Art. 113", "Annex III", "Art. 26", "Art. 27", "Art. 13", "Art. 50"],
         }
         _seed_classification_obligations(context, verdict)
         return verdict["answer"]
@@ -3905,7 +3968,7 @@ def _claude_max_enhance_answer(
             user_message += (
                 f"BACKGROUND RISK FRAMEWORK:\n{kg_answer}\n\n"
                 "The user is asking a classification question about a specific AI system use-case. "
-                "Provide a professional, custom legal analysis of whether this specific system falls under prohibited practices (Article 5), high-risk (Article 6, Annex I, Annex III), or limited/minimal risk (Article 50). "
+                "Provide a professional, custom legal analysis of whether this specific system falls under prohibited practices, high-risk, or limited/minimal risk. "
                 "Apply logical deduction: if the system's described purpose (e.g., logging administrative data) clearly does not meet the strict definitions of prohibited or high-risk practices in the references, explicitly state that it does not trigger those classifications. "
                 "Do NOT use a prefabricated or generic response. Tailor your answer strictly to the user's specific use case. "
                 "Cite only articles and annexes from the EU AI ACT REFERENCES block.\n"
