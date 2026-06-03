@@ -1855,7 +1855,7 @@ _CLASSIFICATION_QUESTION_RE = re.compile(
     r"|(?:does|do)\s+[\w\s\-]{1,80}?\s+(?:fall\s+(?:under|into|within)|"
     r"still\s+apply|apply\s+to|count\s+as|qualify\s+as)"
     r"|(?:can|could|may|will)\s+[\w\s\-,]{1,120}?\s+(?:use|employ|deploy|build|create|sell|sort)"
-    r"|what(?:'s|\s+is)\s+the\s+risk\s+(?:class|level|tier|categor)"
+    r"|(?:what(?:'s|\s+is|\s+are)(?:\s+the)?|what)\s+risk\s+(?:class|level|tier|categor)"
     r"|how\s+is\s+[\w\s\-]+\s+classif"
     r"|risk\s+classification\b"
     r"|classif(?:ied|ication)\s+as\s+(?:prohibited|high|minimal|limited)"
@@ -2380,6 +2380,19 @@ _CLASSIFICATION_TOPICS: list[dict] = [
             "III Section 2 obligations stack on top of the sectoral requirements."
         ),
         "refs": ["Art. 6", "Annex I"],
+    },
+    # ── Risk Framework Overview / Taxonomy ────────────────────────────
+    {
+        "name": "risk_framework_overview",
+        "patterns": [
+            re.compile(r"(?:what(?:'s|\s+is|\s+are)(?:\s+the)?|what)\s+risk\s+(?:categor|tier|level|class)", re.IGNORECASE)
+        ],
+        "answer": (
+            "The AI Act establishes a risk-based framework, categorising AI systems "
+            "based on their potential for harm. Here are the risk categories: "
+            "Unacceptable Risk, High Risk, Limited Risk and Minimal Risk."
+        ),
+        "refs": ["Art. 3", "Art. 5", "Art. 6", "Art. 50"],
     },
     # ── Education grading / student assessment (Annex III.3) ──────────
     {
