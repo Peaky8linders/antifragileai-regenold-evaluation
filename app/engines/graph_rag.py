@@ -4153,6 +4153,7 @@ def _two_stage_generate(
     query: GraphQuery | None = None,
     system_description: str | None = None,
     history_turn_count: int = 1,
+    resolved_question: str | None = None,
 ) -> tuple[str, bool]:
     """Two-stage answer generation.
 
@@ -4170,12 +4171,13 @@ def _two_stage_generate(
     Returns (enhanced, True) on success or (kg_answer, False) on fallback /
     skip.
     """
-    kg_answer = _deterministic_answer(question, context)
+    resolved_q = resolved_question or question
+    kg_answer = _deterministic_answer(resolved_q, context)
 
     force_stage2 = False
     try:
         from app.engines.question_complexity import is_complex_question  # noqa: PLC0415
-        if is_complex_question(question, history_turn_count):
+        if is_complex_question(resolved_q, history_turn_count):
             force_stage2 = True
     except Exception:  # noqa: BLE001
         pass
@@ -4189,7 +4191,7 @@ def _two_stage_generate(
             pass
 
     # Classification-verdict short-circuit fired inside _deterministic_answer.
-    if not force_stage2 and _detect_classification_topic(question) is not None:
+    if not force_stage2 and _detect_classification_topic(resolved_q) is not None:
         return kg_answer, False
 
     # R77 — Stage-2 polish is OFF by default.
@@ -4212,7 +4214,7 @@ def _two_stage_generate(
                 # REGENOLD_ANSWER_ROUTER=0 → exact R96 behaviour (verbatim
                 # never runs Stage-2). This is the A/B baseline + rollback.
                 return kg_answer, False
-            _decision = select_answer_mode(question, query=query,
+            _decision = select_answer_mode(resolved_q, query=query,
                                            history_turn_count=history_turn_count)
             if not _decision.is_synthesis:
                 return kg_answer, False
@@ -4224,7 +4226,7 @@ def _two_stage_generate(
                 record_note(f"answer_route=synthesis:{_decision.reason}")
             except Exception:  # noqa: BLE001 — fail-soft on trace
                 pass
-        elif not _needs_stage2_enhancement(question, context, query):
+        elif not _needs_stage2_enhancement(resolved_q, context, query):
             return kg_answer, False
 
     # R87-E — confidence-gated Stage-2 skip.
@@ -4283,7 +4285,7 @@ def _two_stage_generate(
             try:
                 from app.engines.web_search import perform_web_search
                 from app.integrations.regenold.reasoning_trace import record_note
-                results = perform_web_search(question)
+                results = perform_web_search(resolved_q)
                 if results:
                     context.web_search_results = results
                     record_note(f"stage2_supplemental_web_search_triggered={len(results)}")
@@ -4296,7 +4298,7 @@ def _two_stage_generate(
         context=context,
         system_description=system_description,
         history_turn_count=history_turn_count,
-        is_general_classification=_general_classification_verdict(question) is not None,
+        is_general_classification=_general_classification_verdict(resolved_q) is not None,
     )
     if enhanced is None:
         try:
@@ -4313,7 +4315,7 @@ def _two_stage_generate(
                     context=context,
                     system_description=system_description,
                     history_turn_count=history_turn_count,
-                    is_general_classification=_general_classification_verdict(question) is not None,
+                    is_general_classification=_general_classification_verdict(resolved_q) is not None,
                     force_provider="groq",
                 )
         except Exception:
@@ -4390,10 +4392,12 @@ def ask_compliance_question(request: GraphRAGRequest) -> GraphRAGResponse:
     )
 
     # Stage 1 + 2 — Generate
-    kg_answer = _deterministic_answer(request.question, context)
+    resolved_q = getattr(request, "resolved_question", None) or request.question
+    kg_answer = _deterministic_answer(resolved_q, context)
     answer_text, stage2_used = _two_stage_generate(
         request.question, context, query, request.system_description,
         history_turn_count=getattr(request, "history_turn_count", 1) or 1,
+        resolved_question=resolved_q,
     )
 
     reasoning_trace = [

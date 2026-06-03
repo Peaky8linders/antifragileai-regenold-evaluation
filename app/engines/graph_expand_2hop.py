@@ -254,6 +254,14 @@ def is_enabled() -> bool:
     """
     if not _env_enabled():
         return False
+    # P4: Skip 2-hop on multi-turn finals unless explicit listing intent
+    try:
+        from app.integrations.regenold.reasoning_trace import is_multiturn, has_listing_intent
+        if os.getenv("REGENOLD_CAP_EXPANSION", "1").strip().lower() in ("1", "true", "yes", "on"):
+            if is_multiturn() and not has_listing_intent():
+                return False
+    except Exception:
+        pass
     # Lazy client import — defers the heavy ``app.graph.client`` load
     # until the first ``is_enabled()`` / ``expand_2hop`` call.
     try:

@@ -51,6 +51,7 @@ class GraphRAGRequest(BaseModel):
     complex-question gate can fire on multi-turn finals (3+ turns +
     short coreferent). Default 1 keeps single-turn callers unaffected.
     """
+    resolved_question: str | None = Field(default=None, max_length=2_000)
 
 
 class GraphRAGResponse(BaseModel):

@@ -30,6 +30,10 @@ from pathlib import Path
 from statistics import mean, median
 from typing import Any
 
+from dotenv import load_dotenv
+load_dotenv()
+
+
 from evals.bench import metrics as bench_metrics
 from evals.regenold.runner_v2 import (
     _ensure_local_auth,

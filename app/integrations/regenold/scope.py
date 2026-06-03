@@ -3258,6 +3258,7 @@ def classify_conversation(
     # below for the security rationale.
     prior_assistant_anchors: list[str] = []
     unknowns: list[str] = []
+    prior_user_in_scope = False
     for idx, m in enumerate(messages):
         role = _get(m, "role")
         if role == "system":
@@ -3296,6 +3297,14 @@ def classify_conversation(
                 live_question=live_text,
             )
         is_prior_for_rescue = (live_index is None) or (idx < live_index)
+        if role == "user" and is_prior_for_rescue:
+            try:
+                import os
+                if os.getenv("REGENOLD_SCOPE_STICKINESS", "1").strip().lower() in ("1", "true", "yes", "on"):
+                    if classify_scope(content).in_scope:
+                        prior_user_in_scope = True
+            except Exception:
+                pass
         k, u = extract_referenced_articles(content)
         # Unknown refs ALWAYS block (precedence guard) regardless of role
         # — a hallucinated assistant ref still poisons the next prompt.
@@ -3469,6 +3478,28 @@ def classify_conversation(
             evidence=(
                 f"Coreference rescue: anchor(s) {', '.join(rescue_anchors)} from prior turn(s)."
             ),
+            referenced_articles=tuple(rescue_anchors),
+        )
+        return ConversationVerdict(
+            verdict=rescued,
+            anchor_articles=tuple(dict.fromkeys([*anchors, *rescue_anchors])),
+            history_unknown_articles=(),
+            live_question=live_text,
+        )
+
+    # P1 stickiness rescue as a final fallback for otherwise-refused turns
+    if (
+        prior_user_in_scope
+        and live_verdict.reason not in hard_refusal_reasons
+        and not _is_explicit_scope_negation_refusal(live_text, live_verdict)
+        and not _question_is_pure_conversational(live_text)
+        and not _question_is_generic_knowledge(live_text)
+        and not _looks_like_nonsense(live_text)
+    ):
+        rescued = ScopeVerdict(
+            in_scope=True,
+            reason=ScopeReason.IN_SCOPE,
+            evidence="Scope stickiness: prior user turn in-scope.",
             referenced_articles=tuple(rescue_anchors),
         )
         return ConversationVerdict(

@@ -143,6 +143,7 @@ from app.integrations.regenold.scope import (
     classify_conversation,
     refusal_copy_for,
     text_has_injection,
+    extract_referenced_articles,
 )
 from app.integrations.regenold.text_normalize import normalize_unicode_punctuation
 from app.llm.intent_classifier import classify_intent
@@ -977,6 +978,82 @@ def _apply_assistant_anchor_inheritance(
     except Exception:  # noqa: BLE001 — fail-soft on trace
         pass
     return injected + out
+
+
+def _apply_fact_state_carry_forward(
+    candidates: list[str],
+    dialogue: list[Any],
+    last_user_idx: int,
+) -> list[str]:
+    """P3 — fact-state carry-forward.
+    When no article was named in prior turns, scan prior user turns for roles/domains
+    and inject corresponding articles at the head of candidates.
+    """
+    if os.getenv("REGENOLD_FACT_CARRY_FORWARD", "1").strip().lower() not in ("1", "true", "yes", "on"):
+        return list(candidates)
+    
+    if last_user_idx <= 0:
+        return list(candidates)
+        
+    # Check if any prior turn named an article/annex
+    refs_seen = False
+    prior_messages = dialogue[:last_user_idx]
+    for m in prior_messages:
+        content = getattr(m, "content", "") or ""
+        if content:
+            k, u = extract_referenced_articles(content)
+            if k or u:
+                refs_seen = True
+                break
+                
+    if refs_seen:
+        return list(candidates)
+        
+    # Scan prior user turns for roles and domains
+    to_inject = []
+    for m in prior_messages:
+        role = getattr(m, "role", "")
+        if role != "user":
+            continue
+        content = (getattr(m, "content", "") or "").lower()
+        
+        # Check roles
+        if "deployer" in content:
+            to_inject.append("Article 26")
+        if "provider" in content:
+            to_inject.append("Article 16")
+        if "importer" in content:
+            to_inject.append("Article 23")
+        if "distributor" in content:
+            to_inject.append("Article 24")
+        if "authorized representative" in content or "authorised representative" in content:
+            to_inject.append("Article 22")
+            
+        # Check domains
+        if any(w in content for w in ("biometric", "biometrics", "facial recognition", "emotion recognition")):
+            to_inject.append("Article 5")
+        if any(w in content for w in ("hiring", "recruitment", "employment", "cv screening", "resume screening", "performance evaluation")):
+            if "Article 6" not in to_inject:
+                to_inject.append("Article 6")
+            if "Annex III" not in to_inject:
+                to_inject.append("Annex III")
+
+    # Inject at the head of candidates, preserving order, avoiding duplicates
+    out = list(candidates)
+    injected = []
+    for item in to_inject:
+        resolved = reference_from_article_ref(item)
+        if resolved and resolved not in candidates and resolved not in injected:
+            injected.append(resolved)
+            
+    if injected:
+        try:
+            from app.integrations.regenold.reasoning_trace import record_note
+            record_note("fact_state_carry_forward=" + ",".join(injected))
+        except Exception:
+            pass
+        return injected + out
+    return out
 
 
 def _engine_cache_key(
@@ -2874,19 +2951,6 @@ def _rewrite_multiturn_query(
                 provider=provider_name,
             )
             return None
-        from app.engines.graph_rag import _looks_structurally_truncated
-        if _looks_structurally_truncated(resp.text):
-            logger.debug(
-                "query_denoiser: response structurally truncated"
-            )
-            record_query_denoiser(
-                fired=False,
-                latency_ms=int(latency_ms),
-                fallback_reason="truncated",
-                model=model,
-                provider=provider_name,
-            )
-            return None
         rewritten = resp.text.strip().strip('"').strip("'")
         # Sanity: if the rewrite is too short or suspiciously long, bail
         if len(rewritten) < 10 or len(rewritten) > 500:
@@ -2924,7 +2988,16 @@ def _rewrite_multiturn_query(
         return None
 
 
-def _build_question_from_history(messages: list[Any]) -> tuple[str, str | None]:
+class QuestionHistoryResult(tuple):
+    resolved_question: str | None
+
+    def __new__(cls, question: str, system_context: str | None, resolved_question: str | None):
+        obj = super().__new__(cls, (question, system_context))
+        obj.resolved_question = resolved_question
+        return obj
+
+
+def _build_question_from_history(messages: list[Any]) -> QuestionHistoryResult:
 
     """Build (question, system_context) from the full conversation history.
 
@@ -3030,6 +3103,7 @@ def _build_question_from_history(messages: list[Any]) -> tuple[str, str | None]:
         if denoised is not None and not _denoised_dropped_shape:
             anchor_prefix = (anchor_line + "\n") if anchor_line else ""
             question = f"{anchor_prefix}{denoised}"
+            resolved_turn = denoised
         else:
             # Fallback: existing concatenation path
             history_block = "\n".join(
@@ -3045,8 +3119,13 @@ def _build_question_from_history(messages: list[Any]) -> tuple[str, str | None]:
                 "Latest question:\n"
                 f"{live_question}"
             )
+            resolved_turn = live_question
     else:
         question = live_question
+        resolved_turn = live_question
+
+    if resolved_turn is not None and len(resolved_turn) > 2000:
+        resolved_turn = resolved_turn[-2000:]
 
     # Engine cap — GraphRAGRequest.question is 2000-char max, system
     # description 1000-char max. Truncate from the LEFT (drop oldest
@@ -3077,7 +3156,7 @@ def _build_question_from_history(messages: list[Any]) -> tuple[str, str | None]:
     if system_context is not None and len(system_context) > 1000:
         system_context = system_context[-1000:]
 
-    return question, system_context
+    return QuestionHistoryResult(question, system_context, resolved_turn)
 
 
 @regenold_router.post(
@@ -3221,7 +3300,31 @@ def regenold_eu_ai_act_ask(
 
     # Build question + system_context from the FULL conversation history
     # (multi-turn aware — see :func:`_build_question_from_history`).
-    question, system_context = _build_question_from_history(req.messages)
+    history_res = _build_question_from_history(req.messages)
+    question, system_context = history_res
+    resolved_question = history_res.resolved_question
+
+    _is_multiturn = sum(1 for m in req.messages if m.role == "user") > 1
+    _listing_triggers = (
+        "which articles",
+        "which article",
+        "list the articles",
+        "list every article",
+        "set them out",
+        "what articles apply",
+        "what articles set",
+        "all the articles",
+        "every article",
+        "all applicable articles",
+    )
+    _has_listing_intent = any(t in (resolved_question or question or "").lower() for t in _listing_triggers)
+
+    try:
+        from app.integrations.regenold.reasoning_trace import set_multiturn, set_listing_intent
+        set_multiturn(_is_multiturn)
+        set_listing_intent(_has_listing_intent)
+    except Exception:
+        pass
 
     # ── Scope gate ─────────────────────────────────────────────────────
     # Run conversation-aware scope classification BEFORE retrieval.
@@ -3272,6 +3375,7 @@ def regenold_eu_ai_act_ask(
         # to let the engine condition the answer.
         system_description=system_context,
         history_turn_count=_history_turn_count,
+        resolved_question=resolved_question,
     )
 
     # Round 28 — response memoisation (LLM Wiki v2 gist pattern). The
@@ -3348,7 +3452,7 @@ def regenold_eu_ai_act_ask(
     # mutations can skip when the engine's curated text should be
     # shipped verbatim. Detector is pure-function + deterministic; the
     # cost is one regex sweep over the question (sub-µs).
-    _is_classification_topic = _detect_classification_topic(question) is not None
+    _is_classification_topic = _detect_classification_topic(resolved_question or question) is not None
 
     # R68 — role×risk obligation-matrix dump detection.
     #
@@ -3402,8 +3506,8 @@ def regenold_eu_ai_act_ask(
     #     prose would over-shoot the gold answer length
     #   * skip on multi-turn follow-ups (rag_res.answer already
     #     incorporates the prior turn context)
-    _is_scenario = classify_scenario_query(question) is not None
-    _is_scenario_shape = _looks_like_scenario_shape(question)
+    _is_scenario = classify_scenario_query(resolved_question or question) is not None
+    _is_scenario_shape = _looks_like_scenario_shape(resolved_question or question)
     _is_multiturn = sum(1 for m in req.messages if m.role == "user") > 1
     # R93 — when the extractive pass produces the answer, it is a precise,
     # gold-shaped single sentence answering the SPECIFIC question. The
@@ -3428,7 +3532,7 @@ def regenold_eu_ai_act_ask(
         and not _stage2_landed
     ):
         extracted = _try_extractive_answer(
-            question=question,
+            question=resolved_question or question,
             engine_citations=rag_res.citations or (),
             # R68 — when the engine matrix-dumped a focused QA question,
             # prefer the scope gate's specific keyword anchors so the
@@ -3550,7 +3654,7 @@ def regenold_eu_ai_act_ask(
     # where BM25's high-IDF duty-keyword anchor stole the slot from
     # the role's canonical obligation Article.
     try:
-        candidates = _apply_role_duty_seed(candidates, question)
+        candidates = _apply_role_duty_seed(candidates, resolved_question or question)
     except Exception:  # noqa: BLE001 — fail-soft, must not 500 the route
         pass
 
@@ -3583,6 +3687,13 @@ def regenold_eu_ai_act_ask(
             candidates, _r88a_history, _r88a_live_q
         )
     except Exception:  # noqa: BLE001 — fail-soft, must not 500 the route
+        pass
+
+    try:
+        candidates = _apply_fact_state_carry_forward(
+            candidates, _r88a_dialogue, _r88a_last_user_idx
+        )
+    except Exception:  # noqa: BLE001 — fail-soft
         pass
 
     # R88-B / R88-D — protected-seed registry. Multi-turn seeds inject
@@ -3639,7 +3750,7 @@ def regenold_eu_ai_act_ask(
             general_classification_verdict_refs,
         )
         for _gv_ref in general_classification_verdict_refs(
-            live_user_message or question
+            resolved_question or live_user_message or question
         ):
             _gv_user = reference_from_article_ref(_gv_ref)
             if _gv_user and _gv_user not in _r88_protected_seeds:
@@ -3738,7 +3849,7 @@ def regenold_eu_ai_act_ask(
         force_prohibited_citations,
         scan_for_prohibitions,
     )
-    _prohibition_matches = scan_for_prohibitions(question)
+    _prohibition_matches = scan_for_prohibitions(resolved_question or question)
     if _prohibition_matches:
         candidates = force_prohibited_citations(candidates, _prohibition_matches)
 
@@ -3751,7 +3862,7 @@ def regenold_eu_ai_act_ask(
         # (more gold tokens present). The verdict is intentionally
         # tight (1 sentence, ≤200 chars) so the existing 3-sentence
         # + 600-char cap absorbs it without dropping engine content.
-        _verdict_prefix = build_verdict_prefix(question)
+        _verdict_prefix = build_verdict_prefix(resolved_question or question)
         if (
             _verdict_prefix
             and "Article 5" not in (answer_text or "")
@@ -3875,7 +3986,7 @@ def regenold_eu_ai_act_ask(
     _compound_strength = ""
     _scenario_verdict_for_budget = None
     try:
-        _scenario_verdict_for_budget = classify_scenario_query(question)
+        _scenario_verdict_for_budget = classify_scenario_query(resolved_question or question)
         if (
             _scenario_verdict_for_budget is not None
             and _scenario_verdict_for_budget.compound_roles
@@ -4084,7 +4195,13 @@ def regenold_eu_ai_act_ask(
                 )
         except Exception:  # noqa: BLE001 — fail-soft
             pass
-    if _is_scenario_question:
+    # P4: skip HRAIS expand on multi-turn finals unless explicit listing intent
+    _should_expand = _is_scenario_question
+    if os.getenv("REGENOLD_CAP_EXPANSION", "1").strip().lower() in ("1", "true", "yes", "on"):
+        if _is_multiturn and not _has_listing_intent:
+            _should_expand = False
+
+    if _should_expand:
         candidates = expand_citations(
             candidates,
             budget=_effective_max_refs,
@@ -4230,10 +4347,10 @@ def regenold_eu_ai_act_ask(
         os.getenv("REGENOLD_DEFINITION_REF", "1").strip().lower()
         in ("1", "true", "yes", "on")
         and not _stage2_landed
-        and classify_question_type(question) == "definition"
+        and classify_question_type(resolved_question or question) == "definition"
     ):
         try:
-            if select_definition_sentence(question):
+            if select_definition_sentence(resolved_question or question):
                 references = ["Article 3"] + [
                     r for r in references if r and r.split(".")[0].strip()
                     not in ("Article 3", "Art. 3")
@@ -4707,6 +4824,7 @@ def regenold_eu_ai_act_ask(
                 answer_text,
                 list(references),
                 question=question,
+                is_multiturn=_is_multiturn,
             )
             if _augmented != answer_text:
                 # Re-normalise so the 3-sentence + 600-char cap is
@@ -4758,6 +4876,7 @@ def regenold_eu_ai_act_ask(
                 list(references),
                 question=question,
                 semantic_covered=_sem_map,
+                is_multiturn=_is_multiturn,
             )
             if _augmented != answer_text:
                 answer_text = normalise_answer_for_regenold(

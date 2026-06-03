@@ -372,3 +372,19 @@ def record_cite_describe_guard(
             f"cite_describe_drop ref={ref}"
             + (f" reason={reason}" if reason else "")
         )
+
+
+_IS_MULTITURN_VAR: ContextVar[bool] = ContextVar("is_multiturn", default=False)
+_HAS_LISTING_INTENT_VAR: ContextVar[bool] = ContextVar("has_listing_intent", default=False)
+
+def set_multiturn(val: bool) -> None:
+    _IS_MULTITURN_VAR.set(val)
+
+def set_listing_intent(val: bool) -> None:
+    _HAS_LISTING_INTENT_VAR.set(val)
+
+def is_multiturn() -> bool:
+    return _IS_MULTITURN_VAR.get()
+
+def has_listing_intent() -> bool:
+    return _HAS_LISTING_INTENT_VAR.get()

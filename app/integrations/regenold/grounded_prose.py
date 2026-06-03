@@ -1237,6 +1237,7 @@ def augment_with_ref_descriptions(
     max_new_clauses: int = _AUGMENT_MAX_NEW_CLAUSES,
     clause_chars: int = _AUGMENT_CLAUSE_CHARS,
     semantic_covered: dict[str, float] | None = None,
+    is_multiturn: bool = False,
 ) -> str:
     """Append one short KB-description clause per uncovered cited ref.
 
@@ -1387,6 +1388,7 @@ def augment_with_ref_descriptions(
                 is_subpoint_key
                 or is_conditional_key
                 or r89a_force_append
+                or is_multiturn
             )
 
             # If replace mode is active, try to replace inline bare citations in-place
