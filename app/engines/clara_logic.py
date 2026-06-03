@@ -1022,7 +1022,7 @@ def _normalise_clara_ref(ref: str) -> str:
     return re.sub(r"\s+", " ", ref.strip().lower())
 
 
-def compute_verdict(tags: BooleanTags) -> Verdict:
+def _compute_verdict_inner(tags: BooleanTags) -> Verdict:
     """Deterministic logic matrix — pure function, never raises.
 
     Encodes the AI Act's risk pyramid in priority order. The first
@@ -1367,10 +1367,7 @@ def compute_verdict(tags: BooleanTags) -> Verdict:
 # deterministic verdict matrix runs. Kept as a thin shim around
 # :func:`compute_verdict` so the matrix itself stays a pure function
 # of ``BooleanTags`` only.
-_compute_verdict_inner = compute_verdict
-
-
-def compute_verdict(tags: BooleanTags) -> Verdict:  # type: ignore[no-redef]  # noqa: F811
+def compute_verdict(tags: BooleanTags) -> Verdict:
     """R47-C wrapper around the verdict matrix.
 
     Runs the deterministic matrix first, then augments the result

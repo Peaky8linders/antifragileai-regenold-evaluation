@@ -252,7 +252,7 @@ def _acquire_postgres_advisory_lock() -> object | None:
             acquired = bool(row and row[0])
         if not acquired:
             conn.close()
-            return None
+            return False
     except Exception as exc:  # noqa: BLE001
         logger.debug("auto-seed advisory-lock acquire failed: %s", exc)
         try:
@@ -303,7 +303,7 @@ def _run_auto_seed_in_thread(reason: str) -> None:
     # process-local lock — that's fine because MERGE is idempotent so
     # two workers racing is benign (just wasteful).
     if (
-        lock_handle is None
+        lock_handle is False
         and os.getenv("DATABASE_URL", "").strip().startswith("postgres")
     ):
         logger.info(

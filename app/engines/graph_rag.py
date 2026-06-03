@@ -656,6 +656,9 @@ class GraphContext:
 
 # ─── LLM Integration ────────────────────────────────────────────────────────
 
+import functools
+
+@functools.lru_cache(maxsize=1)
 def _get_anthropic_client():
     """Lazy-load Anthropic client. Returns None if not configured."""
     try:

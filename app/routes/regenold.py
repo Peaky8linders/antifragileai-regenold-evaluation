@@ -1281,10 +1281,10 @@ def _client_addr(request: Request) -> str:
     if _TRUST_PROXY:
         xff = request.headers.get("x-forwarded-for", "").strip()
         if xff:
-            # Leftmost = original client per the de-facto convention.
-            first_hop = xff.split(",", 1)[0].strip()
-            if first_hop:
-                return first_hop
+            # Rightmost = immediate client of the trusted proxy.
+            rightmost_hop = xff.split(",")[-1].strip()
+            if rightmost_hop:
+                return rightmost_hop
     return get_remote_address(request) or "unknown"
 
 
@@ -2864,6 +2864,19 @@ def _rewrite_multiturn_query(
         if getattr(resp, "finish_reason", None) == "length":
             logger.debug(
                 "query_denoiser: response truncated (finish_reason=length)"
+            )
+            record_query_denoiser(
+                fired=False,
+                latency_ms=int(latency_ms),
+                fallback_reason="truncated",
+                model=model,
+                provider=provider_name,
+            )
+            return None
+        from app.engines.graph_rag import _looks_structurally_truncated
+        if _looks_structurally_truncated(resp.text):
+            logger.debug(
+                "query_denoiser: response structurally truncated"
             )
             record_query_denoiser(
                 fired=False,
