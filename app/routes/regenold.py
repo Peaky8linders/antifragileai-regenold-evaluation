@@ -89,7 +89,7 @@ from app.engines.sentence_index import (
 from app.evidence.models import EvidenceEntryType
 from app.evidence.store import get_evidence_store
 from app.integrations.regenold.auth import (
-    require_regenold_api_key,
+    optional_regenold_api_key,
     validate_regenold_api_key,
 )
 from app.integrations.regenold.models import (
@@ -3080,7 +3080,7 @@ def regenold_eu_ai_act_ask(
     body: Any = Body(...),  # noqa: B008 — FastAPI-idiomatic Body(...) at default position
     include_telemetry: bool = False,
     include_reasoning: bool = False,
-    api_key: str = Depends(require_regenold_api_key),
+    api_key: str | None = Depends(optional_regenold_api_key),
 ) -> RegenoldAskResponse:
     """Regenold partner endpoint: grounded EU AI Act Q&A with citations.
 
