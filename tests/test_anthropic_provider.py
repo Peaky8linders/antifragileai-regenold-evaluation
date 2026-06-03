@@ -64,6 +64,8 @@ def reset_anthropic_env(monkeypatch: pytest.MonkeyPatch):
     # Reset cached settings.graph_rag.api_key to None for a clean slate.
     from app.config import settings
     monkeypatch.setattr(settings.graph_rag, "api_key", None, raising=True)
+    from app.engines.graph_rag import _get_anthropic_client
+    _get_anthropic_client.cache_clear()
 
 
 @pytest.fixture(autouse=True)
