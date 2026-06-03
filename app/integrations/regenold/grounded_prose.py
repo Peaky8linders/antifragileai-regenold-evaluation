@@ -53,22 +53,10 @@ from app.data.kb import EC_CHECKER_OBLIGATION_MAP
 
 def _clause_complete_enabled() -> bool:
     """R94 bug 3 — env gate for the complete-clause / no-run-on augmenter
-    behaviour.
-
-    Default OFF so the davidath bench (which fires the augmenter on the
-    deterministic path) stays byte-identical: the pre-R94 short hard-cut
-    keeps answer prose tight, which the quadratic-length conciseness metric
-    rewards. The fix lands LIVE — flipped ON via ``railway.toml`` — where
-    the LLM judge penalises the dangling-conjunction / run-on fragments
-    (R93 fresh-200 tone failures) the short hard-cut produces. This mirrors
-    the R78 ``REGENOLD_HARD_CHAR_CAP`` davidath-wash / live-win discipline.
+    behaviour. Always returns True per user directive to prevent mid-word character slicing.
     """
-    return os.environ.get("REGENOLD_CLAUSE_COMPLETE", "0").strip().lower() in (
-        "1",
-        "true",
-        "yes",
-        "on",
-    )
+    return True
+
 
 
 # ── Soft caps ───────────────────────────────────────────────────────────
