@@ -45,9 +45,15 @@ REGENOLD_GRAPH_AWARE = "1"
 # UNIONing the result additively-below-cap. Every sub-query + source touched is
 # logged to the ReasoningTrace audit lineage (glass-box). davidath byte-identical
 # (the deterministic parse + BM25 already saturate that corpus); the win lands on
-# the production Neo4j path + the live judge axes. Disable with
-# ``railway variables --set REGENOLD_SUFFICIENT_CONTEXT=0``. Tune the hop cap with
+# the production Neo4j path + the live judge axes. Tune the hop cap with
 # ``REGENOLD_SUFFICIENT_CONTEXT_MAX_HOPS`` (default 3, clamp [1,5]).
+#
+# R110.1 — the gate ALSO defaults ON in CODE
+# (``sufficient_context.sufficient_context_enabled``). A live probe after the
+# R110 deploy showed this ``[deploy.envs]`` entry was NOT applied to the
+# running service (the R80.2 phenomenon), so per the R80.2 doctrine the ON
+# default is baked into code. This entry is kept as belt-and-suspenders +
+# intent documentation. Disable explicitly with REGENOLD_SUFFICIENT_CONTEXT=0.
 REGENOLD_SUFFICIENT_CONTEXT = "1"
 
 # Round 89-A — Article-level describer force-append for V2 multi-turn.

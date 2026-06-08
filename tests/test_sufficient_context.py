@@ -35,9 +35,11 @@ def trace():
 # ── Env gates ────────────────────────────────────────────────────────────
 
 
-def test_disabled_by_default(monkeypatch) -> None:
+def test_enabled_by_default(monkeypatch) -> None:
+    # R110.1 — default ON in code (railway.toml [deploy.envs] proved
+    # unreliable on the live service; bake the default per the R80.2 doctrine).
     monkeypatch.delenv("REGENOLD_SUFFICIENT_CONTEXT", raising=False)
-    assert sc.sufficient_context_enabled() is False
+    assert sc.sufficient_context_enabled() is True
 
 
 @pytest.mark.parametrize("val", ["1", "true", "TRUE", "yes", "on"])
@@ -343,7 +345,7 @@ def test_merge_graph_context_gaps_dedup() -> None:
 
 
 def test_hop_noop_when_disabled(monkeypatch) -> None:
-    monkeypatch.delenv("REGENOLD_SUFFICIENT_CONTEXT", raising=False)
+    monkeypatch.setenv("REGENOLD_SUFFICIENT_CONTEXT", "0")  # R110.1 — explicit off
     base = GraphContext(obligations=[{"id": "o13", "article": "Art. 13"}])
     req = GraphRAGRequest(question="What do Article 13 and Article 99 require?")
     out = gr._maybe_sufficient_context_hop(
@@ -418,9 +420,9 @@ def ask_compliance_question_e2e(question: str):
 
 
 def test_engine_gate_off_is_noop_e2e(monkeypatch) -> None:
-    # With the gate OFF, the engine output is the normal deterministic path —
-    # this is the davidath byte-identity guarantee in miniature.
-    monkeypatch.delenv("REGENOLD_SUFFICIENT_CONTEXT", raising=False)
+    # With the gate explicitly OFF, the engine output is the normal
+    # deterministic path — the davidath byte-identity guarantee in miniature.
+    monkeypatch.setenv("REGENOLD_SUFFICIENT_CONTEXT", "0")  # R110.1 — explicit off
     monkeypatch.setenv("P2P_GRAPH_RAG_ENABLE_STAGE2", "0")
     a = ask_compliance_question_e2e("What does Article 13 require?")
     b = ask_compliance_question_e2e("What does Article 13 require?")

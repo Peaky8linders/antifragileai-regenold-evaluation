@@ -72,13 +72,29 @@ _TRUE = {"1", "true", "yes", "on"}
 
 
 def sufficient_context_enabled() -> bool:
-    """True when ``REGENOLD_SUFFICIENT_CONTEXT`` opts the gate in.
+    """True when the Sufficient-Context gate is active. **Default ON.**
 
-    Default OFF. The davidath TestClient bench never sets this env var, so
-    the gate is a no-op there and the local scorecard is byte-identical to
-    the prior round. Production enables it via ``railway.toml``.
+    R110.1 — baked the default ON in code. R110 first shipped default-OFF +
+    ``REGENOLD_SUFFICIENT_CONTEXT=1`` in ``railway.toml [deploy.envs]``, but a
+    live probe showed the var was NOT applied to the running service (the
+    documented R80.2 phenomenon: Railway can silently ignore a new
+    ``[deploy.envs]`` entry, and dashboard variables override it). The
+    project's R80.2 resolution is to bake the best config as a CODE default
+    rather than rely on ``[deploy.envs]`` — so a fresh deploy activates the
+    gate with no dashboard intervention.
+
+    This is **davidath byte-identical** because the gate is ON==OFF on the
+    benchmark (the deterministic parse + BM25 already saturate the corpus →
+    the bounded hop is a dedup no-op locally; measured byte-identical on
+    every axis). The win lands on the production Neo4j path + the live judge.
+
+    Operators disable explicitly: ``REGENOLD_SUFFICIENT_CONTEXT=0`` (or any
+    falsy value / empty string). Unset = ON.
     """
-    return os.getenv("REGENOLD_SUFFICIENT_CONTEXT", "").strip().lower() in _TRUE
+    val = os.getenv("REGENOLD_SUFFICIENT_CONTEXT")
+    if val is None:
+        return True
+    return val.strip().lower() in _TRUE
 
 
 def max_sub_queries() -> int:

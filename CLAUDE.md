@@ -5742,6 +5742,30 @@ risks the latency the R77-R87 rounds tuned down. Park behind a future
 `REGENOLD_ANSWER_VERIFY` flag if a live judge run shows refs-faithfulness headroom
 the existing guards don't capture.
 
+### Round 110.1 — bake the Sufficient-Context default ON in code (2026-06-08)
+
+R110 shipped the gate default-OFF in code + `REGENOLD_SUFFICIENT_CONTEXT=1` in
+`railway.toml [deploy.envs]`. After the merge + redeploy, a live
+`?include_reasoning=true` probe on a multi-part question showed the new code WAS
+live (`stage2_polish=true`, both `Article 23`+`Article 24` surfaced) but
+`reasoning.sub_queries` was still `null` — the `[deploy.envs]` entry was NOT
+applied to the running service. This is the documented **R80.2 phenomenon**
+("Railway dashboard service variables override `railway.toml [deploy.envs]`…
+bake the best config as CODE defaults"). The Railway CLI was unauthorised this
+session, so a dashboard set wasn't available.
+
+Fix: `sufficient_context.sufficient_context_enabled()` now **defaults ON**
+(unset → ON; explicit `REGENOLD_SUFFICIENT_CONTEXT=0` / falsy → OFF). A fresh
+deploy activates the gate with no dashboard intervention. **davidath stays
+byte-identical** because the gate is ON==OFF on the benchmark (the bounded hop
+is a dedup no-op locally — measured byte-identical on every axis across R110's
+OFF/ON A/B). 3 R110 tests updated to set `=0` explicitly where they exercised
+the disabled path (`test_enabled_by_default`, `test_hop_noop_when_disabled`,
+`test_engine_gate_off_is_noop_e2e`); `railway.toml` entry kept as
+belt-and-suspenders. The gate fires by default locally (verified: no env set →
+`sub_queries` populated on a multi-part probe); the live re-probe confirming
+`reasoning.sub_queries` on production is done after this round's redeploy.
+
 ## Non-goals / things to skip
 
 - ~~Vector embeddings / dense retrieval~~ → **Round 31 added a
