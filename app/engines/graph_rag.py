@@ -4634,15 +4634,39 @@ def _maybe_sufficient_context_hop(
             _src = "kb"
 
         risk_level = request.risk_level.value if request.risk_level else None
-        for sub_q in verdict.sub_queries[: max_sub_queries()]:
+
+        # Execute sub-query retrievals in parallel to minimize latency (FRAMES plan-then-execute doctrine)
+        import concurrent.futures
+
+        def _retrieve_task(sub_q: str) -> tuple[str, GraphContext]:
             sub_query = _deterministic_parse(sub_q)
             sub_ctx = _retrieve_from_graph(
                 sub_query, risk_level=risk_level, answers=answer_dict,
             )
-            added = _merge_graph_context(context, sub_ctx)
-            record_sub_query(
-                sub_q, refs=added, source=_src, reason=verdict.reason,
-            )
+            return sub_q, sub_ctx
+
+        sub_queries_to_run = list(verdict.sub_queries[: max_sub_queries()])
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(sub_queries_to_run)) as executor:
+            # Map futures to preserve original order
+            future_to_sub_q = {
+                executor.submit(_retrieve_task, sub_q): sub_q
+                for sub_q in sub_queries_to_run
+            }
+
+            # Process results sequentially in the original order to preserve determinism and prevent concurrent mutation races on the base context
+            for future in future_to_sub_q:
+                try:
+                    sub_q, sub_ctx = future.result()
+                    added = _merge_graph_context(context, sub_ctx)
+                    record_sub_query(
+                        sub_q, refs=added, source=_src, reason=verdict.reason,
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "sufficient_context_hop sub_query parallel retrieval failed for %r: %s",
+                        future_to_sub_q[future],
+                        exc,
+                    )
         record_note(
             f"sufficient_context_hop reason={verdict.reason} "
             f"sub_queries={len(verdict.sub_queries)}"

@@ -2,8 +2,9 @@
 
 Covers the four invariants the round must hold:
 
-* **Default OFF** — ``sufficient_context_enabled()`` is False without the env,
-  so the davidath TestClient bench is byte-identical by construction.
+* **Default ON (R110.1)** — ``sufficient_context_enabled()`` is True without the
+  env; davidath stays byte-identical because the gate is ON==OFF on the bench
+  (the bounded hop is a dedup no-op when the parse + BM25 already cover it).
 * **Deterministic missing-pieces analysis** — ``assess_sufficiency`` fires only
   on uncovered explicit refs or genuinely multi-part complex questions; the
   decomposition is a pure regex clause split with a verb-guarded coordination
@@ -399,6 +400,108 @@ def test_hop_failsoft_on_retrieval_error(monkeypatch) -> None:
         req, gr._deterministic_parse(req.question), base, {}
     )
     assert len(out.obligations) == 1
+
+
+# ── Parallel execution tests ──────────────────────────────────────────────
+
+
+def test_hop_parallel_execution(monkeypatch, trace) -> None:
+    import time
+    monkeypatch.setenv("REGENOLD_SUFFICIENT_CONTEXT", "1")
+    base = GraphContext(
+        obligations=[{"id": "o13", "article": "Art. 13", "text": "transparency"}]
+    )
+
+    retrieval_starts = []
+    def fake_retrieve(query, risk_level=None, answers=None):
+        retrieval_starts.append(time.time())
+        time.sleep(0.05)
+        entity = query.entities[0] if query.entities else "Art. 99"
+        art_num = "".join(filter(str.isdigit, entity))
+        return GraphContext(
+            obligations=[{"id": f"o{art_num}", "article": entity, "text": "extra"}],
+            nodes_traversed=1,
+        )
+
+    monkeypatch.setattr(gr, "_retrieve_from_graph", fake_retrieve)
+    req = GraphRAGRequest(question="What do Article 13, Article 50 and Article 99 require?")
+
+    start_time = time.time()
+    out = gr._maybe_sufficient_context_hop(
+        req, gr._deterministic_parse(req.question), base, {}
+    )
+    duration = time.time() - start_time
+
+    # If sequential, 2 queries * 0.05s = 0.10s+. If parallel, duration is ~0.05s.
+    # We assert duration is less than 0.09s.
+    assert duration < 0.09
+    assert len(retrieval_starts) == 2  # Article 50 and 99
+    # Check that they started at almost the exact same time
+    assert abs(retrieval_starts[1] - retrieval_starts[0]) < 0.03
+
+
+def test_hop_parallel_execution_partial_failure(monkeypatch, trace) -> None:
+    monkeypatch.setenv("REGENOLD_SUFFICIENT_CONTEXT", "1")
+    base = GraphContext(
+        obligations=[{"id": "o13", "article": "Art. 13", "text": "transparency"}]
+    )
+
+    def fake_retrieve(query, risk_level=None, answers=None):
+        entity = query.entities[0] if query.entities else ""
+        if "50" in entity:
+            raise RuntimeError("Article 50 lookup exploded")
+        return GraphContext(
+            obligations=[{"id": "o99", "article": "Art. 99", "text": "penalties"}],
+            nodes_traversed=1,
+        )
+
+    monkeypatch.setattr(gr, "_retrieve_from_graph", fake_retrieve)
+    req = GraphRAGRequest(question="What do Article 13, Article 50 and Article 99 require?")
+
+    # Should not raise any error, and should successfully merge the non-failing retrieval
+    out = gr._maybe_sufficient_context_hop(
+        req, gr._deterministic_parse(req.question), base, {}
+    )
+
+    ids = [o["id"] for o in out.obligations]
+    assert "o13" in ids
+    assert "o99" in ids
+    assert "o50" not in ids
+
+
+def test_hop_parallel_execution_order_preservation(monkeypatch, trace) -> None:
+    import time
+    monkeypatch.setenv("REGENOLD_SUFFICIENT_CONTEXT", "1")
+    base = GraphContext(
+        obligations=[{"id": "o13", "article": "Art. 13", "text": "transparency"}]
+    )
+
+    # Mock retrieve to complete in reverse order by sleeping longer on earlier queries
+    def fake_retrieve(query, risk_level=None, answers=None):
+        entity = query.entities[0] if query.entities else ""
+        if "50" in entity:
+            time.sleep(0.06)
+            return GraphContext(
+                obligations=[{"id": "o50", "article": "Art. 50", "text": "transp50"}],
+                nodes_traversed=1,
+            )
+        else:
+            time.sleep(0.01)
+            return GraphContext(
+                obligations=[{"id": "o99", "article": "Art. 99", "text": "penalties"}],
+                nodes_traversed=1,
+            )
+
+    monkeypatch.setattr(gr, "_retrieve_from_graph", fake_retrieve)
+    req = GraphRAGRequest(question="What do Article 13, Article 50 and Article 99 require?")
+
+    out = gr._maybe_sufficient_context_hop(
+        req, gr._deterministic_parse(req.question), base, {}
+    )
+
+    # Despite completion order, result merge order must be preserved: o13, then o50, then o99
+    ids = [o["id"] for o in out.obligations]
+    assert ids == ["o13", "o50", "o99"]
 
 
 # ── End-to-end + cache key ───────────────────────────────────────────────
