@@ -5867,6 +5867,24 @@ leaves carried through the wrapper) land on the next live re-probe post-deploy;
 the deterministic intercepts (Q6/Q7/Q9/Q17) verified correct on the local
 deterministic path.
 
+### R111.1 — extractive-override guard for curated intercepts
+
+The post-deploy live re-probe found **Q9 still shipping the verbatim Article
+99(1)** even though the new `_detect_high_risk_penalty_inquiry` intercept fired
+in `_deterministic_answer`: the route's `_try_extractive_answer` pass
+(restricted to high-precision QA shapes) **overwrote** the engine's 99(4)
+verdict with the extractive 99(1) sentence. Classification topics were already
+exempt from that pass (`not _is_classification_topic`), but a standalone
+curated intercept was not. Fix: the route now also computes
+`_is_curated_authoritative_intercept(question)` and adds `not
+_is_curated_intercept` to the extractive-override gate, so the
+minimal-risk / guiding-principles / Article 6(3) / R&D-scope / high-risk-penalty
+verdicts ship as authored. davidath **byte-identical** (the predicate fires on
+0 davidath rows — re-confirmed: Ans Strict 0.3457, Ref Loose 0.5965, Ref Strict
+0.4558, Tone 1.0, mt 20/20). Q9 now ships the Article 99(4) ceiling (EUR 15M /
+3 %) + the Article 99(6) SME rule; the prohibited control keeps the 99(3)
+35M / 7 % ceiling.
+
 ## Non-goals / things to skip
 
 - ~~Vector embeddings / dense retrieval~~ → **Round 31 added a

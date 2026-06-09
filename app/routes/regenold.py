@@ -73,6 +73,7 @@ from slowapi.util import get_remote_address
 from app.data.kb import KB_VERSION
 from app.engines.graph_rag import (
     _detect_classification_topic,
+    _is_curated_authoritative_intercept,
     ask_compliance_question,
 )
 from app.engines.scenario_classifier import (
@@ -3500,6 +3501,19 @@ def regenold_eu_ai_act_ask(
     _classification_topic_match = _detect_classification_topic(resolved_question or question)
     _is_classification_topic = _classification_topic_match is not None
 
+    # R111 — curated authoritative-intercept detection (minimal-risk,
+    # guiding-principles, Article 6(3), R&D-scope, high-risk penalties).
+    # Like a classification topic, these emit a pre-curated verdict whose
+    # prose must NOT be reshaped by the extractive-QA pass / QA-trim below
+    # (the penalties intercept's 99(4) ceiling answer was being overwritten
+    # by the extractive 99(1) sentence). Fires on 0 davidath rows.
+    try:
+        _is_curated_intercept = _is_curated_authoritative_intercept(
+            resolved_question or question
+        )
+    except Exception:  # noqa: BLE001 — fail-soft
+        _is_curated_intercept = False
+
     # R68 — role×risk obligation-matrix dump detection.
     #
     # The engine's ``_deterministic_answer`` emits the FULL provider×risk
@@ -3575,6 +3589,7 @@ def regenold_eu_ai_act_ask(
         and not _is_scenario_shape
         and not _is_multiturn
         and not _is_classification_topic
+        and not _is_curated_intercept
         and not _stage2_landed
     ):
         extracted = _try_extractive_answer(
