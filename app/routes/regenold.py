@@ -2172,7 +2172,7 @@ def _intent_anchor_set(
 # list, and the 2-3 extras each fail faithfulness. After the answer is
 # final, drop wire references the prose never names. Floor-protected so
 # the list is never emptied.
-_REFS_RECONCILE_FLOOR = 2
+_REFS_RECONCILE_FLOOR = 1
 
 # R77 — I6 shape-aware QA reference budget. QA gold avg ~1 article;
 # the legacy MAX_REFERENCES=5 over-cites and degrades Ref Conciseness

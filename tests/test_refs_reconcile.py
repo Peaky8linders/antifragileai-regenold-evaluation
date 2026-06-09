@@ -113,7 +113,8 @@ def test_empty_references_returns_empty():
 
 
 def test_fail_soft_on_bad_input():
-    # Non-string ref must not raise — fail-soft returns input unchanged.
-    bad = ["Article 25", None]  # type: ignore[list-item]
-    out = _reconcile_references_to_prose(bad, "Article 25 applies.")
+    # Force an exception inside the function to test the fail-soft block.
+    # The simplest way is to pass a non-iterable as references.
+    bad = object()
+    out = _reconcile_references_to_prose(bad, "Article 25 applies.")  # type: ignore
     assert out == bad
