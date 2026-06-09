@@ -5766,6 +5766,107 @@ belt-and-suspenders. The gate fires by default locally (verified: no env set →
 `sub_queries` populated on a multi-part probe); the live re-probe confirming
 `reasoning.sub_queries` on production is done after this round's redeploy.
 
+## Round 111 — Antifragile Q&A review fixes (2026-06-09)
+
+Closes the residual defects from the **Antifragile AI Review** (20 graded
+live Q&A answers) that survived R109 + the aaf6739 prompt/scope pass. Each
+of the 20 reviewer items was re-measured against the LIVE deployed wire
+(Sonnet via the wrapper), the genuinely-still-broken ones triaged, and the
+fixes located by a 3-agent investigation workflow then applied + gated.
+**davidath byte-identical on every rubric axis** (Ans Strict 0.3457, Ref
+Loose 0.5965, Ref Strict 0.4558, Ref Conciseness 0.4136, Tone 1.0, mt 20/20).
+
+### Citation precision — `app/data/subpoint_emitter.py` (Q11, Q12, Q13)
+
+The R38 sub-point emitter carried three wrong/contradictory leaf mappings,
+verified against the official Annex text:
+* **Q11 hardware** — `Annex IV.2.a` (development methods/steps) → **`Annex
+  IV.1.e`** (the description of the hardware on which the system runs) +
+  **`Annex IV.2.c`** (computational resources used to develop/train/test).
+* **Q12 emotion recognition** — `Annex III.5` (essential services) →
+  **`Annex III.1.c`** (emotion recognition under Biometrics) + **`Article
+  50.3`** (the precise deployer transparency duty toward exposed persons).
+* **Q13 doctor-patient transcription** — dropped the `Annex III.5` leaf
+  entirely (kept `Article 6.1`): the answer prose says transcription is
+  *not listed in Annex III*, so citing an Annex III leaf was a
+  self-contradiction; it is high-risk only as an Annex I medical-device
+  safety component (Article 6(1)).
+
+### Deterministic intercept gaps — `app/engines/graph_rag.py` (Q6, Q7, Q9, Q17)
+
+New curated intercepts in the `_deterministic_answer` cascade, each gated to
+fire on **0 davidath QA + 0 davidath scenario rows** (verified directly
+against the dataset):
+* **Q6 minimal-risk** (`_detect_minimal_risk_inquiry`) — "What are AI systems
+  with minimal risks?" was not verdict-shaped, fell through to the QA-dump,
+  and BM25-retrieved the high-risk Chapter III articles (a minimal-risk
+  question answered with high-risk content + 7 high-risk citations). Now emits
+  the residual-tier verdict (neither Art 5 / Art 6 / Art 50 / GPAI) with refs
+  `[Art. 5, Art. 6, Art. 50]`.
+* **Q7 guiding principles** — added the missing 7th principle
+  (**accountability**) so the curated answer enumerates all seven Recital-27
+  trustworthy-AI principles, and added a `_is_curated_authoritative_intercept`
+  short-circuit in `_two_stage_generate` so Stage-2 polish can no longer DROP
+  the closed-set enumeration (live: Sonnet had shortened it to just the Art 1
+  / Art 4 framing).
+* **Q9 high-risk penalties** (`_detect_high_risk_penalty_inquiry`) — emits the
+  **Article 99(4)** ceiling (EUR 15M / 3 %, the high-risk obligations) + the
+  **Article 99(6)** SME lower-of-two rule, replacing the generic Article 99(1)
+  recitation the extractive path surfaced. Gated penalty + high-risk + NOT
+  prohibited (so the 99(3) 35M/7 % ceiling still wins for prohibited-practice
+  penalty questions).
+* **Q17 scientific-R&D scope** (`_detect_research_scope_inquiry`) — emits the
+  Article 2(6) R&D exclusion + Article 2(8) pre-market-testing carve-out,
+  authoritative so the curated short-circuit prevents Sonnet from
+  hallucinating a GPAI-obligations lead off the word "model". A negative
+  guard (`scientific panel` / `market research`) + an AND-requirement on the
+  scope framing keeps it off Q16 (GPAI transparency → stays on the GPAI path)
+  and the davidath research rows.
+
+### Route-level — `app/routes/regenold.py` (Q1, Q2)
+
+* **Q1** — protect the **`risk_framework_overview`** verdict's curated refs
+  from the R19/R20 anchor pruner (the live neo4j intent-fallback collapsed
+  "What risk categories?" to `[Art 6, Annex III]` though the prose names all
+  four tiers + Arts 51-55). Narrowly scoped to that topic by name — protecting
+  every topic blew the `MAX_REFERENCES` cap on `medical_transcription` + an
+  explicit user anchor (caught + fixed in-round).
+* **Q2** — closed-set enumeration cap override
+  (`_is_closed_set_enumeration_ask`): "what practices are prohibited" / "what
+  risk categories" skip the ≤4-readable-unit Stage-2 backstop so the full
+  member list survives (the live (a)(b)(c)-then-truncated bug). Stage2-gated →
+  davidath byte-identical.
+
+### Stage-2 prompt completeness — `app/data/graph_rag_prompts.py` (Q2, Q3, Q5, Q14/15/20, Q18)
+
+Prompt-only (davidath byte-identical by construction; the deterministic bench
+never sends `ANSWER_GENERATE_SYSTEM`):
+* **Q2** rule 12b — forbid lettered "(a)/(b)" / semicolon enumerators for
+  closed-set asks (each is counted as a sentence and truncated); pack as one
+  comma-separated sentence.
+* **Q3** — "definition of high-risk" MUST describe BOTH routes (Annex I /
+  Annex III) + name the Article 6(3) carve-outs.
+* **Q5** — Article 50 per-paragraph + per-actor FACTUAL GUARD (50(1)/(2) =
+  provider; 50(3)/(4) = deployer; lead with 50(1)).
+* **Q14/15/20** rule 7 — answer EVERY sub-question (conformity → Article 43 +
+  the Art 43(3) MDR-integrated route; triage → Annex III(5)(d) vs
+  clinical-trial selection).
+* **Q18** — chatbot guard now CLASSIFY-first (a general patient-query chatbot
+  is limited-risk → Article 50 ALONE, not the cumulative Art 13 + 50) + the
+  hospital = deployer / provider-duty split.
+
+### Verification
+
+`pytest` full suite green (the only failures were env-induced by forcing
+`P2P_GRAPH_RAG_ENABLE_STAGE2=0` in a smoke run — they pass under the canonical
+env); davidath **byte-identical** to the R110 baseline; 276-runner **255/255**
+(RISK_F1 macro 0.85); OOS probe **21/21, 0 leaks**; +1 new test module
+`tests/test_r111_qa_review.py` + updated `tests/test_subpoint_emitter.py`. The
+fixes that depend on Sonnet (the prompt completeness items + the citation
+leaves carried through the wrapper) land on the next live re-probe post-deploy;
+the deterministic intercepts (Q6/Q7/Q9/Q17) verified correct on the local
+deterministic path.
+
 ## Non-goals / things to skip
 
 - ~~Vector embeddings / dense retrieval~~ → **Round 31 added a

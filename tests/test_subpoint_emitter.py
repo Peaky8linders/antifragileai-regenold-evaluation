@@ -60,9 +60,10 @@ def test_existing_subpoint_ref_is_preserved():
         base_refs=["Article 5.1.f"],  # already a leaf — don't double-upgrade
     )
     # R39 eng-review F3: emotion-recognition topic maps to BOTH
-    # Article 5.1.f AND Annex III.5 (HRAIS context). The leaf for
+    # Article 5.1.f AND Annex III.1.c (R111: emotion recognition is high-risk
+    # under Annex III(1)(c) biometrics, NOT Annex III(5)). The leaf for
     # Article 5 is already present so the upgrade pass leaves it alone;
-    # the new INJECT pass adds Annex III.5 because the Annex III base
+    # the new INJECT pass adds Annex III.1.c because the Annex III base
     # isn't represented. Article 5.1.f is still preserved (test intent).
     assert "Article 5.1.f" in refs
     # Optional: at most one injected leaf, capped at 2 per the F3 budget.
@@ -92,46 +93,57 @@ def test_emotion_recognition_infer_emotions_paraphrase():
 
 
 def test_emotion_recognition_also_emits_annex_iii_subpoint():
-    """Regenold probe gold pairs Article 5.1.f with Annex III.5. When
-    the engine surfaces Annex III as a base, the emitter must upgrade
-    it to Annex III.5 on emotion-recognition questions."""
+    """R111: emotion recognition high-risk is Annex III(1)(c) (biometrics),
+    NOT Annex III(5) (essential services). When the engine surfaces Annex III
+    as a base, the emitter must upgrade it to Annex III.1.c — and surface the
+    Article 50(3) deployer transparency leaf — on emotion-recognition
+    questions. The old (wrong) Annex III.5 leaf must NOT appear."""
     refs = upgrade_references(
         question="Are AI systems intended for emotion recognition from biometric data always prohibited?",
-        base_refs=["Article 5", "Annex III"],
+        base_refs=["Article 5", "Annex III", "Article 50"],
     )
     assert "Article 5.1.f" in refs
-    assert "Annex III.5" in refs
+    assert "Annex III.1.c" in refs
+    assert "Article 50.3" in refs
+    assert "Annex III.5" not in refs
 
 
 # ── Regenold probe coverage — doctor-patient transcription ───────────────
 
 
-def test_doctor_patient_transcription_upgrades_annex_iii_to_5():
-    """'doctor-patient' / 'transcribes' / 'transcription' must upgrade
-    Annex III → Annex III.5 (essential services — healthcare overlap)."""
+def test_doctor_patient_transcription_does_not_emit_annex_iii_leaf():
+    """R111 (Q13): general transcription is NOT any Annex III high-risk use
+    case; it is high-risk only as an Annex I medical-device safety component
+    (Article 6(1)). The emitter must NOT add an Annex III leaf (the old
+    Annex III.5 leaf contradicted the answer prose 'not listed in Annex
+    III')."""
     refs = upgrade_references(
         question="Is an AI that transcribes doctor-patient conversations prohibited?",
-        base_refs=["Annex III"],
+        base_refs=["Annex III", "Article 6"],
     )
-    assert "Annex III.5" in refs
+    assert "Annex III.5" not in refs
+    assert "Article 6.1" in refs
 
 
 def test_medical_consultation_transcription_paraphrase_matches():
-    """Probe p03 paraphrase: 'AI transcription of medical consultations'."""
+    """Probe p03 paraphrase: 'AI transcription of medical consultations'.
+    R111: no Annex III leaf; Article 6.1 (medical-device route) only."""
     refs = upgrade_references(
         question="Does the EU AI Act prohibit AI transcription of medical consultations?",
-        base_refs=["Annex III"],
+        base_refs=["Annex III", "Article 6"],
     )
-    assert "Annex III.5" in refs
+    assert "Annex III.5" not in refs
+    assert "Article 6.1" in refs
 
 
 def test_ai_scribe_paraphrase_matches():
-    """Probe p05 paraphrase: 'AI scribe for doctors'."""
+    """Probe p05 paraphrase: 'AI scribe for doctors'. R111: Article 6.1 only,
+    no contradicting Annex III leaf."""
     refs = upgrade_references(
         question="We deploy an AI scribe for doctors during patient consultations.",
         base_refs=["Annex III", "Article 6"],
     )
-    assert "Annex III.5" in refs
+    assert "Annex III.5" not in refs
     assert "Article 6.1" in refs
 
 
@@ -145,13 +157,15 @@ def test_physician_patient_dialogue_paraphrase_matches():
 
 
 def test_medical_record_paraphrase_matches():
-    """Additional paraphrase: 'medical record' should also trigger the
-    healthcare essential-services overlap mapping."""
+    """Additional paraphrase: 'medical record' fires the transcription topic.
+    R111: it maps to Article 6.1 (medical-device route) and emits NO Annex III
+    leaf (the old Annex III.5 mapping was a self-contradiction)."""
     refs = upgrade_references(
         question="Is an AI that summarises a medical record subject to Annex III?",
-        base_refs=["Annex III"],
+        base_refs=["Annex III", "Article 6"],
     )
-    assert "Annex III.5" in refs
+    assert "Annex III.5" not in refs
+    assert "Article 6.1" in refs
 
 
 # ── Regenold probe coverage — technical documentation hardware ───────────
@@ -164,7 +178,12 @@ def test_technical_doc_required_hardware_paraphrase():
         question="Is information about required hardware part of the technical documentation?",
         base_refs=["Annex IV", "Annex IV.2"],
     )
-    assert any(r == "Annex IV.2.a" for r in refs)
+    # R111 (Q11): hardware description is Annex IV(1)(e); computational
+    # resources are Annex IV(2)(c). The old Annex IV.2.a leaf = development
+    # methods/steps, unrelated to hardware.
+    assert any(r == "Annex IV.1.e" for r in refs)
+    assert any(r == "Annex IV.2.c" for r in refs)
+    assert not any(r == "Annex IV.2.a" for r in refs)
 
 
 def test_technical_doc_hardware_used_to_train_paraphrase():
@@ -173,7 +192,8 @@ def test_technical_doc_hardware_used_to_train_paraphrase():
         question="Do we have to describe the hardware used to train and run our AI system?",
         base_refs=["Annex IV"],
     )
-    assert any(r == "Annex IV.2.a" for r in refs)
+    assert any(r == "Annex IV.1.e" for r in refs)
+    assert any(r == "Annex IV.2.c" for r in refs)
 
 
 # ── No regression on davidath-style queries ──────────────────────────────
@@ -181,27 +201,31 @@ def test_technical_doc_hardware_used_to_train_paraphrase():
 
 def test_davidath_workplace_emotion_scenario_still_works():
     """A davidath emotion scenario in workplace context must still pick
-    up Article 5.1.f via the emotion-recognition pattern."""
+    up Article 5.1.f via the emotion-recognition pattern. R111: the base
+    Article 50 transparency ref is upgraded to the precise Article 50(3)
+    deployer duty toward exposed persons."""
     refs = upgrade_references(
         question="Run a call-centre monitoring tool that infers caller emotions.",
         base_refs=["Article 5", "Article 50"],
     )
     assert "Article 5.1.f" in refs
-    assert "Article 50" in refs
+    # Article 50 -> Article 50.3 (precise emotion-recognition deployer ref).
+    assert "Article 50.3" in refs
 
 
 def test_subpoint_topic_map_grew_for_doctor_transcription():
-    """At least one entry references Annex III.5 and Article 6.1 together
-    (the doctor-transcription mapping)."""
+    """R111: the doctor-transcription mapping emits Article 6.1 (the Annex I
+    medical-device route) and does NOT emit any contradicting Annex III leaf."""
     from app.data.subpoint_emitter import SUBPOINT_TOPIC_MAP
 
     found = False
-    for _, candidates in SUBPOINT_TOPIC_MAP:
+    for pattern, candidates in SUBPOINT_TOPIC_MAP:
         leaves = {leaf for leaf, _ in candidates}
-        if "Annex III.5" in leaves and "Article 6.1" in leaves:
+        if pattern.search("transcribes doctor-patient conversations"):
             found = True
-            break
-    assert found, "no entry pairs Annex III.5 with Article 6.1"
+            assert "Article 6.1" in leaves
+            assert not any(leaf.startswith("Annex III") for leaf in leaves)
+    assert found, "no transcription entry found"
 
 
 def test_r71_upgrade_references_live_message_vs_flattened_multiturn():

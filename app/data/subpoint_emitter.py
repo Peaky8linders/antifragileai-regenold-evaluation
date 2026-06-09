@@ -1,7 +1,8 @@
 """Topic-driven leaf sub-point reference emitter (R38 / Issue A1).
 
-The Regenold competition rules PDF's 3 example questions all map to
-leaf-subpoint refs (Article 5(1)(f), Annex IV(2)(a), Annex III(5)). Our
+The Regenold competition rules PDF's 3 example questions map to
+leaf-subpoint refs (Article 5(1)(f) emotion-recognition prohibition,
+Annex IV(1)(e) hardware description, Article 6(1) medical-device route). Our
 pipeline historically emits base articles; this module surface-upgrades
 to leaves when the question's topic matches.
 
@@ -38,10 +39,13 @@ SUBPOINT_TOPIC_MAP: tuple[tuple[re.Pattern[str], tuple[tuple[str, float], ...]],
     (re.compile(r"\bfacial recognition (?:database|scraping)|untargeted scrap", re.I),
      (("Article 5.1.e", 1.0),)),
     # Emotion recognition — Article 5(1)(f) prohibition in workplace/education
-    # PLUS Annex III(5) high-risk classification elsewhere (per Regenold probe
-    # gold). Regex handles hyphenated form ("emotion-recognition"), space form
-    # ("emotion recognition"), inflected ("emotions recognition"), and paraphrases
-    # ("infer customer emotions", "detect mood", "infer feelings", "gauge feelings").
+    # PLUS, elsewhere, high-risk classification under Annex III(1)(c) (emotion
+    # recognition sits under the BIOMETRICS heading — Annex III.1.c — NOT under
+    # Annex III(5) essential services) and the Article 50(3) deployer
+    # transparency duty toward exposed persons. Regex handles hyphenated form
+    # ("emotion-recognition"), space form ("emotion recognition"), inflected
+    # ("emotions recognition"), and paraphrases ("infer customer emotions",
+    # "detect mood", "infer feelings", "gauge feelings").
     (re.compile(
         r"\bemotion[s\-]?\s*recognition\b|"
         r"\bemotion-recognition\b|"
@@ -50,7 +54,7 @@ SUBPOINT_TOPIC_MAP: tuple[tuple[re.Pattern[str], tuple[tuple[str, float], ...]],
         r"detect(?:s|ed|ing)?\s+(?:of\s+)?mood",
         re.I,
      ),
-     (("Article 5.1.f", 1.0), ("Annex III.5", 1.0))),
+     (("Article 5.1.f", 1.0), ("Annex III.1.c", 1.0), ("Article 50.3", 1.0))),
     (re.compile(r"\bbiometric categori[sz]ation\b.*(race|religion|trade union|sex(ual)? orientation|political)", re.I),
      (("Article 5.1.g", 1.0),)),
     (re.compile(r"\breal[- ]time (?:remote )?biometric identification|live biometric ident", re.I),
@@ -72,10 +76,15 @@ SUBPOINT_TOPIC_MAP: tuple[tuple[re.Pattern[str], tuple[tuple[str, float], ...]],
     (re.compile(r"\b(?:administration of )?justice|judicial|court", re.I),
      (("Annex III.8", 1.0),)),
     # Annex IV — technical documentation
-    # Hardware / computational resource requirement clause in Annex IV(2)(a).
-    # Pattern covers direct collocations ("hardware specs",
-    # "computational resources"), inverted forms ("required hardware",
-    # "hardware that is required"), and paraphrases ("hardware used to train").
+    # Hardware specification lives in Annex IV(1)(e) ("the description of the
+    # hardware on which the AI system is intended to run"); the computational
+    # resources used to develop/train/test/validate are Annex IV(2)(c). NOTE
+    # Annex IV(2)(a) is "the methods and steps performed for the development of
+    # the AI system" — development methodology, UNRELATED to hardware — so the
+    # earlier IV.2.a mapping was wrong. Pattern covers direct collocations
+    # ("hardware specs", "computational resources"), inverted forms ("required
+    # hardware", "hardware that is required"), and paraphrases ("hardware used
+    # to train").
     (re.compile(
         r"\b(?:hardware|computational|computing)\s+(?:requirement|resource|infrastructure|spec)|"
         r"\brequired\s+hardware\b|"
@@ -85,7 +94,7 @@ SUBPOINT_TOPIC_MAP: tuple[tuple[re.Pattern[str], tuple[tuple[str, float], ...]],
         r"\bhardware\s+(?:specification|specifications)\b",
         re.I,
      ),
-     (("Annex IV.2.a", 0.5), ("Annex IV.2", 0.5))),
+     (("Annex IV.1.e", 0.5), ("Annex IV.2.c", 0.5))),
     (re.compile(r"\bdata\s+(?:set|requirements?|provenance)\b.*technical doc", re.I),
      (("Annex IV.2.d", 1.0),)),
     (re.compile(r"\btechnical documentation\b", re.I),
@@ -121,10 +130,13 @@ SUBPOINT_TOPIC_MAP: tuple[tuple[re.Pattern[str], tuple[tuple[str, float], ...]],
     # Art. 73 — incident reporting
     (re.compile(r"\bserious incident|incident report", re.I),
      (("Article 73.1", 1.0),)),
-    # Doctor-patient / medical transcription — Annex III(5) essential
-    # services (healthcare overlap). Regenold probe gold maps these to
-    # Annex III.5 plus Article 6 (HRAIS via MDR overlap) and Article 50
-    # (transparency if not medical device). Pattern covers transcription
+    # Doctor-patient / medical transcription. General transcription is NOT
+    # any Annex III high-risk use case (III.5 is essential-services eligibility,
+    # III.1.c is emotion recognition); it becomes high-risk only when it is a
+    # safety component of a medical device (Annex I via MDR/IVDR), which is the
+    # Article 6(1) route. So this maps to Article 6.1 ONLY — emitting an Annex
+    # III leaf here contradicts the deterministic answer prose ("not listed in
+    # Annex III as a high-risk use case"). Pattern covers transcription
     # verbs ("transcribes", "transcription"), medical-encounter nouns
     # ("doctor-patient", "physician-patient", "clinical conversation",
     # "medical consultation", "patient consultation", "AI scribe"), and
@@ -144,7 +156,7 @@ SUBPOINT_TOPIC_MAP: tuple[tuple[re.Pattern[str], tuple[tuple[str, float], ...]],
         r"\bclinical\s+conversation\b",
         re.I,
      ),
-     (("Annex III.5", 1.0), ("Article 6.1", 1.0))),
+     (("Article 6.1", 1.0),)),
     # Art. 5 — generic catch-all for ambiguous "prohibited practices" queries.
     # Surfaces the most-cited leaf letters as ambiguous candidates so the
     # emitter falls into the EMIT-BOTH path (base + leaves).
