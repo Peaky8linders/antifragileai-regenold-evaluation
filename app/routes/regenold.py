@@ -2290,7 +2290,15 @@ _CLOSED_SET_ENUMERATION_RE = re.compile(
     r"what\s+(?:practices|types\s+of\s+ai|kinds\s+of\s+ai)\s+(?:are|is)\s+"
     r"(?:explicitly\s+|expressly\s+)?(?:prohibited|banned|forbidden)"
     r"|what\s+risk\s+(?:categor|tier|level|class)\w*\s+"
-    r"(?:are\s+there|exist|do(?:es)?\s+the\s+(?:eu\s+)?(?:ai\s+)?act\b"
+    r"(?:are\s+there|exist"
+    # R112.1 — passive enumerative frames ("are provided / defined /
+    # established / set out for AI systems") are set-enumeration asks
+    # too (the R111 closed-set test pins "What risk categories are
+    # provided for AI systems?"). Single-system classification asks
+    # ("what risk category is my CV tool") stay excluded — they carry
+    # "is/does my", not a passive plural frame.
+    r"|are\s+(?:provided|defined|established|set\s+out|laid\s+down)"
+    r"|do(?:es)?\s+the\s+(?:eu\s+)?(?:ai\s+)?act\b"
     r"|do(?:es)?\s+the\s+regulation\b)"
     r"|what\s+are\s+the\s+risk\s+(?:categor|tier|level|class)\w*"
     r"|what\s+are\s+the\s+(?:annex\s+iii|risk)\s+(?:categor|use\s+cases|tiers)"
@@ -4353,11 +4361,32 @@ def regenold_eu_ai_act_ask(
         # low-confidence BM25 addition that davidath gold doesn't include —
         # dropping it lifts Ref Conciseness and Ref Strict without hurting
         # Ref Loose (gold ~1, F1 metric).
+        # R112 — also exempt GENERAL classification-verdict questions
+        # ("is X high-risk according to Article 5?" — the patient-weight
+        # shape). They match no curated _CLASSIFICATION_TOPICS entry, so
+        # the _is_classification_topic exemption above missed them, and
+        # their verdict legitimately spans Art. 5 + Art. 6 + Annex III
+        # (+Art. 50) — a 3-ref cut drops the Annex III anchor. The
+        # detector fires on 0 davidath QA rows (the general-verdict
+        # round was built davidath-neutral), so the bench-measured
+        # R77-I6 trade is preserved. Pre-R112 this gap was masked by
+        # the unconditional ontology-hop budget bump to 7.
+        _is_general_classification = False
+        try:
+            from app.engines.graph_rag import (  # noqa: PLC0415
+                _is_classification_question,
+            )
+            _is_general_classification = _is_classification_question(
+                live_user_message or question or ""
+            )
+        except Exception:  # noqa: BLE001 — fail-soft
+            pass
         if (
             os.getenv("REGENOLD_QA_REF_BUDGET", "1").strip().lower()
             in ("1", "true", "yes", "on")
             and not _is_multiturn
             and not _is_classification_topic
+            and not _is_general_classification
         ):
             _effective_max_refs = _QA_MAX_REFERENCES
         else:

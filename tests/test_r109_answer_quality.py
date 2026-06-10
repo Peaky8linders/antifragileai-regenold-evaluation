@@ -164,7 +164,12 @@ class TestR109Stage2PromptDiscipline:
 
 class TestR109KBVersion:
     def test_kb_version_bumped(self):
-        assert KB_VERSION == "2024.1689.v14"
+        """R109 bumped the KB to v14; later rounds bump further (R112 →
+        v15). Assert a version FLOOR, not an exact pin — the exact
+        content↔version coupling is enforced by the R56-A signature
+        lint in test_kb_consistency.py."""
+        assert KB_VERSION.startswith("2024.1689.v")
+        assert int(KB_VERSION.rsplit("v", 1)[1]) >= 14
 
 
 # ═══════════════════════════ Batch 2 ════════════════════════════════════
@@ -311,6 +316,12 @@ class TestR109Batch2Penalties:
         # Concrete amounts.
         assert "35m" in low and "15m" in low and "7.5m" in low
         assert "7%" in summary and "3%" in summary and "1%" in summary
-        # The Art 99(4) tier explicitly names high-risk + transparency.
-        assert "high-risk ai system obligations" in low
+        # The Art 99(4) tier names the official CLOSED enumeration
+        # (R112 finding 51 replaced the over-broad "high-risk AI system
+        # obligations / any other obligation" phrasing with the
+        # operator/notified-body list of the official text): provider
+        # Art. 16 + deployer Art. 26 carry the high-risk operator
+        # obligations, and Art. 50 carries transparency.
+        assert "article 16" in low
+        assert "article 26" in low
         assert "transparency obligations" in low

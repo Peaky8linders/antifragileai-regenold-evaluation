@@ -70,7 +70,12 @@ def run(
 
     rows: list[dict[str, Any]] = []
     for scn in MEDTECH_SCENARIOS:
-        history = [{"role": "user", "content": scn["question"]}]
+        # Multi-turn rows (rgn_mt_*) carry a full ``messages`` history whose
+        # final user turn equals ``question``; single-turn rows fall back to
+        # the historical one-message shape.
+        history = scn.get("messages") or [
+            {"role": "user", "content": scn["question"]}
+        ]
         body, lat, status, err, _attempts, _retried = transport(
             endpoint, api_key, history, timeout
         )

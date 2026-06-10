@@ -136,8 +136,11 @@ class TestSearchDefinitions:
         hits = search_definitions("biometric verification", top_k=3)
         assert hits, "expected at least one hit"
         top_citation, _top_defn = hits[0]
-        # Art. 3.35 is the biometric-verification entry; it should rank
+        # Art. 3.36 is the biometric-verification entry per the FINAL
+        # Regulation 2024/1689 Article 3 numbering (R112 finding 14
+        # renumbered the registry against the pinned official text —
+        # official 3(35) is 'biometric identification'); it should rank
         # at or near the top of a "biometric verification" search.
-        assert top_citation == "Art. 3.35", (
-            f"Expected Art. 3.35 (biometric verification) at top; got {top_citation}"
+        assert top_citation == "Art. 3.36", (
+            f"Expected Art. 3.36 (biometric verification) at top; got {top_citation}"
         )
