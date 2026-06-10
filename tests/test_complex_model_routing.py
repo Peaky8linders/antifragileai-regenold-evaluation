@@ -98,10 +98,10 @@ class TestDefaultRouting:
             complex_question=True,
         )
         req: OpenAIWrapperRequest = _mock_wrapper.complete.call_args.args[0]
-        # Load-bearing: the complex path swaps to Fable 5 by default.
-        assert req.model == "fable-5"
+        # Load-bearing: the complex path swaps to Fable 5 (claude-fable-5) by default.
+        assert req.model == "claude-fable-5"
         # Pin the new defaults so a future revert is loud, not silent.
-        assert settings.graph_rag.complex_model == "fable-5"
+        assert settings.graph_rag.complex_model == "claude-fable-5"
         assert settings.graph_rag.complex_thinking_tokens == 0
         # Extended thinking OFF by default → no thinking header sent.
         assert "X-Claude-Max-Thinking-Tokens" not in req.extra_headers
@@ -118,7 +118,7 @@ class TestDefaultRouting:
         test above.)"""
         original_complex = settings.graph_rag.complex_model
         original_thinking = settings.graph_rag.complex_thinking_tokens
-        settings.graph_rag.complex_model = "fable-5"
+        settings.graph_rag.complex_model = "claude-fable-5"
         settings.graph_rag.complex_thinking_tokens = 2500
         try:
             _openai_wrapper_complete_for_graph_rag(
@@ -129,7 +129,7 @@ class TestDefaultRouting:
             settings.graph_rag.complex_model = original_complex
             settings.graph_rag.complex_thinking_tokens = original_thinking
         req: OpenAIWrapperRequest = _mock_wrapper.complete.call_args.args[0]
-        assert req.model == "fable-5"
+        assert req.model == "claude-fable-5"
         assert req.extra_headers.get("X-Claude-Max-Thinking-Tokens") == "2500"
 
 

@@ -62,27 +62,37 @@ class GraphRAGSettings(BaseSettings):
     # and the deterministic + Sonnet polish path is rubric-positive
     # in aggregate.
     #
-    # **R103 reversal (2026-06-01): default = ``fable-5``, NO
-    # extended thinking.** The R81-A1 latency disaster (16 s p50, 51 s
-    # outlier) was the 8000→1024-token EXTENDED-THINKING budget, NOT
-    # Opus itself. Fable 5 (new Mythos model with stronger reasoning)
-    # with ``complex_thinking_tokens=0`` runs as a plain
-    # model swap at ~Sonnet latency, lifting the hard reasoning
-    # categories (conflict / borderline-prohibition / GPAI thresholds /
-    # multi-turn coreference — the ~20% the complexity gate fires on)
-    # without the thinking-budget tail. Verified reachable via the Max
-    # wrapper (`fable-5`, HTTP 200, ~6 s tiny prompt).
+    # **R103 reversal (2026-06-01) + R112.1 ID fix (2026-06-11):
+    # default = ``claude-fable-5``, NO extended thinking.** The R81-A1
+    # latency disaster (16 s p50, 51 s outlier) was the
+    # 8000→1024-token EXTENDED-THINKING budget, NOT the model swap.
+    # Fable 5 with ``complex_thinking_tokens=0`` runs as a plain model
+    # swap, lifting the hard reasoning categories (conflict /
+    # borderline-prohibition / GPAI thresholds / multi-turn
+    # coreference — the ~20% the complexity gate fires on) without the
+    # thinking-budget tail.
     #
-    # Operator override (per-deploy): set
-    # ``P2P_GRAPH_RAG_COMPLEX_MODEL=`` (empty) to disable the swap and
-    # keep every Stage-2 call on Sonnet for cost/latency reasons.
-    complex_model: str = "fable-5"
+    # R112.1 — the model ID MUST be ``claude-fable-5``. The bare
+    # ``fable-5`` id is REJECTED by the wrapper's Claude Code CLI
+    # ("There's an issue with the selected model (fable-5)…" relayed
+    # as an HTTP 200 completion — the exact incident the R112
+    # _WRAPPER_CLI_ERROR_SENTINELS guard now catches), so the complex
+    # path silently lost its LLM lift on every call. Verified via the
+    # Max wrapper 2026-06-11: ``claude-fable-5`` → HTTP 200 "OK";
+    # ``fable-5`` → CLI error sentinel.
+    #
+    # Operator overrides (per-deploy): set
+    # ``P2P_GRAPH_RAG_COMPLEX_MODEL=claude-opus-4-8`` (the verified
+    # R103 alternative for complex reasoning) or ``=`` (empty) to
+    # disable the swap and keep every Stage-2 call on Sonnet.
+    complex_model: str = "claude-fable-5"
     """Model name for the complex-question path. Default:
-    ``fable-5`` (no extended thinking — see
-    ``complex_thinking_tokens=0``). Set empty to disable the swap
-    (every Stage-2 polish call uses the base ``model``). The provider
-    falls back to deterministic if the configured complex model is
-    unreachable, so worst case is a soft miss, not a 500."""
+    ``claude-fable-5`` (no extended thinking — see
+    ``complex_thinking_tokens=0``). ``claude-opus-4-8`` is the verified
+    alternative override. Set empty to disable the swap (every Stage-2
+    polish call uses the base ``model``). The provider falls back to
+    deterministic if the configured complex model is unreachable, so
+    worst case is a soft miss, not a 500."""
 
     complex_thinking_tokens: int = 0
     """``max_thinking_tokens`` for extended-thinking Stage-2 polish on
