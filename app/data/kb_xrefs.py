@@ -54,6 +54,53 @@ from app.data.kb import EC_CHECKER_OBLIGATION_MAP
 _ART_RE = re.compile(r"\bArt\.?\s*(\d{1,3})\b", re.IGNORECASE)
 _ANNEX_RE = re.compile(r"\bAnnex\s+([IVXLC]+)\b", re.IGNORECASE)
 
+# ── Cross-Regulation guard (R112) ───────────────────────────────────────
+#
+# Several KB summaries cite articles of OTHER instruments in the
+# abbreviated form ``_ART_RE`` matches — "Broader than GDPR Art. 77",
+# "Art. 5 of Regulation (EU) No 182/2011", "the Art. 18 rights of
+# defence in Reg. (EU) 2019/1020". The bare numbers coincide with real
+# AI Act articles, so without a context guard they become spurious
+# AI-Act edges that pass the ARTICLE_EXISTENCE lint and reach the
+# wire's 1-hop citation expansion. The R47 prose-miner curated its
+# edges with exactly this filter; the legacy regex extractor gets the
+# code equivalent here.
+#
+# A match is rejected when:
+#   * the text immediately BEFORE it names a foreign instrument
+#     ("GDPR Art. 77", "Regulation (EU) 2019/1020 Art. 18"), or
+#   * the text shortly AFTER it attributes the article to a foreign
+#     instrument ("Art. 5 of Regulation (EU) No 182/2011",
+#     "Art. 18 rights of defence in Reg. (EU) 2019/1020") — allowing a
+#     sub-point chain and up to four intervening words before the
+#     of/in/under + Regulation/Reg./GDPR/Directive attribution.
+_FOREIGN_LEAD_RE = re.compile(
+    r"(?:\bGDPR|\bDirective\s+[\d/]+(?:/(?:EU|EC|EEC))?|"
+    r"\bRegulation\s*\((?:EU|EC|EEC)\)\s*(?:No\s*)?\d{1,4}/\d{2,4})\s*$",
+    re.IGNORECASE,
+)
+_FOREIGN_TRAIL_RE = re.compile(
+    r"^\s*(?:\([0-9a-zA-Z]+\)\s*)*(?:[a-z]+\s+){0,4}"
+    r"(?:of|in|under)\s+(?:the\s+)?"
+    r"(?:GDPR\b|Reg\.\s*\(|Regulation\s*\((?:EU|EC|EEC)\)|Directive\b)",
+    re.IGNORECASE,
+)
+
+#: Window sizes for the foreign-instrument context check.
+_FOREIGN_LEAD_WINDOW = 60
+_FOREIGN_TRAIL_WINDOW = 60
+
+
+def _is_cross_regulation_context(summary: str, start: int, end: int) -> bool:
+    """True when the ``summary[start:end]`` citation belongs to a foreign
+    instrument (GDPR / Reg. 2019/1020 / Reg. 182/2011 / a Directive)
+    rather than the AI Act. See the R112 guard note above."""
+    lead = summary[max(0, start - _FOREIGN_LEAD_WINDOW):start]
+    trail = summary[end:end + _FOREIGN_TRAIL_WINDOW]
+    return bool(
+        _FOREIGN_LEAD_RE.search(lead) or _FOREIGN_TRAIL_RE.match(trail)
+    )
+
 
 # ── Manually-curated cross-reference edges ─────────────────────────────
 #
@@ -538,6 +585,10 @@ def _build_regex_xref_graph() -> dict[str, tuple[str, ...]]:
         for match in _ART_RE.finditer(summary):
             num = match.group(1)
             target = f"Art. {num}"
+            # R112: skip citations that belong to a foreign instrument
+            # (GDPR / Reg. 2019/1020 / comitology Reg. 182/2011 / ...).
+            if _is_cross_regulation_context(summary, match.start(), match.end()):
+                continue
             # Validate existence so we don't surface a hallucinated
             # cross-ref (e.g. a typo in the summary like Art. 200).
             if target in ARTICLE_EXISTENCE and target not in seen:
@@ -547,6 +598,8 @@ def _build_regex_xref_graph() -> dict[str, tuple[str, ...]]:
         for match in _ANNEX_RE.finditer(summary):
             roman = match.group(1).upper()
             target = f"Annex {roman}"
+            if _is_cross_regulation_context(summary, match.start(), match.end()):
+                continue
             if target in ARTICLE_EXISTENCE and target not in seen:
                 seen.add(target)
                 targets.append(target)

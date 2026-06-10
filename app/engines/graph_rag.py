@@ -1571,6 +1571,31 @@ _KEYWORD_ENTITY_MAP: tuple[tuple[str, str], ...] = (
     ("practical implementation guidelines", "Art. 96"),
 )
 
+# R112 — word-boundary guard for the collision-prone keyword-map entries.
+#
+# The `_deterministic_parse` keyword scan is a bare substring test
+# (`kw in q_lower`) — INTENTIONALLY, so plural / inflected forms keep
+# matching ("sandboxes", "watermarks", "recalled", "registrations" all hit
+# their singular keys). That property is load-bearing for davidath recall,
+# so it must NOT be replaced wholesale with word-bounded matching.
+#
+# The one provable wrong-target hazard family is the penalties cluster:
+# "fines" substring-matches inside "defines" / "refines" / "confines", and
+# "fine(s) for" inside "define(s) for(eseeable)" — anchoring Art. 99
+# (penalties) as the SOLE retrieval entity for definitional questions
+# ("Which article defines the term provider?"), which then skips the BM25
+# fallback that would have found Art. 3. These entries (and only these)
+# are matched with \b word boundaries instead. An audit of every other
+# short key in the map found no second wrong-target hazard: the remaining
+# substring over-matches ("banned"→"unbanned", "recall"→"recalled",
+# "retrain"→"retraining", …) all land on the SAME article as the
+# intended-topic match. Verified zero old-vs-new diffs across all 476
+# davidath questions.
+_KEYWORD_ENTITY_BOUNDARY_RES: dict[str, re.Pattern[str]] = {
+    kw: re.compile(r"\b" + re.escape(kw) + r"\b")
+    for kw in ("fines", "fine for", "fines for")
+}
+
 
 # ─── Deterministic fallbacks (no LLM required) ──────────────────────────────
 
@@ -1678,8 +1703,17 @@ def _deterministic_parse(question: str) -> GraphQuery:
     # that risks over-eager entity injection for questions whose primary
     # intent isn't the mapped article.
     # Uses module-level :data:`_KEYWORD_ENTITY_MAP` (defined above the function).
+    # R112 — collision-prone entries (the "fines" → "defines" family) are
+    # matched with word boundaries via _KEYWORD_ENTITY_BOUNDARY_RES; every
+    # other entry keeps the substring test (plural/inflected recall).
     for kw, art_ref in _KEYWORD_ENTITY_MAP:
-        if kw in q_lower and art_ref not in entities:
+        boundary_pat = _KEYWORD_ENTITY_BOUNDARY_RES.get(kw)
+        if boundary_pat is not None:
+            if not boundary_pat.search(q_lower):
+                continue
+        elif kw not in q_lower:
+            continue
+        if art_ref not in entities:
             entities.append(art_ref)
 
     # R81-N — typed-entity NER. Closes the 15–24% retrieval-fail
@@ -2146,14 +2180,22 @@ _CLASSIFICATION_TOPICS: list[dict] = [
                 re.IGNORECASE,
             ),
         ],
+        # R112 — anchor corrected: Article 113(3)(b) is the 2 August 2025
+        # governance/GPAI list; the 2 August 2026 general-application date
+        # for Annex III high-risk obligations comes from Article 113,
+        # second paragraph. Digital Omnibus sentence stripped per project
+        # policy (commit 2a755d7 + graph_rag_prompts.py rule 2b — OMNIBUS
+        # OUT). Dates verified verbatim against the pinned official
+        # Article 113 text (official_text_patches.py).
         "answer": (
-            "Under Article 113(b), the full Chapter III Section 2 obligations for "
-            "Annex III high-risk AI systems — including deployer duties under "
-            "Article 26, the Fundamental Rights Impact Assessment under Article 27, "
-            "and transparency obligations under Articles 13 and 50 — take effect on "
-            "2 August 2026. The Digital Omnibus political agreement (May 2026) "
-            "deferred this deadline to 2 December 2027, but the original 2026 date "
-            "remains the baseline in the published text."
+            "Under Article 113, second paragraph, the Regulation applies from "
+            "2 August 2026, so the full Chapter III Section 2 obligations for "
+            "Annex III high-risk AI systems, including deployer duties under "
+            "Article 26, the Fundamental Rights Impact Assessment under "
+            "Article 27, and transparency obligations under Articles 13 and 50, "
+            "take effect on 2 August 2026. Under Article 113(3)(c), Article 6(1) "
+            "high-risk systems embedded in Annex I products follow the later "
+            "application date of 2 August 2027."
         ),
         "refs": ["Art. 113", "Annex III", "Art. 26", "Art. 27", "Art. 13"],
     },
@@ -2921,10 +2963,29 @@ def _detect_article_6_3_inquiry(question: str) -> bool:
     return bool(pattern.search(q))
 
 
+# R112 — the principles phrase must BIND to the Act/Regulation itself. The
+# R111 first cut fired on bare "general/core/ethical principles" and on
+# "principles laid down/established" with no Act binding, hijacking
+# article-specific questions ("data governance principles laid down in
+# Article 10", "general principles … biometric data") with the canned
+# 7-principles answer. Every branch now requires the principles to be
+# OF / BEHIND / UNDERPINNING / ESTABLISHED-BY the (EU) (AI) Act/Regulation.
 _GUIDING_PRINCIPLES_RE = re.compile(
-    r"\b(?:guiding|general|core|ethical|underlying|overarching)\s+principles?\b"
-    r"|\bprinciples?\s+(?:established|laid\s+down|underpinning|behind|that\s+underpin)\b"
-    r"|\bprinciples?\s+of\s+the\s+(?:ai\s+)?(?:act|regulation)\b",
+    r"\b(?:(?:guiding|general|core|ethical|underlying|overarching)\s+)?"
+    r"principles?\s+"
+    r"(?:of|behind|underpinning|underlying"
+    r"|(?:that\s+)?underpin\w*"
+    r"|established\s+(?:by|in|under)"
+    r"|laid\s+down\s+(?:by|in|under))\s+"
+    r"(?:the\s+)?(?:eu\s+)?(?:ai\s+)?(?:act|regulation)\b",
+    re.IGNORECASE,
+)
+# Explicit Article/Annex reference other than Art. 1 / Art. 4 in the live
+# question → the user is asking about THAT provision's principles, not the
+# Act's trustworthy-AI framework. Bail out (mirrors the
+# _PENALTY_PROHIBITED_RE negative-guard pattern).
+_PRINCIPLES_OTHER_REF_RE = re.compile(
+    r"\bart(?:icle)?\.?\s*(\d{1,3})\b|\bannex\s+[ivxlcdm\d]+\b",
     re.IGNORECASE,
 )
 
@@ -2938,14 +2999,26 @@ def _detect_guiding_principles_inquiry(question: str) -> bool:
     article, so plain BM25 mis-routes the question (it landed on Art. 54
     GPAI authorised-representative content on the live benchmark). This
     gate routes it to a faithful curated answer anchored on Art. 1 +
-    Art. 4.
+    Art. 4 — but ONLY when the principles phrase binds to the Act itself
+    and the question names no other explicit Article/Annex (R112).
     """
     raw_q = question or ""
     marker = "Latest question:\n"
     idx = raw_q.rfind(marker)
     if idx >= 0:
         raw_q = raw_q[idx + len(marker):]
-    return bool(_GUIDING_PRINCIPLES_RE.search(raw_q))
+    if not _GUIDING_PRINCIPLES_RE.search(raw_q):
+        return False
+    # Bail out when the live question names an explicit Article other than
+    # 1 / 4 (the intercept's own anchors) or any Annex — the user wants that
+    # provision's content, not the Act-level principles answer.
+    for m in _PRINCIPLES_OTHER_REF_RE.finditer(raw_q):
+        num = m.group(1)
+        if num is None:  # an Annex reference
+            return False
+        if int(num) not in (1, 4):
+            return False
+    return True
 
 
 # Minimal-/low-risk definitional intercept (R111 Q6). "What are AI systems
@@ -2954,14 +3027,23 @@ def _detect_guiding_principles_inquiry(question: str) -> bool:
 # to the QA-dump path — which BM25-retrieves the high-risk Chapter III
 # articles (the only strong token is "risk") and ships them as the answer.
 # This gate routes it to the faithful residual-tier verdict.
+# R112 — the open-ended branches carry a negative lookahead so "minimal
+# risk" cannot be read as an adjective phrase on a following management /
+# assessment / mitigation / measure / control / documentation noun
+# ("What minimal risk management measures does Article 9 require?" is an
+# Article 9 risk-management question, NOT a residual-tier definitional ask).
+_MINIMAL_RISK_NEG = (
+    r"(?![-\s]+(?:management|assessment|mitigation|measures?|controls?|"
+    r"documentation)\b)"
+)
 _MINIMAL_RISK_RE = re.compile(
     r"(?:what(?:'s|\s+is|\s+are)?(?:\s+(?:an?|the))?\s+"
     r"(?:examples?\s+of\s+|kinds?\s+of\s+|types?\s+of\s+)?"
     r"(?:ai\s+systems?\s+with\s+)?"
-    r"minimal[-\s]?risk"
+    r"minimal[-\s]?risk" + _MINIMAL_RISK_NEG +
     r"|minimal[-\s]?risk\s+(?:ai\s+systems?|category|tier)"
-    r"|what\s+is\s+(?:a\s+)?minimal[-\s]?risk"
-    r"|what\s+are\s+minimal[-\s]?risk"
+    r"|what\s+is\s+(?:a\s+)?minimal[-\s]?risk" + _MINIMAL_RISK_NEG +
+    r"|what\s+are\s+minimal[-\s]?risk" + _MINIMAL_RISK_NEG +
     r"|low[-\s]?risk\s+ai\b)",
     re.IGNORECASE,
 )
@@ -3011,8 +3093,27 @@ def _detect_research_scope_inquiry(question: str) -> bool:
 # rule, not the generic 99(1) opener. Requires a penalty/fine subject AND a
 # high-risk signal AND NOT a prohibited/Article-5 context (those keep the
 # 99(3) 35M/7% ceiling). Fires on 0 davidath rows.
+#
+# R112 — every alternative is word-bounded: the unbounded "fine" alternative
+# substring-matched "defined" / "refined" / "confined", shipping the Article
+# 99 penalties answer for definition-shaped questions ("How is a high-risk AI
+# system defined…?"). The fine-tune / defin* collocations are additionally
+# blanked out of the text BEFORE matching (see _PENALTY_NEG_CONTEXT_RE) so a
+# bare "fine-tune" can never read as a penalty ask, while a genuine penalty
+# token elsewhere in the same question ("If we fine-tune…, what penalties
+# apply?") still fires.
 _HIGH_RISK_PENALTY_RE = re.compile(
-    r"(?:penalt|fine|sanction|administrative\s+fine|how\s+much.*(?:fined|penalt))",
+    r"(?:\bpenalt\w*\b|\bfines?\b|\bfined\b|\bsanction\w*\b"
+    r"|\badministrative\s+fines?\b"
+    r"|\bhow\s+much\b.*\b(?:fined|penalt\w*)\b)",
+    re.IGNORECASE,
+)
+# Collocations that contain a spurious word-bounded "fine" / penalty-like
+# token but are NOT penalty contexts. Blanked from the question text before
+# the positive scan (word-bounding alone cannot fix "fine-tune": the hyphen
+# is a word boundary, so \bfine\b matches inside it).
+_PENALTY_NEG_CONTEXT_RE = re.compile(
+    r"\bfine[-\s]?tun\w*|\bdefin\w*|\brefin\w*|\bconfin\w*",
     re.IGNORECASE,
 )
 _PENALTY_HIGHRISK_RE = re.compile(r"high[-\s]?risk", re.IGNORECASE)
@@ -3031,8 +3132,11 @@ def _detect_high_risk_penalty_inquiry(question: str) -> bool:
         raw_q = raw_q[idx + len(marker):]
     if _PENALTY_PROHIBITED_RE.search(raw_q):
         return False
+    # Blank fine-tune / defin* collocations so they can neither fire the
+    # penalty scan themselves nor mask a genuine penalty token elsewhere.
+    cleaned = _PENALTY_NEG_CONTEXT_RE.sub(" ", raw_q)
     return bool(
-        _HIGH_RISK_PENALTY_RE.search(raw_q)
+        _HIGH_RISK_PENALTY_RE.search(cleaned)
         and _PENALTY_HIGHRISK_RE.search(raw_q)
     )
 
@@ -3191,17 +3295,24 @@ def _deterministic_answer(question: str, context: GraphContext) -> str:
         return verdict["answer"]
 
     # High-Risk Deadline Intercept
+    # R112 — anchor corrected ("Article 113(b)" → "Article 113, second
+    # paragraph"; 113(3)(b) is the 2 August 2025 governance/GPAI list) and
+    # the Digital Omnibus sentence stripped per project policy (commit
+    # 2a755d7 + graph_rag_prompts.py rule 2b — OMNIBUS OUT). Mirrors the
+    # _CLASSIFICATION_TOPICS "high_risk_obligations_deadline" entry; keep
+    # both copies byte-identical.
     if re.search(r"when do high[- ]?risk ai obligations apply\??", question or "", re.IGNORECASE):
         verdict = {
             "name": "high_risk_obligations_deadline",
             "answer": (
-                "Under Article 113(b), the full Chapter III Section 2 obligations for "
-                "Annex III high-risk AI systems — including deployer duties under "
-                "Article 26, the Fundamental Rights Impact Assessment under Article 27, "
-                "and transparency obligations under Articles 13 and 50 — take effect on "
-                "2 August 2026. The Digital Omnibus political agreement (May 2026) "
-                "deferred this deadline to 2 December 2027, but the original 2026 date "
-                "remains the baseline in the published text."
+                "Under Article 113, second paragraph, the Regulation applies from "
+                "2 August 2026, so the full Chapter III Section 2 obligations for "
+                "Annex III high-risk AI systems, including deployer duties under "
+                "Article 26, the Fundamental Rights Impact Assessment under "
+                "Article 27, and transparency obligations under Articles 13 and 50, "
+                "take effect on 2 August 2026. Under Article 113(3)(c), Article 6(1) "
+                "high-risk systems embedded in Annex I products follow the later "
+                "application date of 2 August 2027."
             ),
             "refs": ["Art. 113", "Annex III", "Art. 26", "Art. 27", "Art. 13"],
         }
@@ -3259,7 +3370,14 @@ def _deterministic_answer(question: str, context: GraphContext) -> str:
             _seed_classification_obligations(context, general_verdict)
             return general_verdict["answer"]
 
-    is_scenario = classify_scenario_query(question) is not None or bool(re.search(
+    # R112 — the earlier `classify_scenario_query(question)` call at the top
+    # of this function RETURNS whenever its verdict is non-None, so control
+    # reaching this point guarantees it is None (the classifier is a pure
+    # deterministic function of the question string). The previous
+    # re-invocation here was a provably-dead sub-expression that re-ran the
+    # full compound-role + marker-scan pipeline on every QA-shaped request;
+    # only the inline regex below decides `is_scenario`.
+    is_scenario = bool(re.search(
         r"\bwe\s+are\s+(?:an?\s+)?(?:provider|deployer|importer|distributor|"
         r"manufacturer|representative)\b",
         question,
@@ -3994,6 +4112,17 @@ _STAGE2_REFUSAL_MARKERS: tuple[str, ...] = (
     "no matching references",
     "was retrieved for this specific query",
     "were retrieved for this query",
+    # R112 — Claude Code CLI error text relayed by the wrapper as an
+    # HTTP 200 completion ("There's an issue with the selected model
+    # (fable-5). It may not exist or you may not have access to it.
+    # Run --model to pick a different model."). The provider-level
+    # sentinel (_WRAPPER_CLI_ERROR_SENTINELS in openai_wrapper_provider)
+    # is the primary guard; these markers are defence-in-depth in case
+    # CLI/tooling error text reaches the polish output through another
+    # provider path. CLI vocabulary — never legitimate regulator prose.
+    "issue with the selected model",
+    "run --model to pick a different model",
+    "no response from claude code",
 )
 
 
@@ -4821,6 +4950,7 @@ def _maybe_sufficient_context_hop(
     try:
         from app.engines.sufficient_context import (  # noqa: PLC0415
             assess_sufficiency,
+            get_executor,
             max_sub_queries,
             sufficient_context_enabled,
         )
@@ -4848,8 +4978,22 @@ def _maybe_sufficient_context_hop(
 
         risk_level = request.risk_level.value if request.risk_level else None
 
-        # Execute sub-query retrievals in parallel to minimize latency (FRAMES plan-then-execute doctrine)
-        import concurrent.futures
+        # Execute sub-query retrievals in parallel to minimize latency
+        # (FRAMES plan-then-execute doctrine).
+        #
+        # R112 — two fixes over the R110.1 first cut:
+        # * Shared module-level executor (sufficient_context.get_executor,
+        #   max_workers=4, thread_name_prefix="suffctx") instead of a fresh
+        #   per-request ThreadPoolExecutor (~0.8 ms create+map+shutdown +
+        #   OS thread churn; mirrors graph_expand_2hop._get_executor).
+        # * Each task is submitted under contextvars.copy_context() so the
+        #   worker thread sees the request's ContextVar state — the
+        #   ReasoningTrace multiturn / listing-intent flags that
+        #   graph_expand_2hop reads to pick its expansion budget — instead
+        #   of the unset defaults (plain executor.submit does NOT propagate
+        #   contextvars into worker threads). One fresh copy per submission:
+        #   a single Context object cannot run concurrently in two threads.
+        import contextvars  # noqa: PLC0415
 
         def _retrieve_task(sub_q: str) -> tuple[str, GraphContext]:
             sub_query = _deterministic_parse(sub_q)
@@ -4859,27 +5003,32 @@ def _maybe_sufficient_context_hop(
             return sub_q, sub_ctx
 
         sub_queries_to_run = list(verdict.sub_queries[: max_sub_queries()])
-        with concurrent.futures.ThreadPoolExecutor(max_workers=len(sub_queries_to_run)) as executor:
-            # Map futures to preserve original order
-            future_to_sub_q = {
-                executor.submit(_retrieve_task, sub_q): sub_q
-                for sub_q in sub_queries_to_run
-            }
-
-            # Process results sequentially in the original order to preserve determinism and prevent concurrent mutation races on the base context
-            for future in future_to_sub_q:
-                try:
-                    sub_q, sub_ctx = future.result()
-                    added = _merge_graph_context(context, sub_ctx)
-                    record_sub_query(
-                        sub_q, refs=added, source=_src, reason=verdict.reason,
-                    )
-                except Exception as exc:
-                    logger.warning(
-                        "sufficient_context_hop sub_query parallel retrieval failed for %r: %s",
-                        future_to_sub_q[future],
-                        exc,
-                    )
+        executor = get_executor()
+        # Submit in original order; merge results sequentially in that same
+        # order to preserve determinism and prevent concurrent mutation
+        # races on the base context.
+        submitted = [
+            (
+                sub_q,
+                executor.submit(
+                    contextvars.copy_context().run, _retrieve_task, sub_q
+                ),
+            )
+            for sub_q in sub_queries_to_run
+        ]
+        for sub_q_label, future in submitted:
+            try:
+                sub_q, sub_ctx = future.result()
+                added = _merge_graph_context(context, sub_ctx)
+                record_sub_query(
+                    sub_q, refs=added, source=_src, reason=verdict.reason,
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "sufficient_context_hop sub_query parallel retrieval failed for %r: %s",
+                    sub_q_label,
+                    exc,
+                )
         record_note(
             f"sufficient_context_hop reason={verdict.reason} "
             f"sub_queries={len(verdict.sub_queries)}"

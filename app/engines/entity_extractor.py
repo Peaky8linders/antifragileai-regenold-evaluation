@@ -359,7 +359,15 @@ CONCEPTS: dict[str, dict] = {
             "fine amount",
             "sanctions",
             "violations of the regulation",
-            "transparency risk systems",
+            # R112 (finding #9) — "transparency risk systems" REMOVED.
+            # The phrase names the LIMITED-RISK tier (Art. 50/13), not
+            # penalties; as a penalties alias it fired the kb_search
+            # Art.-99 concept boost + blanket non-Art.-99 drift penalty
+            # on transparency-tier questions, promoting Article 99 to
+            # rank #1 over Art. 13/50/6/Annex III (violating safety
+            # invariant #3 above). The genuinely intended GraphRAG-
+            # benchmark sanctions row (ng_02) still fires penalties via
+            # the "sanctions" alias.
         ),
     },
     "gpai_obligations": {

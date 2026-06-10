@@ -774,15 +774,20 @@ _AI_ACT_ANCHORS: frozenset[str] = frozenset(
         "remote biometric",
         "social scoring",
         "emotion recognition",
-        "emotional state",
-        "facial analysis",
-        "protected characteristics",
-        "political affiliation",
-        "physical appearance",
-        "trade union membership",
-        "sexual orientation",
-        "religious beliefs",
-        "biometric data",
+        # R112 (finding #2) — the aaf6739 "expand prohibited anchor
+        # scope" pass added nine bare GDPR / anti-discrimination
+        # phrases here ("emotional state", "facial analysis",
+        # "protected characteristics", "political affiliation",
+        # "physical appearance", "trade union membership", "sexual
+        # orientation", "religious beliefs", "biometric data"). They
+        # flipped clearly out-of-scope GDPR / employment-law questions
+        # in-scope ("Does GDPR treat biometric data as a special
+        # category?" shipped an AI Act answer) — the exact R34-P0 /
+        # R54.1-C2 bare-anchor failure class. They are now CONDITIONAL
+        # anchors in _ART5_SENSITIVE_ATTRIBUTE_ANCHORS below: they only
+        # flip the gate when an AI marker co-occurs, which preserves
+        # the Article 5(1)(g) biometric-categorisation prohibition
+        # shapes the aaf6739 pass protected.
         # Misc
         "AI literacy",
         "fundamental rights",
@@ -2214,6 +2219,57 @@ _ANCHOR_RE: re.Pattern[str] = re.compile(
     "|".join(re.escape(s) for s in _ANCHOR_VOCAB)
 )
 
+# R112 (finding #2) — conditional Art. 5(1)(g) sensitive-attribute
+# anchors. These phrases are common GDPR / anti-discrimination English
+# ("Can my employer ask about my political affiliation?") so they must
+# NOT flip the scope gate alone (R34-P0 / R54.1-C2 doctrine). They DO
+# flip the gate when an AI marker co-occurs in the same question —
+# preserving the aaf6739 intent: biometric-categorisation prohibition
+# questions phrased without the literal "biometric categorisation" /
+# "emotion recognition" anchor ("Can an algorithm infer sexual
+# orientation from photos?") stay in-scope.
+#
+# Storage form: post-normalisation (lower-case, hyphen→space) to match
+# the `low` text inside :func:`_has_ai_act_anchor`.
+_ART5_SENSITIVE_ATTRIBUTE_ANCHORS: tuple[str, ...] = (
+    "emotional state",
+    "facial analysis",
+    "protected characteristics",
+    "political affiliation",
+    "physical appearance",
+    "trade union membership",
+    "sexual orientation",
+    "religious beliefs",
+    "biometric data",
+)
+_ART5_SENSITIVE_ATTRIBUTE_RE: re.Pattern[str] = re.compile(
+    "|".join(
+        re.escape(s)
+        for s in sorted(_ART5_SENSITIVE_ATTRIBUTE_ANCHORS, key=len, reverse=True)
+    )
+)
+# AI markers that licence a sensitive-attribute anchor. Word-bounded
+# "ai" (bare substring would match "maintain"); the multi-word forms
+# are AI-shaped enough for substring matching. Markers that are
+# themselves strong anchors ("artificial intelligence", "emotion
+# recognition") are deliberately included so the predicate reads as a
+# self-contained co-occurrence rule.
+_AI_MARKER_RE: re.Pattern[str] = re.compile(
+    r"\bai\b"
+    r"|artificial intelligence"
+    r"|algorithm"           # algorithm / algorithmic / algorithms
+    r"|machine learning"
+    r"|deep learning"
+    r"|neural network"
+    r"|automated system"
+    r"|automated decision"
+    r"|facial recognition"
+    r"|emotion recognition"
+    r"|biometric categori[sz]"
+    r"|\bmodel\b.{0,30}\binfer"
+    r"|\binfer\w*\b.{0,40}\bbiometric"
+)
+
 
 # Conversational fillers. Match start-of-text or a short standalone
 # phrase. Combined with the no-anchor rule below to fire only on
@@ -2547,9 +2603,21 @@ def _has_ai_act_anchor(text: str) -> bool:
     helper only handles the keyword path. We normalize hyphens to
     spaces on both sides so "high-risk ai" and "high risk ai" match
     the same anchor — users freely vary between the two forms.
+
+    R112 (finding #2) — the Art. 5(1)(g) sensitive-attribute phrases
+    ("sexual orientation", "biometric data", …) are CONDITIONAL
+    anchors: they flip the gate only when an AI marker co-occurs, so
+    plain GDPR / anti-discrimination questions stay out-of-scope.
     """
     low = text.lower().replace("-", " ")
-    return _ANCHOR_RE.search(low) is not None
+    if _ANCHOR_RE.search(low) is not None:
+        return True
+    if (
+        _ART5_SENSITIVE_ATTRIBUTE_RE.search(low) is not None
+        and _AI_MARKER_RE.search(low) is not None
+    ):
+        return True
+    return False
 
 
 def _has_other_regulation_mention(text: str) -> bool:

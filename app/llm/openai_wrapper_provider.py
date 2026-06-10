@@ -29,6 +29,28 @@ from pydantic import BaseModel, Field
 logger = logging.getLogger(__name__)
 
 
+# R112 — Claude Code CLI failure shapes the wrapper can relay as an
+# HTTP 200 completion body. Matched case-insensitively as substrings of
+# the completion text. Every entry must be a phrase that can NEVER occur
+# in a legitimate EU AI Act answer (CLI/tooling vocabulary only) — a
+# false positive here silently downgrades a good Sonnet answer to the
+# deterministic fallback.
+_WRAPPER_CLI_ERROR_SENTINELS: tuple[str, ...] = (
+    # Model-resolution failure (observed live 2026-06-10: "There's an
+    # issue with the selected model (fable-5). It may not exist or you
+    # may not have access to it. Run --model to pick a different model.")
+    "there's an issue with the selected model",
+    "there is an issue with the selected model",
+    "run --model to pick a different model",
+    # Wrapper-internal process failures relayed as completion text.
+    "no response from claude code",
+    "claude code process exited",
+    # Anthropic-side auth/quota strings relayed verbatim by the CLI.
+    "invalid api key",
+    "credit balance is too low",
+)
+
+
 class OpenAIWrapperRequest(BaseModel):
     system: str = ""
     user: str = Field(min_length=1)
@@ -83,6 +105,50 @@ class OpenAIWrapperResponse(BaseModel):
 # willing to wait. On anything above this cap we surface api_status_429
 # and let the engine fall back to deterministic immediately.
 _MAX_RETRY_AFTER_SECONDS = float(os.getenv("OPENAI_MAX_RETRY_AFTER", "8"))
+
+
+# R112 (perf finding #33) — connect-class timeout bound. The documented
+# 60 s default is a READ budget for slow Sonnet generation; passing it as
+# a bare float made httpx apply 60 s to the CONNECT class too, so a
+# black-holed wrapper host (stale DNS / dropped tunnel hostname) stalled
+# a threadpool worker for the full 60 s at connection time. 5 s is ample
+# for TCP+TLS to a healthy endpoint; the read/write/pool classes keep the
+# caller's full budget.
+_CONNECT_TIMEOUT_SECONDS = 5.0
+
+
+class _BudgetTimeout(httpx.Timeout):
+    """``httpx.Timeout`` that compares equal to its read-budget float.
+
+    R112 — the per-request timeout contract is documented (and pinned by
+    ``tests/test_llm_providers.py``) as ``post(timeout=<budget>)`` where
+    ``<budget>`` is the caller's float budget. Splitting the connect
+    class would otherwise break that ``== 60.0`` / ``== 2.5`` contract,
+    so this subclass keeps float equality against the read budget while
+    carrying the short connect bound. httpx normalises it via
+    ``Timeout(instance)`` (attribute copy), so the wire behaviour is a
+    plain ``httpx.Timeout``.
+    """
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, bool):
+            return NotImplemented
+        if isinstance(other, (int, float)):
+            return self.read == float(other)
+        return super().__eq__(other)
+
+    __hash__ = httpx.Timeout.__hash__
+
+
+def _split_connect_timeout(budget_seconds: float) -> _BudgetTimeout:
+    """Build the per-request timeout: full budget on read/write/pool,
+    connect capped at ``min(_CONNECT_TIMEOUT_SECONDS, budget)`` so a
+    short caller budget (intent 2.5 s, de-noiser 1.0 s) is never
+    loosened by the connect cap."""
+    return _BudgetTimeout(
+        budget_seconds,
+        connect=min(_CONNECT_TIMEOUT_SECONDS, budget_seconds),
+    )
 
 
 def _parse_retry_after(header_value: str | None) -> float:
@@ -146,9 +212,15 @@ class _OpenAIWrapperProvider:
         # Pooled long-lived client = one TLS handshake + persistent
         # connection pool. Per-request `httpx.post` opens a fresh TLS
         # handshake AND leaks sockets in TIME_WAIT under concurrent load.
+        # R112 — split timeout classes: the 60 s budget is for READ
+        # (slow Sonnet generation); connect is bounded at 5 s so a
+        # black-holed host can't stall a worker for the full budget.
         self._client = httpx.Client(
             base_url=self._base_url,
-            timeout=self._timeout,
+            timeout=httpx.Timeout(
+                self._timeout,
+                connect=min(_CONNECT_TIMEOUT_SECONDS, self._timeout),
+            ),
             limits=httpx.Limits(
                 max_keepalive_connections=10,
                 max_connections=20,
@@ -188,18 +260,17 @@ class _OpenAIWrapperProvider:
         # Stage-1/2 Sonnet calls need 60 s. Without this knob a single
         # caller setting OPENAI_TIMEOUT_SECONDS via env would poison the
         # singleton for everyone (the bug that killed bench round 29).
-        request_timeout: float | httpx.Timeout = (
-            req.timeout_seconds if req.timeout_seconds is not None
-            else self._timeout
-        )
         # Issue #48: end-to-end deadline. The caller's `timeout_seconds`
         # is a budget for the WHOLE call (including any 429 backoff),
         # not just one HTTP attempt. Track a wall-clock deadline so a
         # Retry-After sleep can't blow past the caller's budget.
-        if isinstance(request_timeout, (int, float)):
-            budget_seconds = float(request_timeout)
-        else:
-            budget_seconds = self._timeout
+        budget_seconds = (
+            float(req.timeout_seconds) if req.timeout_seconds is not None
+            else self._timeout
+        )
+        # R112 — connect-class split: read/write/pool keep the caller's
+        # full budget; connect is capped (see _split_connect_timeout).
+        request_timeout: httpx.Timeout = _split_connect_timeout(budget_seconds)
 
         start = time.perf_counter()
         deadline = start + budget_seconds
@@ -261,7 +332,7 @@ class _OpenAIWrapperProvider:
                     )
                     time.sleep(retry_after)
                     # Retry POST inherits the SHORTENED remaining budget.
-                    retry_timeout = max(
+                    retry_budget = max(
                         0.001, deadline - time.perf_counter()
                     )
                     try:
@@ -269,7 +340,7 @@ class _OpenAIWrapperProvider:
                             "/chat/completions",
                             headers=merged_headers,
                             json=body,
-                            timeout=retry_timeout,
+                            timeout=_split_connect_timeout(retry_budget),
                         )
                     except httpx.HTTPError as exc:
                         return OpenAIWrapperResponse(
@@ -307,6 +378,24 @@ class _OpenAIWrapperProvider:
                 model=req.model,
                 elapsed_ms=int((time.perf_counter() - start) * 1000),
             )
+
+        # R112 — the wrapper can also relay Claude Code CLI error text as
+        # an HTTP 200 "completion" (observed live 2026-06-10: every
+        # Stage-2 call returned "There's an issue with the selected model
+        # (fable-5). It may not exist or you may not have access to it.
+        # Run --model to pick a different model." and the bundle shipped
+        # that CLI error as the wire answer on 339/339 bench scenarios).
+        # Scan for the known CLI failure shapes and surface them as
+        # provider errors so every consumer (Stage-0/1/2, de-noiser,
+        # judge) falls back deterministically instead.
+        lowered = text.lower() if isinstance(text, str) else ""
+        for marker in _WRAPPER_CLI_ERROR_SENTINELS:
+            if marker in lowered:
+                return OpenAIWrapperResponse(
+                    error=f"wrapper_cli_error: {text[:120]}",
+                    model=req.model,
+                    elapsed_ms=int((time.perf_counter() - start) * 1000),
+                )
 
         usage = payload.get("usage") or {}
         return OpenAIWrapperResponse(

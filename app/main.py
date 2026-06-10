@@ -531,6 +531,157 @@ def _maybe_auto_seed_rushdb() -> None:
 
 
 
+# ─── Startup index warm-up (R112, perf finding #12) ──────────────────────
+#
+# Every retrieval index in the engine is a lazy first-use builder
+# (``kb_search._build_index`` lru_cache, ``sentence_index._all_sentence_
+# indexes`` lru_cache, ``embeddings_index`` asset load, the turboquant
+# dense build, ``eu_ai_act_tree.build_tree``). Without a warm hook the
+# first ~5 distinct partner requests after every Railway deploy / worker
+# recycle each paid 0.8-6 s of index building (measured: 5,222 / 4,483 /
+# 2,034 / 2,049 / 4,011 ms cold vs 9-15 ms warm p50) — latency is a
+# scored competition axis. CLAUDE.md R78.1 recommended exactly this hook
+# and deferred it; R112 ships it. Mirrors ``_maybe_auto_seed_neo4j``'s
+# pattern: daemon thread, never blocks uvicorn boot, every step
+# exception-swallowed, honours ``REGENOLD_SKIP_STARTUP_LOG=1`` (tests).
+# Env-gate ``REGENOLD_INDEX_WARMUP`` — default ON; ``0/false/no/off``
+# disables. Zero wire-behaviour change: the warm thread only populates
+# the same caches the first request would.
+
+_INDEX_WARMUP_LOCK = _threading.Lock()
+_INDEX_WARMUP_STARTED = False
+
+
+def _index_warmup_disabled_by_env() -> bool:
+    """True when ``REGENOLD_INDEX_WARMUP`` is explicitly off.
+
+    Default is ON. Mirrors :func:`_auto_seed_disabled_by_env`: an empty
+    string is NOT a disable signal (Railway / Docker ``--env-file``
+    overrides sometimes pass a blank value).
+    """
+    raw = os.getenv("REGENOLD_INDEX_WARMUP")
+    if raw is None:
+        return False
+    return raw.strip().lower() in {"0", "false", "no", "off"}
+
+
+def _run_index_warmup_in_thread() -> None:
+    """Warm-up body — runs inside the daemon thread.
+
+    Each step is individually exception-swallowed so one missing asset
+    (e.g. turboquant npz on a stripped install) never stops the rest.
+    Imports stay inside the steps — module import order at boot is
+    unchanged and a broken optional dependency can't break startup.
+    """
+    import time as _time
+
+    t_start = _time.perf_counter()
+    timings: list[str] = []
+
+    def _step(name: str, fn: Any) -> None:
+        t0 = _time.perf_counter()
+        try:
+            fn()
+            timings.append(f"{name}={int((_time.perf_counter() - t0) * 1000)}ms")
+        except Exception as exc:  # noqa: BLE001 — warm-up is best-effort
+            timings.append(f"{name}=failed")
+            logger.debug(
+                "regenold.startup index_warmup step=%s failed: %s", name, exc
+            )
+
+    def _warm_kb_search() -> None:
+        # BM25 index + the R28 xref-in-degree confidence-boost table.
+        from app.data.kb_search import _build_index, _xref_in_degree
+
+        _build_index()
+        _xref_in_degree()
+
+    def _warm_sentence_index() -> None:
+        # Per-article sentence BM25 (extractive-QA path), ~0.5 s cold.
+        from app.engines.sentence_index import _all_sentence_indexes
+
+        _all_sentence_indexes()
+
+    def _warm_embeddings_index() -> None:
+        # R32 NumPy-SVD sentence embeddings asset load (~135 ms cold).
+        from app.engines.embeddings_index import warm_up
+
+        warm_up()
+
+    def _warm_turboquant() -> None:
+        # The dense build was the largest cold cost (3.8 s measured).
+        # ``dense_top_k`` triggers the full lazy ``_setup`` + one probe
+        # query; respect the env gate so a disabled dense path stays
+        # zero-cost.
+        from app.engines.turboquant_index import dense_top_k, is_enabled
+
+        if is_enabled():
+            dense_top_k("warm up probe", k=1)
+
+    def _warm_tree() -> None:
+        # Layer-A document tree (~25 ms cold).
+        from app.data.eu_ai_act_tree import build_tree
+
+        build_tree()
+
+    _step("kb_search_bm25", _warm_kb_search)
+    _step("sentence_index", _warm_sentence_index)
+    _step("embeddings_index", _warm_embeddings_index)
+    _step("turboquant_dense", _warm_turboquant)
+    _step("eu_ai_act_tree", _warm_tree)
+
+    logger.info(
+        "regenold.startup index_warmup_completed elapsed_s=%.2f %s",
+        _time.perf_counter() - t_start,
+        " ".join(timings),
+    )
+
+
+@app.on_event("startup")
+def _maybe_warm_indexes() -> None:
+    """Warm the lazy retrieval indexes on boot — non-blocking, env-gated.
+
+    Decision tree:
+
+    1. ``REGENOLD_SKIP_STARTUP_LOG=1`` → bail (tests).
+    2. ``REGENOLD_INDEX_WARMUP=0/false/no/off`` → log + bail.
+    3. Already started (dev-reload double hook) → bail.
+    4. Otherwise → fire the daemon warm-up thread.
+    """
+    global _INDEX_WARMUP_STARTED
+
+    if os.getenv("REGENOLD_SKIP_STARTUP_LOG") == "1":
+        return
+
+    if _index_warmup_disabled_by_env():
+        logger.info(
+            "regenold.startup index_warmup action=disabled-by-env "
+            "REGENOLD_INDEX_WARMUP=%s",
+            os.getenv("REGENOLD_INDEX_WARMUP", ""),
+        )
+        return
+
+    with _INDEX_WARMUP_LOCK:
+        if _INDEX_WARMUP_STARTED:
+            return
+        _INDEX_WARMUP_STARTED = True
+
+    try:
+        thread = _threading.Thread(
+            target=_run_index_warmup_in_thread,
+            name="regenold-index-warmup",
+            daemon=True,
+        )
+        thread.start()
+        logger.info("regenold.startup index_warmup action=started")
+    except Exception as exc:  # noqa: BLE001 — boot must never block on this
+        logger.warning(
+            "regenold.startup index_warmup action=error err=%s — first "
+            "requests will build the indexes lazily",
+            exc,
+        )
+
+
 @app.get("/healthz")
 def healthz() -> dict[str, str]:
     return {"status": "ok", "version": settings.version}

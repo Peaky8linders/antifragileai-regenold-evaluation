@@ -1293,15 +1293,27 @@ def _answer_covers_ref(
                 # "(Arts. 11 and 18)" — without the plural forms the first
                 # number escaped the covered-check and got redundantly
                 # re-described as a tacked-on "Article 11 requires…" clause.
-                if (
-                    f"Article {stripped}" in answer_text
-                    or f"Articles {stripped}" in answer_text
-                    or f"Arts. {stripped}" in answer_text
-                    or internal_ref in answer_text
+                #
+                # R112 — boundary-aware. Bare substring containment let
+                # "Art. 2" count as covered by "Article 22" (and "Art. 5"
+                # by "Article 50/51/53/55" — the prohibited+GPAI
+                # co-citation), suppressing the description append R80-D
+                # shipped. Require a non-digit after the article number;
+                # "Article 13(1)" / "Article 13.1" still cover "Art. 13"
+                # (the base article IS described).
+                num = re.escape(stripped)
+                if re.search(
+                    rf"\b(?:Articles?|Arts?\.)\s+{num}(?!\d)", answer_text
                 ):
                     return True
             elif internal_ref.startswith("Annex "):
-                if internal_ref in answer_text:  # "Annex IV"
+                # R112 — boundary-aware: "Annex I" no longer counts as
+                # covered by "Annex IX" / "Annex III" (Roman-numeral
+                # prefix collision).
+                roman = re.escape(stripped)
+                if re.search(
+                    rf"\bAnnex\s+{roman}(?![IVXLC])", answer_text
+                ):
                     return True
 
         from app.data.kb_search import _tokenize  # noqa: PLC0415

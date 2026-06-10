@@ -26,8 +26,11 @@ from dataclasses import dataclass, field
 # person rule scope, Art. 22 mandate tasks, Art. 26 carve-outs,
 # Art. 52(4) open-source designation, Art. 53(2) FOSS carve-out,
 # Art. 55 four systemic-risk obligations, Art. 79 market-surveillance
-# procedure).
-KB_VERSION = "2024.1689.v14"
+# procedure). R112 bumps v14 → v15 for the deep-review stub fixes
+# (Art. 25(2) cooperation-duty re-anchor + real 25(4) written-agreement
+# clause, Art. 99(4) closed enumeration, Art. 79/109 Reg-2019/1020
+# Art. 3(19) qualification).
+KB_VERSION = "2024.1689.v15"
 
 
 @dataclass(frozen=True)
@@ -953,9 +956,14 @@ EC_CHECKER_OBLIGATION_MAP: dict[str, dict[str, str]] = {
             "percentage. Article 99(3): up to EUR 35M or 7% of total worldwide annual "
             "turnover for non-compliance with the Article 5 prohibited practices. "
             "Article 99(4): up to EUR 15M or 3% of total worldwide annual turnover for "
-            "non-compliance with any other obligation under the Regulation, including "
-            "the high-risk AI system obligations on providers, deployers, importers and "
-            "distributors and the Article 50 transparency obligations. Article 99(5): "
+            "non-compliance with a closed list of operator and notified-body "
+            "provisions: provider obligations under Article 16, "
+            "authorised-representative obligations under Article 22, importer "
+            "obligations under Article 23, distributor obligations under Article 24, "
+            "deployer obligations under Article 26, the requirements and obligations "
+            "of notified bodies under Article 31, Article 33(1), (3) and (4) or "
+            "Article 34, and the transparency obligations for providers and "
+            "deployers under Article 50. Article 99(5): "
             "up to EUR 7.5M or 1% for supplying incorrect, incomplete or misleading "
             "information to notified bodies or competent authorities. Penalties must be "
             "effective, proportionate and dissuasive and proportionate to the gravity "
@@ -1141,11 +1149,21 @@ EC_CHECKER_OBLIGATION_MAP: dict[str, dict[str, str]] = {
             "importer, deployer, or third party becomes a provider (and assumes "
             "all provider obligations) if they put their name/trademark on the "
             "system, make a substantial modification, or modify the intended "
-            "purpose making it high-risk. Art. 25(4) requires the original "
+            "purpose making it high-risk. Art. 25(2) requires the initial "
             "provider and the new provider to cooperate along the value "
-            "chain — original providers must supply information, technical "
-            "access, and reasonable assistance so that downstream actors can "
-            "meet their own obligations. For general-purpose AI models, the "
+            "chain: the initial provider must make available the necessary "
+            "information and provide the reasonably expected technical "
+            "access and other assistance so that the new provider can meet "
+            "its obligations, in particular the conformity assessment of "
+            "high-risk AI systems. Art. 25(4) is a separate duty: the "
+            "high-risk provider and third-party suppliers of AI systems, "
+            "tools, services, components or processes used in or integrated "
+            "into a high-risk AI system must specify, by written agreement, "
+            "the necessary information, capabilities, technical access and "
+            "other assistance, except for third parties making tools, "
+            "services, processes or components (other than general-purpose "
+            "AI models) accessible to the public under a free and "
+            "open-source licence. For general-purpose AI models, the "
             "one-third fine-tune rule (per the Commission's 18 July 2025 GPAI "
             "Guidelines, anchored on Art. 51) makes the downstream modifier a "
             "new provider when additional training compute exceeds 1/3 of the "
@@ -1378,8 +1396,10 @@ EC_CHECKER_OBLIGATION_MAP: dict[str, dict[str, str]] = {
             "Art. 79 procedure for AI systems presenting a risk: market-"
             "surveillance authorities that have sufficient reasons to consider "
             "that an AI system presents a risk to health, safety or fundamental "
-            "rights (per the Art. 3(19) definition as amended by Art. 79(1)) "
-            "carry out an evaluation of the system. Where non-compliance is "
+            "rights (per the 'product presenting a risk' definition in Article 3, "
+            "point 19, of Regulation (EU) 2019/1020, extended by Art. 79(1) to "
+            "fundamental-rights risks) carry out an evaluation of the system. "
+            "Where non-compliance is "
             "found, the authority requires the relevant operator to take "
             "corrective action — withdrawal of the system from the EU market, "
             "recall from the distribution chain, or restriction of its "
@@ -2486,7 +2506,9 @@ EC_CHECKER_OBLIGATION_MAP: dict[str, dict[str, str]] = {
             "Regulation (EU) 2019/1020 — apply to AI systems governed by "
             "the AI Act, without prejudice to the AI-specific additions "
             "made by Chapter IX of the AI Act (e.g. fundamental-rights "
-            "risks added to Art. 3(19) by Art. 79(1) of the AI Act)."
+            "risks added by Art. 79(1) of the AI Act to the 'product "
+            "presenting a risk' concept of Article 3, point 19, of "
+            "Regulation (EU) 2019/1020)."
         ),
     },
     "Art. 110": {

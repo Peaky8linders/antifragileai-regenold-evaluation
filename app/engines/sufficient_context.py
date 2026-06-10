@@ -65,6 +65,10 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:  # pragma: no cover — typing only
+    from concurrent.futures import ThreadPoolExecutor
 
 # ── Env gates ────────────────────────────────────────────────────────────
 
@@ -110,6 +114,36 @@ def max_sub_queries() -> int:
     except ValueError:
         return 3
     return max(1, min(5, n))
+
+
+# ── Shared executor (R112) ───────────────────────────────────────────────
+#
+# Module-level shared executor for the engine's parallel sub-query
+# retrievals (``graph_rag._maybe_sufficient_context_hop``). R110.1 first
+# constructed a fresh ``ThreadPoolExecutor`` per firing request — measured
+# ~0.8 ms create+map+shutdown vs ~0.07 ms on a shared pool, plus OS thread
+# churn under concurrent load. The codebase convention is a lazy
+# module-level singleton (``graph_expand_2hop._get_executor``,
+# ``graph_aware_retrieval._get_executor``). Created lazily so module import
+# stays sub-ms (``concurrent.futures`` pulls ``threading`` + ``queue``).
+_EXECUTOR: Any = None
+
+
+def get_executor() -> ThreadPoolExecutor:
+    """Lazy accessor for the shared sub-query retrieval pool.
+
+    ``max_workers=4`` comfortably covers the ≤5 clamp of
+    :func:`max_sub_queries` (default 3) without per-request thread churn.
+    """
+    global _EXECUTOR
+    if _EXECUTOR is None:
+        from concurrent.futures import ThreadPoolExecutor
+
+        _EXECUTOR = ThreadPoolExecutor(
+            max_workers=4,
+            thread_name_prefix="suffctx",
+        )
+    return _EXECUTOR
 
 
 # ── Reference normalisation ──────────────────────────────────────────────

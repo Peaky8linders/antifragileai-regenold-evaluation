@@ -38,7 +38,9 @@ from app.config import settings
 from app.main import app
 from app.rate_limit import limiter
 
-from evals.bench import aireg_bench, holdout, metrics, regenold_probe
+from evals.bench import aireg_bench, holdout, metrics, regenold_probe, airbench_2024
+import os
+
 
 
 _EVAL_KEY = "regenold-unbiased-eval-key"
@@ -216,7 +218,88 @@ def _run_probe(
     return regenold_probe.score_regenold_probe(items, agent)
 
 
+# ── AIR-Bench 2024 ───────────────────────────────────────────────────────
+
+
+def _run_airbench(
+    client: TestClient,
+    airbench_limit: int | None,
+) -> dict[str, Any]:
+    """Run the AIR-Bench 2024 ``eu_mandatory`` subset.
+
+    Prompts are adversarial and verify the scope gate and Article 5
+    prohibited practice refusal logic.
+    """
+    env_gate = os.environ.get("REGENOLD_AIRBENCH", "").strip().lower()
+    if env_gate not in ("1", "true", "yes", "on"):
+        return {
+            "n": 0,
+            "refusal_correctness": 0.0,
+            "ref_correctness_loose": 0.0,
+            "rows": [],
+            "skipped": True,
+        }
+
+    rows_raw = airbench_2024.load_eu_mandatory()
+    if not rows_raw:
+        return {
+            "n": 0,
+            "refusal_correctness": 0.0,
+            "ref_correctness_loose": 0.0,
+            "rows": [],
+        }
+    if airbench_limit is not None:
+        rows_raw = rows_raw[:airbench_limit]
+
+    result_rows: list[dict[str, Any]] = []
+    for idx, raw in enumerate(rows_raw):
+        prompt = raw["prompt"]
+        cate_idx = raw["cate_idx"]
+        l3_name = raw["l3_name"]
+        gold_refs = airbench_2024.derive_gold_refs(cate_idx)
+
+        body, latency_ms = _ask(client, prompt)
+        answer = body.get("answer") or ""
+        pred_refs = body.get("references") or []
+
+        score = airbench_2024.score_row(
+            answer=answer,
+            refs=pred_refs,
+            gold_refs=gold_refs,
+        )
+
+        result_rows.append(
+            {
+                "item_id": f"air_{idx:05d}",
+                "cate_idx": cate_idx,
+                "l3_name": l3_name,
+                "prompt_preview": prompt[:200],
+                "gold_refs": gold_refs,
+                "pred_answer_preview": answer[:300],
+                "pred_refs": pred_refs,
+                "latency_ms": round(latency_ms, 2),
+                "refused": score["refused"],
+                "ref_loose": score["ref_loose"],
+            }
+        )
+
+    refused_flags = [r["refused"] for r in result_rows]
+    ref_loose_scores = [r["ref_loose"] for r in result_rows]
+    n = len(result_rows)
+
+    refusal_rate = metrics.refusal_correctness(refused_flags)
+    avg_ref_loose = sum(ref_loose_scores) / n if n else 0.0
+
+    return {
+        "n": n,
+        "refusal_correctness": round(refusal_rate, 4),
+        "ref_correctness_loose": round(avg_ref_loose, 4),
+        "rows": result_rows,
+    }
+
+
 # ── Top-level run() ──────────────────────────────────────────────────────
+
 
 
 def run(
@@ -227,8 +310,9 @@ def run(
     scenario_limit: int | None = None,
     aireg_limit: int | None = None,
     probe_limit: int | None = None,
+    airbench_limit: int | None = None,
 ) -> dict[str, Any]:
-    """Run all three harnesses and persist a JSON sidecar.
+    """Run all harnesses and persist a JSON sidecar.
 
     Returns the persisted payload. The sidecar path is included in the
     payload under ``sidecar_path``.
@@ -246,6 +330,7 @@ def run(
             davidath_block = _run_holdout(client, qa_limit, scenario_limit)
             aireg_block = _run_aireg(client, aireg_limit, source="fixture")
             probe_block = _run_probe(client, probe_limit)
+            airbench_block = _run_airbench(client, airbench_limit)
     finally:
         settings.regenold.api_key = prev_key
 
@@ -258,12 +343,14 @@ def run(
         "davidath_holdout": davidath_block,
         "aireg_bench": aireg_block,
         "regenold_probe": probe_block,
+        "air_bench": airbench_block,
     }
 
     sidecar_path = out_dir / f"unbiased-{label}.json"
     sidecar_path.write_text(
         json.dumps(payload, indent=2, default=str), encoding="utf-8"
     )
+
     payload["sidecar_path"] = str(sidecar_path)
     return payload
 
@@ -336,6 +423,19 @@ def _format_summary(payload: dict[str, Any]) -> str:
             f"AnsOverlap={q.get('ans_overlap','-')}"
         )
 
+    # AIR-Bench 2024
+    air = payload.get("air_bench", {})
+    if air:
+        lines.append("")
+        if air.get("skipped"):
+            lines.append("[AIR-BENCH 2024] n=0 (skipped; set REGENOLD_AIRBENCH=1 to run)")
+        else:
+            lines.append(f"[AIR-BENCH 2024] n={air.get('n','-')}")
+            lines.append(
+                f"  RefusalCorrectness={air.get('refusal_correctness','-')}  "
+                f"RefLoose={air.get('ref_correctness_loose','-')}"
+            )
+
     lines.append("")
     lines.append(f"sidecar: {payload.get('sidecar_path','?')}")
     return "\n".join(lines)
@@ -356,6 +456,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--scenario-limit", type=int, default=None)
     parser.add_argument("--aireg-limit", type=int, default=None)
     parser.add_argument("--probe-limit", type=int, default=None)
+    parser.add_argument("--airbench-limit", type=int, default=None)
     args = parser.parse_args(argv)
 
     payload = run(
@@ -365,9 +466,11 @@ def main(argv: list[str] | None = None) -> int:
         scenario_limit=args.scenario_limit,
         aireg_limit=args.aireg_limit,
         probe_limit=args.probe_limit,
+        airbench_limit=args.airbench_limit,
     )
     print(_format_summary(payload))
     return 0
+
 
 
 if __name__ == "__main__":

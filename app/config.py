@@ -62,23 +62,23 @@ class GraphRAGSettings(BaseSettings):
     # and the deterministic + Sonnet polish path is rubric-positive
     # in aggregate.
     #
-    # **R103 reversal (2026-06-01): default = ``claude-opus-4-8``, NO
+    # **R103 reversal (2026-06-01): default = ``fable-5``, NO
     # extended thinking.** The R81-A1 latency disaster (16 s p50, 51 s
     # outlier) was the 8000→1024-token EXTENDED-THINKING budget, NOT
-    # Opus itself. Opus 4.8 (newer + stronger reasoning than the 4.7
-    # R51 tried) with ``complex_thinking_tokens=0`` runs as a plain
+    # Opus itself. Fable 5 (new Mythos model with stronger reasoning)
+    # with ``complex_thinking_tokens=0`` runs as a plain
     # model swap at ~Sonnet latency, lifting the hard reasoning
     # categories (conflict / borderline-prohibition / GPAI thresholds /
     # multi-turn coreference — the ~20% the complexity gate fires on)
     # without the thinking-budget tail. Verified reachable via the Max
-    # wrapper (`claude-opus-4-8`, HTTP 200, ~6 s tiny prompt).
+    # wrapper (`fable-5`, HTTP 200, ~6 s tiny prompt).
     #
     # Operator override (per-deploy): set
     # ``P2P_GRAPH_RAG_COMPLEX_MODEL=`` (empty) to disable the swap and
     # keep every Stage-2 call on Sonnet for cost/latency reasons.
-    complex_model: str = "claude-opus-4-8"
-    """Model name for the complex-question path. **R103 default**:
-    ``claude-opus-4-8`` (no extended thinking — see
+    complex_model: str = "fable-5"
+    """Model name for the complex-question path. Default:
+    ``fable-5`` (no extended thinking — see
     ``complex_thinking_tokens=0``). Set empty to disable the swap
     (every Stage-2 polish call uses the base ``model``). The provider
     falls back to deterministic if the configured complex model is

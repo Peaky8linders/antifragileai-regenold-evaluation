@@ -506,6 +506,38 @@ def _fuse_dense(
     return additive_dense_fill(bm25_refs, dense_refs, k=k)
 
 
+def _entity_boosts_from_entities(
+    entities: dict[str, list[tuple[str, int]]],
+) -> dict[str, float]:
+    """Derive ``{article_ref: max_boost}`` from already-extracted entities.
+
+    R112 (perf finding #49) — pure-mapping counterpart of
+    :func:`app.engines.entity_extractor.boosted_articles` that takes the
+    entities as input instead of re-running the ~100-regex
+    ``extract_entities`` sweep. Semantics are byte-identical: for each
+    article hit by a role and/or concept alias, the MAXIMUM boost wins
+    (role 3.0 > concept 2.0 — never the product). Keys are
+    ``"Art. {n}"`` strings matching the BM25 index format.
+
+    The caller is responsible for the ``is_enabled()`` env-gate (this
+    helper is only reached on the enabled path); empty/no-match entities
+    yield an empty dict, mirroring ``boosted_articles``.
+    """
+    from app.engines.entity_extractor import boost_factor  # noqa: PLC0415
+
+    if not entities.get("role") and not entities.get("concept"):
+        return {}
+    out: dict[str, float] = {}
+    for etype in ("role", "concept"):
+        b = boost_factor(etype)
+        for _eid, art_num in entities.get(etype) or ():
+            ref = f"Art. {art_num}"
+            prev = out.get(ref, 0.0)
+            if b > prev:
+                out[ref] = b
+    return out
+
+
 def top_articles_by_relevance(
     question: str, *, k: int = 3, min_score: float = 1.5,
 ) -> list[str]:
@@ -620,17 +652,26 @@ def top_articles_by_relevance(
     # minimal and avoids a build-time circular dependency risk.
     try:
         from app.engines.entity_extractor import (  # noqa: PLC0415
-            boosted_articles,
             extract_entities,
             is_qa_shape_with_single_role,
         )
         from app.engines.entity_extractor import (
             is_enabled as _entity_enabled,
         )
-        entity_boosts = boosted_articles(question)
-        # Cache the extracted entities for the injection step below —
-        # avoids a second extraction pass.
-        _ents_for_injection = extract_entities(question) if _entity_enabled() else None
+        # R112 (perf finding #49) — extract ONCE, derive the boost map
+        # from the extracted entities. The pre-R112 code called
+        # ``boosted_articles(question)`` (which runs the full ~100-regex
+        # ``extract_entities`` sweep internally) and then ran
+        # ``extract_entities(question)`` AGAIN for the injection step.
+        # ``_entity_boosts_from_entities`` mirrors ``boosted_articles``'s
+        # mapping exactly (max boost per ref) — output is identical,
+        # pinned by ``tests/test_r112_perf_fixes.py``.
+        if _entity_enabled():
+            _ents_for_injection = extract_entities(question)
+            entity_boosts = _entity_boosts_from_entities(_ents_for_injection)
+        else:
+            _ents_for_injection = None
+            entity_boosts = {}
     except Exception:  # noqa: BLE001 — never fail BM25 on the boost
         entity_boosts = {}
         _ents_for_injection = None

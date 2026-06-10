@@ -17,7 +17,17 @@ import re
 # a trailing punctuation + space.
 _HEDGE_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"^\s*as\s+an\s+ai(?:\s+(?:language\s+)?model)?[,\.\s]+(?:i\s+(?:can(?:not)?|am)\s+\S+\s+\S+[,\.\s]+)?", re.I),
-    re.compile(r"^\s*based\s+on\s+(?:my\s+(?:understanding|reading|interpretation|knowledge)|the\s+(?:provided\s+)?information)[,\.\s]+", re.I),
+    # R112 — also consume the POST-positioned participle ("the
+    # information provided/supplied/given/available"). The previous
+    # pattern only knew "the provided information", so "Based on the
+    # information provided, …" half-stripped to the garbled
+    # "Provided, …" (the orphan participle got capitalised).
+    re.compile(
+        r"^\s*based\s+on\s+(?:my\s+(?:understanding|reading|interpretation|knowledge)"
+        r"|the\s+(?:provided\s+)?information"
+        r"(?:\s+(?:provided|supplied|given|available))?)[,\.\s]+",
+        re.I,
+    ),
     re.compile(r"^\s*please\s+note(?:\s+that)?[,\.\s]+", re.I),
     re.compile(r"^\s*it\s+(?:seems|appears|is\s+(?:likely|possible))\s+(?:that[,\.\s]+)?", re.I),
     re.compile(r"^\s*i\s+(?:think|believe|would\s+argue|understand)(?:\s+that)?[,\.\s]+", re.I),

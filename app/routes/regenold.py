@@ -273,17 +273,25 @@ _MIN_CACHEABLE_CONFIDENCE = 0.3
 # graph:
 #   Art. 26 (deployer obligations) → Art. 13 / 14 / 9
 #   Art. 27 (FRIA) → Art. 6 / Annex III
-#   Art. 50 (transparency for deployers) → Art. 52
 # Static map instead of Neo4j 1-hop because (a) davidath is
 # BM25-saturated per R31/R59/R69 — opening the whole graph adds
 # latency for no rubric lift, (b) precision-first hand-curation
 # guarantees no R47-A-style orphan-pull pathology. Strictly additive,
 # appended AFTER the BM25 winners — never displaces a winner.
+#
+# R112 — removed the stale draft-numbering edge ``Article 50`` →
+# ``Article 52``. In the FINAL Regulation 2024/1689 Article 52 is the
+# GPAI systemic-risk classification PROCEDURE (kb.py "Art. 52" stub),
+# not transparency — the edge reflected the 2021 draft numbering where
+# transparency WAS Art. 52 (it became Art. 50 in the final text). The
+# edge was injecting a wrong-topic citation onto transparency
+# questions ("What transparency requirements apply to deployers…?").
+# Deployer transparency duties live in Art. 50(3)/(4) itself; the
+# Act's own xref graph for Art. 50 points only at Arts. 56 / 98.
 _ONTOLOGY_HOP_MAP: dict[str, list[str]] = {
     # Deployer -> Provider obligations
     "Article 26":   ["Article 13", "Article 14", "Article 9"],
     "Article 27":   ["Article 6", "Annex III"],
-    "Article 50":   ["Article 52"],
     "Article 26.5": ["Article 13", "Article 14", "Article 9"],
     
     # Provider Obligations (Section 3)
@@ -963,8 +971,19 @@ def _apply_assistant_anchor_inheritance(
     for anchor in anchors:
         if anchor in cand_parents or anchor in injected:
             continue
-        injected.append(anchor)
-        cand_parents.add(anchor)
+        # R112 — validate against ARTICLE_EXISTENCE before injecting.
+        # Assistant turns are fully client-supplied request-body content
+        # (the API is stateless per turn), so a spoofed assistant turn
+        # citing "Article 999" / "Annex XIV" would otherwise inject a
+        # non-existent ref at HEAD of candidates and ship it on the wire
+        # (hard rule: every emitted citation must resolve in
+        # ARTICLE_EXISTENCE). Mirrors the validation in
+        # ``_apply_fact_state_carry_forward``.
+        resolved = reference_from_article_ref(anchor)
+        if resolved is None:
+            continue
+        injected.append(resolved)
+        cand_parents.add(resolved)
         if len(injected) >= _ASSISTANT_ANCHOR_INHERIT_MAX:
             break
     if not injected:
@@ -1216,6 +1235,50 @@ def _engine_cache_key(
             # in the cache identity (R30/R56/R79 doctrine).
             "REGENOLD_SUFFICIENT_CONTEXT",
             "REGENOLD_SUFFICIENT_CONTEXT_MAX_HOPS",
+            # R112 — cache-poisoning audit round 2. Per-call env reads that
+            # flip the engine output (the GraphRAGResponse this cache
+            # stores) but were missing from the key:
+            #   * REGENOLD_RRF_FUSION — swaps additive dense fill for
+            #     weighted RRF inside kb_search._fuse_dense (the SAME
+            #     dispatch whose SCORE_FUSION siblings are already keyed);
+            #     reorders/changes GraphRAGResponse.references.
+            #   * REGENOLD_GRAPH_PPR / REGENOLD_PATH_RAG — gate additive
+            #     Neo4j candidate appends inside
+            #     kb_search.top_articles_by_relevance.
+            #   * REGENOLD_SECTION_SCOPED_BM25 — switches
+            #     _deterministic_parse's zero-entity fallback to a
+            #     section-scoped BM25 with a different candidate pool.
+            #   * REGENOLD_STAGE2_MIN_CONFIDENCE — the single-turn Stage-2
+            #     confidence floor (graph_rag._two_stage_generate); flips
+            #     GraphRAGResponse.answer + stage2_landed. The MULTITURN
+            #     variant was already keyed (R97) — this is the base var
+            #     it is min()'d against.
+            #   * REGENOLD_STAGE{1,2}_MODEL_{GROQ,GEMINI} — per-call
+            #     provider-fallback model selectors whose prose lands in
+            #     the cached response (the DENOISER model siblings are
+            #     already keyed).
+            #   * REGENOLD_STAGE2_WEB_SEARCH — gates the Stage-2 DDG
+            #     web-search context path in graph_rag.
+            #   * REGENOLD_RUSHDB_HYBRID / REGENOLD_GRAPH_BACKEND —
+            #     backend selector + hybrid-retrieval gate (double-gated,
+            #     but the doctrine is unconditional).
+            # NOT added: P2P_GRAPH_RAG_MODEL / P2P_GRAPH_RAG_COMPLEX_MODEL /
+            # P2P_GRAPH_RAG_COMPLEX_THINKING_TOKENS — those are snapshot
+            # into the module-level ``settings`` singleton at import time
+            # (app/config.py ``settings = AppSettings()``), so a runtime
+            # env flip cannot flip engine output within a live process.
+            "REGENOLD_RRF_FUSION",
+            "REGENOLD_GRAPH_PPR",
+            "REGENOLD_PATH_RAG",
+            "REGENOLD_SECTION_SCOPED_BM25",
+            "REGENOLD_STAGE2_MIN_CONFIDENCE",
+            "REGENOLD_STAGE1_MODEL_GROQ",
+            "REGENOLD_STAGE1_MODEL_GEMINI",
+            "REGENOLD_STAGE2_MODEL_GROQ",
+            "REGENOLD_STAGE2_MODEL_GEMINI",
+            "REGENOLD_STAGE2_WEB_SEARCH",
+            "REGENOLD_RUSHDB_HYBRID",
+            "REGENOLD_GRAPH_BACKEND",
         )
     )
     import json
@@ -2211,14 +2274,57 @@ def _reference_described_in_prose(ref: str, prose: str) -> bool:
     return False
 
 
+# R112 — the tier/level/class branch previously made "risk" optional
+# (r"what\s+(?:risk\s+)?(?:categor|tier|level|class)\w*"), so any bare
+# "what level / what class / what tier / what categories" phrase
+# matched — e.g. "What level of human oversight does Article 14
+# require?" or "What risk category is my CV-screening tool?" (a
+# single-system classification ask, not a set enumeration) — and
+# disabled the Stage-2 conciseness backstop on non-enumeration
+# questions. The branch now requires "risk" AND an enumerative frame
+# (mirroring the engine's risk_framework_overview topic shape):
+# either "what are the risk categor*/tiers/levels/classes" or
+# "what risk categor* are there / exist / does the (EU) (AI) Act /
+# does the regulation …".
 _CLOSED_SET_ENUMERATION_RE = re.compile(
     r"what\s+(?:practices|types\s+of\s+ai|kinds\s+of\s+ai)\s+(?:are|is)\s+"
     r"(?:explicitly\s+|expressly\s+)?(?:prohibited|banned|forbidden)"
-    r"|what\s+(?:risk\s+)?(?:categor|tier|level|class)\w*"
+    r"|what\s+risk\s+(?:categor|tier|level|class)\w*\s+"
+    r"(?:are\s+there|exist|do(?:es)?\s+the\s+(?:eu\s+)?(?:ai\s+)?act\b"
+    r"|do(?:es)?\s+the\s+regulation\b)"
+    r"|what\s+are\s+the\s+risk\s+(?:categor|tier|level|class)\w*"
     r"|what\s+are\s+the\s+(?:annex\s+iii|risk)\s+(?:categor|use\s+cases|tiers)"
     r"|(?:list|name|enumerate)\s+(?:all\s+)?(?:the\s+)?"
     r"(?:prohibited\s+practices|risk\s+(?:categor|tier))"
     r"|what\s+is\s+banned",
+    re.IGNORECASE,
+)
+
+
+# R112 — exact base-article matcher for the benchmark-specific
+# high-precision reference filter. The previous substring tests
+# (``"Article 5" in c``) over-matched: "Article 5" is a substring of
+# "Article 50"…"Article 59" and "Article 6" of "Article 60"…
+# "Article 69", so the prohibition filter kept Articles 50-59 while
+# dropping the true candidates.
+def _ref_matches_base(candidate: str, base: str) -> bool:
+    """True iff ``candidate`` IS ``base`` or a sub-point of it.
+
+    ``_ref_matches_base("Article 5.1.f", "Article 5")`` → True;
+    ``_ref_matches_base("Article 50", "Article 5")`` → False.
+    """
+    c = (candidate or "").strip()
+    return c == base or c.startswith(base + ".")
+
+
+# R112 — word-boundary fines/penalties trigger for the same filter. The
+# previous ``any(w in q_low for w in ("fine", ...))`` substring test
+# fired on "define" / "refine" / "fine-tune", collapsing definitional
+# or GPAI fine-tune questions to [Article 99] whenever an Article 99
+# candidate was present. The negative lookahead excludes the
+# "fine-tune" / "fine tuning" family.
+_FINES_FILTER_TRIGGER_RE = re.compile(
+    r"\b(?:fine(?![\s-]*tun)|fines|penalty|penalties|sanction|sanctions)\b",
     re.IGNORECASE,
 )
 
@@ -4382,40 +4488,62 @@ def regenold_eu_ai_act_ask(
             ]
 
     # Benchmark-specific high-precision reference pruning for pure QA-shape questions
+    # R112 — exact base-article matching via ``_ref_matches_base`` (the
+    # previous substring tests kept Articles 50-59 on the "Article 5"
+    # prohibition filter and 60-69 on "Article 6") + word-boundary fines
+    # trigger (the substring test fired on "define"/"refine"/"fine-tune").
     if not _is_scenario_question and not _is_classification_topic:
         q_low = (question or "").lower()
         _filtered_cands = None
         if _prohibition_matches:
-            _filtered_cands = [c for c in candidates if "Article 5" in c or "Art. 5" in c]
-        elif any(w in q_low for w in ("fine", "fines", "penalty", "penalties", "sanction", "sanctions")):
-            _filtered_cands = [c for c in candidates if "Article 99" in c or "Art. 99" in c]
+            _filtered_cands = [c for c in candidates if _ref_matches_base(c, "Article 5") or _ref_matches_base(c, "Art. 5")]
+        elif _FINES_FILTER_TRIGGER_RE.search(q_low):
+            _filtered_cands = [c for c in candidates if _ref_matches_base(c, "Article 99") or _ref_matches_base(c, "Art. 99")]
         elif "assessing the risk" in q_low or "assessing risk" in q_low or "criteria exist for assessing" in q_low:
             _filtered_cands = [c for c in candidates if c in ("Article 7", "Article 9", "Art. 7", "Art. 9")]
         elif "sectors or applications" in q_low and "high-risk" in q_low:
-            _filtered_cands = [c for c in candidates if "Article 6" in c or "Art. 6" in c]
+            _filtered_cands = [c for c in candidates if _ref_matches_base(c, "Article 6") or _ref_matches_base(c, "Art. 6")]
         elif "informed when interacting" in q_low or "interact with ai systems" in q_low:
-            _filtered_cands = [c for c in candidates if "Article 50" in c or "Art. 50" in c]
-        
+            _filtered_cands = [c for c in candidates if _ref_matches_base(c, "Article 50") or _ref_matches_base(c, "Art. 50")]
+
         if _filtered_cands:
             candidates = _filtered_cands
 
     # R104 — Ontology 1-hop expansion. See ``_apply_ontology_hops``.
+    # R112 — track how many candidates the hop actually injected so the
+    # budget bump below is conditional on a real injection.
+    _ontology_hop_injected = 0
     try:
         _intent_label_for_hop = (
             getattr(_boost_intent_res, "intent", "") or ""
             if _boost_intent_res is not None else ""
         )
+        _pre_hop_len = len(candidates)
         candidates = _apply_ontology_hops(
             candidates, _intent_label_for_hop, question
         )
+        _ontology_hop_injected = max(0, len(candidates) - _pre_hop_len)
     except Exception:  # noqa: BLE001 — fail-soft
         pass
 
     # R104 — Expand max refs if ontology hops occurred so injected targets survive
     # Only do this if we are not restricted to a tight weak compound budget (e.g. <= 5).
+    #
+    # R112 — the bump previously fired UNCONDITIONALLY whenever
+    # REGENOLD_ONTOLOGY_HOP != "0" (the default), regardless of whether
+    # ``_apply_ontology_hops`` injected anything — silently raising every
+    # pure-QA question's budget from the R77-I6 ``_QA_MAX_REFERENCES = 3``
+    # (a measured rubric win: Ref Strict +0.014 / Ref Conciseness +0.014)
+    # to a blanket 7. Now the budget is raised ONLY when the hop actually
+    # injected candidates, and only by the injected amount (capped at the
+    # historical 7 ceiling so the bump never exceeds the old behaviour;
+    # ``_ONTOLOGY_HOP_MAX_INJECT = 4`` bounds the raise to QA 3 + 4 = 7).
     _is_weak_compound_question = _has_compound_roles and not _is_scenario_question and _compound_strength != "strong"
-    if os.getenv("REGENOLD_ONTOLOGY_HOP", "1") != "0" and not _is_weak_compound_question:
-        _effective_max_refs = max(_effective_max_refs, 7)
+    if _ontology_hop_injected > 0 and not _is_weak_compound_question:
+        _effective_max_refs = max(
+            _effective_max_refs,
+            min(7, _effective_max_refs + _ontology_hop_injected),
+        )
 
     references: list[str] = candidates[:_effective_max_refs]
 
@@ -4830,6 +4958,28 @@ def regenold_eu_ai_act_ask(
                             enforce_tone,  # noqa: PLC0415
                         )
                         answer_text = enforce_tone(answer_text)
+                    except Exception:  # noqa: BLE001 — fail-soft
+                        pass
+                    # R112 — re-apply the R108 dash strip. The guard
+                    # substitute replaces ``answer_text`` AFTER the main
+                    # ``normalise_answer_for_regenold`` pass (the only
+                    # site that runs ``strip_dash_separators``), and
+                    # ``stitch_grounded_prose`` embeds KB stub summaries
+                    # near-verbatim — 36/131 of which carry em/en dashes
+                    # (e.g. Art. 79 / Art. 86). Without this re-pass the
+                    # forbidden separators ship on the wire (R108 rule).
+                    # Honours the same REGENOLD_STRIP_DASHES off-switch
+                    # as the normaliser-side pass.
+                    try:
+                        if os.getenv(
+                            "REGENOLD_STRIP_DASHES", "1"
+                        ).strip().lower() in ("1", "true", "yes", "on"):
+                            from app.integrations.regenold.answer_normaliser import (  # noqa: PLC0415
+                                strip_dash_separators,
+                            )
+                            _de_dashed = strip_dash_separators(answer_text)
+                            if _de_dashed:
+                                answer_text = _de_dashed
                     except Exception:  # noqa: BLE001 — fail-soft
                         pass
             except Exception:  # noqa: BLE001 — never fail the route

@@ -14,14 +14,13 @@ lookup eliminates both costs.
 
 ## Coverage
 
-This module ships ~30 of the highest-impact defined terms (the ones
-that recur most frequently in compliance Q&A: operator roles,
-biometric taxonomy, GPAI taxonomy, the lifecycle verbs, conformity-
-assessment vocabulary). The catalogue is deliberately partial: a
-confident 30-term subset beats a stretched 68-term set where the
-edge entries paraphrase Art. 3 from training-data memory rather than
-the regulation text. Additional terms can be added incrementally as
-their wording is verified against the published Regulation.
+This module ships all 68 defined terms of Article 3 of the final
+Regulation (EU) 2024/1689. Citation numbering is verified against the
+SHA-pinned official corpus (``app.data.official_eu_ai_act`` via
+``app.data.provision_text``) by a lint test in
+``tests/test_r112_data_fixes.py``, so any drift between
+``Definition.citation`` and the official Article 3 point numbering
+fails CI (R112).
 
 ## Bias guardrail
 
@@ -291,7 +290,7 @@ _DEFINITIONS: tuple[Definition, ...] = (
         ),
     ),
     Definition(
-        citation="Art. 3.19",
+        citation="Art. 3.27",
         term="harmonised standard",
         description=(
             "A harmonised standard as defined in Article 2(1)(c) of Regulation "
@@ -305,7 +304,7 @@ _DEFINITIONS: tuple[Definition, ...] = (
         ),
     ),
     Definition(
-        citation="Art. 3.20",
+        citation="Art. 3.28",
         term="common specification",
         description=(
             "A set of technical specifications, as defined in Article 2(4) of "
@@ -318,7 +317,7 @@ _DEFINITIONS: tuple[Definition, ...] = (
         ),
     ),
     Definition(
-        citation="Art. 3.21",
+        citation="Art. 3.29",
         term="training data",
         description=(
             "Data used for training an AI system through fitting its learnable "
@@ -331,7 +330,7 @@ _DEFINITIONS: tuple[Definition, ...] = (
         ),
     ),
     Definition(
-        citation="Art. 3.22",
+        citation="Art. 3.20",
         term="conformity assessment",
         description=(
             "The process of demonstrating whether the requirements set out in "
@@ -344,7 +343,7 @@ _DEFINITIONS: tuple[Definition, ...] = (
         ),
     ),
     Definition(
-        citation="Art. 3.23",
+        citation="Art. 3.21",
         term="conformity assessment body",
         description=(
             "A body that performs third-party conformity assessment activities, "
@@ -358,7 +357,7 @@ _DEFINITIONS: tuple[Definition, ...] = (
         ),
     ),
     Definition(
-        citation="Art. 3.24",
+        citation="Art. 3.22",
         term="notified body",
         description=(
             "A conformity assessment body notified in accordance with this "
@@ -367,7 +366,7 @@ _DEFINITIONS: tuple[Definition, ...] = (
         keywords=("notified body", "notified bodies"),
     ),
     Definition(
-        citation="Art. 3.25",
+        citation="Art. 3.23",
         term="substantial modification",
         description=(
             "A change to an AI system after its placing on the market or "
@@ -384,7 +383,7 @@ _DEFINITIONS: tuple[Definition, ...] = (
         ),
     ),
     Definition(
-        citation="Art. 3.26",
+        citation="Art. 3.30",
         term="validation data",
         description=(
             "Data used for providing an evaluation of the trained AI system and "
@@ -397,7 +396,7 @@ _DEFINITIONS: tuple[Definition, ...] = (
         ),
     ),
     Definition(
-        citation="Art. 3.27",
+        citation="Art. 3.32",
         term="testing data",
         description=(
             "Data used for providing an independent evaluation of the AI system "
@@ -411,7 +410,7 @@ _DEFINITIONS: tuple[Definition, ...] = (
         ),
     ),
     Definition(
-        citation="Art. 3.28",
+        citation="Art. 3.33",
         term="input data",
         description=(
             "Data provided to or directly acquired by an AI system on the basis "
@@ -424,7 +423,7 @@ _DEFINITIONS: tuple[Definition, ...] = (
         ),
     ),
     Definition(
-        citation="Art. 3.29",
+        citation="Art. 3.24",
         term="CE marking",
         description=(
             "A marking by which a provider indicates that an AI system is in "
@@ -438,7 +437,7 @@ _DEFINITIONS: tuple[Definition, ...] = (
         ),
     ),
     Definition(
-        citation="Art. 3.30",
+        citation="Art. 3.25",
         term="post-market monitoring system",
         description=(
             "All activities carried out by providers of AI systems to collect "
@@ -454,7 +453,7 @@ _DEFINITIONS: tuple[Definition, ...] = (
         ),
     ),
     Definition(
-        citation="Art. 3.31",
+        citation="Art. 3.26",
         term="market surveillance authority",
         description=(
             "The national authority carrying out the activities and taking the "
@@ -467,7 +466,7 @@ _DEFINITIONS: tuple[Definition, ...] = (
         ),
     ),
     Definition(
-        citation="Art. 3.32",
+        citation="Art. 3.48",
         term="national competent authority",
         description=(
             "A notifying authority or a market surveillance authority designated "
@@ -481,7 +480,7 @@ _DEFINITIONS: tuple[Definition, ...] = (
         ),
     ),
     Definition(
-        citation="Art. 3.33",
+        citation="Art. 3.34",
         term="biometric data",
         description=(
             "Personal data resulting from specific technical processing relating "
@@ -491,7 +490,7 @@ _DEFINITIONS: tuple[Definition, ...] = (
         keywords=("biometric data", "biometrics"),
     ),
     Definition(
-        citation="Art. 3.34",
+        citation="Art. 3.35",
         term="biometric identification",
         description=(
             "The automated recognition of physical, physiological, behavioural "
@@ -505,7 +504,7 @@ _DEFINITIONS: tuple[Definition, ...] = (
         ),
     ),
     Definition(
-        citation="Art. 3.35",
+        citation="Art. 3.36",
         term="biometric verification",
         description=(
             "The automated, one-to-one verification, including authentication, "
@@ -518,22 +517,7 @@ _DEFINITIONS: tuple[Definition, ...] = (
         ),
     ),
     Definition(
-        citation="Art. 3.36",
-        term="biometric categorisation",
-        description=(
-            "Assigning natural persons to specific categories on the basis of "
-            "their biometric data, where these categories relate to aspects "
-            "such as sex, age, hair colour, eye colour, tattoos, behavioural "
-            "or personality traits, language, religion, membership of a "
-            "national minority, sexual or political orientation."
-        ),
-        keywords=(
-            "biometric categorisation",
-            "biometric categorization",
-        ),
-    ),
-    Definition(
-        citation="Art. 3.37",
+        citation="Art. 3.42",
         term="real-time remote biometric identification system",
         description=(
             "A remote biometric identification system whereby the capturing of "
@@ -551,8 +535,8 @@ _DEFINITIONS: tuple[Definition, ...] = (
         ),
     ),
     Definition(
-        citation="Art. 3.38",
-        term="post remote biometric identification system",
+        citation="Art. 3.43",
+        term="post-remote biometric identification system",
         description=(
             "A remote biometric identification system other than a real-time "
             "remote biometric identification system."
@@ -566,7 +550,7 @@ _DEFINITIONS: tuple[Definition, ...] = (
         ),
     ),
     Definition(
-        citation="Art. 3.40",
+        citation="Art. 3.41",
         term="remote biometric identification system",
         description=(
             "An AI system for the purpose of identifying natural persons, "
@@ -582,7 +566,7 @@ _DEFINITIONS: tuple[Definition, ...] = (
         ),
     ),
     Definition(
-        citation="Art. 3.41",
+        citation="Art. 3.40",
         term="biometric categorisation system",
         description=(
             "An AI system for the purpose of assigning natural persons to "
@@ -593,10 +577,12 @@ _DEFINITIONS: tuple[Definition, ...] = (
         keywords=(
             "biometric categorisation system",
             "biometric categorization system",
+            "biometric categorisation",
+            "biometric categorization",
         ),
     ),
     Definition(
-        citation="Art. 3.42",
+        citation="Art. 3.44",
         term="publicly accessible space",
         description=(
             "Any publicly or privately owned physical place accessible to an "
@@ -612,7 +598,7 @@ _DEFINITIONS: tuple[Definition, ...] = (
         ),
     ),
     Definition(
-        citation="Art. 3.43",
+        citation="Art. 3.45",
         term="law enforcement authority",
         description=(
             "Any public authority competent for the prevention, investigation, "
@@ -629,7 +615,7 @@ _DEFINITIONS: tuple[Definition, ...] = (
         ),
     ),
     Definition(
-        citation="Art. 3.44",
+        citation="Art. 3.46",
         term="law enforcement",
         description=(
             "Activities carried out by law enforcement authorities or on their "
@@ -645,7 +631,7 @@ _DEFINITIONS: tuple[Definition, ...] = (
         ),
     ),
     Definition(
-        citation="Art. 3.45",
+        citation="Art. 3.52",
         term="profiling",
         description=(
             "Profiling as defined in Article 4, point (4), of Regulation (EU) "
@@ -658,7 +644,7 @@ _DEFINITIONS: tuple[Definition, ...] = (
         ),
     ),
     Definition(
-        citation="Art. 3.46",
+        citation="Art. 3.57",
         term="testing in real-world conditions",
         description=(
             "The temporary testing of an AI system for its intended purpose in "
@@ -674,7 +660,7 @@ _DEFINITIONS: tuple[Definition, ...] = (
         ),
     ),
     Definition(
-        citation="Art. 3.47",
+        citation="Art. 3.53",
         term="real-world testing plan",
         description=(
             "A document that describes the objectives, methodology, geographical, "
@@ -685,10 +671,13 @@ _DEFINITIONS: tuple[Definition, ...] = (
             "real-world testing plan",
             "real world testing plan",
             "rwt plan",
+            "testing in real world conditions plan",
+            "real world conditions plan",
+            "real-world conditions plan",
         ),
     ),
     Definition(
-        citation="Art. 3.48",
+        citation="Art. 3.55",
         term="AI regulatory sandbox",
         description=(
             "A controlled framework set up by a competent authority which "
@@ -718,7 +707,7 @@ _DEFINITIONS: tuple[Definition, ...] = (
         ),
     ),
     Definition(
-        citation="Art. 3.50",
+        citation="Art. 3.37",
         term="special categories of personal data",
         description=(
             "The categories of personal data referred to in Article 9(1) of "
@@ -732,7 +721,7 @@ _DEFINITIONS: tuple[Definition, ...] = (
         ),
     ),
     Definition(
-        citation="Art. 3.51",
+        citation="Art. 3.38",
         term="sensitive operational data",
         description=(
             "Operational data related to activities of prevention, detection, "
@@ -745,7 +734,7 @@ _DEFINITIONS: tuple[Definition, ...] = (
         ),
     ),
     Definition(
-        citation="Art. 3.52",
+        citation="Art. 3.59",
         term="informed consent",
         description=(
             "A subject's freely-given, specific, unambiguous and voluntary "
@@ -761,7 +750,7 @@ _DEFINITIONS: tuple[Definition, ...] = (
         ),
     ),
     Definition(
-        citation="Art. 3.53",
+        citation="Art. 3.64",
         term="high-impact capabilities",
         description=(
             "Capabilities that match or exceed the capabilities recorded in the "
@@ -774,7 +763,7 @@ _DEFINITIONS: tuple[Definition, ...] = (
         ),
     ),
     Definition(
-        citation="Art. 3.54",
+        citation="Art. 3.67",
         term="floating-point operation",
         description=(
             "Any mathematical operation or assignment involving floating-point "
@@ -790,7 +779,7 @@ _DEFINITIONS: tuple[Definition, ...] = (
         ),
     ),
     Definition(
-        citation="Art. 3.55",
+        citation="Art. 3.68",
         term="downstream provider",
         description=(
             "A provider of an AI system, including a general-purpose AI system, "
@@ -838,21 +827,7 @@ _DEFINITIONS: tuple[Definition, ...] = (
         keywords=("ai literacy", "literacy"),
     ),
     Definition(
-        citation="Art. 3.57",
-        term="testing in real world conditions plan",
-        description=(
-            "A document that describes the objectives, methodology, "
-            "geographical, population and temporal scope, monitoring, "
-            "organisation and conduct of testing in real-world conditions."
-        ),
-        keywords=(
-            "testing in real world conditions plan",
-            "real world conditions plan",
-            "real-world conditions plan",
-        ),
-    ),
-    Definition(
-        citation="Art. 3.58",
+        citation="Art. 3.54",
         term="sandbox plan",
         description=(
             "A document agreed between the participating provider and the "
@@ -866,7 +841,7 @@ _DEFINITIONS: tuple[Definition, ...] = (
         ),
     ),
     Definition(
-        citation="Art. 3.59",
+        citation="Art. 3.58",
         term="subject of testing in real-world conditions",
         description=(
             "A natural person who participates in testing in real-world "
@@ -879,7 +854,7 @@ _DEFINITIONS: tuple[Definition, ...] = (
         ),
     ),
     Definition(
-        citation="Art. 3.61",
+        citation="Art. 3.19",
         term="notifying authority",
         description=(
             "The national authority responsible for setting up and carrying out "
@@ -925,7 +900,7 @@ _DEFINITIONS: tuple[Definition, ...] = (
         ),
     ),
     Definition(
-        citation="Art. 3.64",
+        citation="Art. 3.47",
         term="AI Office",
         description=(
             "The Commission's function of contributing to the implementation, "
@@ -967,34 +942,59 @@ _DEFINITIONS: tuple[Definition, ...] = (
             "gpai systems",
         ),
     ),
+    # ── R112 — missing official Art. 3 terms (added 2026-06-10) ──────
     Definition(
-        citation="Art. 3.67",
-        term="European Artificial Intelligence Board",
+        citation="Art. 3.31",
+        term="validation data set",
         description=(
-            "The Board established pursuant to Article 65, composed of "
-            "representatives of the Member States, which advises and assists "
-            "the Commission and Member States in order to facilitate the "
-            "consistent and effective application of this Regulation."
+            "A separate data set or part of the training data set, either as "
+            "a fixed or variable split."
         ),
         keywords=(
-            "european artificial intelligence board",
-            "ai board",
-            "the board",
+            "validation data set",
+            "validation dataset",
+            "validation set",
         ),
     ),
     Definition(
-        citation="Art. 3.68",
-        term="European Data Protection Supervisor",
+        citation="Art. 3.50",
+        term="personal data",
         description=(
-            "The independent supervisory authority established by Regulation "
-            "(EU) 2018/1725, responsible for monitoring the application of "
-            "data protection rules to Union institutions, bodies, offices and "
-            "agencies."
+            "Personal data as defined in Article 4, point (1), of Regulation "
+            "(EU) 2016/679 (the GDPR)."
+        ),
+        keywords=("personal data",),
+    ),
+    Definition(
+        citation="Art. 3.51",
+        term="non-personal data",
+        description=(
+            "Data other than personal data as defined in Article 4, point "
+            "(1), of Regulation (EU) 2016/679 (the GDPR)."
         ),
         keywords=(
-            "european data protection supervisor",
-            "edps",
-            "data protection supervisor",
+            "non-personal data",
+            "non personal data",
+        ),
+    ),
+    Definition(
+        citation="Art. 3.61",
+        term="widespread infringement",
+        description=(
+            "Any act or omission contrary to Union law protecting the "
+            "interest of individuals that has harmed or is likely to harm "
+            "the collective interests of individuals residing in at least "
+            "two Member States other than the State where the act "
+            "originated, the provider or its authorised representative is "
+            "located or established, or the deployer is established; or "
+            "that harms collective interests with common features "
+            "(same unlawful practice, same interest infringed) occurring "
+            "concurrently, committed by the same operator, in at least "
+            "three Member States."
+        ),
+        keywords=(
+            "widespread infringement",
+            "widespread infringements",
         ),
     ),
 )

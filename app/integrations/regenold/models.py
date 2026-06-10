@@ -378,6 +378,20 @@ def _extract_subpoints(tail: str) -> list[str]:
     nothing policy mirrors :func:`_capture_subpoint_chain` in scope.py.
     """
     tokens: list[str] = []
+    # R112 — contiguity guard. ``re.findall`` below only YIELDS matching
+    # tokens; arbitrary prose BETWEEN tokens was never seen and so could
+    # never trigger the documented whole-chain rejection. ``Art.
+    # 13(1)(a) and (b)`` silently skipped the conjunction and assembled
+    # the phantom chain ``Article 13.1.a.b``; ``Art. 13(1) second
+    # subparagraph (a)`` swallowed the qualifier and emitted a DIFFERENT
+    # provision (``Article 13.1.a``). Require the tail to be EXACTLY a
+    # run of recognised token shapes (optionally whitespace-separated);
+    # any residue rejects the whole chain, matching the all-or-nothing
+    # policy above.
+    if tail.strip() and not re.fullmatch(
+        r"(?:\s*(?:\([A-Za-z0-9]+\)|\.[A-Za-z0-9]+))+\s*", tail
+    ):
+        return []
     # Unified single-pass extraction: capture either a ``(...)`` group
     # OR a ``.<seg>`` segment. Each match yields a 2-tuple where exactly
     # one capture is non-empty (the other is the empty string). Flatten
@@ -577,8 +591,17 @@ _META_OPENER_RE = re.compile(
 #     "Article 13(1)(a):"        → drop
 #     "Annex IV:"                → drop
 #     "Annex III.2:"             → drop
+#
+# R112 — the Article tail is token-bounded (mirroring the Annex branch).
+# The previous ``(?:[.\(][^:]*)?`` was an unbounded non-colon run, so any
+# sentence starting "Article N(" / "Article N." that carried a LATER
+# colon was amputated from the start through that colon — e.g.
+# "Article 5(1) prohibits the following: (a) subliminal techniques…"
+# lost its operative "prohibits" framing (meaning inversion). The colon
+# must now immediately follow the citation's subpoint chain (a genuine
+# label shape), never a prose clause.
 _KB_STUB_LABEL_RE = re.compile(
-    r"^(?:Art\.|Article)\s+\d+(?:[.\(][^:]*)?\s*:\s*"
+    r"^(?:Art\.|Article)\s+\d+(?:\([A-Za-z0-9]+\)|\.[A-Za-z0-9]+)*\s*:\s*"
     r"|^Annex\s+[IVXLC]+(?:\.[A-Za-z0-9]+)*\s*:\s*",
     re.IGNORECASE,
 )
@@ -782,9 +805,15 @@ def _is_abbreviation_period(left: str) -> bool:
 # like "sentences" but carry no content. Drop them.
 _DEGENERATE_SENTENCE_RE = re.compile(r"^\s*\d{1,3}[.)]\s*[.!?]?\s*$")
 # Sentences shorter than this many characters are almost always noise
-# fragments (a stray bullet marker, an empty colon line). 8 chars covers
-# "ok." / "Yes." / "No." but kills "1." / "2." / ":".
+# fragments (a stray bullet marker, an empty colon line). The length
+# floor kills "1." / "2." / ":"; short VERDICT sentences ("Yes." /
+# "No." / "OK.") are explicitly whitelisted below — R112 fixed the
+# previous behaviour where the floor silently dropped the direct
+# boolean verdict the R86 BLUF prompt asks Sonnet to lead with.
 _MIN_SENTENCE_CHARS = 8
+# Short verdict words that must survive the length floor even though
+# they sit under _MIN_SENTENCE_CHARS.
+_SHORT_VERDICT_WORDS = frozenset({"yes", "no", "ok"})
 
 
 def _is_degenerate_sentence(sentence: str) -> bool:
@@ -794,6 +823,11 @@ def _is_degenerate_sentence(sentence: str) -> bool:
         return True
     if _DEGENERATE_SENTENCE_RE.match(s):
         return True
+    # R112 — preserve short verdict sentences ("Yes." / "No." / "OK.")
+    # before the length floor; they carry the gold boolean token on
+    # yes/no questions.
+    if s.rstrip(".!?").strip().lower() in _SHORT_VERDICT_WORDS:
+        return False
     if len(s) < _MIN_SENTENCE_CHARS:
         return True
     return False
@@ -880,8 +914,19 @@ def _truncate_to_sentences(text: str, max_sentences: int = MAX_ANSWER_SENTENCES)
 # IGNORECASE handles lowercase drift ("art. 13"); the \b + digit
 # lookahead keeps "part."/"start."/"Article" itself safe, and the
 # replacement is always the legal-voice capitalised "Article"/"Articles".
-_PROSE_ARTS_PLURAL_RE = re.compile(r"\bArts\.?\s*(?=\d)", re.IGNORECASE)
-_PROSE_ART_SINGULAR_RE = re.compile(r"\bArt\.?\s*(?=\d)", re.IGNORECASE)
+# R112 — the bare (period-less) form must be CASE-SENSITIVE. The
+# previous single IGNORECASE pattern with an optional period rewrote
+# the ordinary English word "art" before a digit — "state of the art
+# 2024 benchmarks" became "state of the Article 2024 benchmarks", and
+# "state of the art" is literal statutory language (Articles 9/15
+# accuracy clauses). The WITH-period citation form stays IGNORECASE
+# (lowercase drift "art. 13" is a real citation shape); the bare form
+# only matches the capitalised "Art"/"Arts" token so bare lowercase
+# "art <digit>" prose is never rewritten.
+_PROSE_ARTS_PLURAL_DOT_RE = re.compile(r"\bArts\.\s*(?=\d)", re.IGNORECASE)
+_PROSE_ARTS_PLURAL_BARE_RE = re.compile(r"\bArts\s*(?=\d)")
+_PROSE_ART_SINGULAR_DOT_RE = re.compile(r"\bArt\.\s*(?=\d)", re.IGNORECASE)
+_PROSE_ART_SINGULAR_BARE_RE = re.compile(r"\bArt\s*(?=\d)")
 
 
 def _normalise_prose_citation_form(text: str) -> str:
@@ -892,8 +937,10 @@ def _normalise_prose_citation_form(text: str) -> str:
     """
     if not text:
         return text
-    text = _PROSE_ARTS_PLURAL_RE.sub("Articles ", text)
-    text = _PROSE_ART_SINGULAR_RE.sub("Article ", text)
+    text = _PROSE_ARTS_PLURAL_DOT_RE.sub("Articles ", text)
+    text = _PROSE_ARTS_PLURAL_BARE_RE.sub("Articles ", text)
+    text = _PROSE_ART_SINGULAR_DOT_RE.sub("Article ", text)
+    text = _PROSE_ART_SINGULAR_BARE_RE.sub("Article ", text)
     return text
 
 
@@ -919,8 +966,17 @@ def _hard_truncate_at_clause(text: str, limit: int) -> str:
         return text
     window = text[:limit]
     candidates: list[int] = []
-    # Sentence ends — include the terminator itself.
-    candidates += [m.end() for m in re.finditer(r"[.!?](?=\s)", window)]
+    # Sentence ends — include the terminator itself. R112 — filter out
+    # abbreviation periods (``e.g.`` / ``i.e.`` / ``Art.`` …) via the
+    # module's own _is_abbreviation_period helper, exactly as
+    # _split_sentences does; previously the abbreviation period could
+    # win as the "latest clean boundary" and ship a mid-sentence chop
+    # ending "…, e.g.".
+    candidates += [
+        m.end()
+        for m in re.finditer(r"[.!?](?=\s)", window)
+        if not _is_abbreviation_period(window[: m.end()])
+    ]
     # Enumerated-clause ends.
     candidates += [m.end() for m in re.finditer(r";(?=\s)", window)]
     # Enumerated-item starts " (a) " / " (A) " / " (ii) " — cut just
@@ -970,7 +1026,14 @@ def _cap_readable_units(text: str, max_units: int = 4) -> str:
     if not text:
         return text
     starts = {0}
+    # R112 — abbreviation-aware unit boundaries. The naive [.!?]\s+ was
+    # counting "e.g. " / "i.e. " as a unit boundary, so a 5-sentence
+    # answer containing one mid-sentence abbreviation lost a legitimate
+    # trailing sentence to the phantom unit. Mirror _split_sentences'
+    # abbreviation handling.
     for m in _SENT_END_RE.finditer(text):
+        if _is_abbreviation_period(text[: m.start() + 1]):
+            continue
         starts.add(m.end())
     for m in _ENUM_ITEM_RE.finditer(text):
         starts.add(m.start() + 1)  # the "(x)" itself begins the unit
@@ -1034,11 +1097,28 @@ def normalise_answer_for_regenold(
             max_sentences = MAX_ANSWER_SENTENCES
         max_sentences = max(1, min(max_sentences, 6))
 
-    qa_cap = int(os.getenv("REGENOLD_QA_LENGTH_CAP", "400").strip())
+    # R112 — defensive env parse (mirrors the max_sentences pattern
+    # above). REGENOLD_QA_LENGTH_CAP is an operator-tuned Railway knob
+    # (R103 set it to 1200 in production); a malformed value ("600px",
+    # "", "1200 # comment") previously raised ValueError here and
+    # 500'd every in-scope request through the unguarded route call
+    # site. Fall back to the 400 default and clamp to a sane range so
+    # a typo can never crash — or zero out — the answer cap.
+    try:
+        qa_cap = int(os.getenv("REGENOLD_QA_LENGTH_CAP", "400").strip() or 400)
+    except ValueError:
+        qa_cap = 400
+    qa_cap = max(100, min(qa_cap, 20000))
     is_scenario = False
     if question:
+        # R112 — keep in sync with routes/regenold.py::_SCENARIO_SHAPE_RE.
+        # The route copy gained ``(?:both\s+)?`` for compound-role
+        # scenarios ("We are both a provider and a deployer…"); this
+        # duplicate had drifted, so strong-compound scenario answers got
+        # the QA char cap instead of the scenario 600.
         is_scenario = bool(re.search(
-            r"\bwe\s+are\s+(?:an?\s+)?(?:provider|deployer|importer|distributor|"
+            r"\bwe\s+are\s+(?:both\s+)?(?:an?\s+)?"
+            r"(?:provider|deployer|importer|distributor|"
             r"manufacturer|representative)\b",
             question,
             re.IGNORECASE,
@@ -1216,16 +1296,42 @@ def normalise_answer_for_regenold(
         s_clean = s_clean.replace("…", " ")
         s_clean = re.sub(r'\.\.\.+', ' ', s_clean)
         s_clean = re.sub(r'\s+', ' ', s_clean).strip()
-        
-        # Remove trailing periods first to avoid double periods
-        s_clean = s_clean.rstrip(".")
-        
+
         if not s_clean:
             continue
-            
-        # Ensure it has a terminal period (if not already ending in ! or ?)
-        if s_clean[-1] not in ".!?":
-            s_clean += "."
+
+        # R112 — closing-char-aware terminator. Re-peel AFTER the
+        # ellipsis scrub and decide termination on the PEELED view so a
+        # sentence legitimately ending '."' or '.)' is recognised as
+        # already terminated. Previously the raw last char (the quote /
+        # paren) failed the [.!?] check and a stray extra period was
+        # appended ('…autonomy.".').
+        _peeled_post = s_clean
+        while _peeled_post and _peeled_post[-1] in ")]}\"”’'":
+            _peeled_post = _peeled_post[:-1].rstrip()
+        if _peeled_post and _peeled_post[-1] in ".!?":
+            # Already terminated (possibly inside a closing quote /
+            # paren). Collapse a bare trailing period run ("foo.." →
+            # "foo.", "Done!." → "Done!"); drop the sentence if nothing
+            # remains. Sentences ending inside a closer ('…autonomy."')
+            # are left untouched.
+            if s_clean.endswith("."):
+                _core = s_clean.rstrip(".")
+                if not _core:
+                    continue
+                if _core[-1] in "!?":
+                    s_clean = _core
+                else:
+                    s_clean = _core + "."
+        else:
+            # Remove trailing periods first to avoid double periods,
+            # then ensure a terminal period (if not already ending in
+            # ! or ?).
+            s_clean = s_clean.rstrip(".")
+            if not s_clean:
+                continue
+            if s_clean[-1] not in ".!?":
+                s_clean += "."
             
         # Drop clipped sentences if we already have a complete sentence
         # or if the remaining fragment is too short to be meaningful.

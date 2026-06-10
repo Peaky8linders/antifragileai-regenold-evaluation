@@ -658,7 +658,14 @@ _PROHIBITED_MARKERS = (
     "exploits the financial",
     "exploits the disability",
     "exploitation of",
-    "exploit",  # broad verb stem; works because we already gate on a role marker
+    # R112 (finding #8) — bare verb stem "exploit" removed. The in-code
+    # justification ("works because we already gate on a role marker")
+    # was wrong: the role gate only confirms scenario SHAPE, not marker
+    # semantics, so benign business phrasings ("exploit market data to
+    # forecast retail demand") shipped a confidently-wrong PROHIBITED
+    # verdict. Art. 5(1)(b) recall is preserved by the specific forms
+    # above plus the _EXPLOIT_CONTEXT_RE co-occurrence regex below
+    # (exploit* near a person / vulnerability object).
     "disability exploitation",
     "vulnerability targeting",
     "vulnerability-driven",
@@ -761,14 +768,25 @@ _HIGH_RISK_MARKERS = (
     # Annex III (7) migration / asylum / borders
     "asylum",
     "border control",
-    "migration",
+    # R112 (finding #8) — bare "migration" removed: it substring-matched
+    # benign IT phrasings ("automate database migration for enterprise
+    # clients") and shipped a wrong high-risk Annex III verdict. The
+    # Annex III(7) shapes are preserved by "asylum" / "border control" /
+    # "visa decision" plus _MIGRATION_CONTEXT_RE below (migration term +
+    # asylum/border/visa/passport/travel-document co-token).
     "visa decision",
     # Annex III (8) administration of justice
     "administration of justice",
     "judicial decision",
     "court decision",
     "democratic process",
-    "election",
+    # R112 (finding #8) — bare "election" removed: plain substring
+    # matching fired it inside "selection" / "selections" ("optimise
+    # product selection", "genre/mood selections" — davidath row 258's
+    # minimal-risk movie recommender was misclassified high-risk). The
+    # Annex III(8) shapes are preserved by "democratic process" plus
+    # _ELECTION_CONTEXT_RE below (word-bounded election/referendum +
+    # voter/voting/political/democratic co-token).
 )
 
 
@@ -811,6 +829,68 @@ def _any_in(text_low: str, markers: Iterable[str]) -> bool:
     return any(m in text_low for m in markers)
 
 
+# ── R112 (finding #8) — context-bound replacements for the removed
+# bare markers "exploit" / "migration" / "election" ──────────────────
+#
+# The bare substrings produced categorically wrong verdicts on benign
+# scenarios ("exploit market data" → prohibited; "database migration" →
+# high-risk; "product selection" → high-risk via the "election"
+# substring). Each replacement requires the statutory CONTEXT the
+# Annex III / Art. 5 category is actually about, so the canonical
+# davidath / Art. 5(1)(b) / Annex III(7)/(8) phrasings keep firing.
+
+# Art. 5(1)(b) — "exploit*" within one clause of a person /
+# vulnerability object (either order). Covers the davidath shapes the
+# bare stem carried: "exploit the loneliness of elderly users",
+# "exploits the fear of missing out among young adults", "seniors …
+# exploitation-aware".
+_EXPLOIT_OBJECTS = (
+    r"vulnerab|child|minor|elder|senior|teen|young adult|disab|addict|"
+    r"gambl|lonel|illiterate|low.?income|low.?skill|economic situation|"
+    r"fear of"
+)
+_EXPLOIT_CONTEXT_RE = re.compile(
+    r"exploit\w*[^.;:!?]{0,80}?(?:" + _EXPLOIT_OBJECTS + r")"
+    r"|(?:" + _EXPLOIT_OBJECTS + r")\w*[^.;:!?]{0,80}?exploit"
+)
+
+# Annex III(7) — migration term + a migration-management co-token
+# anywhere in the scenario (asylum / border / visa / refugee /
+# passport / travel document / immigration officer …).
+_MIGRATION_TERM_RE = re.compile(r"\b(?:migration|migrant|migrants|immigration)\b")
+_MIGRATION_CONTEXT_TOKENS = (
+    "asylum", "border", "visa", "residence permit", "residency",
+    "refugee", "passport", "travel document", "deport", "crossing",
+    "immigration officer", "entering the eu",
+)
+
+# Annex III(8) — word-bounded election/referendum term (no more
+# "selection" substring hits) + a democratic-process co-token.
+_ELECTION_TERM_RE = re.compile(r"\b(?:election|elections|referendum|referenda)\b")
+_ELECTION_CONTEXT_TOKENS = (
+    "voter", "voting", "political", "democratic", "campaign",
+    "ballot", "electoral", "influence the outcome",
+)
+
+
+def _exploit_context(text_low: str) -> bool:
+    return _EXPLOIT_CONTEXT_RE.search(text_low) is not None
+
+
+def _migration_context(text_low: str) -> bool:
+    return (
+        _MIGRATION_TERM_RE.search(text_low) is not None
+        and _any_in(text_low, _MIGRATION_CONTEXT_TOKENS)
+    )
+
+
+def _election_context(text_low: str) -> bool:
+    return (
+        _ELECTION_TERM_RE.search(text_low) is not None
+        and _any_in(text_low, _ELECTION_CONTEXT_TOKENS)
+    )
+
+
 # The davidath dataset uses Unicode non-breaking hyphens (U+2011) and
 # non-breaking spaces (U+00A0, U+202F) inside scenario text — these
 # break ASCII-only substring matches. Normalise to plain ASCII before
@@ -840,9 +920,13 @@ def _detect_risk_level(text: str) -> str | None:
     ``"minimal"`` / ``None``.
     """
     low = _normalise(text).lower()
-    if _any_in(low, _PROHIBITED_MARKERS):
+    if _any_in(low, _PROHIBITED_MARKERS) or _exploit_context(low):
         return "prohibited"
-    if _any_in(low, _HIGH_RISK_MARKERS):
+    if (
+        _any_in(low, _HIGH_RISK_MARKERS)
+        or _migration_context(low)
+        or _election_context(low)
+    ):
         return "high-risk"
     if _any_in(low, _LIMITED_MARKERS):
         return "limited"
