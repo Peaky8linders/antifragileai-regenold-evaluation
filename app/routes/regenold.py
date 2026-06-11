@@ -2587,6 +2587,9 @@ def _resolve_retrieval_path(graph_stats: dict[str, Any]) -> str:
     Empty-everything → ``deterministic`` (fallback path also fires
     when the LLM is unavailable).
     """
+    if "retrieval_path" in graph_stats:
+        return graph_stats["retrieval_path"]
+
     nodes = int(graph_stats.get("nodes_traversed", 0) or 0)
     edges = int(graph_stats.get("edges_followed", 0) or 0)
     obligations = int(graph_stats.get("obligations_found", 0) or 0)

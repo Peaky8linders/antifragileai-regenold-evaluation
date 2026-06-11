@@ -28,7 +28,7 @@ class GraphSettings(BaseSettings):
 
     model_config = SettingsConfigDict(env_prefix="NEO4J_", extra="ignore")
 
-    enabled: bool = False
+    enabled: bool = True
     # Default points at the Regenold Neo4j Aura instance (R98 — Aura is the
     # production graph backend). Overridable via ``NEO4J_URI``; the Railway
     # dashboard / local ``.env`` set the operative value. ``neo4j+s://``

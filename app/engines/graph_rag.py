@@ -672,6 +672,7 @@ class GraphContext:
     semantically_relevant_statements: list[str] = field(default_factory=list)
     referenced_annexes_and_recitals: list[dict] = field(default_factory=list)
     web_search_results: list[str] = field(default_factory=list)
+    retrieval_path: str = "neo4j"
 
 
 # ─── LLM Integration ────────────────────────────────────────────────────────
@@ -3709,7 +3710,7 @@ def _retrieve_from_kb(
         get_dimensions_for_risk_level,
     )
 
-    context = GraphContext()
+    context = GraphContext(retrieval_path="kb_fallback")
     effective_risk = query.risk_context or risk_level or "high"
 
     # Get applicable dimensions
@@ -5329,6 +5330,7 @@ def ask_compliance_question(request: GraphRAGRequest) -> GraphRAGResponse:
             # record AND the R72 reference-reconciliation gate; before
             # R72.1 the key was never set, so both silently saw False.
             "stage2_landed": bool(stage2_used),
+            "retrieval_path": context.retrieval_path,
         },
         kg_answer=kg_answer,
     )
