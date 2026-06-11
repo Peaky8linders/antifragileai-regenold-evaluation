@@ -3205,15 +3205,18 @@ def _deterministic_answer(question: str, context: GraphContext) -> str:
     if _detect_guiding_principles_inquiry(question):
         verdict = {
             "name": "guiding_principles",
+            # The seven-principles enumeration MUST carry a cite anchor
+            # (Article 1): normalise_answer_for_regenold's 600-char soft cap
+            # drops the longest NON-cite-anchored sentence first, and without
+            # the anchor the enumeration — the whole point of the answer — is
+            # exactly that sentence (R114, Antifragile Q7 wire regression).
             "answer": (
-                "The EU AI Act rests on seven general principles applicable to all "
-                "AI systems, reflecting the trustworthy-AI framework: human agency and "
-                "oversight, technical robustness and safety, privacy and data "
-                "governance, transparency, diversity, non-discrimination and fairness, "
-                "social and environmental wellbeing, and accountability. Article 1 "
-                "frames the Regulation's purpose as promoting human-centric and "
-                "trustworthy AI while ensuring a high level of protection of health, "
-                "safety, and fundamental rights. Article 4 operationalises these "
+                "Under Article 1's purpose of promoting human-centric and "
+                "trustworthy AI, the EU AI Act reflects seven guiding principles: "
+                "human agency and oversight; technical robustness and safety; "
+                "privacy and data governance; transparency; diversity, "
+                "non-discrimination and fairness; social and environmental "
+                "wellbeing; and accountability. Article 4 operationalises these "
                 "principles by requiring providers and deployers to ensure a "
                 "sufficient level of AI literacy among their staff."
             ),
