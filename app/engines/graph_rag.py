@@ -4484,12 +4484,8 @@ def _claude_max_enhance_answer(
         # wrapper call uses those for THIS polish call only.
         #
         # User directive (2026-06-02): route to the complex model (Opus
-        # 4.8) when reasoning is requested via parameters, OR the question
-        # is complex, OR it bundles more than one phrase/question. The
-        # latter two are handled inside ``is_complex_question`` (it now
-        # carries the multi-phrase signal); the reasoning-requested signal
-        # is detected here via the active reasoning-trace ContextVar
-        # (``?include_reasoning=true`` activates it for the request).
+        # 4.8 / Fable 5) when the question is complex, OR it bundles more than
+        # one phrase/question. This is handled entirely inside ``is_complex_question``.
         try:
             from app.engines.question_complexity import (  # noqa: PLC0415
                 is_complex_question,
@@ -4497,15 +4493,6 @@ def _claude_max_enhance_answer(
             complex_q = is_complex_question(question, history_turn_count)
         except Exception:  # noqa: BLE001
             complex_q = False
-        if not complex_q:
-            try:
-                from app.integrations.regenold.reasoning_trace import (  # noqa: PLC0415
-                    current as _current_trace,
-                )
-                if _current_trace() is not None:
-                    complex_q = True
-            except Exception:  # noqa: BLE001 — fail-soft; reasoning signal is optional
-                pass
 
         # R56 — Stage-2 provider routing. The historical
         # ``_claude_max_enhance_answer`` name is preserved for back-compat;
@@ -4539,6 +4526,11 @@ def _claude_max_enhance_answer(
             _use_gemini = is_gemini_provider_enabled()
 
         if _use_anthropic_sdk:
+            try:
+                from app.integrations.regenold.reasoning_trace import record_note
+                _model = os.getenv("REGENOLD_STAGE2_MODEL_ANTHROPIC", "claude-sonnet-4-6")
+                record_note(f"stage2_model={_model} complex={complex_q}")
+            except Exception: pass
             text_raw = _anthropic_complete_for_graph_rag(
                 system=PROMPT_HARDENING_PREFIX + ANSWER_GENERATE_SYSTEM,
                 user=user_message,
@@ -4548,11 +4540,16 @@ def _claude_max_enhance_answer(
             )
         elif _use_groq:
             from app.llm.openai_wrapper_provider import OpenAIWrapperRequest, get_groq_provider
+            _model = os.getenv("REGENOLD_STAGE2_MODEL_GROQ", "llama-3.3-70b-versatile")
+            try:
+                from app.integrations.regenold.reasoning_trace import record_note
+                record_note(f"stage2_model={_model} complex={complex_q}")
+            except Exception: pass
             resp = get_groq_provider().complete(
                 OpenAIWrapperRequest(
                     system=PROMPT_HARDENING_PREFIX + ANSWER_GENERATE_SYSTEM,
                     user=user_message,
-                    model=os.getenv("REGENOLD_STAGE2_MODEL_GROQ", "llama-3.3-70b-versatile"),
+                    model=_model,
                     max_tokens=max_tokens,
                     temperature=0.0,
                 )

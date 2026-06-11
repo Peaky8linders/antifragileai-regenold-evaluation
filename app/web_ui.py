@@ -909,6 +909,12 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             color: #10b981;
         }
 
+        .reasoning-model-badge.gemini {
+            background: rgba(59, 130, 246, 0.1);
+            border: 1px solid rgba(59, 130, 246, 0.25);
+            color: #3b82f6;
+        }
+
         .reasoning-section {
             background: rgba(255, 255, 255, 0.02);
             border: 1px solid var(--border-glass);
@@ -1904,6 +1910,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 if (/fable/i.test(m)) return 'fable5';
                 if (/opus/i.test(m)) return 'opus';
                 if (/groq|llama/i.test(m)) return 'groq';
+                if (/gemini/i.test(m)) return 'gemini';
                 return 'sonnet';
             }
 
@@ -1913,6 +1920,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 if (/opus.*4.*8/i.test(m)) return '★ Opus 4.8';
                 if (/opus/i.test(m)) return '★ Opus';
                 if (/groq|llama/i.test(m)) return '⚡ Groq Llama';
+                if (/gemini/i.test(m)) return '✨ Gemini 3.1';
                 return 'Sonnet 4.6';
             }
 
