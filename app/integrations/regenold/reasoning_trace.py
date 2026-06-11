@@ -302,8 +302,8 @@ def record_note(text: str) -> None:
     trace = current()
     if trace is None or not text:
         return
-    if len(trace.notes) < 12:  # cap at 12 to keep the payload bounded
-        trace.notes.append(text[:200])
+    if len(trace.notes) < 32:  # cap at 32 — full-detail analysis mode
+        trace.notes.append(text)  # no truncation; full reasoning output
 
 
 def record_query_denoiser(
@@ -375,9 +375,9 @@ def record_sub_query(
         return
     if len(trace.sub_queries) >= 8:
         return
-    entry: dict[str, Any] = {"q": str(text)[:160]}
+    entry: dict[str, Any] = {"q": str(text)[:400]}
     if refs:
-        entry["refs"] = [str(r) for r in refs][:12]
+        entry["refs"] = [str(r) for r in refs][:24]
     if source:
         entry["source"] = str(source)[:16]
     if reason:

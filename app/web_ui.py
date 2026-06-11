@@ -849,27 +849,181 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             line-height: 1.4;
         }
 
-        /* Reasoning tab */
+        /* Reasoning tab — rich structured display */
         .reasoning-scroller {
             height: 100%;
             display: flex;
             flex-direction: column;
-            gap: 16px;
+            gap: 10px;
+            overflow-y: auto;
+        }
+
+        .reasoning-header-bar {
+            background: rgba(0, 240, 255, 0.05);
+            border: 1px solid rgba(0, 240, 255, 0.2);
+            border-radius: 8px;
+            padding: 10px 14px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-shrink: 0;
+        }
+
+        .reasoning-header-bar .schema-ver {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 10px;
+            color: var(--text-muted);
+        }
+
+        .reasoning-model-badge {
+            font-family: 'Outfit', sans-serif;
+            font-size: 11px;
+            font-weight: 600;
+            padding: 3px 8px;
+            border-radius: 20px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .reasoning-model-badge.fable5 {
+            background: rgba(168, 85, 247, 0.15);
+            border: 1px solid rgba(168, 85, 247, 0.35);
+            color: #c084fc;
+        }
+
+        .reasoning-model-badge.sonnet {
+            background: rgba(0, 240, 255, 0.1);
+            border: 1px solid rgba(0, 240, 255, 0.25);
+            color: var(--accent-cyan);
+        }
+
+        .reasoning-model-badge.opus {
+            background: rgba(251, 191, 36, 0.1);
+            border: 1px solid rgba(251, 191, 36, 0.3);
+            color: #fbbf24;
+        }
+
+        .reasoning-model-badge.groq {
+            background: rgba(16, 185, 129, 0.1);
+            border: 1px solid rgba(16, 185, 129, 0.25);
+            color: #10b981;
+        }
+
+        .reasoning-section {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--border-glass);
+            border-radius: 8px;
+            overflow: hidden;
+            flex-shrink: 0;
+        }
+
+        .reasoning-section-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            font-size: 10px;
+            font-family: 'Outfit', sans-serif;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            border-bottom: 1px solid var(--border-glass);
+        }
+
+        .reasoning-section-header.scope-hdr { color: #34d399; background: rgba(52,211,153,0.05); }
+        .reasoning-section-header.intent-hdr { color: #60a5fa; background: rgba(96,165,250,0.05); }
+        .reasoning-section-header.retrieval-hdr { color: var(--accent-cyan); background: rgba(0,240,255,0.04); }
+        .reasoning-section-header.graph-hdr { color: #a78bfa; background: rgba(167,139,250,0.05); }
+        .reasoning-section-header.guards-hdr { color: #fb923c; background: rgba(251,146,60,0.05); }
+        .reasoning-section-header.model-hdr { color: #c084fc; background: rgba(192,132,252,0.05); }
+        .reasoning-section-header.subq-hdr { color: #38bdf8; background: rgba(56,189,248,0.05); }
+        .reasoning-section-header.notes-hdr { color: #94a3b8; background: rgba(148,163,184,0.03); }
+
+        .reasoning-section-body {
+            padding: 10px 14px;
+            font-size: 12px;
+            line-height: 1.6;
+            color: var(--text-secondary);
+        }
+
+        .rlog-kv {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 4px;
+            align-items: flex-start;
+        }
+
+        .rlog-key {
+            color: var(--text-muted);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            min-width: 90px;
+            flex-shrink: 0;
+            padding-top: 1px;
+        }
+
+        .rlog-val {
+            color: var(--text-secondary);
+            font-size: 12px;
+            word-break: break-word;
+        }
+
+        .rlog-val.highlight { color: var(--text-primary); }
+        .rlog-val.ok { color: #34d399; }
+        .rlog-val.warn { color: #fbbf24; }
+
+        .rlog-tag {
+            display: inline-block;
+            padding: 1px 6px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-family: 'JetBrains Mono', monospace;
+            margin: 1px 3px 1px 0;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border-glass);
+            color: var(--text-secondary);
+        }
+
+        .rlog-subq-card {
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 6px;
+            padding: 8px 10px;
+            margin-bottom: 8px;
+            border-left: 2px solid rgba(56, 189, 248, 0.4);
+        }
+
+        .rlog-subq-card:last-child { margin-bottom: 0; }
+
+        .rlog-subq-q {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            color: #38bdf8;
+            margin-bottom: 6px;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .rlog-note-line {
+            font-size: 11px;
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--text-secondary);
+            padding: 3px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.03);
+            word-break: break-word;
+            white-space: pre-wrap;
+        }
+
+        .rlog-note-line:last-child { border-bottom: none; }
+
+        .rlog-empty {
+            color: var(--text-muted);
+            font-size: 13px;
+            text-align: center;
+            margin-top: 40px;
         }
 
         .reasoning-log-container {
-            background: #02040a;
-            border: 1px solid var(--border-glass);
-            border-radius: 8px;
-            padding: 12px;
-            overflow-x: auto;
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 11px;
-            line-height: 1.5;
-            color: #a5b4fc;
-            flex-grow: 1;
-            white-space: pre-wrap;
-            box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.5);
+            display: none; /* kept for backward compat but hidden */
         }
 
         /* Stats tab */
@@ -1222,8 +1376,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
             <!-- Reasoning Tab -->
             <div id="tab-reasoning" class="tab-content">
-                <div class="reasoning-scroller">
-                    <div class="reasoning-log-container" id="reasoning-container">No reasoning trace captured. Check "Include Reasoning Trace" before sending.</div>
+                <div class="reasoning-scroller" id="reasoning-container">
+                    <p class="rlog-empty">No reasoning trace captured. Enable "Include Reasoning Trace" before sending.</p>
                 </div>
             </div>
 
@@ -1437,7 +1591,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 <p style="color: var(--text-muted); font-size: 13px; text-align: center; margin-top: 40px;">
                     No citations available. Submit a question to retrieve grounding data.
                 </p>`;
-            document.getElementById('reasoning-container').innerText = 'No reasoning trace captured. Check "Include Reasoning Trace" before sending.';
+            document.getElementById('reasoning-container').innerHTML = '<p class="rlog-empty">No reasoning trace captured. Enable "Include Reasoning Trace" before sending.</p>';
             document.getElementById('stat-confidence').innerText = 'N/A';
             document.getElementById('gauge-confidence').style.width = '0%';
             document.getElementById('stat-path').innerText = 'N/A';
@@ -1705,6 +1859,179 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             return { row, run, remove };
         }
 
+        // ── renderReasoningLog ─────────────────────────────────────────────
+        // Builds a rich structured display from the JSON reasoning trace payload.
+        // Each field gets a dedicated colour-coded section card; notes are shown
+        // in full (no truncation) as a timeline log.
+        function renderReasoningLog(container, rawReasoning) {
+            if (!rawReasoning) {
+                container.innerHTML = '<p class="rlog-empty">No detailed reasoning logs returned. Enable "Include Reasoning Trace" in the sidebar.</p>';
+                return;
+            }
+
+            let trace;
+            try { trace = JSON.parse(rawReasoning); }
+            catch (e) {
+                container.innerHTML = '<p class="rlog-empty">Reasoning payload is not valid JSON.</p>';
+                return;
+            }
+
+            // Detect which Stage-2 model was used from the notes array.
+            // The engine records e.g. "stage2_model=claude-fable-5 complex=true"
+            // or "stage2_model=claude-sonnet-4-6 complex=false" in notes.
+            let detectedModel = '';
+            let isComplex = false;
+            (trace.notes || []).forEach(n => {
+                const m = n.match(/stage2_model[=:]\s*(\S+)/i);
+                if (m) detectedModel = m[1];
+                if (/complex[=:]?\s*true/i.test(n)) isComplex = true;
+            });
+            // Also check stage2_polish landed + complex inference from guards/notes
+            if (!detectedModel && trace.stage2_polish) {
+                // Fall back to reading the note that records which model was used
+                (trace.notes || []).forEach(n => {
+                    if (/fable.?5/i.test(n)) detectedModel = 'claude-fable-5';
+                    else if (/opus.?4/i.test(n)) detectedModel = 'claude-opus-4';
+                    else if (/sonnet/i.test(n)) detectedModel = 'claude-sonnet-4-6';
+                    else if (/groq|llama/i.test(n)) detectedModel = 'groq-llama';
+                });
+            }
+            if (!detectedModel && trace.stage2_polish === true) detectedModel = 'claude-fable-5'; // default
+            if (!detectedModel && trace.stage2_polish === false) detectedModel = 'claude-sonnet-4-6';
+
+            function modelClass(m) {
+                if (!m) return 'sonnet';
+                if (/fable/i.test(m)) return 'fable5';
+                if (/opus/i.test(m)) return 'opus';
+                if (/groq|llama/i.test(m)) return 'groq';
+                return 'sonnet';
+            }
+
+            function modelLabel(m) {
+                if (!m) return 'Sonnet 4.6';
+                if (/fable/i.test(m)) return '✦ Fable 5';
+                if (/opus.*4.*8/i.test(m)) return '★ Opus 4.8';
+                if (/opus/i.test(m)) return '★ Opus';
+                if (/groq|llama/i.test(m)) return '⚡ Groq Llama';
+                return 'Sonnet 4.6';
+            }
+
+            function section(hdrClass, icon, title, bodyHTML) {
+                return `<div class="reasoning-section">
+                    <div class="reasoning-section-header ${hdrClass}">${icon} ${escapeHtml(title)}</div>
+                    <div class="reasoning-section-body">${bodyHTML}</div>
+                </div>`;
+            }
+
+            function kv(key, valHTML) {
+                return `<div class="rlog-kv"><span class="rlog-key">${escapeHtml(key)}</span><span class="rlog-val">${valHTML}</span></div>`;
+            }
+
+            function tags(arr) {
+                return (arr || []).map(t => `<span class="rlog-tag">${escapeHtml(t)}</span>`).join('');
+            }
+
+            const parts = [];
+
+            // ── Header bar ───────────────────────────────────────────────────
+            const schemaVer = trace.schema_version || '?';
+            const mClass = modelClass(detectedModel);
+            const mLabel = modelLabel(detectedModel);
+            const complexBadge = isComplex ? ' <span style="font-size:10px;color:#a78bfa">(complex routing)</span>' : '';
+            parts.push(`<div class="reasoning-header-bar">
+                <span class="schema-ver">schema ${escapeHtml(schemaVer)}</span>
+                <span class="reasoning-model-badge ${mClass}">${escapeHtml(mLabel)}${complexBadge}</span>
+            </div>`);
+
+            // ── Scope ────────────────────────────────────────────────────────
+            if (trace.scope && Object.keys(trace.scope).length > 0) {
+                const sc = trace.scope;
+                const vclass = sc.verdict === 'in_scope' ? 'ok' : sc.verdict === 'out_of_scope' ? 'warn' : '';
+                let body = kv('verdict', `<span class="rlog-val ${vclass} highlight">${escapeHtml(sc.verdict || '—')}</span>`);
+                if (sc.evidence) body += kv('evidence', escapeHtml(sc.evidence));
+                if (sc.near_oos_framework) body += kv('near-oos', `<span class="rlog-val warn">${escapeHtml(sc.near_oos_framework)}</span>`);
+                parts.push(section('scope-hdr', '🔍', 'Scope Gate', body));
+            }
+
+            // ── Intent ───────────────────────────────────────────────────────
+            if (trace.intent_label || trace.compound_roles?.length || trace.query_denoiser?.fired !== undefined) {
+                let body = '';
+                if (trace.intent_label) body += kv('intent', `<span class="rlog-val highlight">${escapeHtml(trace.intent_label)}</span>`);
+                if (trace.compound_roles?.length) body += kv('roles', tags(trace.compound_roles));
+                const qd = trace.query_denoiser;
+                if (qd && Object.keys(qd).length) {
+                    body += kv('denoiser', `<span class="rlog-val ${qd.fired ? 'ok' : ''}">${qd.fired ? 'fired' : 'skipped'}${qd.fallback_reason ? ' (' + escapeHtml(qd.fallback_reason) + ')' : ''}</span>`);
+                    if (qd.rewritten_chars) body += kv('rewritten', escapeHtml(String(qd.rewritten_chars)) + ' chars');
+                    if (qd.model) body += kv('model', escapeHtml(qd.model));
+                }
+                if (body) parts.push(section('intent-hdr', '🎯', 'Intent & Query', body));
+            }
+
+            // ── Retrieval ────────────────────────────────────────────────────
+            if (trace.retrieval_path || trace.anchors_used?.length || trace.top_k_bm25?.length) {
+                let body = '';
+                if (trace.retrieval_path) body += kv('path', `<span class="rlog-val highlight">${escapeHtml(trace.retrieval_path)}</span>`);
+                if (trace.anchors_used?.length) body += kv('anchors', tags(trace.anchors_used));
+                if (trace.xref_expand_added?.length) body += kv('xrefs', tags(trace.xref_expand_added));
+                if (trace.top_k_bm25?.length) {
+                    const hits = trace.top_k_bm25.map(h => `<span class="rlog-tag">${escapeHtml(h.ref || '')} <span style="color:var(--text-muted)">${h.score != null ? h.score.toFixed(1) : ''}</span></span>`).join('');
+                    body += kv('BM25 top-k', hits);
+                }
+                if (trace.engine_confidence != null) body += kv('confidence', `<span class="rlog-val highlight">${trace.engine_confidence.toFixed(3)}</span>`);
+                if (trace.cache_hit != null) body += kv('cache', `<span class="rlog-val ${trace.cache_hit ? 'ok' : ''}">${trace.cache_hit ? 'HIT' : 'miss'}</span>`);
+                if (body) parts.push(section('retrieval-hdr', '📚', 'Retrieval', body));
+            }
+
+            // ── Graph expansion ──────────────────────────────────────────────
+            if (trace.graph_2hop_added?.length) {
+                const body = kv('2-hop added', tags(trace.graph_2hop_added));
+                parts.push(section('graph-hdr', '🕸', 'Graph Expansion', body));
+            }
+
+            // ── Guards fired ─────────────────────────────────────────────────
+            if (trace.guards_fired?.length) {
+                const body = kv('guards', tags(trace.guards_fired));
+                parts.push(section('guards-hdr', '🛡', 'Guards Fired', body));
+            }
+
+            // ── Stage-2 model ────────────────────────────────────────────────
+            if (trace.stage2_polish !== null && trace.stage2_polish !== undefined) {
+                let body = kv('stage2', `<span class="rlog-val ${trace.stage2_polish ? 'ok' : 'warn'}">${trace.stage2_polish ? 'landed' : 'skipped / fallback'}</span>`);
+                if (detectedModel) body += kv('model used', `<span class="rlog-val highlight reasoning-model-badge ${mClass}" style="padding:2px 6px;font-size:10px">${escapeHtml(modelLabel(detectedModel))}</span>`);
+                if (isComplex) body += kv('gate', '<span class="rlog-val" style="color:#a78bfa">complex routing — question complexity gate fired</span>');
+                parts.push(section('model-hdr', '✦', 'LLM Stage-2', body));
+            }
+
+            // ── Sub-queries (R110 Sufficient-Context) ────────────────────────
+            if (trace.sub_queries?.length) {
+                let body = '';
+                trace.sub_queries.forEach((sq, i) => {
+                    const refs = (sq.refs || []).map(r => `<span class="rlog-tag">${escapeHtml(r)}</span>`).join('');
+                    body += `<div class="rlog-subq-card">
+                        <div class="rlog-subq-q">[${i+1}] ${escapeHtml(sq.q || '')}</div>
+                        ${sq.source ? `<div class="rlog-kv"><span class="rlog-key">source</span><span class="rlog-val">${escapeHtml(sq.source)}</span></div>` : ''}
+                        ${sq.reason ? `<div class="rlog-kv"><span class="rlog-key">reason</span><span class="rlog-val">${escapeHtml(sq.reason)}</span></div>` : ''}
+                        ${refs ? `<div class="rlog-kv"><span class="rlog-key">refs</span><span class="rlog-val">${refs}</span></div>` : ''}
+                    </div>`;
+                });
+                parts.push(section('subq-hdr', '🔄', `Sub-Queries (${trace.sub_queries.length})`, body));
+            }
+
+            // ── Notes timeline ───────────────────────────────────────────────
+            if (trace.notes?.length) {
+                const lines = trace.notes.map(n => `<div class="rlog-note-line">${escapeHtml(n)}</div>`).join('');
+                parts.push(section('notes-hdr', '📝', `Engine Notes (${trace.notes.length})`, lines));
+            }
+
+            if (parts.length === 0) {
+                container.innerHTML = '<p class="rlog-empty">Trace received but contains no structured fields.</p>';
+            } else {
+                container.innerHTML = parts.join('');
+            }
+            // Switch to Reasoning tab automatically so the user sees it
+            switchTab('reasoning');
+        }
+
         function updateDiagnostics(data) {
             // Update Citations Tab
             const citationsContainer = document.getElementById('citations-container');
@@ -1750,19 +2077,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             document.getElementById('stat-obligations').innerText = data.obligations_found !== null && data.obligations_found !== undefined ? data.obligations_found : 'N/A';
             document.getElementById('stat-gaps').innerText = data.gaps_found !== null && data.gaps_found !== undefined ? data.gaps_found : 'N/A';
 
-            // Update Reasoning Tab
-            const reasoningContainer = document.getElementById('reasoning-container');
-            if (data.reasoning) {
-                try {
-                    // Try parsing as JSON to display in a clean structure
-                    const parsed = JSON.parse(data.reasoning);
-                    reasoningContainer.innerText = JSON.stringify(parsed, null, 2);
-                } catch (e) {
-                    reasoningContainer.innerText = data.reasoning;
-                }
-            } else {
-                reasoningContainer.innerText = 'No detailed reasoning logs returned. Ensure "Include Reasoning Trace" option is enabled in the sidebar.';
-            }
+            // Update Reasoning Tab — rich structured renderer
+            renderReasoningLog(document.getElementById('reasoning-container'), data.reasoning);
         }
     </script>
 </body>

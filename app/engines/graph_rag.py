@@ -313,6 +313,12 @@ def _openai_wrapper_complete_for_graph_rag(
     base_model = configured or "claude-sonnet-4-6"
     # R51 — complex-question routing.
     model = complex_model if (complex_question and complex_model) else base_model
+    # Record the chosen model in the reasoning trace so the UI can surface it.
+    try:
+        from app.integrations.regenold.reasoning_trace import record_note as _rn
+        _rn(f"stage2_model={model} complex={complex_question}")
+    except Exception:  # noqa: BLE001 — trace is optional
+        pass
     extra_headers: dict[str, str] = {}
     if complex_question and thinking_budget > 0:
         # Cap at wrapper's recommended ceiling. The wrapper itself
