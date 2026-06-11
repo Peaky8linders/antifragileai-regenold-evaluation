@@ -1308,7 +1308,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             <div class="welcome-container" id="welcome-message">
                 <h1 class="welcome-title">EU AI Act Workspace</h1>
                 <p class="welcome-desc">
-                    Greetings! I am Lexy, your AI compliance copilot. Powered by the Antifragile RAG engine, I perform deep legal analysis over the EU AI Act using a hybrid Neo4j Knowledge Graph. Ask me about prohibitions, provider obligations, GPAI, risk classes, or specific articles.
+                    Greetings! I am Lexy, your AI compliance copilot. Powered by the Antifragile RAG engine, I perform deep legal analysis over the EU AI Act.
                 </p>
                 <div class="suggestion-grid">
                     <div class="suggestion-card" onclick="selectSuggestion('Is a remote biometric identification system prohibited under Article 5?')">
