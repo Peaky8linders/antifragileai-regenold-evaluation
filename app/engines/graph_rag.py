@@ -330,12 +330,17 @@ def _openai_wrapper_complete_for_graph_rag(
             model, capped,
         )
 
+    # R112.2 - Ensure we don't trigger `max_thinking_tokens` validation errors 
+    # if the wrapper uses an older map from `max_tokens` to `max_thinking_tokens`.
+    # Pydantic requires an int, and Claude requires max_thinking_tokens >= 1024.
+    safe_max_tokens = max(max_tokens or 1024, 1024)
+    
     response = get_openai_wrapper_provider().complete(
         OpenAIWrapperRequest(
             system=system,
             user=user,
             model=model,
-            max_tokens=max_tokens,
+            max_tokens=safe_max_tokens,
             temperature=temperature,
             extra_headers=extra_headers,
         )
@@ -1822,6 +1827,30 @@ def _deterministic_parse(question: str) -> GraphQuery:
                         entities.insert(0, art_ref)
             except Exception as exc:  # noqa: BLE001
                 logger.debug("r74_cross_turn_pairing_failed: %s", exc)
+
+    # R114 — definitional-term anchor (general; Antifragile q08 class).
+    # When the question is DEFINITION-shaped and its extracted term
+    # resolves in the 68 Art. 3 definitions (via the R102 canonicaliser:
+    # hyphen folding, "artificial intelligence"→"ai", "system of X"→
+    # "X system"), anchor Art. 3 directly. Without this, definitional
+    # phrasings that don't literal-match the keyword map ("system of
+    # artificial intelligence") fall through to BM25, where the
+    # amendment articles (Arts 102-110 — their EUR-Lex prose repeats
+    # "artificial intelligence system" constantly) win the ranking and
+    # pollute both the Stage-2 grounding and the wire citations.
+    if not entities:
+        try:
+            from app.engines.sentence_index import (  # noqa: PLC0415
+                classify_question as _si_classify,
+                select_definition_sentence as _si_select_def,
+            )
+            if (
+                _si_classify(question) == "definition"
+                and _si_select_def(question) is not None
+            ):
+                entities.append("Art. 3")
+        except Exception as exc:  # noqa: BLE001 — fail-soft to BM25
+            logger.debug("r114_definitional_anchor_failed: %s", exc)
 
     # BM25 fallback over the obligation-row corpus. Fires ONLY when the
     # curated keyword + regex paths produced zero entities — at that

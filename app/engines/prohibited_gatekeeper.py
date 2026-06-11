@@ -53,6 +53,25 @@ from functools import lru_cache
 from app.data.ontology import PRACTICE_REGISTRY
 
 
+# Verb-first prohibition phrasings the literal PRACTICE_REGISTRY keyword
+# set cannot express (R114, Antifragile q19 class). The registry carries
+# noun-phrase forms ("emotion recognition", "infer emotions"); natural
+# questions often verb the object instead: "monitor the emotions and
+# stress levels of workers", "track employees' emotional state". Each
+# entry is a GENERAL verb-stem x emotional-state-noun proximity pattern
+# (up to three filler words), NOT a transcript of any one eval question.
+_VERB_OBJECT_PATTERNS: tuple[tuple[str, str, str], ...] = (
+    (
+        r"\b(?:monitor|track|read|detect|infer|recognis|recogniz|assess|"
+        r"analys|analyz|measur|identif)\w*\s+(?:\w+[''’]?\w*\s+){0,3}?"
+        r"(?:emotions?\b|emotional\s+states?\b|stress\s+levels?\b|"
+        r"mental\s+states?\b)",
+        "Art. 5",
+        "Art. 5.1.f",
+    ),
+)
+
+
 @lru_cache(maxsize=1)
 def _keyword_pattern_index() -> tuple[tuple[re.Pattern[str], str, str], ...]:
     """Compile (pattern, parent_ref, sub_ref) triples once per process.
@@ -61,6 +80,9 @@ def _keyword_pattern_index() -> tuple[tuple[re.Pattern[str], str, str], ...]:
     keywords; we compile each into a word-boundary regex (case-
     insensitive) and pair it with both the parent article ref
     (``Art. 5``) and the sub-paragraph chain (``Art. 5.1.a``).
+
+    Supplemented by :data:`_VERB_OBJECT_PATTERNS` — true regexes for
+    verb-first phrasings the literal keyword set cannot express.
 
     Sorted in DESCENDING priority by sub-paragraph order so a query
     matching multiple prohibitions surfaces the first one in the
@@ -84,6 +106,8 @@ def _keyword_pattern_index() -> tuple[tuple[re.Pattern[str], str, str], ...]:
                 re.IGNORECASE,
             )
             rows.append((pattern, parent, sub))
+    for raw, parent, sub in _VERB_OBJECT_PATTERNS:
+        rows.append((re.compile(raw, re.IGNORECASE), parent, sub))
     # Sort by sub-paragraph order — Art. 5(1)(a) before 5(1)(h).
     rows.sort(key=lambda t: t[2])
     return tuple(rows)

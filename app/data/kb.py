@@ -30,7 +30,7 @@ from dataclasses import dataclass, field
 # (Art. 25(2) cooperation-duty re-anchor + real 25(4) written-agreement
 # clause, Art. 99(4) closed enumeration, Art. 79/109 Reg-2019/1020
 # Art. 3(19) qualification).
-KB_VERSION = "2024.1689.v15"
+KB_VERSION = "2024.1689.v16"
 
 
 @dataclass(frozen=True)
@@ -875,22 +875,35 @@ EC_CHECKER_OBLIGATION_MAP: dict[str, dict[str, str]] = {
     },
     "Art. 50": {
         "dimension": "transparency",
+        # R114 (Antifragile Q5): per-paragraph ACTOR attribution. The old
+        # actor-less stub ("emotion-recognition systems must inform exposed
+        # persons") invited "providers" as the default subject in polished
+        # prose — Art. 50(3) and 50(4) are DEPLOYER duties.
         "summary": (
-            "Art. 50: Transparency obligations: AI systems interacting "
-            "with natural persons must disclose their AI nature; "
-            "emotion-recognition + biometric-categorisation systems must "
-            "inform exposed persons; deepfakes and AI-generated content "
-            "must be labelled."
+            "Art. 50: Transparency obligations split by actor: providers "
+            "must ensure AI systems interacting with natural persons "
+            "disclose their AI nature (Art. 50(1)) and must mark synthetic "
+            "AI-generated content in a machine-readable, detectable format "
+            "(Art. 50(2)); deployers must inform exposed persons when "
+            "operating emotion-recognition or biometric-categorisation "
+            "systems (Art. 50(3)) and must label deepfakes as artificially "
+            "generated or manipulated (Art. 50(4))."
         ),
     },
     "Art. 53": _KBEntry(
         dimension="tech_docs",
         stubs=(
             (
+                # R114 (Antifragile q16): name the systemic-risk gating
+                # question — any GPAI-obligations answer should tell the
+                # reader whether the heavier Art. 55 tier could attach.
                 "Art. 53: GPAI provider obligations: maintain technical "
                 "documentation per Annex XI, supply downstream-provider "
                 "information per Annex XII, implement a copyright policy, "
-                "and publish a sufficiently detailed training-data summary."
+                "and publish a sufficiently detailed training-data summary. "
+                "Where the model meets the Art. 51 systemic-risk threshold "
+                "(10^25 FLOPs cumulative training compute), the additional "
+                "Art. 55 obligations apply on top."
             ),
             (
                 "Art. 53(1)(d): Training-data content summary — the "

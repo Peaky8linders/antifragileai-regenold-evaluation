@@ -1549,8 +1549,17 @@ KEYWORD_TO_ARTICLE: dict[str, str] = {
     "fine-tuning": "Art. 25",
     "fine tune": "Art. 25",
     "fine tuning": "Art. 25",
-    "obligations apply": "Art. 113",
-    "obligation apply": "Art. 113",
+    # R114 (Antifragile q16): bare "obligations apply" was over-generic —
+    # "What transparency obligations apply to us?" is an OBLIGATION
+    # question, yet the substring anchored Art. 113 (applicability dates)
+    # as a spurious citation. The Art. 113 reading needs a temporal
+    # marker; the timeline forms below + the round-9.1 "when will the
+    # obligations" entries cover it.
+    "when do the obligations apply": "Art. 113",
+    "when do obligations apply": "Art. 113",
+    "when does the obligation apply": "Art. 113",
+    "obligations apply from": "Art. 113",
+    "obligations start to apply": "Art. 113",
     # NOTE: "applicable" / "applies on" / "in scope" / "definition" /
     # "definitions" alone are too generic — they appear in legitimate
     # questions about completely different articles (e.g. "Is Art. 26
