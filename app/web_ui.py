@@ -595,12 +595,12 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         /* Welcome layout */
         .welcome-container {
             max-width: 680px;
-            margin: auto;
+            margin: 15px auto auto auto;
             display: flex;
             flex-direction: column;
             align-items: center;
             text-align: center;
-            padding: 40px 20px;
+            padding: 10px 20px 30px 20px;
         }
 
         .welcome-icon {
@@ -1306,7 +1306,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         <!-- Chat View -->
         <div class="chat-scroller" id="chat-container">
             <div class="welcome-container" id="welcome-message">
-                <div class="welcome-icon">🇪🇺</div>
                 <h1 class="welcome-title">EU AI Act Workspace</h1>
                 <p class="welcome-desc">
                     Greetings! I am Lexy, your AI compliance copilot. Powered by the Antifragile RAG engine, I perform deep legal analysis over the EU AI Act using a hybrid Neo4j Knowledge Graph. Ask me about prohibitions, provider obligations, GPAI, risk classes, or specific articles.
@@ -1543,7 +1542,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 const res = await fetch('/healthz');
                 if (res.ok) {
                     const data = await res.json();
-                    document.getElementById('diag-api').innerHTML = `<span class="badge-ok">OK (v${escapeHtml(data.version || '0.1.0')})</span>`;
+                    document.getElementById('diag-api').innerHTML = `<span class="badge-ok">OK (v${escapeHtml(data.version || '1.0.0')})</span>`;
                 } else {
                     document.getElementById('diag-api').innerHTML = '<span class="badge-err">Error</span>';
                 }

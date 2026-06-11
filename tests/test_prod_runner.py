@@ -421,7 +421,7 @@ class TestHealthProbe:
     def test_health_only_all_ok(self):
         def _fake(req, timeout):
             return _FakeResponse(
-                {"status": "ok", "version": "0.1.0"}, status=200
+                {"status": "ok", "version": "1.0.0"}, status=200
             )
 
         with _patch_urlopen(_fake):

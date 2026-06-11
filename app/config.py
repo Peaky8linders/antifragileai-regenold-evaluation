@@ -156,7 +156,7 @@ class AppSettings(BaseSettings):
     regenold: RegenoldSettings = Field(default_factory=RegenoldSettings)
     rate_limit: RateLimitSettings = Field(default_factory=RateLimitSettings)
 
-    version: str = "0.1.0"
+    version: str = "1.0.0"
 
 
 settings = AppSettings()
