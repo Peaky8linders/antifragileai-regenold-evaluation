@@ -4444,11 +4444,13 @@ def _claude_max_enhance_answer(
         if is_general_classification:
             user_message += (
                 f"BACKGROUND RISK FRAMEWORK:\n{kg_answer}\n\n"
-                "The user is asking a classification question about a specific AI system use-case. "
-                "Provide a professional, objective legal analysis of whether this specific system falls under prohibited practices, high-risk, or limited/minimal risk based on the EU AI Act. "
-                "Apply logical deduction: objectively evaluate the system's described purpose against the strict definitions of prohibited or high-risk practices in the references. Do not dismiss the use-case; provide a balanced assessment of what classifications might or might not apply. "
-                "Do NOT use a prefabricated or generic response. Tailor your answer strictly to the user's specific use case using formal, neutral regulatory language. "
-                "Cite only articles and annexes from the EU AI ACT REFERENCES block.\n"
+                "The user is asking a classification question about a specific AI system use-case or category. "
+                "Provide a professional, objective regulatory verdict based strictly on the EU AI Act. "
+                "CRITICAL INSTRUCTION: Adhere to the BOTTOM-LINE UP FRONT (BLUF) format from your system prompt. "
+                "Start IMMEDIATELY with the regulation (e.g. 'Article 5 prohibits...'). "
+                "Do NOT use essay introductions, meta-commentary, headings, or titles (e.g., do NOT output 'EU AI Act Classification Analysis:'). "
+                "Apply logical deduction: objectively evaluate the described system against the strict definitions of prohibited or high-risk practices in the references. "
+                "Write in formal, neutral regulatory language. Cite only articles and annexes from the EU AI ACT REFERENCES block.\n"
             )
         else:
             user_message += (
@@ -4687,17 +4689,6 @@ def _two_stage_generate(
     # (live: Sonnet deleted the 7-principle list; turned an Article 2
     # R&D-scope answer into a GPAI obligations dump). The deterministic answer
     # is authoritative here, so skip Stage-2 even when force_stage2 is set (a
-    # complex-flagged scope question must not let the LLM override the
-    # carve-out). Placed BEFORE the force_stage2-gated classification check so
-    # it wins for complex-flagged questions. davidath byte-identical (0 rows
-    # match these gates AND the bench wires no Stage-2 provider).
-    if _is_curated_authoritative_intercept(resolved_q):
-        return kg_answer, False
-
-    # Classification-verdict short-circuit fired inside _deterministic_answer.
-    if not force_stage2 and _detect_classification_topic(resolved_q) is not None:
-        return kg_answer, False
-
     # R77 — Stage-2 polish is OFF by default.
     if not _stage2_polish_enabled():
         return kg_answer, False
@@ -4706,8 +4697,8 @@ def _two_stage_generate(
     if not _stage2_provider_enabled():
         return kg_answer, False
 
-    # (2026-06-11) User Directive: Ensure Stage 2 is NOT skipped and done for normal questions.
-    # We bypass the verbatim router and confidence gate so normal questions always get Stage 2 polish.
+    # (2026-06-11) User Directive: Ensure Stage 2 is NOT skipped and done for all questions.
+    # We bypass the curated intercepts, classification intercept, verbatim router, and confidence gate.
     
     _route_multi_turn = False
     from app.engines.answer_router import (  # noqa: PLC0415
