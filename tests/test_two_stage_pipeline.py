@@ -217,19 +217,22 @@ class TestStage2ClaudeMaxProxy:
         stage2_line = next(t for t in result.reasoning_trace if "Stage 2" in t)
         assert "False" in stage2_line
 
-    def test_stage2_skipped_for_simple_question_even_when_wrapper_enabled(self) -> None:
-        """A simple single-article question must NOT trigger Stage 2 even if the
-        proxy is running — Stage 2 cost is only paid when the question warrants it."""
+    def test_stage2_fires_for_simple_question_when_wrapper_enabled(self) -> None:
+        """With Stage-2-always enabled, simple questions also trigger Stage 2."""
         with (
             patch("app.llm.openai_wrapper_provider.is_openai_wrapper_enabled", return_value=True),
-            patch("app.engines.graph_rag._openai_wrapper_complete_for_graph_rag") as mock_wrapper,
+            patch(
+                "app.engines.graph_rag._openai_wrapper_complete_for_graph_rag",
+                return_value="Polished simple answer.",
+            ) as mock_wrapper,
         ):
             req = GraphRAGRequest(question=_SIMPLE_Q)
             result = ask_compliance_question(req)
 
-        mock_wrapper.assert_not_called()
+        mock_wrapper.assert_called_once()
+        assert result.answer == "Polished simple answer."
         stage2_line = next(t for t in result.reasoning_trace if "Stage 2" in t)
-        assert "False" in stage2_line
+        assert "True" in stage2_line
 
     def test_stage2_fires_for_multi_turn_when_wrapper_enabled(self) -> None:
         with (
@@ -311,8 +314,9 @@ class TestStage2CallFailedFlag:
             result = ask_compliance_question(req)
         assert result.graph_stats.get("stage2_call_failed") is False
 
-    def test_stage2_call_failed_unset_when_stage2_not_needed(self) -> None:
-        """Simple single-article question doesn't trigger Stage-2 — not a failure."""
+    def test_stage2_call_failed_unset_when_stage2_disabled_by_env(self, monkeypatch) -> None:
+        """When Stage-2 is disabled by env, stage2_call_failed must be False."""
+        monkeypatch.setenv("P2P_GRAPH_RAG_ENABLE_STAGE2", "0")
         with patch("app.llm.openai_wrapper_provider.is_openai_wrapper_enabled", return_value=True):
             req = GraphRAGRequest(question=_SIMPLE_Q)
             result = ask_compliance_question(req)
@@ -338,14 +342,18 @@ class TestTwoStageGenerateUnit:
         assert not used
         assert answer
 
-    def test_skips_stage2_for_simple_question_even_if_wrapper_enabled(self) -> None:
+    def test_runs_stage2_for_simple_question_when_wrapper_enabled(self) -> None:
         with (
             patch("app.llm.openai_wrapper_provider.is_openai_wrapper_enabled", return_value=True),
-            patch("app.engines.graph_rag._openai_wrapper_complete_for_graph_rag") as mock,
+            patch(
+                "app.engines.graph_rag._openai_wrapper_complete_for_graph_rag",
+                return_value="Polished simple answer.",
+            ) as mock,
         ):
             answer, used = _two_stage_generate(_SIMPLE_Q, _empty_ctx())
-        assert not used
-        mock.assert_not_called()
+        assert used
+        assert answer == "Polished simple answer."
+        mock.assert_called_once()
 
     def test_returns_enhanced_for_complex_question_when_wrapper_enabled(self) -> None:
         with (
