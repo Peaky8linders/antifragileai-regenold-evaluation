@@ -4687,17 +4687,6 @@ def _two_stage_generate(
     # (live: Sonnet deleted the 7-principle list; turned an Article 2
     # R&D-scope answer into a GPAI obligations dump). The deterministic answer
     # is authoritative here, so skip Stage-2 even when force_stage2 is set (a
-    # complex-flagged scope question must not let the LLM override the
-    # carve-out). Placed BEFORE the force_stage2-gated classification check so
-    # it wins for complex-flagged questions. davidath byte-identical (0 rows
-    # match these gates AND the bench wires no Stage-2 provider).
-    if _is_curated_authoritative_intercept(resolved_q):
-        return kg_answer, False
-
-    # Classification-verdict short-circuit fired inside _deterministic_answer.
-    if not force_stage2 and _detect_classification_topic(resolved_q) is not None:
-        return kg_answer, False
-
     # R77 — Stage-2 polish is OFF by default.
     if not _stage2_polish_enabled():
         return kg_answer, False
@@ -4706,84 +4695,34 @@ def _two_stage_generate(
     if not _stage2_provider_enabled():
         return kg_answer, False
 
+    # (2026-06-11) User Directive: Ensure Stage 2 is NOT skipped and done for all questions.
+    # We bypass the curated intercepts, classification intercept, verbatim router, and confidence gate.
+    
     _route_multi_turn = False
-    if not force_stage2:
-        from app.engines.answer_router import (  # noqa: PLC0415
-            answer_router_enabled,
-            select_answer_mode,
-            verbatim_enabled,
-        )
-        if verbatim_enabled():
-            if not answer_router_enabled():
-                # REGENOLD_ANSWER_ROUTER=0 → exact R96 behaviour (verbatim
-                # never runs Stage-2). This is the A/B baseline + rollback.
-                return kg_answer, False
-            _decision = select_answer_mode(resolved_q, query=query,
-                                           history_turn_count=history_turn_count)
-            if not _decision.is_synthesis:
-                return kg_answer, False
-            _route_multi_turn = _decision.reason == "multi_turn"
-            try:
-                from app.integrations.regenold.reasoning_trace import (  # noqa: PLC0415
-                    record_note,
-                )
-                record_note(f"answer_route=synthesis:{_decision.reason}")
-            except Exception:  # noqa: BLE001 — fail-soft on trace
-                pass
-        elif not _needs_stage2_enhancement(resolved_q, context, query):
-            return kg_answer, False
-
-    # R87-E — confidence-gated Stage-2 skip.
-    #
-    # r86-live-postship measured 30 of 100 rows hitting the consistency
-    # guard (Stage-2 prose contradicted the refs → R49-A grounded prose
-    # substitute fired). The pattern correlates with low engine_confidence:
-    # 38/100 at 0.3 (sparse), 2/100 at 0.0 (zero retrieval) — that's 40%
-    # of rows where Stage-2 polish risks more contradiction than lift.
-    #
-    # Skip Stage-2 when confidence ≤ threshold. Saves ~5-15 s of latency
-    # on those rows (deterministic Stage-1 already landed) and removes a
-    # contradiction source. Tone holds at 1.0 on the deterministic path,
-    # so the tone axis is unaffected.
-    #
-    # Env-gated REGENOLD_STAGE2_MIN_CONFIDENCE (default 0.5). Set to 0.0
-    # to disable the gate entirely (R86 behaviour: polish on every row
-    # that passes the prior gates).
-    #
-    # R97 — router-aware floor: multi-turn SYNTHESIS uses a lower floor
-    # (REGENOLD_STAGE2_MIN_CONFIDENCE_MULTITURN, default 0.3) because
-    # coreferent follow-ups retrieve sparsely, yet a Sonnet synthesis
-    # across the prior turns still beats a verbatim dump / generic floor.
-    # The drift + self-contradiction guards below still protect the output.
-    try:
-        _stage2_min_conf = float(
-            os.getenv("REGENOLD_STAGE2_MIN_CONFIDENCE", "0.5")
-        )
-    except ValueError:
-        _stage2_min_conf = 0.5
-    if _route_multi_turn:
+    from app.engines.answer_router import (  # noqa: PLC0415
+        select_answer_mode,
+    )
+    _decision = select_answer_mode(resolved_q, query=query, history_turn_count=history_turn_count)
+    if _decision.is_synthesis:
+        _route_multi_turn = _decision.reason == "multi_turn"
         try:
-            _mt_floor = float(
-                os.getenv("REGENOLD_STAGE2_MIN_CONFIDENCE_MULTITURN", "0.3")
+            from app.integrations.regenold.reasoning_trace import (  # noqa: PLC0415
+                record_note,
             )
-        except ValueError:
-            _mt_floor = 0.3
-        _stage2_min_conf = min(_stage2_min_conf, _mt_floor)
-    if _stage2_min_conf > 0.0 and not force_stage2:
-        _ctx_conf = _compute_confidence(context)
-        if _ctx_conf < _stage2_min_conf:
-            try:
-                from app.integrations.regenold.reasoning_trace import (  # noqa: PLC0415
-                    record_note,
-                )
-                record_note(
-                    f"stage2_skipped_low_confidence={_ctx_conf:.2f}"
-                )
-            except Exception:  # noqa: BLE001 — fail-soft on trace
-                pass
-            return kg_answer, False
+            record_note(f"answer_route=synthesis:{_decision.reason}")
+        except Exception:  # noqa: BLE001
+            pass
+    else:
+        # Force synthesis even if the router said VERBATIM
+        try:
+            from app.integrations.regenold.reasoning_trace import record_note
+            record_note("answer_route=forced_synthesis_override")
+        except Exception:
+            pass
 
+    # No confidence minimums — run Stage 2 for all questions.
     if force_stage2:
+        _stage2_min_conf = 0.5
         _ctx_conf = _compute_confidence(context)
         if _ctx_conf < _stage2_min_conf:
             try:
