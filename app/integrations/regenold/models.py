@@ -660,7 +660,19 @@ def _strip_kb_stub_label(sentence: str) -> str:
 
 
 # Markdown shapes the in-app UI uses but Regenold's spec says no to.
-_MD_HEADING_RE = re.compile(r"^\s*#{1,6}\s+[^\n]*\n?", re.MULTILINE)
+# R112.3 — strip the heading MARKER only, never the line's prose. The
+# previous pattern consumed the entire heading line (``[^\n]*``), and
+# live Stage-2 output can put the heading marker and the lead verdict
+# sentence on ONE line, so _strip_markdown deleted the whole fragment —
+# the r112-live root cause for 3,000+ char raw-markdown walls shipping
+# on classification-topic rows (the R104.2 cap re-normalise returned
+# '' and silently no-op'd, models.py was returning empty on the
+# truncated single-line fragment). A second pattern drops mid-line
+# markers ("… ## 1. Classification …") that survive the line-start
+# anchor after upstream truncation; '#' has no legitimate use in
+# regulator prose.
+_MD_HEADING_RE = re.compile(r"^\s*#{1,6}\s+", re.MULTILINE)
+_MD_INLINE_HEADING_RE = re.compile(r"\s+#{1,6}\s+")
 _MD_LIST_MARKER_RE = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+", re.MULTILINE)
 _MD_BOLD_RE = re.compile(r"\*\*([^*]+)\*\*")
 _MD_BOLD_UNDERSCORE_RE = re.compile(r"__([^_]+)__")
@@ -692,8 +704,12 @@ def _strip_markdown(text: str) -> str:
     if not text:
         return text
     out = text
-    # Drop heading lines (whole line including trailing newline).
+    # Drop heading MARKERS (keep the line's prose — see _MD_HEADING_RE
+    # note: consuming the whole line deleted heading-line verdict
+    # sentences and emptied truncated fragments). Mid-line markers from
+    # truncated upstream text are normalised to a sentence gap.
     out = _MD_HEADING_RE.sub("", out)
+    out = _MD_INLINE_HEADING_RE.sub(". ", out)
     # Drop list markers (keep the content that followed the marker).
     out = _MD_LIST_MARKER_RE.sub("", out)
     # Unwrap inline emphasis. Order matters — bold before italic so the

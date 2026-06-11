@@ -3657,7 +3657,20 @@ def regenold_eu_ai_act_ask(
     # Fixes UnboundLocalError in _drop_orphan_refs pass (P1 #4).
     # Round-36 issue #49: classification verdicts are pre-shaped by the
     # engine — preserve them verbatim, skip the soft-cap pass.
-    if _is_classification_topic:
+    #
+    # R112.3 — the verbatim-preserve applies ONLY to the deterministic
+    # curated verdict. When Stage-2 polish LANDED on a classification
+    # topic (force_stage2 via the complex gate or an active reasoning
+    # trace bypasses the engine's classification short-circuit), the
+    # answer is raw LLM output — r112-live shipped 3,000+ char markdown
+    # walls on 5 classification rows through this branch. Route those
+    # through the normaliser like every other Stage-2 answer. davidath
+    # is unaffected (deterministic bench → stage2_landed is False →
+    # verbatim-preserve path unchanged).
+    _stage2_landed_for_answer = bool(
+        (rag_res.graph_stats or {}).get("stage2_landed")
+    )
+    if _is_classification_topic and not _stage2_landed_for_answer:
         answer_text = rag_res.answer
     else:
         answer_text = normalise_answer_for_regenold(rag_res.answer, question=question)

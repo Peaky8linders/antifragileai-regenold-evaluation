@@ -2231,9 +2231,16 @@ _CLASSIFICATION_TOPICS: list[dict] = [
                 r"[\w\s\-_,]{0,30}?(screen|filter|rank|shortlist|score|select|sort)",
                 re.IGNORECASE,
             ),
+            # R112.3 — "candidate" needs an employment reading. The bare
+            # noun substring-matched "screen candidate small molecules"
+            # (drug-discovery candidate compounds, r112-live rgn_07) and
+            # shipped the curated employment verdict on an R&D scope
+            # question. A negative lookahead excludes the life-sciences
+            # collocations; CV/resume/applicant shapes are unaffected.
             re.compile(
                 r"(screen|filter|rank|shortlist|select)[\w\s\-_,]{0,20}?"
-                r"(cv|resume|candidate|applicant)s?",
+                r"(cv|resume|applicant"
+                r"|candidate(?!s?\s+(?:small\s+)?(?:molecule|compound|drug|protein|gene|target)))s?",
                 re.IGNORECASE,
             ),
         ],
@@ -3072,8 +3079,8 @@ def _detect_minimal_risk_inquiry(question: str) -> bool:
 _RESEARCH_SCOPE_RE = re.compile(
     r"(?:"
     r"(?:exclusively|solely|only|sole\s+purpose)\s+for\s+(?:scientific\s+)?(?:research|r\s*&\s*d|research\s+and\s+development)"
-    r"|(?:scientific\s+research|research\s+and\s+development|r\s*&\s*d)\b[\w\s,'-]{0,60}?(?:before\s+(?:it\s+is\s+)?(?:placed|released|put|market)|pre[-\s]?market|prior\s+to\s+(?:placing|market|release)|does\s+the\s+(?:ai\s+)?(?:act|regulation)\s+apply)"
-    r"|(?:does\s+the\s+(?:ai\s+)?(?:act|regulation)\s+apply)\b[\w\s,'-]{0,60}?(?:scientific\s+research|research\s+and\s+development|\br\s*&\s*d\b|research[-\s]?only)"
+    r"|(?:scientific\s+research|research\s+and\s+development|r\s*&\s*d)\b[\w\s,'-]{0,60}?(?:before\s+(?:it\s+is\s+)?(?:placed|released|put|market)|pre[-\s]?market|prior\s+to\s+(?:placing|market|release)|does\s+the\s+(?:eu\s+)?(?:ai\s+)?(?:act|regulation)\s+apply)"
+    r"|(?:does\s+the\s+(?:eu\s+)?(?:ai\s+)?(?:act|regulation)\s+apply)\b[\w\s,'-]{0,60}?(?:scientific\s+research|research\s+and\s+development|\br\s*&\s*d\b|research[-\s]?only)"
     r"|research[-\s]?only\s+(?:ai|model|system)"
     r")",
     re.IGNORECASE,
@@ -4825,6 +4832,19 @@ def _two_stage_generate(
         # Wrapper call failed (network error, timeout, 429, wrapper auth
         # dead, or structural truncation). Fall back to the deterministic
         # Stage-1 answer.
+        #
+        # R112.3 — record the double-failure in the reasoning trace.
+        # The r112-live MedTech run had 6/40 rows take this path with
+        # NOTHING in the trace beyond the bare groq-fallback note, so
+        # the post-hoc analysis could not tell a primary-failed row
+        # from a never-attempted one without elimination reasoning.
+        try:
+            from app.integrations.regenold.reasoning_trace import (  # noqa: PLC0415
+                record_note,
+            )
+            record_note("stage2_failed_both_providers_deterministic_ship")
+        except Exception:  # noqa: BLE001 — trace is best-effort
+            pass
         context.stage2_call_failed = True
         return kg_answer, False
 
@@ -4844,6 +4864,18 @@ def _two_stage_generate(
             "falling back to kg_answer",
             bad_ref,
         )
+        # R112.3 — surface the silent drop in the reasoning trace. A
+        # completed-then-rejected polish was previously
+        # indistinguishable from Stage-2-never-attempted (r112-live
+        # mt_02 / rgn_02 / rgn_08 burned 24-29 s then shipped the
+        # deterministic stub with no trace evidence why).
+        try:
+            from app.integrations.regenold.reasoning_trace import (  # noqa: PLC0415
+                record_note,
+            )
+            record_note(f"stage2_drift_guard_dropped_polish ref={bad_ref}"[:160])
+        except Exception:  # noqa: BLE001 — trace is best-effort
+            pass
         return kg_answer, False
 
     # R48 — Stage-2 self-contradiction guard. Sonnet occasionally emits
@@ -4859,6 +4891,17 @@ def _two_stage_generate(
             "non-empty references — falling back to kg_answer",
             marker,
         )
+        # R112.3 — surface the silent drop in the reasoning trace
+        # (same rationale as the drift-guard note above).
+        try:
+            from app.integrations.regenold.reasoning_trace import (  # noqa: PLC0415
+                record_note,
+            )
+            record_note(
+                f"stage2_contradiction_guard_dropped_polish marker={marker}"[:160]
+            )
+        except Exception:  # noqa: BLE001 — trace is best-effort
+            pass
         return kg_answer, False
 
     return enhanced, True
