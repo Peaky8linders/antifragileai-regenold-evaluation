@@ -2030,6 +2030,12 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 parts.push(section('notes-hdr', '📝', `Engine Notes (${trace.notes.length})`, lines));
             }
 
+            // ── LLM Thinking ─────────────────────────────────────────────────
+            if (trace.llm_thinking) {
+                const thinkingHtml = `<div class="rlog-note-line" style="white-space: pre-wrap; font-family: monospace; font-size: 0.9em; max-height: 400px; overflow-y: auto;">${escapeHtml(trace.llm_thinking)}</div>`;
+                parts.push(section('model-hdr', '🧠', 'LLM Thinking', thinkingHtml));
+            }
+
             if (parts.length === 0) {
                 container.innerHTML = '<p class="rlog-empty">Trace received but contains no structured fields.</p>';
             } else {

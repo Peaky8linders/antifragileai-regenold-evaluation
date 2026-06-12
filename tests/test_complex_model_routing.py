@@ -79,18 +79,18 @@ class TestDefaultRouting:
         assert req.model == settings.graph_rag.model
         assert req.extra_headers == {}
 
-    def test_complex_question_swaps_to_fable5_by_default(
+    def test_complex_question_swaps_to_opus48_by_default(
         self, _mock_wrapper
     ) -> None:
         """**R103 default behaviour**: with no env override, a
         ``complex_question=True`` call swaps the model to
-        ``fable-5`` (the default) — Fable 5 is the
+        ``opus-4-8`` (the default) — Opus 4.8 is the
         stronger reasoner for the ~20% complex categories (conflict /
         borderline-prohibition / GPAI thresholds / multi-turn
         coreference). Pre-R103 (R81-A1) the default was empty (no swap,
         Sonnet only) to cut the latency outlier; R103 re-enables the
         swap WITHOUT extended thinking (``complex_thinking_tokens=0``),
-        which was the sole latency driver, so Fable 5 answers at
+        which was the sole latency driver, so Opus 4.8 answers at
         ~Sonnet latency. Operators can disable the swap with
         ``P2P_GRAPH_RAG_COMPLEX_MODEL=`` (empty)."""
         _openai_wrapper_complete_for_graph_rag(
@@ -98,10 +98,10 @@ class TestDefaultRouting:
             complex_question=True,
         )
         req: OpenAIWrapperRequest = _mock_wrapper.complete.call_args.args[0]
-        # Load-bearing: the complex path swaps to Fable 5 (claude-fable-5) by default.
-        assert req.model == "claude-fable-5"
+        # Load-bearing: the complex path swaps to Opus 4.8 by default.
+        assert req.model == "claude-opus-4-8"
         # Pin the new defaults so a future revert is loud, not silent.
-        assert settings.graph_rag.complex_model == "claude-fable-5"
+        assert settings.graph_rag.complex_model == "claude-opus-4-8"
         assert settings.graph_rag.complex_thinking_tokens == 0
         # Extended thinking OFF by default → no thinking header sent.
         assert "X-Claude-Max-Thinking-Tokens" not in req.extra_headers

@@ -85,14 +85,14 @@ class GraphRAGSettings(BaseSettings):
     # ``P2P_GRAPH_RAG_COMPLEX_MODEL=claude-opus-4-8`` (the verified
     # R103 alternative for complex reasoning) or ``=`` (empty) to
     # disable the swap and keep every Stage-2 call on Sonnet.
-    complex_model: str = "claude-fable-5"
+    complex_model: str = "claude-opus-4-8"
     """Model name for the complex-question path. Default:
-    ``claude-fable-5`` (no extended thinking — see
-    ``complex_thinking_tokens=0``). ``claude-opus-4-8`` is the verified
-    alternative override. Set empty to disable the swap (every Stage-2
-    polish call uses the base ``model``). The provider falls back to
-    deterministic if the configured complex model is unreachable, so
-    worst case is a soft miss, not a 500."""
+    ``claude-opus-4-8``. Set empty to disable the swap (every Stage-2
+    polish call uses the base ``model``)."""
+
+    ultra_complex_model: str = "claude-fable-5"
+    """Model name for really complex questions with multi-turn conversations
+    over specific use cases."""
 
     complex_thinking_tokens: int = 0
     """``max_thinking_tokens`` for extended-thinking Stage-2 polish on

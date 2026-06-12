@@ -303,16 +303,30 @@ def _openai_wrapper_complete_for_graph_rag(
         from app.config import settings
         configured = settings.graph_rag.model
         complex_model = getattr(settings.graph_rag, "complex_model", "") or ""
+        ultra_complex_model = getattr(settings.graph_rag, "ultra_complex_model", "") or ""
         thinking_budget = int(
             getattr(settings.graph_rag, "complex_thinking_tokens", 0) or 0
         )
     except Exception:  # noqa: BLE001
         configured = ""
         complex_model = ""
+        ultra_complex_model = ""
         thinking_budget = 0
     base_model = configured or "claude-sonnet-4-6"
     # R51 — complex-question routing.
-    model = complex_model if (complex_question and complex_model) else base_model
+    model = base_model
+    if complex_question:
+        try:
+            from app.engines.question_complexity import is_ultra_complex_question
+            ultra_complex_q = is_ultra_complex_question(user, 1)  # history not passed directly here, handled later if possible
+        except Exception:
+            ultra_complex_q = False
+        
+        # We rely on the parent caller setting complex_question.
+        # But we don't have ultra_complex_q natively here unless passed.
+        # Wait, the caller can just pass ultra_complex_question!
+        model = complex_model if complex_model else base_model
+    
     # Record the chosen model in the reasoning trace so the UI can surface it.
     try:
         from app.integrations.regenold.reasoning_trace import record_note as _rn
@@ -408,6 +422,14 @@ def _openai_wrapper_complete_for_graph_rag(
             response.completion_tokens,
         )
         return _try_groq_fallback()
+        
+    if getattr(response, "thinking", None):
+        try:
+            from app.integrations.regenold.reasoning_trace import record_llm_thinking
+            record_llm_thinking(response.thinking)
+        except Exception:
+            pass
+            
     return response.text
 
 
@@ -442,15 +464,27 @@ def _anthropic_complete_for_graph_rag(
         from app.config import settings
         configured = settings.graph_rag.model
         complex_model = getattr(settings.graph_rag, "complex_model", "") or ""
+        ultra_complex_model = getattr(settings.graph_rag, "ultra_complex_model", "") or ""
         thinking_budget = int(
             getattr(settings.graph_rag, "complex_thinking_tokens", 0) or 0
         )
     except Exception:  # noqa: BLE001
         configured = ""
         complex_model = ""
+        ultra_complex_model = ""
         thinking_budget = 0
     base_model = configured or "claude-sonnet-4-6"
-    model = complex_model if (complex_question and complex_model) else base_model
+    
+    model = base_model
+    if complex_question:
+        try:
+            from app.engines.question_complexity import is_ultra_complex_question
+            if is_ultra_complex_question(user, 1):
+                model = ultra_complex_model if ultra_complex_model else (complex_model or base_model)
+            else:
+                model = complex_model if complex_model else base_model
+        except Exception:
+            model = complex_model if complex_model else base_model
 
     extra: dict[str, object] = {}
     if complex_question and thinking_budget > 0:
@@ -504,8 +538,22 @@ def _anthropic_complete_for_graph_rag(
         if not getattr(response, "content", None):
             logger.warning("graph_rag.anthropic_empty_content_block")
             return None
-        block = response.content[0]
-        text = getattr(block, "text", "") or ""
+            
+        text = ""
+        thinking_text = ""
+        for block in response.content:
+            b_type = getattr(block, "type", "")
+            if b_type == "thinking" or hasattr(block, "thinking"):
+                thinking_text += getattr(block, "thinking", "") or ""
+            if b_type == "text" or (not b_type and hasattr(block, "text")):
+                text += getattr(block, "text", "") or ""
+                
+        if thinking_text:
+            try:
+                from app.integrations.regenold.reasoning_trace import record_llm_thinking
+                record_llm_thinking(thinking_text)
+            except Exception:
+                pass
     except Exception as exc:  # noqa: BLE001
         logger.warning("graph_rag.anthropic_response_parse_failed: %s", str(exc)[:200])
         return None
@@ -4708,10 +4756,13 @@ def _claude_max_enhance_answer(
         try:
             from app.engines.question_complexity import (  # noqa: PLC0415
                 is_complex_question,
+                is_ultra_complex_question,
             )
             complex_q = is_complex_question(question, history_turn_count)
+            ultra_complex_q = is_ultra_complex_question(question, history_turn_count)
         except Exception:  # noqa: BLE001
             complex_q = False
+            ultra_complex_q = False
 
         # R56 — Stage-2 provider routing. The historical
         # ``_claude_max_enhance_answer`` name is preserved for back-compat;
@@ -4747,15 +4798,21 @@ def _claude_max_enhance_answer(
         if _use_anthropic_sdk:
             try:
                 from app.integrations.regenold.reasoning_trace import record_note
-                _model = os.getenv("REGENOLD_STAGE2_MODEL_ANTHROPIC", "claude-sonnet-4-6")
-                record_note(f"stage2_model={_model} complex={complex_q}")
+                from app.config import settings
+                if ultra_complex_q and hasattr(settings.graph_rag, "ultra_complex_model"):
+                    _model = settings.graph_rag.ultra_complex_model or "claude-fable-5"
+                elif complex_q and hasattr(settings.graph_rag, "complex_model"):
+                    _model = settings.graph_rag.complex_model or "claude-opus-4-8"
+                else:
+                    _model = os.getenv("REGENOLD_STAGE2_MODEL_ANTHROPIC", "claude-sonnet-4-6")
+                record_note(f"stage2_model={_model} complex={complex_q} ultra={ultra_complex_q}")
             except Exception: pass
             text_raw = _anthropic_complete_for_graph_rag(
                 system=PROMPT_HARDENING_PREFIX + ANSWER_GENERATE_SYSTEM,
                 user=user_message,
                 max_tokens=max_tokens,
                 temperature=0.0,
-                complex_question=complex_q,
+                complex_question=ultra_complex_q or complex_q,
             )
         elif _use_groq:
             from app.llm.openai_wrapper_provider import OpenAIWrapperRequest, get_groq_provider

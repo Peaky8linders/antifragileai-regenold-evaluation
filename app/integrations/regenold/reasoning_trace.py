@@ -100,6 +100,7 @@ class ReasoningTrace:
     # payload) unless the R110 gate actually fired.
     sub_queries: list[dict[str, Any]] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
+    llm_thinking: str | None = None
 
     def to_json_dict(self) -> dict[str, Any]:
         """Render to a JSON-serialisable dict with the schema version."""
@@ -137,6 +138,8 @@ class ReasoningTrace:
             out["sub_queries"] = list(self.sub_queries)
         if self.notes:
             out["notes"] = list(self.notes)
+        if self.llm_thinking is not None:
+            out["llm_thinking"] = self.llm_thinking
         return out
 
     def to_json_string(self) -> str:
@@ -304,6 +307,14 @@ def record_note(text: str) -> None:
         return
     if len(trace.notes) < 32:  # cap at 32 — full-detail analysis mode
         trace.notes.append(text)  # no truncation; full reasoning output
+
+
+def record_llm_thinking(thinking_text: str) -> None:
+    """Record extended-thinking logs returned by the provider."""
+    trace = current()
+    if trace is None or not thinking_text:
+        return
+    trace.llm_thinking = thinking_text
 
 
 def record_query_denoiser(

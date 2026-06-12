@@ -82,6 +82,7 @@ class OpenAIWrapperRequest(BaseModel):
 
 class OpenAIWrapperResponse(BaseModel):
     text: str = ""
+    thinking: str | None = None
     error: str | None = None
     model: str = ""
     prompt_tokens: int = 0
@@ -359,7 +360,9 @@ class _OpenAIWrapperProvider:
         try:
             payload = response.json()
             choice = payload["choices"][0]
-            text = choice["message"]["content"]
+            msg = choice["message"]
+            text = msg.get("content") or ""
+            thinking = msg.get("reasoning_content") or ""
             finish_reason = choice.get("finish_reason")
         except (KeyError, IndexError, TypeError, ValueError) as exc:
             return OpenAIWrapperResponse(
@@ -400,6 +403,7 @@ class _OpenAIWrapperProvider:
         usage = payload.get("usage") or {}
         return OpenAIWrapperResponse(
             text=text,
+            thinking=thinking,
             model=payload.get("model", req.model),
             prompt_tokens=int(usage.get("prompt_tokens", 0)),
             completion_tokens=int(usage.get("completion_tokens", 0)),
