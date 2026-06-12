@@ -5766,6 +5766,59 @@ belt-and-suspenders. The gate fires by default locally (verified: no env set →
 `sub_queries` populated on a multi-part probe); the live re-probe confirming
 `reasoning.sub_queries` on production is done after this round's redeploy.
 
+## Round 115 — Antifragile follow-ups: subpoint rescue + curated-refs protection + overfit filter repair + explicit-quote verbatim restore (2026-06-12)
+
+Closes the R114-documented follow-ups. Five fixes + two breakages found
+during gating, all verified davidath-neutral (A/B vs R114 byte-identical
+on Ref axes / Tone 1.0 / MT 20/20):
+
+* **q11 pin-cites** — subpoint-aware budget rescue at the route cap:
+  `upgrade_references` leaves whose parent survived the QA 3-ref cap are
+  appended most-specific-first within a +2 slack (the parent sat at the
+  candidate tail, so `[:3]` truncated exactly the Annex IV.1.e / IV.2.c
+  pin-cites the hardware topic fired for).
+* **q06 curated refs** — `_suppress_noise_anchors` + the R112 QA
+  phrase-filters now SKIP when `_is_curated_authoritative_intercept`
+  fires: the minimal-risk verdict's deliberate Article 5/6/50 contrast
+  refs were being dropped as "broad noise" (wire shipped [Article 50]).
+* **q04 under-citation root cause found** — the R112 "benchmark-specific"
+  phrase filter (`"sectors or applications"` keyed to the reviewer's exact
+  words) kept ONLY Article 6, CAUSING the under-citation the reviewer
+  flagged. Now keeps Article 6 + Annex III + Annex I with a must-append,
+  triggers generalized to which-sectors/use-cases/applications shapes, and
+  phrase scans run against the LIVE user turn per the R71 doctrine (the
+  flattened-history scan broke `multiturn_g_long_art27_6turn` when the
+  trigger widened — caught by the 276-runner, fixed, 255/255).
+* **Explicit-quote verbatim restored (R113 regression)** — bisected to
+  10096f3: Stage-2-always made the verbatim gate's `not _stage2_landed`
+  condition unsatisfiable with a healthy wrapper, so "give me the exact
+  text of Article 13" shipped a Sonnet paraphrase. Post-R100 the router
+  selects VERBATIM only when the quote IS the requested answer, so the
+  overwrite now wins over the polish by design.
+* **q14 Art. 43(3)** — the Art. 43 stub names the single integrated
+  sectoral conformity procedure (MDR notified-body route). KB_VERSION
+  v16 → v17 + signature pin.
+* **Generalization MEDIUMs** — hardware subpoint aliases (compute / GPU /
+  TPU / server / "runs on" gated on a documentation-context token),
+  research-scope detector predicate shapes ("still in the research phase,
+  does the Act cover it?"), social-scoring prompt guard extended to
+  passing mentions/parentheticals.
+* **Full-suite green for the first time since R113** — the R114 full run
+  (3,669 pass) carried 5 chronic failures: the r100 explicit-quote test
+  (fixed by the gate restore) + 3 r97 router tests asserting pre-R113
+  "engine skips Stage-2" contracts (flipped to the R113 Stage-2-always
+  contract — rollback modes are enforced at the ROUTE via the verbatim
+  overwrite) + the reasoning-trace note-cap test (aligned to the R112.3
+  cap 12 → 32). R115 wire tests are hermetic against neighbouring-suite
+  env/settings pollution (the r100 suite pins the auth key on the global
+  settings singleton and deletes OPENAI_API_BASE, which flips the R112
+  hard-coded-enabled wrapper onto its production-tunnel fallback).
+
+Deferred (documented): medical-transcription vocab widening (touches a
+PDF-example classification topic — hard rule #3 caution), q20 Art. 14/72
+robotic-surgery depth, deterministic QA-dump lead ordering (q02/q10
+fallback shapes — live Stage-2 heals them).
+
 ## Round 114 — Antifragile deep re-review: persona workflow + wire fixes + generalization audit (2026-06-12)
 
 A full persona-based re-review of the 20-question Antifragile dataset against
