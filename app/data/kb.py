@@ -30,7 +30,7 @@ from dataclasses import dataclass, field
 # (Art. 25(2) cooperation-duty re-anchor + real 25(4) written-agreement
 # clause, Art. 99(4) closed enumeration, Art. 79/109 Reg-2019/1020
 # Art. 3(19) qualification).
-KB_VERSION = "2024.1689.v16"
+KB_VERSION = "2024.1689.v17"
 
 
 @dataclass(frozen=True)
@@ -1191,12 +1191,19 @@ EC_CHECKER_OBLIGATION_MAP: dict[str, dict[str, str]] = {
     # ─── Title III: Conformity, CE marking, registration (Arts. 43, 47-49) ───
     "Art. 43": {
         "dimension": "conformity",
+        # R115 (Antifragile q14): name the Art. 43(3) single integrated
+        # procedure — any Annex-I regulated-product conformity answer
+        # (medical device, machinery, vehicle) should state that the AI
+        # Act assessment folds into the sectoral notified-body procedure.
         "summary": (
             "Requires providers of high-risk AI to undergo a conformity "
             "assessment: internal-control procedure (Annex VI) for Annex-III "
             "systems where harmonised standards / common specifications are "
             "applied, otherwise notified-body procedure (Annex VII); for Annex-I "
-            "systems, the procedure under the relevant product-safety legislation."
+            "products, Art. 43(3) integrates the AI Act assessment into the "
+            "sectoral third-party conformity-assessment procedure (for a "
+            "medical device, the MDR notified-body assessment), one single "
+            "procedure covering both regimes."
         ),
     },
     "Art. 47": {

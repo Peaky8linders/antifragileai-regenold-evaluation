@@ -85,13 +85,25 @@ SUBPOINT_TOPIC_MAP: tuple[tuple[re.Pattern[str], tuple[tuple[str, float], ...]],
     # ("hardware specs", "computational resources"), inverted forms ("required
     # hardware", "hardware that is required"), and paraphrases ("hardware used
     # to train").
+    # R115 (generalization audit, MEDIUM) — widened beyond the literal
+    # "hardware" token: compute/GPU/TPU/processor/server vocabulary and
+    # the "system runs on" word order, gated on a documentation context
+    # token so a bare "GPU cluster" capacity question doesn't fire.
     (re.compile(
-        r"\b(?:hardware|computational|computing)\s+(?:requirement|resource|infrastructure|spec)|"
+        r"\b(?:hardware|computational|computing|compute)\s+"
+        r"(?:requirement|resource|infrastructure|spec)|"
         r"\brequired\s+hardware\b|"
         r"\bhardware\s+(?:that(?:\s+is|\s+are|'s|’s)?\s+)?required\b|"
         r"\bhardware\s+used\s+to\s+(?:train|run|develop|test|validate)|"
         r"\bdescribe\s+the\s+hardware\b|"
-        r"\bhardware\s+(?:specification|specifications)\b",
+        r"\bhardware\s+(?:specification|specifications)\b|"
+        r"\b(?:gpu|tpu|processor|server|chip)s?\b.{0,60}\b(?:technical\s+"
+        r"(?:documentation|file)|annex\s+iv)\b|"
+        r"\b(?:technical\s+(?:documentation|file)|annex\s+iv)\b.{0,60}"
+        r"\b(?:gpu|tpu|processor|server|chip)s?\b|"
+        r"\b(?:hardware|infrastructure)\b.{0,30}\b(?:runs?|running|"
+        r"operate[sd]?)\s+on\b|"
+        r"\b(?:runs?|running)\s+on\b.{0,30}\b(?:hardware|infrastructure)\b",
         re.I,
      ),
      (("Annex IV.1.e", 0.5), ("Annex IV.2.c", 0.5))),

@@ -130,15 +130,15 @@ class TestRecorders:
         ]
 
     def test_record_note_caps_count_and_length(self) -> None:
+        # R112.3 raised the cap 12 → 32 (full-detail analysis mode) and
+        # dropped per-note truncation; the count cap is the only bound.
         for i in range(50):
             record_note(f"note {i}")
-        assert len(self.trace.notes) == 12  # cap enforced
+        assert len(self.trace.notes) == 32  # cap enforced
         long = "x" * 500
-        record_note(long)  # would be #13 — dropped
-        assert len(self.trace.notes) == 12
-        # Length cap of 200 — check existing entries are bounded
-        for n in self.trace.notes:
-            assert len(n) <= 200
+        record_note(long)  # would be #33 — dropped
+        assert len(self.trace.notes) == 32
+        assert long not in self.trace.notes
 
     def test_record_confidence_rounds(self) -> None:
         record_confidence(0.81234567)

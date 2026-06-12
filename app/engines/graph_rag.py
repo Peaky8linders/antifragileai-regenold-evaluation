@@ -3130,8 +3130,12 @@ _RESEARCH_SCOPE_RE = re.compile(
     r"(?:"
     r"(?:exclusively|solely|only|sole\s+purpose)\s+for\s+(?:scientific\s+)?(?:research|r\s*&\s*d|research\s+and\s+development)"
     r"|(?:scientific\s+research|research\s+and\s+development|r\s*&\s*d)\b[\w\s,'-]{0,60}?(?:before\s+(?:it\s+is\s+)?(?:placed|released|put|market)|pre[-\s]?market|prior\s+to\s+(?:placing|market|release)|does\s+the\s+(?:eu\s+)?(?:ai\s+)?(?:act|regulation)\s+apply)"
-    r"|(?:does\s+the\s+(?:eu\s+)?(?:ai\s+)?(?:act|regulation)\s+apply)\b[\w\s,'-]{0,60}?(?:scientific\s+research|research\s+and\s+development|\br\s*&\s*d\b|research[-\s]?only)"
+    r"|(?:does\s+the\s+(?:eu\s+)?(?:ai\s+)?(?:act|regulation)\s+(?:apply|cover))\b[\w\s,'-]{0,60}?(?:scientific\s+research|research\s+and\s+development|\br\s*&\s*d\b|research[-\s]?only|research\s+phase|still\s+in\s+(?:research|development)|in\s+development|not\s+yet\s+(?:released|on\s+the\s+market|placed))"
     r"|research[-\s]?only\s+(?:ai|model|system)"
+    # R115 (generalization audit, MEDIUM) — research-phase subject +
+    # scope/apply framing, word order independent: "Our model is still
+    # in the research phase, does the AI Act cover it?"
+    r"|(?:research\s+phase|still\s+in\s+(?:research|development)|not\s+yet\s+(?:released|on\s+the\s+market|placed\s+on\s+the\s+market))[\w\s,'-]{0,60}?(?:does\s+the\s+(?:eu\s+)?(?:ai\s+)?(?:act|regulation)\s+(?:apply|cover)|covered\s+by\s+the\s+(?:eu\s+)?ai\s+act|fall\s+under\s+the\s+(?:eu\s+)?ai\s+act|in\s+scope)"
     r")",
     re.IGNORECASE,
 )

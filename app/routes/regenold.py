@@ -4478,7 +4478,15 @@ def regenold_eu_ai_act_ask(
     # uses ``live_user_message`` (the raw final turn) so prior-turn
     # topic keywords can't keep/drop the wrong anchor on a multi-turn
     # final (mirrors the R71 anchor-bleed discipline).
-    if not _is_scenario_question:
+    # R115 (Antifragile q06 follow-up) — curated authoritative intercepts
+    # carry HAND-PICKED reference sets (the minimal-risk residual verdict
+    # deliberately cites Article 5 / Article 6 / Article 50 as contrast
+    # refs). The noise suppressor reads Articles 3/5/6/51 as "broad
+    # anchors" and drops them when the question lacks prohibition /
+    # high-risk signal tokens — exactly wrong for a curated answer whose
+    # prose names them. Skip suppression for curated intercepts (mirrors
+    # the R111.1 extractive-override guard doctrine).
+    if not _is_scenario_question and not _is_curated_intercept:
         _scope_wire_for_noise: set[str] = set()
         for _a in scope.anchor_articles or []:
             _w = reference_from_article_ref(_a)
@@ -4537,8 +4545,17 @@ def regenold_eu_ai_act_ask(
     # previous substring tests kept Articles 50-59 on the "Article 5"
     # prohibition filter and 60-69 on "Article 6") + word-boundary fines
     # trigger (the substring test fired on "define"/"refine"/"fine-tune").
-    if not _is_scenario_question and not _is_classification_topic:
-        q_low = (question or "").lower()
+    if (
+        not _is_scenario_question
+        and not _is_classification_topic
+        # R115 — curated intercepts ship hand-picked refs; never filter.
+        and not _is_curated_intercept
+    ):
+        # R115 — scan the LIVE user turn, not the flattened multi-turn
+        # string (R71 anchor-bleed doctrine): a prior turn mentioning
+        # "which sectors are high-risk" must not filter the final turn's
+        # refs (276-runner multiturn_g_long_art27_6turn regression).
+        q_low = (live_user_message or question or "").lower()
         _filtered_cands = None
         if _prohibition_matches:
             _filtered_cands = [c for c in candidates if _ref_matches_base(c, "Article 5") or _ref_matches_base(c, "Art. 5")]
@@ -4546,9 +4563,34 @@ def regenold_eu_ai_act_ask(
             _filtered_cands = [c for c in candidates if _ref_matches_base(c, "Article 99") or _ref_matches_base(c, "Art. 99")]
         elif "assessing the risk" in q_low or "assessing risk" in q_low or "criteria exist for assessing" in q_low:
             _filtered_cands = [c for c in candidates if c in ("Article 7", "Article 9", "Art. 7", "Art. 9")]
-        elif "sectors or applications" in q_low and "high-risk" in q_low:
-            _filtered_cands = [c for c in candidates if _ref_matches_base(c, "Article 6") or _ref_matches_base(c, "Art. 6")]
-        elif "informed when interacting" in q_low or "interact with ai systems" in q_low:
+        elif (
+            ("sectors or applications" in q_low or "sectors or use cases" in q_low
+             or "which sectors" in q_low or "what sectors" in q_low
+             or "which use cases" in q_low or "which applications" in q_low)
+            and ("high-risk" in q_low or "high risk" in q_low)
+        ):
+            # R115 (Antifragile q04 repair) — the R112 filter kept ONLY
+            # Article 6, dropping Annex III (the use-case list the
+            # reviewer demanded) and Annex I (the product-safety route).
+            # A which-sectors question's reference set is the
+            # classification rule + BOTH routes' lists.
+            _filtered_cands = [
+                c for c in candidates
+                if _ref_matches_base(c, "Article 6") or _ref_matches_base(c, "Art. 6")
+                or _ref_matches_base(c, "Annex III")
+                or _ref_matches_base(c, "Annex I")
+            ]
+            for _must in ("Article 6", "Annex III", "Annex I"):
+                if not any(_ref_matches_base(c, _must) for c in _filtered_cands):
+                    _filtered_cands.append(_must)
+        elif (
+            "informed when interacting" in q_low
+            or "interact with ai systems" in q_low
+            # R115 — natural paraphrases of the user-information question
+            or ("informed" in q_low and "interacting" in q_low)
+            or "users be informed" in q_low
+            or "how should users" in q_low and "informed" in q_low
+        ):
             _filtered_cands = [c for c in candidates if _ref_matches_base(c, "Article 50") or _ref_matches_base(c, "Art. 50")]
 
         if _filtered_cands:
@@ -4591,6 +4633,30 @@ def regenold_eu_ai_act_ask(
         )
 
     references: list[str] = candidates[:_effective_max_refs]
+
+    # R115 (Antifragile q11 follow-up) — subpoint-aware budget rescue.
+    # ``upgrade_references`` inserts emitted leaf sub-points immediately
+    # AFTER their parent; when the parent sits at the tail of the
+    # candidate ranking (q11: [Article 11, Article 6, Annex IV, IV.2,
+    # IV.1.e, IV.2.c]) the ``[:budget]`` cap truncates exactly the
+    # sub-points the topic map fired for. Rescue: append truncated
+    # sub-points whose PARENT survived the cap, most-specific first,
+    # within a +2 slack (a 3-budget QA question with a fired subpoint
+    # topic ships at most 5 refs — the historical MAX_REFERENCES).
+    # Never reorders the capped head, never adds an orphan sub-point.
+    _r115_tail = candidates[_effective_max_refs:]
+    if _r115_tail:
+        _r115_head_set = set(references)
+        _r115_rescue: list[str] = []
+        for _r115_ref in _r115_tail:
+            if "." not in _r115_ref or _r115_ref in _r115_head_set:
+                continue
+            _r115_parent = _r115_ref.split(".", 1)[0].strip()
+            if _r115_parent in _r115_head_set:
+                _r115_rescue.append(_r115_ref)
+        if _r115_rescue:
+            _r115_rescue.sort(key=lambda r: r.count("."), reverse=True)
+            references = references + _r115_rescue[:2]
 
     # R103 — definitional reference attribution. Every term defined by the
     # Act lives in Article 3; when the question is a definition that the
@@ -5374,13 +5440,18 @@ def regenold_eu_ai_act_ask(
     if (
         os.getenv("REGENOLD_VERBATIM_ANSWER", "1").strip().lower()
         in ("1", "true", "yes", "on")
-        and not _stage2_landed
         and references
         and retrieval_path != "no_match"
         # R100 — only ship verbatim when the router selects VERBATIM
         # (explicit-quote request / synthesis-default off / router off).
-        # For synthesis targets where Stage-2 didn't land, the
-        # deterministic Stage-1 prose ships instead of a raw quote.
+        # R115 — the R97-era ``not _stage2_landed`` condition is REMOVED:
+        # post-R100 the router selects VERBATIM only when the verbatim
+        # text IS the requested answer ("give me the exact text of
+        # Article 13"), and post-R113 (Stage-2-always) Sonnet lands on
+        # every question, so the old condition made explicit-quote
+        # verbatim mode unreachable in production — the user asking for
+        # exact text got a paraphrase. When the router selects VERBATIM,
+        # the verbatim overwrite wins over the polish by design.
         and _should_ship_verbatim(question, _history_turn_count)
     ):
         try:

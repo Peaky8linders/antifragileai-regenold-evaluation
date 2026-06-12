@@ -157,21 +157,24 @@ class TestEngineRoutingUnderVerbatim:
         assert result.answer == _SYNTH
         assert (result.graph_stats or {}).get("stage2_landed") is True
 
-    def test_simple_qa_skips_stage2_when_synthesis_default_off(
+    def test_simple_qa_fires_stage2_even_when_synthesis_default_off(
         self, _verbatim_on, monkeypatch
     ) -> None:
-        """R100 rollback — with REGENOLD_SYNTHESIS_DEFAULT=0 simple single-turn
-        QA stays on the fast deterministic verbatim path (R97 behaviour)."""
+        """R113 (Stage-2-always) — the ENGINE fires Stage-2 regardless of
+        REGENOLD_SYNTHESIS_DEFAULT; the R100 rollback mode is enforced at
+        the ROUTE, where the verbatim overwrite wins at presentation
+        (TestRouteSynthesisDefault in test_r100_synthesis_default.py).
+        Pre-R113 this row asserted the engine skipped Stage-2."""
         monkeypatch.setenv("REGENOLD_SYNTHESIS_DEFAULT", "0")
         with (
             patch("app.llm.openai_wrapper_provider.is_openai_wrapper_enabled",
                   return_value=True),
-            patch("app.engines.graph_rag._openai_wrapper_complete_for_graph_rag")
-            as mock_wrapper,
+            patch("app.engines.graph_rag._openai_wrapper_complete_for_graph_rag",
+                  return_value=_SYNTH) as mock_wrapper,
         ):
             result = ask_compliance_question(GraphRAGRequest(question=_SIMPLE_Q))
-        mock_wrapper.assert_not_called()
-        assert (result.graph_stats or {}).get("stage2_landed") is False
+        mock_wrapper.assert_called_once()
+        assert (result.graph_stats or {}).get("stage2_landed") is True
 
     def test_simple_qa_fires_stage2_by_default(self, _verbatim_on) -> None:
         """R100 default — simple factual QA routes to Sonnet synthesis (the
@@ -198,22 +201,28 @@ class TestEngineRoutingUnderVerbatim:
         mock_wrapper.assert_called_once()
         assert (result.graph_stats or {}).get("stage2_landed") is True
 
-    def test_router_off_restores_r96_baseline(self, monkeypatch) -> None:
-        """REGENOLD_ANSWER_ROUTER=0 → verbatim never runs Stage-2 (R96)."""
+    def test_router_off_engine_still_fires_stage2(self, monkeypatch) -> None:
+        """R113 (Stage-2-always) — with REGENOLD_ANSWER_ROUTER=0 the ENGINE
+        still polishes; the R96 verbatim-only baseline is enforced at the
+        ROUTE (the verbatim overwrite ships regardless of the polish — the
+        R115 gate removed the ``not _stage2_landed`` condition precisely
+        so the rollback modes survive Stage-2-always). Pre-R113 this row
+        asserted the engine never ran Stage-2."""
         monkeypatch.setenv("REGENOLD_VERBATIM_ANSWER", "1")
         monkeypatch.setenv("REGENOLD_ANSWER_ROUTER", "0")
         monkeypatch.setenv("P2P_GRAPH_RAG_ENABLE_STAGE2", "1")
+        monkeypatch.setenv("REGENOLD_STAGE2_MIN_CONFIDENCE", "0")
         with (
             patch("app.llm.openai_wrapper_provider.is_openai_wrapper_enabled",
                   return_value=True),
-            patch("app.engines.graph_rag._openai_wrapper_complete_for_graph_rag")
-            as mock_wrapper,
+            patch("app.engines.graph_rag._openai_wrapper_complete_for_graph_rag",
+                  return_value=_SYNTH) as mock_wrapper,
         ):
             result = ask_compliance_question(
                 GraphRAGRequest(question=_MULTI_TURN_Q, history_turn_count=2)
             )
-        mock_wrapper.assert_not_called()
-        assert (result.graph_stats or {}).get("stage2_landed") is False
+        mock_wrapper.assert_called_once()
+        assert (result.graph_stats or {}).get("stage2_landed") is True
 
 
 # ─── Router-aware confidence floor ───────────────────────────────────────────
@@ -259,12 +268,13 @@ class TestConfidenceFloorRouterAware:
         mock_wrapper = self._run(_CONFLICT_Q, 1, monkeypatch)
         mock_wrapper.assert_called_once()
 
-    def test_single_turn_simple_blocked_by_high_floor(self, monkeypatch) -> None:
-        """A NON-complex single-turn question with conf 0.35 < floor 0.5 is
-        still skipped — the floor governs the non-forced path (force_stage2
-        only bypasses it for complex/reasoning questions)."""
+    def test_single_turn_simple_fires_despite_floor(self, monkeypatch) -> None:
+        """R113 (Stage-2-always) — Stage-2 fires for every question; the
+        R87-E confidence floor no longer blocks the simple single-turn
+        path. Pre-R113 this row asserted conf 0.35 < floor 0.5 skipped
+        the polish."""
         mock_wrapper = self._run(_SIMPLE_Q, 1, monkeypatch)
-        mock_wrapper.assert_not_called()
+        mock_wrapper.assert_called_once()
 
 
 # ─── Route-level: verbatim overwrite skipped when Stage-2 landed ─────────────
