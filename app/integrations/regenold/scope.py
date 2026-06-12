@@ -2168,6 +2168,18 @@ _SCOPE_WEAK_KEYWORDS: frozenset[str] = frozenset({
     # its own (an in-scope AI Act confidentiality question always pairs
     # it with "ai" / "provider" / "market surveillance" / "Article N").
     "confidentiality",
+    # R114 (generalization audit, HIGH) — the R94 Article-111
+    # grandfathering anchors are generic EU product-law phrases. "Was my
+    # washing machine placed on the market before 2020?" must NOT flip
+    # in-scope; an in-scope AI Act transition question always pairs the
+    # phrase with an ai/model/system token, which the normal anchor set
+    # supplies. Retrieval still anchors Art. 111 via the full map.
+    "placed on the market before",
+    "put into service before",
+    "already placed on the market",
+    "already been placed on the market",
+    "already put into service",
+    "systems already placed",
 })
 
 

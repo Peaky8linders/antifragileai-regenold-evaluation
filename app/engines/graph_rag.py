@@ -3087,7 +3087,25 @@ _MINIMAL_RISK_RE = re.compile(
     r"|minimal[-\s]?risk\s+(?:ai\s+systems?|category|tier)"
     r"|what\s+is\s+(?:a\s+)?minimal[-\s]?risk" + _MINIMAL_RISK_NEG +
     r"|what\s+are\s+minimal[-\s]?risk" + _MINIMAL_RISK_NEG +
+    # R114 (generalization audit) — classification-predicate shapes the
+    # Wh-prefix branches miss: "Which AI applications are CONSIDERED
+    # minimal risk?", "What counts as low-risk?", "systems deemed
+    # minimal-risk". Predicate + tier-term proximity; the negative
+    # lookahead still blocks the risk-management noun family.
+    r"|(?:considered|classified\s+as|counts?\s+as|falls?\s+under|"
+    r"deemed|qualif(?:y|ies)\s+as)\s+(?:an?\s+|the\s+)?"
+    r"(?:minimal|low)[-\s]?risk" + _MINIMAL_RISK_NEG +
     r"|low[-\s]?risk\s+ai\b)",
+    re.IGNORECASE,
+)
+
+# Scenario-opener guard for the R114 predicate widening: "We are a
+# provider... is our system considered minimal risk?" must stay on the
+# scenario-classifier path (role x risk verdict), not the generic
+# residual-tier intercept. Mirrors the R81-N.1 QA-shape gate vocabulary.
+_MINIMAL_RISK_SCENARIO_OPENER_RE = re.compile(
+    r"^\s*(?:we\s+are|we're|our\s+(?:company|firm|organisation|organization|"
+    r"startup|start-up|hospital|bank|team)|i\s+am|i'm)\b",
     re.IGNORECASE,
 )
 
@@ -3099,6 +3117,8 @@ def _detect_minimal_risk_inquiry(question: str) -> bool:
     idx = raw_q.rfind(marker)
     if idx >= 0:
         raw_q = raw_q[idx + len(marker):]
+    if _MINIMAL_RISK_SCENARIO_OPENER_RE.search(raw_q):
+        return False
     return bool(_MINIMAL_RISK_RE.search(raw_q))
 
 
