@@ -5766,6 +5766,116 @@ belt-and-suspenders. The gate fires by default locally (verified: no env set →
 `sub_queries` populated on a multi-part probe); the live re-probe confirming
 `reasoning.sub_queries` on production is done after this round's redeploy.
 
+## Round 114 — Antifragile deep re-review: persona workflow + wire fixes + generalization audit (2026-06-12)
+
+A full persona-based re-review of the 20-question Antifragile dataset against
+the CURRENT wire (post-R113 Stage-2-always). Probe evidence: all 20 questions
+run twice (deterministic `provider=cli` + live Claude-Max Stage-2) →
+`.evalout/antifragile_probe_{determ,live}.json`. A 9-agent Workflow then
+fanned out: 4 legal-counsel reviewers (5 questions each, judging BOTH paths
+vs the reviewer's original critique), 3 root-cause investigators by failure
+mechanism, 1 generalization (dataset-overfit) auditor, 1 competition-rubric
+auditor.
+
+### What the re-review found (pre-fix)
+
+* The live path had healed several R111-era items (q02 enumeration, q10
+  definitional contrast, q18 classify-first, q19 prohibition verdict), but
+  carried NEW critical failures: **q08** ("definition of a system of
+  artificial intelligence") shipped refs `[Article 65, Article 108, Annex I]`
+  + meta-commentary with the Art. 3 definition GONE; **q05** still carried
+  the exact flagged role error ("providers… must inform exposed persons" —
+  Art. 50(3)/(4) are DEPLOYER duties); **q07** shipped "anchors these
+  principles" with the seven-principles enumeration CUT; multi-part answers
+  were truncated mid-delivery (q02 "eight prohibitions" → four delivered,
+  q03 "two routes" → one, q14 mid-sentence "and.").
+* Root causes: (a) the 600-char soft cap drops the longest NON-cite-anchored
+  sentence first — the principles enumeration was exactly that sentence;
+  (b) BM25 ranks the amendment articles (Arts 102-110, whose EUR-Lex prose
+  repeats "artificial intelligence system") top for inverted definitional
+  phrasings, polluting Stage-2 grounding; (c) the Art. 50 KB stub was
+  actor-less, inviting "providers" as default subject; (d) the prohibited
+  gatekeeper's literal keyword set missed verb-first emotion phrasings
+  ("monitor the emotions and stress levels of workers" → clara said
+  `minimal`); (e) scope's bare `"obligations apply"` keyword anchored
+  Art. 113 onto substantive obligation questions; (f) Stage-2
+  `max_tokens=384` truncated enumerations mid-delivery (fixed in 43a54b6 by
+  the `safe_max_tokens ≥ 1024` floor).
+
+### The fixes (43a54b6 + bead819)
+
+1. **q07** — guiding-principles curated answer rewritten so the enumeration
+   sentence is cite-anchored ("Under Article 1's purpose…: human agency and
+   oversight; …; and accountability."). The soft cap can no longer target it.
+2. **q05** — Art. 50 KB stub rewritten with per-paragraph actor attribution
+   (50(1)/(2) provider, 50(3)/(4) deployer). KB_VERSION → `2024.1689.v16`.
+3. **q19** — `prohibited_gatekeeper._VERB_OBJECT_PATTERNS`: general verb-stem
+   × emotional-state-noun proximity regex (monitor/track/detect/infer/
+   analyse/measure… × emotions/emotional state/stress levels/mental state).
+   Paraphrase-positive, zero false fires on the negative probe set.
+4. **q08** — `_deterministic_parse` definitional anchor: DEFINITION-shaped
+   questions whose term resolves in the 68 Art. 3 definitions anchor
+   `Art. 3` BEFORE the BM25 fallback. Wire now ships `[Article 3]` + the
+   verbatim definition for every phrasing the R102 canonicaliser handles.
+5. **q16** — scope's bare `"obligations apply"` → temporally-marked forms
+   only ("when do the obligations apply", …); Art. 53 stub now names the
+   Art. 51 systemic-risk gate (10^25 FLOPs) + Art. 55 tier.
+6. **Stage-2 truncation** — `safe_max_tokens = max(max_tokens or 1024, 1024)`
+   floor in `_openai_wrapper_complete_for_graph_rag` (43a54b6) removes the
+   384-token mid-enumeration cuts behind q02/q03/q14-live.
+
+### Generalization audit (the "not biased to this dataset" gate)
+
+Two HIGH findings, both fixed in bead819:
+* `_detect_minimal_risk_inquiry` only fired on Wh-prefix shapes (the
+  reviewer's phrasing) — "Which AI applications are CONSIDERED minimal
+  risk?" fell through to the QA dump and shipped HIGH-RISK content. Widened
+  with classification-predicate shapes (considered / classified as / counts
+  as / falls under / deemed / qualifies as) + a scenario-opener guard so
+  scenario shapes stay on the scenario-classifier path.
+* The R94 Art. 111 grandfathering anchors ("placed on the market before",
+  "put into service before", …) are generic EU product-law phrases and were
+  flipping NON-AI product questions in-scope. Moved to
+  `_SCOPE_WEAK_KEYWORDS` — they anchor Art. 111 for retrieval but cannot
+  flip the scope gate alone ("Was my washing machine placed on the market
+  before 2020?" now refuses; AI-co-occurring transition questions stay
+  in-scope).
+* Deferred (documented, MEDIUM): research-scope detector subjects
+  ("research phase" / "in development"), subpoint-emitter hardware aliases
+  (compute/GPU/server + "technical file"), medical-transcription vocab
+  ("ai scribe", "speech-to-text" + clinical noun).
+
+### R114 — davidath scorecard (476 items) vs same-session baseline
+
+| Axis | baseline (main pre-R114) | R114 | Δ |
+| ---- | ------------------------ | ---- | --- |
+| Ans Strict | 0.3455 | **0.3482** | **+0.0027** ✓ |
+| Ans Loose | 0.1885 | 0.1887 | +0.0002 |
+| Ref Loose | 0.5923 | 0.5925 | +0.0002 |
+| Ref Strict | 0.4675 | **0.4712** | **+0.0037** ✓ |
+| Ref Conciseness | 0.4222 | **0.4284** | **+0.0062** ✓ |
+| Regulatory Tone | 1.0 | 1.0 | flat ✓ |
+| Multi-turn | 20/20 | 20/20 | flat ✓ |
+
+Net rubric-POSITIVE (the definitional Art. 3 anchor + Art. 113 de-pollution
+drive the Ref gains). The two bead819 generalization edits are
+davidath-neutral **by construction**: the widened minimal-risk detector
+fires on 0/476 davidath rows; exactly 1 row carries a grandfathering phrase
+and it stays in-scope (AI tokens present). Other gates: 276-runner **all
+categories 100%**, OOS probe **21/21, 0 leaks**, `tests/test_r114_antifragile.py`
++35 regression tests (paraphrase-positive + false-positive cases for every
+surface).
+
+### Follow-ups queued (from the reviewer + rubric auditors, post-fix residuals)
+
+* Deterministic QA-dump composition still leads off-topic on q02/q04/q10/q18
+  shapes (live Stage-2 heals them; the fallback should too).
+* q06 minimal-risk wire refs trim Art. 5/Art. 6 (prose names them).
+* q14 Art. 43(3) integrated-procedure mention; q20 Art. 14/72 angle.
+* q11 Annex IV.1.e / IV.2.c pin-cites no longer emitted by the subpoint pass.
+* Live multi-part coverage re-probe post-deploy (the ≥1024 token floor
+  should heal q02/q03/q13/q15-live; verify).
+
 ## Round 111 — Antifragile Q&A review fixes (2026-06-09)
 
 Closes the residual defects from the **Antifragile AI Review** (20 graded
