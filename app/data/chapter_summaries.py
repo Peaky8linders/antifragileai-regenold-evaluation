@@ -266,6 +266,9 @@ _SECTION_KEYWORD_MAP: tuple[tuple[str, str, int], ...] = (
     # Chapter III, section 2 — technical requirements
     ("risk management", "III.2", 2),
     ("data governance", "III.2", 2),
+    ("demographic bias", "III.2", 2),
+    ("special categories", "III.2", 2),
+    ("health and genetic datasets", "III.2", 2),
     ("technical documentation", "III.2", 2),
     ("record keeping", "III.2", 2),
     ("logs", "III.2", 2),
