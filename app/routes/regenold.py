@@ -2017,6 +2017,10 @@ _NOISE_HIGHRISK_SIGNALS: tuple[str, ...] = (
     "annex iii", "annex 3", "qualify as high", "qualifies as high",
     "what makes", "when is an ai system high", "considered high-risk",
     "considered high risk",
+    "classify", "classification", "categorise", "categorize",
+    "categorised", "categorized", "categorisation", "categorization",
+    "risk tier", "risk level", "risk category", "risk categories",
+    "risk pyramid",
 )
 # A "broad" anchor is one of these four; a more-specific article is any
 # Article ref outside this set + the Art. 1/2 purpose/scope floor.
