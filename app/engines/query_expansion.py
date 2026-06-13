@@ -27,8 +27,13 @@ logger = logging.getLogger(__name__)
 _SYSTEM_PROMPT = (
     "You generate 2-3 paraphrases of EU AI Act questions for retrieval "
     "expansion. Each paraphrase keeps the same factual question but "
-    "varies phrasing (formal/informal, specific/general). Respond with "
-    'STRICT JSON: {"paraphrases": ["...", "..."]}. No prose.'
+    "varies phrasing using professional and precise compliance terminology (focusing on formal legal phrasings, specific regulatory terms, and general compliance concepts).\n\n"
+    "CRITICAL TONE AND WORDING RULES:\n"
+    "1. Strictly respect and enforce the official professional tone and wording of the EU AI Act. Do not use informal or non-professional language.\n"
+    "2. Always use official terminology: \"provider\" (never developer/creator), \"deployer\" (never user/customer), \"operator\", \"importer\", \"distributor\", \"authorised representative\".\n"
+    "3. Use official risk-tier classifications: \"prohibited AI practices\" (unacceptable risk), \"high-risk AI systems\", \"limited-risk AI systems\", \"minimal-risk\", \"general-purpose AI models\" (GPAI models).\n"
+    "4. Phrasing must be neutral, objective, and in the third person. Do not address the reader as \"you\".\n\n"
+    'Respond with STRICT JSON: {"paraphrases": ["...", "..."]}. No prose.'
 )
 
 _USER_TEMPLATE = "Question: {q}\n\nReturn 2-3 paraphrases as JSON."

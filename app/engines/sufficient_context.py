@@ -394,7 +394,8 @@ def assess_sufficiency(
         )
 
     # (2) Multi-part decomposition — the decomposition is the complexity gate.
-    clauses = decompose_question(question)
+    from app.engines.frames_planner import decompose_question_llm
+    clauses = decompose_question_llm(question)
     if len(clauses) >= 2:
         return SufficiencyVerdict(
             sufficient=False,

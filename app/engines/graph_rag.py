@@ -5280,7 +5280,13 @@ def _maybe_sufficient_context_hop(
         import contextvars  # noqa: PLC0415
 
         def _retrieve_task(sub_q: str) -> tuple[str, GraphContext]:
-            sub_query = _deterministic_parse(sub_q)
+            if sub_q.startswith("Article ") or sub_q.startswith("Annex "):
+                rewritten_q = sub_q
+            else:
+                from app.engines.frames_rewriter import rewrite_sub_query_llm
+                rewritten_q = rewrite_sub_query_llm(sub_q, request.question)
+            
+            sub_query = _deterministic_parse(rewritten_q)
             sub_ctx = _retrieve_from_graph(
                 sub_query, risk_level=risk_level, answers=answer_dict,
             )

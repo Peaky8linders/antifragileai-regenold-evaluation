@@ -2965,10 +2965,10 @@ _QUERY_DENOISER_SYSTEM = (
     "RULES:\n"
     "1. Output ONLY the rewritten query — no explanation, no preamble.\n"
     "2. Preserve all article references (Art. 13, Annex IV, etc.).\n"
-    "3. Preserve role words (provider, deployer, operator).\n"
-    "4. Preserve risk-tier terms (high-risk, prohibited, limited risk).\n"
+    "3. Preserve and enforce official EU AI Act terminology (provider, deployer, importer, distributor, authorised representative, operator). Never use non-standard terms like developer, creator, user, customer, or client.\n"
+    "4. Preserve and enforce official risk-tier classifications (prohibited AI practices, high-risk AI systems, limited-risk AI systems, minimal-risk, general-purpose AI models / GPAI models).\n"
     "5. Preserve any specific AI system descriptions, use-cases, or domains mentioned (e.g., 'tracks patient weight').\n"
-    "6. Strip conversational filler and assistant verbosity.\n"
+    "6. Strip conversational filler, assistant verbosity, and informal phrasing. Maintain a strictly professional, neutral, third-person regulatory tone. Do not use 'you' or address the reader.\n"
     "7. The rewritten query must be self-contained — a reader with no "
     "conversation context must understand what is being asked.\n"
     "8. Maximum 200 characters.\n"
@@ -4580,8 +4580,12 @@ def regenold_eu_ai_act_ask(
                 or _ref_matches_base(c, "Annex III")
                 or _ref_matches_base(c, "Annex I")
             ]
-            for _must in ("Article 6", "Annex III", "Annex I"):
-                if not any(_ref_matches_base(c, _must) for c in _filtered_cands):
+            for _must in ("Article 6", "Art. 6", "Annex III", "Annex I"):
+                # We want to ensure at least one variation is present for Article 6
+                if _must == "Article 6" or _must == "Art. 6":
+                    if not any(_ref_matches_base(c, "Article 6") or _ref_matches_base(c, "Art. 6") for c in _filtered_cands):
+                        _filtered_cands.append("Article 6")
+                elif not any(_ref_matches_base(c, _must) for c in _filtered_cands):
                     _filtered_cands.append(_must)
         elif (
             "informed when interacting" in q_low
@@ -4651,7 +4655,12 @@ def regenold_eu_ai_act_ask(
         for _r115_ref in _r115_tail:
             if "." not in _r115_ref or _r115_ref in _r115_head_set:
                 continue
-            _r115_parent = _r115_ref.split(".", 1)[0].strip()
+            if _r115_ref.startswith("Art. "):
+                _r115_parent = "Art. " + _r115_ref[5:].split(".", 1)[0].strip()
+            elif _r115_ref.startswith("Article "):
+                _r115_parent = "Article " + _r115_ref[8:].split(".", 1)[0].strip()
+            else:
+                _r115_parent = _r115_ref.split(".", 1)[0].strip()
             if _r115_parent in _r115_head_set:
                 _r115_rescue.append(_r115_ref)
         if _r115_rescue:
