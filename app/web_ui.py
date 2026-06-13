@@ -885,12 +885,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             letter-spacing: 0.5px;
         }
 
-        .reasoning-model-badge.fable5 {
-            background: rgba(168, 85, 247, 0.15);
-            border: 1px solid rgba(168, 85, 247, 0.35);
-            color: #c084fc;
-        }
-
         .reasoning-model-badge.sonnet {
             background: rgba(0, 240, 255, 0.1);
             border: 1px solid rgba(0, 240, 255, 0.25);
@@ -1882,7 +1876,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             }
 
             // Detect which Stage-2 model was used from the notes array.
-            // The engine records e.g. "stage2_model=claude-fable-5 complex=true"
+            // The engine records e.g. "stage2_model=claude-opus-4-8 complex=true"
             // or "stage2_model=claude-sonnet-4-6 complex=false" in notes.
             let detectedModel = '';
             let isComplex = false;
@@ -1895,18 +1889,16 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             if (!detectedModel && trace.stage2_polish) {
                 // Fall back to reading the note that records which model was used
                 (trace.notes || []).forEach(n => {
-                    if (/fable.?5/i.test(n)) detectedModel = 'claude-fable-5';
-                    else if (/opus.?4/i.test(n)) detectedModel = 'claude-opus-4';
+                    if (/opus.?4/i.test(n)) detectedModel = 'claude-opus-4';
                     else if (/sonnet/i.test(n)) detectedModel = 'claude-sonnet-4-6';
                     else if (/groq|llama/i.test(n)) detectedModel = 'groq-llama';
                 });
             }
-            if (!detectedModel && trace.stage2_polish === true) detectedModel = 'claude-fable-5'; // default
+            if (!detectedModel && trace.stage2_polish === true) detectedModel = 'claude-opus-4-8'; // default
             if (!detectedModel && trace.stage2_polish === false) detectedModel = 'claude-sonnet-4-6';
 
             function modelClass(m) {
                 if (!m) return 'sonnet';
-                if (/fable/i.test(m)) return 'fable5';
                 if (/opus/i.test(m)) return 'opus';
                 if (/groq|llama/i.test(m)) return 'groq';
                 if (/gemini/i.test(m)) return 'gemini';
@@ -1915,7 +1907,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
             function modelLabel(m) {
                 if (!m) return 'Sonnet 4.6';
-                if (/fable/i.test(m)) return '✦ Fable 5';
                 if (/opus.*4.*8/i.test(m)) return '★ Opus 4.8';
                 if (/opus/i.test(m)) return '★ Opus';
                 if (/groq|llama/i.test(m)) return '⚡ Groq Llama';

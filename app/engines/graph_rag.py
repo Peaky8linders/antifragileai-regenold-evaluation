@@ -303,29 +303,18 @@ def _openai_wrapper_complete_for_graph_rag(
         from app.config import settings
         configured = settings.graph_rag.model
         complex_model = getattr(settings.graph_rag, "complex_model", "") or ""
-        ultra_complex_model = getattr(settings.graph_rag, "ultra_complex_model", "") or ""
         thinking_budget = int(
             getattr(settings.graph_rag, "complex_thinking_tokens", 0) or 0
         )
     except Exception:  # noqa: BLE001
         configured = ""
         complex_model = ""
-        ultra_complex_model = ""
         thinking_budget = 0
     base_model = configured or "claude-sonnet-4-6"
-    # R51 — complex-question routing.
-    model = base_model
-    if complex_question:
-        try:
-            from app.engines.question_complexity import is_ultra_complex_question
-            ultra_complex_q = is_ultra_complex_question(user, 1)  # history not passed directly here, handled later if possible
-        except Exception:
-            ultra_complex_q = False
-        
-        # We rely on the parent caller setting complex_question.
-        # But we don't have ultra_complex_q natively here unless passed.
-        # Wait, the caller can just pass ultra_complex_question!
-        model = complex_model if complex_model else base_model
+    # R51 complex-question routing; R116 removed the Fable 5 ultra
+    # tier, so a complex question swaps to ``complex_model`` (Opus
+    # 4.8) only, else the base ``model`` (Sonnet 4.6).
+    model = complex_model if (complex_question and complex_model) else base_model
     
     # Record the chosen model in the reasoning trace so the UI can surface it.
     try:
@@ -464,27 +453,17 @@ def _anthropic_complete_for_graph_rag(
         from app.config import settings
         configured = settings.graph_rag.model
         complex_model = getattr(settings.graph_rag, "complex_model", "") or ""
-        ultra_complex_model = getattr(settings.graph_rag, "ultra_complex_model", "") or ""
         thinking_budget = int(
             getattr(settings.graph_rag, "complex_thinking_tokens", 0) or 0
         )
     except Exception:  # noqa: BLE001
         configured = ""
         complex_model = ""
-        ultra_complex_model = ""
         thinking_budget = 0
     base_model = configured or "claude-sonnet-4-6"
-    
-    model = base_model
-    if complex_question:
-        try:
-            from app.engines.question_complexity import is_ultra_complex_question
-            if is_ultra_complex_question(user, 1):
-                model = ultra_complex_model if ultra_complex_model else (complex_model or base_model)
-            else:
-                model = complex_model if complex_model else base_model
-        except Exception:
-            model = complex_model if complex_model else base_model
+    # R116 removed the Fable 5 ultra tier; complex -> complex_model
+    # (Opus 4.8) only, else base ``model`` (Sonnet 4.6).
+    model = complex_model if (complex_question and complex_model) else base_model
 
     extra: dict[str, object] = {}
     if complex_question and thinking_budget > 0:
@@ -2568,11 +2547,13 @@ _CLASSIFICATION_TOPICS: list[dict] = [
             "covered by the Union harmonisation legislation in Annex I (for example a "
             "medical device under the MDR or IVDR), where that product must undergo a "
             "third-party conformity assessment, is high-risk under Article 6(1). The "
-            "applicable conformity-assessment procedure is set out in Article 43: for "
-            "Annex I products it is carried out under the relevant sectoral legislation, "
-            "with notified-body involvement where that legislation requires it, and the "
-            "full Chapter III Section 2 provider obligations stack on top of the "
-            "sectoral requirements."
+            "applicable conformity-assessment procedure is set out in Article 43, "
+            "carried out under the relevant sectoral legislation with notified-body "
+            "involvement where that legislation requires it. The full Chapter III "
+            "Section 2 provider obligations then stack on top of the sectoral "
+            "requirements, including effective human oversight by qualified operators "
+            "under Article 14 and continuous post-market monitoring under Article 72 "
+            "alongside the equivalent medical-device surveillance duties."
         ),
         "refs": ["Art. 6", "Art. 43", "Annex I"],
     },
@@ -3279,6 +3260,62 @@ def _is_curated_authoritative_intercept(question: str) -> bool:
     )
 
 
+_LEAD_RANK_STOPWORDS = frozenset(
+    "the a an of to for and or in on with under is are be by from as that this "
+    "what which who whom how when does do can must shall may any all".split()
+)
+
+
+def _qa_lead_rank_enabled() -> bool:
+    """R116 — env gate for the deterministic QA-dump lead re-ranking.
+
+    Default ON. Set ``REGENOLD_QA_LEAD_RANK=0`` to restore the pre-R116
+    extraction-order lead (the deterministic-bench reproducer)."""
+    return os.getenv("REGENOLD_QA_LEAD_RANK", "1").strip().lower() not in (
+        "0", "false", "no", "off",
+    )
+
+
+def _lead_rank_obligations(question: str, obligations: list[dict]) -> list[dict]:
+    """R116 — promote the most question-relevant obligation to the LEAD of
+    the deterministic QA-dump.
+
+    The dump previously led with ``obligations[0]`` (the first entity the
+    parser extracted), which is occasionally off-topic when extraction
+    order is non-topical (the documented q02/q10 fallback shapes). Live
+    Stage-2 already reorders; this lifts the deterministic fallback.
+
+    CONSERVATIVE by design: only the LEAD is moved, and only when one
+    obligation out-scores the current lead by a clear margin (>= 2 more
+    shared content tokens). Every other row keeps extraction order, so the
+    deterministic bench stays stable. Returns the input unchanged on any
+    edge case or when disabled."""
+    if not _qa_lead_rank_enabled() or len(obligations) < 2:
+        return obligations
+    q_tokens = {
+        t for t in re.findall(r"[a-z0-9]+", question.lower())
+        if len(t) > 2 and t not in _LEAD_RANK_STOPWORDS
+    }
+    if not q_tokens:
+        return obligations
+
+    def _overlap(obl: dict) -> int:
+        blob = f"{obl.get('text', '')} {obl.get('article', '')}".lower()
+        toks = {
+            t for t in re.findall(r"[a-z0-9]+", blob)
+            if len(t) > 2 and t not in _LEAD_RANK_STOPWORDS
+        }
+        return len(q_tokens & toks)
+
+    scores = [_overlap(o) for o in obligations]
+    best = max(range(len(scores)), key=lambda i: scores[i])
+    if best != 0 and scores[best] - scores[0] >= 2:
+        return [obligations[best]] + [
+            o for i, o in enumerate(obligations) if i != best
+        ]
+    return obligations
+
+
 def _deterministic_answer(question: str, context: GraphContext) -> str:
     """Generate a structured answer without LLM, using graph data directly."""
     # Article 6(3) "Not-High-Risk" Exception Intercept
@@ -3505,7 +3542,7 @@ def _deterministic_answer(question: str, context: GraphContext) -> str:
 
     if is_qa_shape and context.obligations:
         qa_parts = []
-        for obl in context.obligations[:3]:
+        for obl in _lead_rank_obligations(question, context.obligations)[:3]:
             text = obl.get("text", "N/A").strip()
             cleaned_text = re.sub(r"^\s*(?:Art\.?|Article|Annex)\s+[IVXLCDM\d]+(?:\([^)]+\))?\s*:\s*", "", text, flags=re.IGNORECASE)
             qa_parts.append(cleaned_text)
@@ -4750,19 +4787,14 @@ def _claude_max_enhance_answer(
         # ``claude-opus-4-8``) or ``complex_thinking_tokens``, the
         # wrapper call uses those for THIS polish call only.
         #
-        # User directive (2026-06-02): route to the complex model (Opus
-        # 4.8 / Fable 5) when the question is complex, OR it bundles more than
+        # User directive (2026-06-02): route to the complex model
+        # (Opus 4.8) when the question is complex, OR it bundles more than
         # one phrase/question. This is handled entirely inside ``is_complex_question``.
         try:
-            from app.engines.question_complexity import (  # noqa: PLC0415
-                is_complex_question,
-                is_ultra_complex_question,
-            )
+            from app.engines.question_complexity import is_complex_question  # noqa: PLC0415
             complex_q = is_complex_question(question, history_turn_count)
-            ultra_complex_q = is_ultra_complex_question(question, history_turn_count)
         except Exception:  # noqa: BLE001
             complex_q = False
-            ultra_complex_q = False
 
         # R56 — Stage-2 provider routing. The historical
         # ``_claude_max_enhance_answer`` name is preserved for back-compat;
@@ -4799,20 +4831,18 @@ def _claude_max_enhance_answer(
             try:
                 from app.integrations.regenold.reasoning_trace import record_note
                 from app.config import settings
-                if ultra_complex_q and hasattr(settings.graph_rag, "ultra_complex_model"):
-                    _model = settings.graph_rag.ultra_complex_model or "claude-fable-5"
-                elif complex_q and hasattr(settings.graph_rag, "complex_model"):
+                if complex_q and hasattr(settings.graph_rag, "complex_model"):
                     _model = settings.graph_rag.complex_model or "claude-opus-4-8"
                 else:
                     _model = os.getenv("REGENOLD_STAGE2_MODEL_ANTHROPIC", "claude-sonnet-4-6")
-                record_note(f"stage2_model={_model} complex={complex_q} ultra={ultra_complex_q}")
+                record_note(f"stage2_model={_model} complex={complex_q}")
             except Exception: pass
             text_raw = _anthropic_complete_for_graph_rag(
                 system=PROMPT_HARDENING_PREFIX + ANSWER_GENERATE_SYSTEM,
                 user=user_message,
                 max_tokens=max_tokens,
                 temperature=0.0,
-                complex_question=ultra_complex_q or complex_q,
+                complex_question=complex_q,
             )
         elif _use_groq:
             from app.llm.openai_wrapper_provider import OpenAIWrapperRequest, get_groq_provider

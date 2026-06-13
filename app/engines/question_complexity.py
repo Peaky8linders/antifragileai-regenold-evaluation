@@ -241,32 +241,3 @@ def is_complex_question(question: str, history_turn_count: int = 1) -> bool:
         if token_count <= 12 and _SHORT_COREFERENT_RE.search(scan_text):
             return True
     return False
-
-def is_ultra_complex_question(question: str, history_turn_count: int = 1) -> bool:
-    """Return True when the question warrants the ultra-complex Fable 5 path.
-    Only fires for really complex questions (specific use cases) AND multi-turn conversations.
-    """
-    if history_turn_count < 3:
-        return False
-    
-    if not question or not question.strip():
-        return False
-        
-    marker = "Latest question:\n"
-    idx = question.rfind(marker)
-    scan_text = question[idx + len(marker):] if idx >= 0 else question
-    if not scan_text.strip():
-        return False
-        
-    # Must be a specific use case
-    is_specific = (
-        _GPAI_COMPLEX_RE.search(scan_text) or
-        _ROLE_AMBIGUITY_RE.search(scan_text) or
-        _BORDERLINE_PROHIBITION_RE.search(scan_text) or
-        _CONFLICT_RE.search(scan_text) or
-        _CROSS_FRAMEWORK_RE.search(scan_text)
-    )
-    if not is_specific:
-        return False
-        
-    return True

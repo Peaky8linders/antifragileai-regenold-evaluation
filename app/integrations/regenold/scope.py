@@ -1516,6 +1516,25 @@ KEYWORD_TO_ARTICLE: dict[str, str] = {
     "health record": "Annex III",
     "clinical dialogue": "Annex III",
     "physician dialogue": "Annex III",
+    # R116 — medical-transcription vocab widening. Same Annex III anchor as
+    # the R39 block above (the subpoint_emitter independently emits the
+    # Art. 6.1 leaf). Multi-word, medical-qualified forms ONLY, so generic
+    # speech-to-text / dictation / note-taking OUTSIDE a clinical context
+    # never flips scope (verified against the OOS probe set).
+    "ambient clinical documentation": "Annex III",
+    "ambient voice documentation": "Annex III",
+    "clinical documentation ai": "Annex III",
+    "clinical note generation": "Annex III",
+    "clinical note-taking": "Annex III",
+    "clinical notes": "Annex III",
+    "medical dictation": "Annex III",
+    "clinical dictation": "Annex III",
+    "medical scribe": "Annex III",
+    "clinical scribe": "Annex III",
+    "consultation transcription": "Annex III",
+    "visit transcription": "Annex III",
+    "clinical speech-to-text": "Annex III",
+    "medical speech-to-text": "Annex III",
     # ── Round-2 anchor surfacing (Regenold competition gap-closers) ──
     # Each phrase below was a real eval failure — the question passed
     # scope but didn't surface a defensive citation because no keyword

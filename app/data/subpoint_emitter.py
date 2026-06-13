@@ -165,6 +165,12 @@ SUBPOINT_TOPIC_MAP: tuple[tuple[re.Pattern[str], tuple[tuple[str, float], ...]],
         r"\bai\s+scribe\b|"
         r"\bmedical\s+record\b|"
         r"\bhealth\s+record\b|"
+        # R116 — widen the medical-transcription vocab (same Art. 6.1 leaf).
+        r"\bambient\s+clinical\s+documentation\b|"
+        r"\bclinical\s+note(?:s)?\b|"
+        r"\b(?:medical|clinical)\s+dictation\b|"
+        r"\b(?:medical|clinical)\s+scribe\b|"
+        r"\b(?:clinical|medical)\s+speech[-\s]to[-\s]text\b|"
         r"\bclinical\s+conversation\b",
         re.I,
      ),

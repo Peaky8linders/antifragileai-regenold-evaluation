@@ -118,7 +118,7 @@ class TestDefaultRouting:
         test above.)"""
         original_complex = settings.graph_rag.complex_model
         original_thinking = settings.graph_rag.complex_thinking_tokens
-        settings.graph_rag.complex_model = "claude-fable-5"
+        settings.graph_rag.complex_model = "claude-opus-4-8"
         settings.graph_rag.complex_thinking_tokens = 2500
         try:
             _openai_wrapper_complete_for_graph_rag(
@@ -129,7 +129,7 @@ class TestDefaultRouting:
             settings.graph_rag.complex_model = original_complex
             settings.graph_rag.complex_thinking_tokens = original_thinking
         req: OpenAIWrapperRequest = _mock_wrapper.complete.call_args.args[0]
-        assert req.model == "claude-fable-5"
+        assert req.model == "claude-opus-4-8"
         assert req.extra_headers.get("X-Claude-Max-Thinking-Tokens") == "2500"
 
 
