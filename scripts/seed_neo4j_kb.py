@@ -42,7 +42,8 @@ from typing import Any, Iterable
 from app.data.article_existence import ARTICLE_EXISTENCE
 from app.data.definitions import _DEFINITIONS
 from app.data.eu_ai_act_corpus import ARTICLE_FULL_TEXT, ARTICLE_TITLE, RECITALS
-from app.data.kb import EC_CHECKER_OBLIGATION_MAP, KB_VERSION
+from app.data.kb import EC_CHECKER_OBLIGATION_MAP, KB_VERSION, MATURITY_DIMENSIONS
+from app.data.article_requirements_full import DIMENSION_TO_ARTICLES
 from app.data.kb_xrefs import MANUAL_XREFS, _build_xref_graph
 from app.data.ontology import ANNEX_III_REGISTRY
 from app.data.role_obligations import ROLE_OBLIGATIONS
@@ -210,6 +211,8 @@ class SeedPayload:
     annex_iii_nodes: list[dict]
     risk_level_nodes: list[dict]
     operator_role_nodes: list[dict]
+    dimension_nodes: list[dict]
+    question_nodes: list[dict]
     metadata_node: dict
 
     has_obligation_edges: list[dict]
@@ -218,6 +221,8 @@ class SeedPayload:
     has_recital_anchor_edges: list[dict]
     triggers_high_risk_edges: list[dict]
     applies_at_edges: list[dict]
+    belongs_to_edges: list[dict]
+    assesses_edges: list[dict]
 
     @property
     def total_nodes(self) -> int:
@@ -230,6 +235,8 @@ class SeedPayload:
             + len(self.annex_iii_nodes)
             + len(self.risk_level_nodes)
             + len(self.operator_role_nodes)
+            + len(self.dimension_nodes)
+            + len(self.question_nodes)
             + 1  # metadata
         )
 
@@ -242,6 +249,8 @@ class SeedPayload:
             + len(self.has_recital_anchor_edges)
             + len(self.triggers_high_risk_edges)
             + len(self.applies_at_edges)
+            + len(self.belongs_to_edges)
+            + len(self.assesses_edges)
         )
 
     def counts(self) -> dict[str, int]:
@@ -254,6 +263,8 @@ class SeedPayload:
             "AnnexIIICategory": len(self.annex_iii_nodes),
             "RiskLevel": len(self.risk_level_nodes),
             "OperatorRole": len(self.operator_role_nodes),
+            "Dimension": len(self.dimension_nodes),
+            "Question": len(self.question_nodes),
             "KBMetadata": 1,
             "HAS_OBLIGATION": len(self.has_obligation_edges),
             "HAS_DEFINITION": len(self.has_definition_edges),
@@ -261,6 +272,8 @@ class SeedPayload:
             "HAS_RECITAL_ANCHOR": len(self.has_recital_anchor_edges),
             "TRIGGERS_HIGH_RISK_UNDER": len(self.triggers_high_risk_edges),
             "APPLIES_AT": len(self.applies_at_edges),
+            "BELONGS_TO": len(self.belongs_to_edges),
+            "ASSESSES": len(self.assesses_edges),
         }
 
 
@@ -434,6 +447,41 @@ def build_payload() -> SeedPayload:
             }
         )
 
+    # ── Dimensions and Questions ──────────────────────────────────────
+    dimension_nodes: list[dict] = []
+    question_nodes: list[dict] = []
+    belongs_to_edges: list[dict] = []
+    assesses_edges: list[dict] = []
+
+    for dim in MATURITY_DIMENSIONS:
+        dimension_nodes.append({
+            "id": dim.id,
+            "name": dim.label,
+        })
+        for i, q_text in enumerate(dim.questions):
+            q_id = f"q_{dim.id}_{i}"
+            question_nodes.append({
+                "id": q_id,
+                "text": q_text,
+                "weight": 1.0,
+            })
+            belongs_to_edges.append({
+                "source_id": q_id,
+                "target_id": dim.id,
+            })
+            
+            # Map question to obligations via articles
+            articles = DIMENSION_TO_ARTICLES.get(dim.id, [])
+            for art_ref in articles:
+                if art_ref in ARTICLE_EXISTENCE:
+                    num = _article_number(art_ref)
+                    obl_id = f"obl_{num}"
+                    if art_ref in EC_CHECKER_OBLIGATION_MAP and not _is_annex(art_ref):
+                        assesses_edges.append({
+                            "source_id": q_id,
+                            "target_id": obl_id,
+                        })
+
     # ── Cross-reference edges (regex + manual). Build directly off the
     # merged xref graph so the seeder picks up future edge additions
     # automatically. We tag the source — regex vs manual — for forensic
@@ -510,6 +558,8 @@ def build_payload() -> SeedPayload:
         annex_iii_nodes=annex_iii_nodes,
         risk_level_nodes=risk_level_nodes,
         operator_role_nodes=operator_role_nodes,
+        dimension_nodes=dimension_nodes,
+        question_nodes=question_nodes,
         metadata_node=metadata_node,
         has_obligation_edges=has_obligation_edges,
         has_definition_edges=has_definition_edges,
@@ -517,6 +567,8 @@ def build_payload() -> SeedPayload:
         has_recital_anchor_edges=has_recital_anchor_edges,
         triggers_high_risk_edges=triggers_high_risk_edges,
         applies_at_edges=applies_at_edges,
+        belongs_to_edges=belongs_to_edges,
+        assesses_edges=assesses_edges,
     )
     # Backfill the counts now that everything else is settled.
     metadata_node["total_nodes"] = payload.total_nodes
@@ -604,6 +656,17 @@ SET m.seed_version = $seed_version,
     m.total_edges = $total_edges
 """
 
+_CYPHER_DIMENSION = """
+MERGE (d:Dimension {id: $id})
+SET d.name = $name
+"""
+
+_CYPHER_QUESTION = """
+MERGE (q:Question {id: $id})
+SET q.text = $text,
+    q.weight = $weight
+"""
+
 _CYPHER_HAS_OBLIGATION = """
 MATCH (a:Article {id: $source_id})
 MATCH (o:Obligation {id: $target_id})
@@ -639,6 +702,18 @@ _CYPHER_APPLIES_AT = """
 MATCH (o:Obligation {id: $source_id})
 MATCH (rl:RiskLevel {id: $target_id})
 MERGE (o)-[:APPLIES_AT]->(rl)
+"""
+
+_CYPHER_BELONGS_TO = """
+MATCH (q:Question {id: $source_id})
+MATCH (d:Dimension {id: $target_id})
+MERGE (q)-[:BELONGS_TO]->(d)
+"""
+
+_CYPHER_ASSESSES = """
+MATCH (q:Question {id: $source_id})
+MATCH (o:Obligation {id: $target_id})
+MERGE (q)-[:ASSESSES]->(o)
 """
 
 
@@ -724,6 +799,14 @@ def seed_graph(
         client, _CYPHER_OPERATOR_ROLE, payload.operator_role_nodes,
         batch_size=batch_size, label="OperatorRole", verbose=verbose,
     )
+    counts["Dimension"] = _write_rows(
+        client, _CYPHER_DIMENSION, payload.dimension_nodes,
+        batch_size=batch_size, label="Dimension", verbose=verbose,
+    )
+    counts["Question"] = _write_rows(
+        client, _CYPHER_QUESTION, payload.question_nodes,
+        batch_size=batch_size, label="Question", verbose=verbose,
+    )
     counts["KBMetadata"] = _write_rows(
         client, _CYPHER_METADATA, [payload.metadata_node],
         batch_size=batch_size, label="KBMetadata", verbose=verbose,
@@ -754,6 +837,14 @@ def seed_graph(
         client, _CYPHER_APPLIES_AT, payload.applies_at_edges,
         batch_size=batch_size, label="APPLIES_AT", verbose=verbose,
     )
+    counts["BELONGS_TO"] = _write_rows(
+        client, _CYPHER_BELONGS_TO, payload.belongs_to_edges,
+        batch_size=batch_size, label="BELONGS_TO", verbose=verbose,
+    )
+    counts["ASSESSES"] = _write_rows(
+        client, _CYPHER_ASSESSES, payload.assesses_edges,
+        batch_size=batch_size, label="ASSESSES", verbose=verbose,
+    )
 
     return counts
 
@@ -775,6 +866,8 @@ def validate_payload(payload: SeedPayload) -> list[str]:
         payload.annex_iii_nodes,
         payload.risk_level_nodes,
         payload.operator_role_nodes,
+        payload.dimension_nodes,
+        payload.question_nodes,
     ):
         for row in bucket:
             node_ids.add(row["id"])
@@ -788,6 +881,8 @@ def validate_payload(payload: SeedPayload) -> list[str]:
         ("HAS_RECITAL_ANCHOR", payload.has_recital_anchor_edges),
         ("TRIGGERS_HIGH_RISK_UNDER", payload.triggers_high_risk_edges),
         ("APPLIES_AT", payload.applies_at_edges),
+        ("BELONGS_TO", payload.belongs_to_edges),
+        ("ASSESSES", payload.assesses_edges),
     )
     for name, edges in edge_buckets:
         for row in edges:
