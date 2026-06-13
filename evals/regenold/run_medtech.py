@@ -63,13 +63,15 @@ def run(
     label: str,
     timeout: float,
     use_local: bool,
+    scenarios: list[dict] | None = None,
 ) -> dict[str, Any]:
     transport = _post_local if use_local else _post
     if use_local:
         _ensure_local_auth(api_key)
 
+    scenario_set = scenarios if scenarios is not None else MEDTECH_SCENARIOS
     rows: list[dict[str, Any]] = []
-    for scn in MEDTECH_SCENARIOS:
+    for scn in scenario_set:
         # Multi-turn rows (rgn_mt_*) carry a full ``messages`` history whose
         # final user turn equals ``question``; single-turn rows fall back to
         # the historical one-message shape.
@@ -208,7 +210,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--timeout", type=float, default=90.0)
     parser.add_argument("--local", action="store_true")
     parser.add_argument("--verbose", action="store_true")
+    parser.add_argument(
+        "--v2", action="store_true",
+        help="Use the R116 fresh medtech/life-sciences V2 set instead of the R109 set.",
+    )
     args = parser.parse_args(argv)
+
+    scenarios = None
+    if args.v2:
+        from evals.regenold.scenarios_medtech_lifesci_v2 import MEDTECH_SCENARIOS_V2
+        scenarios = MEDTECH_SCENARIOS_V2
 
     if args.local:
         endpoint = _local_endpoint_url("include_reasoning=true")
@@ -224,6 +235,7 @@ def main(argv: list[str] | None = None) -> int:
         label=args.label,
         timeout=args.timeout,
         use_local=args.local,
+        scenarios=scenarios,
     )
     print(_format(payload))
     return 0
