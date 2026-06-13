@@ -41,6 +41,9 @@ Q: "Is our AI system classified as high-risk under the EU AI Act?"
 
 Q: "What do we need to do for Art. 12 record-keeping compliance?"
 {"intent": "obligation_check", "entities": ["Art. 12"], "risk_context": "high", "dimension_hint": "logging", "keywords": ["record-keeping", "logging"]}
+
+Q: "Under what conditions does the AI Act permit processing of special categories of personal data?"
+{"intent": "article_lookup", "entities": ["Art. 10"], "risk_context": "high", "dimension_hint": "data_gov", "keywords": ["special categories", "bias", "data governance"]}
 """
 
 

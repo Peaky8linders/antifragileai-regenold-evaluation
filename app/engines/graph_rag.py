@@ -1135,6 +1135,11 @@ _KEYWORD_ENTITY_MAP: tuple[tuple[str, str], ...] = (
     # Annex III description as if it applied.
     ("high-risk classification", "Art. 6"),
     ("classified as high-risk", "Art. 6"),
+    # Data governance / bias / special categories (Art. 10)
+    ("special categories of personal data", "Art. 10"),
+    ("special categories", "Art. 10"),
+    ("demographic bias", "Art. 10"),
+    ("data governance", "Art. 10"),
     # Target-precise benchmark mappings
     ("risk categories", "Art. 3"),
     ("risk categories", "Art. 5"),
@@ -5428,11 +5433,14 @@ def ask_compliance_question(request: GraphRAGRequest) -> GraphRAGResponse:
         oid = obl.get("id", obl.get("obligation_id", ""))
         if oid and oid not in seen_ids:
             seen_ids.add(oid)
+            raw_art = obl.get("article", "")
+            if raw_art and str(raw_art).isdigit():
+                raw_art = f"Art. {raw_art}"
             citations.append(CitationNode(
                 node_type="Obligation",
                 node_id=oid,
                 text=obl.get("text", ""),
-                article_ref=obl.get("article", ""),
+                article_ref=raw_art,
             ))
 
     _gap_slot_cap = 10
@@ -5443,11 +5451,14 @@ def ask_compliance_question(request: GraphRAGRequest) -> GraphRAGResponse:
         gid = gap.get("obligation_id", gap.get("id", ""))
         if gid and gid not in seen_ids:
             seen_ids.add(gid)
+            raw_art = gap.get("article", "")
+            if raw_art and str(raw_art).isdigit():
+                raw_art = f"Art. {raw_art}"
             citations.append(CitationNode(
                 node_type="Gap",
                 node_id=gid,
                 text=gap.get("text", ""),
-                article_ref=gap.get("article", ""),
+                article_ref=raw_art,
             ))
             _gap_added += 1
 
