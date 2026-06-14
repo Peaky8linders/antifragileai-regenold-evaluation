@@ -19,7 +19,7 @@ Output:
 
 Only output valid JSON array format. Do not include markdown formatting or extra text."""
 
-DAG_DECOMPOSITION_USER_TEMPLATE = "Question: {q}\n\nJSON:"
+DAG_DECOMPOSITION_USER_TEMPLATE = "Question: {q}\n\nYou must respond ONLY with a valid JSON array of objects. Do not include any conversational text or greetings. Do not ask for clarification. Just output the JSON array.\nJSON:"
 
 
 CONTEXT_PRUNING_PROMPT_SYSTEM = """You are an expert at synthesizing information for multi-hop reasoning.
