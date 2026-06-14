@@ -592,6 +592,26 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             color: #f43f5e;
         }
 
+        .cite-badge {
+            display: inline-block;
+            background: rgba(45, 212, 191, 0.15);
+            color: var(--accent-cyan);
+            border: 1px solid rgba(45, 212, 191, 0.3);
+            border-radius: 6px;
+            padding: 1px 6px;
+            font-size: 12px;
+            font-weight: 500;
+            margin: 0 2px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .cite-badge:hover {
+            background: rgba(45, 212, 191, 0.25);
+            border-color: rgba(45, 212, 191, 0.5);
+            box-shadow: 0 0 8px rgba(45, 212, 191, 0.2);
+        }
+
         /* Welcome layout */
         .welcome-container {
             max-width: 680px;
@@ -1452,9 +1472,12 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         }
         function renderMarkdown(text) {
             const raw = marked.parse(text || '');
-            if (window.DOMPurify) return DOMPurify.sanitize(raw);
-            // Fail-safe: no sanitizer loaded -> never inject raw HTML.
-            return escapeHtml(text || '');
+            let safeHtml = window.DOMPurify ? DOMPurify.sanitize(raw) : escapeHtml(text || '');
+            
+            // Post-process to render citations as interactive badges
+            // Match exactly Article N or Annex X with word boundaries
+            safeHtml = safeHtml.replace(/\b(Article\s+[0-9]+(?:\.[0-9a-zA-Z]+)?|Annex\s+[IVXLCDM]+(?:\.[0-9a-zA-Z]+)?)\b/gi, '<span class="cite-badge">$1</span>');
+            return safeHtml;
         }
 
         // Persist the partner API key client-side only (localStorage), so the

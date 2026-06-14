@@ -54,7 +54,7 @@ MATCH (a:Article) WHERE a.number IN $seed_nums
 WITH collect(id(a)) AS source_ids
 CALL gds.pageRank.stream(
   'eu_ai_act_graph',
-  { sourceNodes: source_ids, maxIterations: 20, dampingFactor: 0.85 }
+  { sourceNodes: source_ids, maxIterations: $max_iter, dampingFactor: $damping }
 )
 YIELD nodeId, score
 MATCH (n:Article) WHERE id(n) = nodeId AND n.number IS NOT NULL
@@ -82,9 +82,21 @@ def ppr_candidates(
     if not getattr(client, "enabled", False):
         return []
     try:
+        max_iter = int(os.getenv("REGENOLD_PPR_MAX_ITER", "20"))
+        damping = float(os.getenv("REGENOLD_PPR_DAMPING", "0.85"))
+    except ValueError:
+        max_iter = 20
+        damping = 0.85
+
+    try:
         rows = client.execute_read(
             _PPR_CYPHER,
-            {"seed_nums": seed_nums, "cap": top_k},
+            {
+                "seed_nums": seed_nums, 
+                "cap": top_k,
+                "max_iter": max_iter,
+                "damping": damping
+            },
         )
     except Exception as exc:  # noqa: BLE001 - fail-soft
         logger.debug("graph_ppr_exception: %s", str(exc)[:200])

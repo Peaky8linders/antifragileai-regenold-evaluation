@@ -885,10 +885,17 @@ def top_articles_by_relevance(
     if not _g2_enabled():
         return fused
     try:
-        expansion = _g2(fused[:3])  # seed from top-3 BM25 winners
+        max_hop2 = int(os.getenv("REGENOLD_MAX_HOP2", "5"))
+    except ValueError:
+        max_hop2 = 5
+    try:
+        expansion = _g2(fused[:3], max_hop2=max_hop2)  # seed from top-3 BM25 winners
     except Exception:  # noqa: BLE001 — never let graph expand 500 the route
         expansion = []
+    fused_before = list(fused)
     fused = _g2_fuse(fused, expansion, budget=k) if expansion else fused
+    if len(fused) > len(fused_before):
+        logger.debug("Graph 2-hop surfaced new refs: %s", [x for x in fused if x not in fused_before])
 
     # R39 / B6 — HippoRAG 2 Personalized PageRank over Neo4j. Strictly
     # additive: PPR candidates fill remaining slots in `fused`, never
@@ -904,9 +911,13 @@ def top_articles_by_relevance(
                 if ref.startswith("Art. "):
                     seed_articles.append(ref)
             ppr_extra = ppr_candidates(seed_articles=seed_articles, top_k=k)
+            ppr_added = []
             for extra_ref in ppr_extra:
                 if extra_ref not in fused and len(fused) < k * 2:
                     fused.append(extra_ref)
+                    ppr_added.append(extra_ref)
+            if ppr_added:
+                logger.debug("Graph PPR surfaced new refs: %s", ppr_added)
     except Exception:  # noqa: BLE001 — fail-soft
         pass
 
