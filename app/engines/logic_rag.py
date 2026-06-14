@@ -32,8 +32,8 @@ def _call_llm(system: str, user: str, max_tokens: int = 1024, temperature: float
         return ""
     
     prov = get_openai_wrapper_provider()
-    # Use a solid reasoning model, fallback to haiku for speed if needed.
-    model = os.getenv("REGENOLD_LOGIC_RAG_MODEL", "claude-sonnet-4-6")
+    # Use a faster reasoning model to minimize latency.
+    model = os.getenv("REGENOLD_LOGIC_RAG_MODEL", "claude-3-5-haiku-20241022")
     
     try:
         resp = prov.complete(
@@ -202,6 +202,10 @@ def execute_logic_rag(query: str, request_answers: dict = None) -> GraphContext:
         )
         
         _merge_contexts(accumulated_context, rank_ctx)
+        
+        if len(ranks) == 1:
+            record_note("LogicRAG: Single rank DAG, skipping context pruning to save latency.")
+            continue
         
         # Format the newly retrieved context into text
         new_context_text = _build_context_references_block(rank_ctx)
