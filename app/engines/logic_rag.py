@@ -26,14 +26,19 @@ from app.llm.prompts_logic import (
 logger = logging.getLogger(__name__)
 
 def _call_llm(system: str, user: str, max_tokens: int = 1024, temperature: float = 0.0) -> str:
-    """Helper to call the wrapper LLM."""
-    if not is_openai_wrapper_enabled():
-        logger.warning("LogicRAG: openai_wrapper not enabled. Returning empty.")
-        return ""
+    """Helper to call the LLM for logic steps."""
+    from app.llm.openai_wrapper_provider import is_groq_provider_enabled, get_groq_provider
     
-    prov = get_openai_wrapper_provider()
-    # Use a faster reasoning model to minimize latency.
-    model = os.getenv("REGENOLD_LOGIC_RAG_MODEL", "claude-haiku-4-5-20251001")
+    if is_groq_provider_enabled():
+        prov = get_groq_provider()
+        model = os.getenv("REGENOLD_LOGIC_RAG_MODEL_GROQ", "llama-3.3-70b-versatile")
+    elif is_openai_wrapper_enabled():
+        prov = get_openai_wrapper_provider()
+        # Use a solid reasoning model, fallback to haiku for speed if needed.
+        model = os.getenv("REGENOLD_LOGIC_RAG_MODEL", "claude-sonnet-4-6")
+    else:
+        logger.warning("LogicRAG: no provider enabled. Returning empty.")
+        return ""
     
     try:
         resp = prov.complete(
