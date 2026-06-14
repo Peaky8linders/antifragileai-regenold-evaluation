@@ -309,7 +309,9 @@ class _OpenAIWrapperProvider:
             retry_after = _parse_retry_after(
                 response.headers.get("Retry-After")
             )
-            if retry_after > 0 and retry_after <= _MAX_RETRY_AFTER_SECONDS:
+            # Fail fast on Groq to avoid 8s sleep loops which break the 20s latency budget.
+            max_retry_allowed = 0.0 if "groq" in self._base_url else _MAX_RETRY_AFTER_SECONDS
+            if retry_after > 0 and retry_after <= max_retry_allowed:
                 # Issue #48: skip the retry if Retry-After + a ~250 ms
                 # network allowance would push past the caller's budget.
                 # Surface api_status_429 immediately so the engine falls
