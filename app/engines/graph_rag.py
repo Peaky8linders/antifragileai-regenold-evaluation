@@ -5404,18 +5404,25 @@ def ask_compliance_question(request: GraphRAGRequest) -> GraphRAGResponse:
     if request.risk_level:
         query.risk_context = request.risk_level.value
 
-    # Stage 1 — Retrieve
     answer_dict = {k: v for k, v in request.answers.items()} if request.answers else {}
-    context = _retrieve_from_graph(
-        query,
-        risk_level=request.risk_level.value if request.risk_level else None,
-        answers=answer_dict,
-    )
+    
+    # LogicRAG Integration (You Don't Need Pre-built Graphs for RAG)
+    import os
+    if os.environ.get("REGENOLD_LOGIC_RAG") == "1":
+        from app.engines.logic_rag import execute_logic_rag
+        context = execute_logic_rag(request.question, answer_dict)
+    else:
+        # Stage 1 — Retrieve
+        context = _retrieve_from_graph(
+            query,
+            risk_level=request.risk_level.value if request.risk_level else None,
+            answers=answer_dict,
+        )
 
-    # R110 — Sufficient-Context gate (FRAMES-style bounded decomposition).
-    # No-op unless REGENOLD_SUFFICIENT_CONTEXT is on AND the gate finds the
-    # first-pass context insufficient for a complex/multi-part question.
-    context = _maybe_sufficient_context_hop(request, query, context, answer_dict)
+        # R110 — Sufficient-Context gate (FRAMES-style bounded decomposition).
+        # No-op unless REGENOLD_SUFFICIENT_CONTEXT is on AND the gate finds the
+        # first-pass context insufficient for a complex/multi-part question.
+        context = _maybe_sufficient_context_hop(request, query, context, answer_dict)
 
     # Stage 1 + 2 — Generate
     resolved_q = getattr(request, "resolved_question", None) or request.question

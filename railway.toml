@@ -14,6 +14,8 @@ restartPolicyMaxRetries = 3
 # ``railway variables --set REGENOLD_GRAPH_2HOP=0`` if a future round
 # regresses on it.
 REGENOLD_GRAPH_2HOP = "1"
+P2P_GRAPH_RAG_PROVIDER = "groq"
+REGENOLD_LOGIC_RAG = "1"
 
 # R98 — graph backend selector. Neo4j Aura is the durable graph backend
 # again (the 2026-05-25 RushDB migration hit RushDB's free-trial limits).
