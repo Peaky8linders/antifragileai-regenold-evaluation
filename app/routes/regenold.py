@@ -2208,6 +2208,13 @@ def _intent_anchor_set(
     from app.data.article_existence import ARTICLE_EXISTENCE  # noqa: PLC0415
 
     intent = _classify_intent_cached(live_question)
+    if intent is not None and getattr(intent, "reasoning", ""):
+        try:
+            from app.integrations.regenold.reasoning_trace import record_note  # noqa: PLC0415
+            record_note(f"intent_reasoning={intent.reasoning}")
+        except Exception:
+            pass
+
     if intent is None or intent.confidence < _INTENT_MIN_CONFIDENCE:
         return set(), set(), ""
     article_nums: set[str] = set()

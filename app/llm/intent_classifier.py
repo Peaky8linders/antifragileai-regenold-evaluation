@@ -169,6 +169,7 @@ class IntentResult:
     elapsed_ms: int
     cache_hit: bool = False
     model: str = ""
+    reasoning: str = ""
 
 
 # ── Module-level config + state ──────────────────────────────────────────────
@@ -268,7 +269,7 @@ _SYSTEM_PROMPT = """You are a fast intent classifier for EU AI Act questions.
 Read the user's question and emit a SINGLE JSON object (no prose, no
 markdown fences) with this exact shape:
 
-{"intent": "<label>", "primary_anchor": "<Art. N | Annex X | empty>", "alternate_anchors": ["<Art. N>", ...], "confidence": 0.0-1.0}
+{"reasoning": "<step-by-step logic>", "intent": "<label>", "primary_anchor": "<Art. N | Annex X | empty>", "alternate_anchors": ["<Art. N>", ...], "confidence": 0.0-1.0}
 
 Valid intent labels (pick exactly one):
 - article_lookup        — user explicitly names an article/annex and asks what it says
@@ -301,10 +302,12 @@ Disambiguation guidance (R66-D — judge-driven):
 - If the question implies *prohibition* ("is X banned?", "is Y prohibited?",
   "is Z illegal under the Act?") choose ``risk_classification`` and set
   ``primary_anchor`` to ``"Art. 5"``. alternate_anchors should include
-  Art. 99 (penalty) only if penalty is asked.
+  Art. 99 (penalty) only if penalty is asked. DO NOT include Art. 51 (GPAI).
+- If the question asks for general risk categories ("What risk categories are provided for AI systems?"), choose ``risk_classification``, set ``primary_anchor`` to ``""``, and list ``["Art. 5", "Art. 6", "Art. 50"]`` in alternate_anchors.
 - If the question is generic ("is X high-risk?", "what tier does Y fall
   into?") choose ``risk_classification`` and set ``primary_anchor`` to
   ``"Art. 6"`` (Annex III via alternate_anchors when an Annex-III use case is named).
+- If the question asks for the definition of high-risk, choose ``risk_classification``, set ``primary_anchor`` to ``"Art. 6"``, and ensure ``alternate_anchors`` includes ``["Annex I", "Annex III"]`` to capture exceptions.
 - ``compliance_checklist`` is for "what do I need to do?" / "list the
   obligations for ..." — primary_anchor should land on the most-load-bearing
   article for the role × risk tier (Art. 9 for high-risk providers,
@@ -388,6 +391,9 @@ def _parse_intent_json(text: str) -> IntentResult | None:
     except (TypeError, ValueError):
         conf = 0.0
     conf = max(0.0, min(1.0, conf))
+    
+    reasoning = (data.get("reasoning") or "").strip()
+    
     # If the model didn't pick a primary anchor but the taxonomy has a
     # default for that intent (e.g. penalty_inquiry → Art. 99), inject it.
     if not primary:
@@ -398,6 +404,7 @@ def _parse_intent_json(text: str) -> IntentResult | None:
         alternate_anchors=tuple(alternates),
         confidence=conf,
         elapsed_ms=0,  # set by caller
+        reasoning=reasoning,
     )
 
 
@@ -519,21 +526,43 @@ def classify_intent(
                 system=_SYSTEM_PROMPT,
                 user=_USER_TEMPLATE.format(q=trimmed),
                 model=model,
-                max_tokens=160,
+                max_tokens=250, # Increased max_tokens to accommodate reasoning
                 temperature=0.0,
                 timeout_seconds=_TIMEOUT_SECONDS,
             )
         )
+        if response.error:
+            raise Exception(f"Provider error: {response.error}")
     except Exception as exc:  # noqa: BLE001 — fail-soft contract
-        _BREAKER.record_failure()
-        logger.debug("intent_classifier_exception: %s", str(exc)[:200])
-        return None
+        # Fallback to OpenAI wrapper (Sonnet) if Groq fails
+        if model == _DEFAULT_GROQ_MODEL and is_openai_wrapper_enabled():
+            logger.debug("intent_classifier_exception on Groq: %s, falling back to Sonnet", str(exc)[:200])
+            provider = get_openai_wrapper_provider()
+            model = _DEFAULT_MODEL
+            try:
+                response = provider.complete(
+                    OpenAIWrapperRequest(
+                        system=_SYSTEM_PROMPT,
+                        user=_USER_TEMPLATE.format(q=trimmed),
+                        model=model,
+                        max_tokens=250,
+                        temperature=0.0,
+                        timeout_seconds=_TIMEOUT_SECONDS,
+                    )
+                )
+                if response.error:
+                    _BREAKER.record_failure()
+                    logger.debug("intent_classifier_failure on fallback: %s", response.error[:120])
+                    return None
+            except Exception as fallback_exc:
+                _BREAKER.record_failure()
+                logger.debug("intent_classifier_exception on fallback: %s", str(fallback_exc)[:200])
+                return None
+        else:
+            _BREAKER.record_failure()
+            logger.debug("intent_classifier_exception: %s", str(exc)[:200])
+            return None
     elapsed_ms = int((time.perf_counter() - start) * 1000)
-
-    if response.error:
-        _BREAKER.record_failure()
-        logger.debug("intent_classifier_failure: %s", response.error[:120])
-        return None
 
     parsed = _parse_intent_json(response.text or "")
     if parsed is None:
@@ -553,6 +582,7 @@ def classify_intent(
         elapsed_ms=elapsed_ms,
         cache_hit=False,
         model=response.model or model,
+        reasoning=parsed.reasoning,
     )
     _cache_put(key, result)
     return result
