@@ -26,19 +26,14 @@ from app.llm.prompts_logic import (
 logger = logging.getLogger(__name__)
 
 def _call_llm(system: str, user: str, max_tokens: int = 1024, temperature: float = 0.0) -> str:
-    """Helper to call the LLM for logic steps."""
-    from app.llm.openai_wrapper_provider import is_groq_provider_enabled, get_groq_provider
-    
-    if is_groq_provider_enabled():
-        prov = get_groq_provider()
-        model = os.getenv("REGENOLD_LOGIC_RAG_MODEL_GROQ", "llama-3.1-8b-instant")
-    elif is_openai_wrapper_enabled():
-        prov = get_openai_wrapper_provider()
-        # Use a solid reasoning model, fallback to haiku for speed if needed.
-        model = os.getenv("REGENOLD_LOGIC_RAG_MODEL", "claude-sonnet-4-6")
-    else:
-        logger.warning("LogicRAG: no provider enabled. Returning empty.")
+    """Helper to call the wrapper LLM."""
+    if not is_openai_wrapper_enabled():
+        logger.warning("LogicRAG: openai_wrapper not enabled. Returning empty.")
         return ""
+    
+    prov = get_openai_wrapper_provider()
+    # Use a faster reasoning model to minimize latency.
+    model = os.getenv("REGENOLD_LOGIC_RAG_MODEL", "claude-sonnet-4-6")
     
     try:
         resp = prov.complete(
@@ -63,13 +58,6 @@ def _call_llm(system: str, user: str, max_tokens: int = 1024, temperature: float
 def _decompose_to_dag(query: str) -> List[Dict[str, Any]]:
     """Decompose query into a DAG of subqueries."""
     fallback = [{"id": 1, "query": query, "dependencies": []}]
-    
-    # Fast path: bypass LLM completely for simple queries (no connectors, short)
-    lower_q = query.lower()
-    connectors = [" and ", " or ", " both ", " vs ", " versus ", " relation", " depend", " if ", " before ", " after "]
-    if len(query.split()) < 12 and not any(c in lower_q for c in connectors):
-        record_note("LogicRAG: Fast-pathing simple query without DAG decomposition")
-        return fallback
         
     user_prompt = DAG_DECOMPOSITION_USER_TEMPLATE.format(q=query)
     response_text = _call_llm(DAG_DECOMPOSITION_PROMPT_SYSTEM, user_prompt)

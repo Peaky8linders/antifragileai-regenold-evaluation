@@ -272,32 +272,7 @@ def _openai_wrapper_complete_for_graph_rag(
     from app.llm.openai_wrapper_provider import (
         OpenAIWrapperRequest,
         get_openai_wrapper_provider,
-        get_groq_provider,
     )
-
-    def _try_groq_fallback() -> str | None:
-        import os
-        logger.info("Attempting Groq Llama 3.3 70B fallback...")
-        groq_model = os.getenv("REGENOLD_STAGE2_MODEL_GROQ", "llama-3.3-70b-versatile")
-        groq_resp = get_groq_provider().complete(
-            OpenAIWrapperRequest(
-                system=system,
-                user=user,
-                model=groq_model,
-                max_tokens=max_tokens,
-                temperature=temperature,
-            )
-        )
-        if groq_resp.error:
-            logger.warning("graph_rag.groq_fallback_failed: %s", groq_resp.error[:200])
-            return None
-        if getattr(groq_resp, "finish_reason", None) == "length":
-            logger.warning("graph_rag.groq_fallback_truncated — finish_reason=length")
-            return None
-        if _looks_structurally_truncated(groq_resp.text):
-            logger.warning("graph_rag.groq_fallback_truncated_structural")
-            return None
-        return groq_resp.text
 
     try:
         from app.config import settings
@@ -356,13 +331,11 @@ def _openai_wrapper_complete_for_graph_rag(
         if "not_logged_in" in response.error:
             logger.error(
                 "graph_rag.openai_wrapper_not_logged_in — Sonnet path is DOWN. "
-                "Re-seed the wrapper's OAuth token by running login.bat. "
-                "Falling back to Groq for this call.",
+                "Re-seed the wrapper's OAuth token by running login.bat. ",
             )
         elif "out of extra usage" in response.error.lower() or "credit balance" in response.error.lower():
             logger.error(
-                "graph_rag.openai_wrapper_quota_exhausted — LLM quota limits reached: %s. "
-                "Falling back to Groq for this call.",
+                "graph_rag.openai_wrapper_quota_exhausted — LLM quota limits reached: %s. ",
                 response.error[:200],
             )
         else:
@@ -370,7 +343,7 @@ def _openai_wrapper_complete_for_graph_rag(
                 "graph_rag.openai_wrapper_call_failed: %s",
                 response.error[:200],
             )
-        return _try_groq_fallback()
+        return None
     # R91 — truncation guard. ``finish_reason="length"`` means the model
     # hit the ``max_tokens`` ceiling before naturally stopping; the text
     # is partial output (often mid-sentence, often missing the trailing
@@ -383,11 +356,11 @@ def _openai_wrapper_complete_for_graph_rag(
     if getattr(response, "finish_reason", None) == "length":
         logger.warning(
             "graph_rag.openai_wrapper_truncated — finish_reason=length "
-            "(model=%s, completion_tokens=%d) — falling back to Groq.",
+            "(model=%s, completion_tokens=%d) — falling back to deterministic.",
             response.model,
             response.completion_tokens,
         )
-        return _try_groq_fallback()
+        return None
     # R102 — STRUCTURAL truncation guard. The Claude-Max
     # ``claude-code-openai-wrapper`` (CLI subprocess behind cloudflared)
     # IGNORES ``max_tokens`` and reports ``finish_reason="stop"`` EVEN when
@@ -405,12 +378,12 @@ def _openai_wrapper_complete_for_graph_rag(
         logger.warning(
             "graph_rag.openai_wrapper_truncated_structural — finish_reason=%r "
             "but text ends mid-clause (model=%s, completion_tokens=%d) — "
-            "falling back to Groq.",
+            "falling back to deterministic.",
             getattr(response, "finish_reason", None),
             response.model,
             response.completion_tokens,
         )
-        return _try_groq_fallback()
+        return None
         
     if getattr(response, "thinking", None):
         try:
@@ -4841,7 +4814,6 @@ def _claude_max_enhance_answer(
         # to use when Stage-2 is on.
         _env_provider = force_provider or os.getenv("P2P_GRAPH_RAG_PROVIDER", "").strip().lower()
         _use_anthropic_sdk = False
-        _use_groq = False
         _use_gemini = False
         if _env_provider == "anthropic":
             try:
@@ -4849,9 +4821,6 @@ def _claude_max_enhance_answer(
                 _use_anthropic_sdk = _s.graph_rag.api_key is not None
             except Exception:  # noqa: BLE001
                 _use_anthropic_sdk = False
-        elif _env_provider == "groq":
-            from app.llm.openai_wrapper_provider import is_groq_provider_enabled
-            _use_groq = is_groq_provider_enabled()
         elif _env_provider == "gemini":
             from app.llm.openai_wrapper_provider import is_gemini_provider_enabled
             _use_gemini = is_gemini_provider_enabled()
@@ -4873,43 +4842,6 @@ def _claude_max_enhance_answer(
                 temperature=0.0,
                 complex_question=complex_q,
             )
-        elif _use_groq:
-            from app.llm.openai_wrapper_provider import OpenAIWrapperRequest, get_groq_provider
-            _model = os.getenv("REGENOLD_STAGE2_MODEL_GROQ", "llama-3.3-70b-versatile")
-            try:
-                from app.integrations.regenold.reasoning_trace import record_note
-                record_note(f"stage2_model={_model} complex={complex_q}")
-            except Exception: pass
-            resp = get_groq_provider().complete(
-                OpenAIWrapperRequest(
-                    system=PROMPT_HARDENING_PREFIX + ANSWER_GENERATE_SYSTEM,
-                    user=user_message,
-                    model=_model,
-                    max_tokens=max_tokens,
-                    temperature=0.0,
-                )
-            )
-            if resp.error:
-                logger.warning("graph_rag.groq_stage2_call_failed: %s", resp.error[:200])
-                text_raw = None
-            elif getattr(resp, "finish_reason", None) == "length":
-                logger.warning(
-                    "graph_rag.groq_stage2_truncated — finish_reason=length "
-                    "(completion_tokens=%d) — falling back to deterministic.",
-                    resp.completion_tokens,
-                )
-                text_raw = None
-            elif _looks_structurally_truncated(resp.text):
-                logger.warning(
-                    "graph_rag.groq_stage2_truncated_structural — "
-                    "finish_reason=%r but text ends mid-clause "
-                    "(completion_tokens=%d) — falling back to deterministic.",
-                    getattr(resp, "finish_reason", None),
-                    resp.completion_tokens,
-                )
-                text_raw = None
-            else:
-                text_raw = resp.text
         elif _use_gemini:
             from app.llm.openai_wrapper_provider import OpenAIWrapperRequest, get_gemini_provider
             resp = get_gemini_provider().complete(
@@ -5078,26 +5010,6 @@ def _two_stage_generate(
         history_turn_count=history_turn_count,
         is_general_classification=_general_classification_verdict(resolved_q) is not None,
     )
-    if enhanced is None:
-        try:
-            from app.llm.openai_wrapper_provider import is_groq_provider_enabled
-            if is_groq_provider_enabled() and os.getenv("P2P_GRAPH_RAG_PROVIDER", "").strip().lower() != "groq":
-                try:
-                    from app.integrations.regenold.reasoning_trace import record_note
-                    record_note("stage2_primary_failed_fallback_groq")
-                except Exception:
-                    pass
-                enhanced = _claude_max_enhance_answer(
-                    question=question,
-                    kg_answer=kg_answer,
-                    context=context,
-                    system_description=system_description,
-                    history_turn_count=history_turn_count,
-                    is_general_classification=_general_classification_verdict(resolved_q) is not None,
-                    force_provider="groq",
-                )
-        except Exception:
-            pass
 
     if enhanced is None:
         # Wrapper call failed (network error, timeout, 429, wrapper auth
