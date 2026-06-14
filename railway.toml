@@ -14,17 +14,32 @@ restartPolicyMaxRetries = 3
 # ``railway variables --set REGENOLD_GRAPH_2HOP=0`` if a future round
 # regresses on it.
 REGENOLD_GRAPH_2HOP = "1"
-# R117 — provider reconciliation. The Groq routing for LogicRAG + Stage-2 was
-# added then SILENTLY REVERTED (commit 9dba937 reset LogicRAG to the Claude Max
-# wrapper + Sonnet and removed the Groq Stage-2 branch). With provider="groq",
-# _stage2_provider_enabled() gated Stage-2 polish on GROQ_API_KEY while the
-# actual call routes to the wrapper, so without a Groq key Stage-2 was silently
-# disabled (a split-brain). LogicRAG._call_llm always uses the wrapper too.
-# Setting this to the wrapper (the documented production path) makes the Stage-2
-# gate consistent with the code. Restore the reverted Groq routing first if the
-# Groq path is genuinely wanted. NOTE: Railway dashboard service variables
-# override this [deploy.envs] entry (the R80.2 phenomenon).
+# R117 — provider architecture (operator directive): Groq for FAST Stage-0
+# intent detection, then the Cloudflare-tunnel Claude Max subscription ALWAYS
+# for Stage-1/2 polish + reasoning.
+#
+#   * Stage-0 intent classification -> Groq Llama 3.3 70B (fast, cheap).
+#     REGENOLD_INTENT_PROVIDER=groq below; GROQ_API_KEY is a dashboard secret.
+#   * Stage-1 parse + Stage-2 polish + reasoning -> Claude Max via the
+#     openai_wrapper (the Cloudflare named tunnel -> NSSM wrapper -> Claude Max).
+#     OPENAI_API_BASE (tunnel URL) + OPENAI_API_KEY are dashboard secrets.
+#
+# The earlier provider="groq" was a split-brain: the Groq Stage-2 routing was
+# added then silently reverted (commit 9dba937), so Stage-2 routed to the
+# wrapper while _stage2_provider_enabled() gated it on GROQ_API_KEY. Setting the
+# graph-RAG provider to the wrapper makes the Stage-2 gate consistent with the
+# code. NOTE: Railway dashboard service variables override this [deploy.envs]
+# block (the R80.2 phenomenon) — verify the dashboard does not pin
+# P2P_GRAPH_RAG_PROVIDER / REGENOLD_INTENT_PROVIDER to stale values.
 P2P_GRAPH_RAG_PROVIDER = "openai_wrapper"
+# Stage-2 polish + reasoning ALWAYS on (the Claude Max tunnel). The code default
+# is already ON (R80.2); pinned here explicitly per the operator directive.
+P2P_GRAPH_RAG_ENABLE_STAGE2 = "1"
+# Stage-0 intent detection on Groq (fast). Requires GROQ_API_KEY in the
+# dashboard; without it the classifier falls back cleanly to the wrapper (no
+# silent disablement). The free Groq tier has a 100K tokens/day cap, so use a
+# paid tier for sustained production volume.
+REGENOLD_INTENT_PROVIDER = "groq"
 REGENOLD_LOGIC_RAG = "1"
 
 # R98 — graph backend selector. Neo4j Aura is the durable graph backend

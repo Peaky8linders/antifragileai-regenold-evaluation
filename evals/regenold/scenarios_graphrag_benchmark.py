@@ -31,117 +31,6 @@ from __future__ import annotations
 # ── Group 1 — questions WITH ground truth (original 10 + promoted 10) ────────────────────────────────
 GROUND_TRUTH: list[dict] = [
     {
-        "id": "docx_q15",
-        "question": "Can a hospital use an AI system to sort patients based on their biometric data to determine priority for an experimental clinical trial?",
-        "expected_refs": [
-            "Article 5",
-            "Article 6",
-            "Annex III",
-            "Annex I"
-        ],
-        "expected_keywords": [
-            "clinical trial",
-            "Annex III",
-            "Article 5",
-            "biometric categorisation"
-        ],
-        "category": "medtech_prohibited_high_risk",
-        "paper_refs": "Articles: 5,6,Annex III, Annex I",
-        "recital_only": False,
-        "notes": "Review notes: Half-right. Annex III.5(d) is for emergency. Clinical trial might be Annex III.5(a) or outside Annex III (MDR). Art 5(1)(g) conditional requires inferring from closed list."
-    },
-    {
-        "id": "docx_q16",
-        "question": "Our life sciences startup developed a general-purpose AI model trained on massive amounts of genomic data. What transparency obligations apply to us?",
-        "expected_refs": [
-            "Article 53",
-            "Article 51",
-            "Article 55"
-        ],
-        "expected_keywords": [
-            "GPAI",
-            "technical documentation",
-            "systemic risk",
-            "copyright"
-        ],
-        "category": "medtech_gpai_transparency",
-        "paper_refs": "Articles: 53,51,55",
-        "recital_only": False,
-        "notes": "Review notes: Must refer to Art 55/51 systemic risk due to massive genomic data."
-    },
-    {
-        "id": "docx_q17",
-        "question": "We are a university lab developing an AI model exclusively for scientific research and development into new life science drugs. Does the AI Act apply to our model before it is released to the market?",
-        "expected_refs": [
-            "Article 2"
-        ],
-        "expected_keywords": [
-            "scientific research",
-            "development",
-            "excluded",
-            "Article 2"
-        ],
-        "category": "medtech_scope_research",
-        "paper_refs": "Articles: 2",
-        "recital_only": False,
-        "notes": "Review notes: Must reference Art 2(6) and 2(8) on pre-market testing."
-    },
-    {
-        "id": "docx_q18",
-        "question": "We are developing a generative AI chatbot that will be deployed on a hospital website to answer general patient queries. What transparency obligations apply?",
-        "expected_refs": [
-            "Article 50"
-        ],
-        "expected_keywords": [
-            "limited risk",
-            "transparency",
-            "interact directly",
-            "generative"
-        ],
-        "category": "medtech_transparency_chatbot",
-        "paper_refs": "Articles: 50",
-        "recital_only": False,
-        "notes": "Review notes: Classification missing - probably limited-risk, not high-risk."
-    },
-    {
-        "id": "docx_q19",
-        "question": "A pharmaceutical company wants to use an AI system to monitor the emotions and stress levels of their manufacturing line workers to improve efficiency. Is this allowed?",
-        "expected_refs": [
-            "Article 5"
-        ],
-        "expected_keywords": [
-            "prohibited",
-            "emotion recognition",
-            "workplace",
-            "medical reasons"
-        ],
-        "category": "medtech_prohibited_emotion",
-        "paper_refs": "Articles: 5",
-        "recital_only": False,
-        "notes": "Review notes: Prohibited Art 5(1)(f) with narrow exception for medical/safety."
-    },
-    {
-        "id": "docx_q20",
-        "question": "Is an AI system intended to be used as a safety component in robotic surgery considered high-risk under the AI Act?",
-        "expected_refs": [
-            "Article 6",
-            "Article 14",
-            "Article 72",
-            "Annex I"
-        ],
-        "expected_keywords": [
-            "high-risk",
-            "MDR",
-            "conformity assessment",
-            "safety component",
-            "oversight"
-        ],
-        "category": "medtech_high_risk_robotic",
-        "paper_refs": "Articles: 6,14,72,Annex I",
-        "recital_only": False,
-        "notes": "Review notes: Needs to engage with Art 14 human oversight and Art 72 post-market."
-    },
-    {
         "id": "med_1",
         "question": "Is a medical device software that detects cancer from MRI scans considered a high-risk AI system under the AI Act?",
         "expected_refs": [
@@ -603,12 +492,12 @@ GROUND_TRUTH: list[dict] = [
     {
         "id": "med_03",
         "question": "Our life sciences startup developed a general-purpose AI model trained on massive amounts of genomic data. What transparency obligations apply to us?",
-        "expected_refs": ["Article 50", "Article 53"],
-        "expected_keywords": ["general-purpose AI model", "transparency", "copyright", "summary of training data", "technical documentation"],
+        "expected_refs": ["Article 53", "Article 51", "Article 55"],
+        "expected_keywords": ["GPAI", "technical documentation", "systemic risk", "copyright"],
         "category": "lifesciences_gpai",
-        "paper_refs": "Articles: 50,53",
+        "paper_refs": "Articles: 53,51,55",
         "recital_only": False,
-        "notes": "Genomic LLM transparency obligations.",
+        "notes": "Genomic LLM GPAI obligations. 'Massive amounts' triggers systemic-risk evaluation under Art 51/55. Art 50 applies to interaction transparency, not GPAI provider obligations.",
     },
     {
         "id": "med_04",
