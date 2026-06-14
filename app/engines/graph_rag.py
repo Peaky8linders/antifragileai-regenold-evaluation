@@ -391,6 +391,12 @@ def _openai_wrapper_complete_for_graph_rag(
             record_llm_thinking(response.thinking, stage=stage_name)
         except Exception:
             pass
+    else:
+        try:
+            from app.integrations.regenold.reasoning_trace import record_llm_thinking
+            record_llm_thinking("Standard fast-path generation used (extended thinking disabled or not supported by model tier).", stage=stage_name)
+        except Exception:
+            pass
             
     return response.text
 
@@ -504,6 +510,12 @@ def _anthropic_complete_for_graph_rag(
             try:
                 from app.integrations.regenold.reasoning_trace import record_llm_thinking
                 record_llm_thinking(thinking_text, stage=stage_name)
+            except Exception:
+                pass
+        else:
+            try:
+                from app.integrations.regenold.reasoning_trace import record_llm_thinking
+                record_llm_thinking("Standard fast-path generation used (extended thinking disabled or not supported by model tier).", stage=stage_name)
             except Exception:
                 pass
     except Exception as exc:  # noqa: BLE001
@@ -750,6 +762,12 @@ def _llm_parse_query(question: str) -> GraphQuery:
                     record_llm_thinking(resp.thinking, stage="Stage 1 (Scope & Extraction)")
                 except Exception:
                     pass
+            else:
+                try:
+                    from app.integrations.regenold.reasoning_trace import record_llm_thinking
+                    record_llm_thinking("Standard fast-path extraction used (no extended thinking returned).", stage="Stage 1 (Scope & Extraction)")
+                except Exception:
+                    pass
             text = (resp.text or "").strip()
         elif provider == "gemini":
             from app.llm.openai_wrapper_provider import OpenAIWrapperRequest, get_gemini_provider
@@ -796,6 +814,14 @@ def _llm_parse_query(question: str) -> GraphQuery:
             raise ValueError(
                 f"LLM returned non-parsable JSON. First 200 chars: {text[:200]!r}"
             )
+        
+        if "reasoning" in parsed:
+            try:
+                from app.integrations.regenold.reasoning_trace import record_llm_thinking
+                record_llm_thinking(parsed["reasoning"], stage="Stage 1 (Scope & Extraction)")
+            except Exception:
+                pass
+
         return GraphQuery(
             intent=parsed.get("intent", "general_compliance"),
             entities=parsed.get("entities", []),
@@ -940,6 +966,12 @@ def _llm_generate_answer(
                 try:
                     from app.integrations.regenold.reasoning_trace import record_llm_thinking
                     record_llm_thinking(resp.thinking, stage="Stage 2 (Synthesis)")
+                except Exception:
+                    pass
+            else:
+                try:
+                    from app.integrations.regenold.reasoning_trace import record_llm_thinking
+                    record_llm_thinking("Standard fast-path generation used (no extended thinking returned).", stage="Stage 2 (Synthesis)")
                 except Exception:
                     pass
             return validate_llm_output((resp.text or "").strip())

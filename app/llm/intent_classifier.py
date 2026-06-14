@@ -490,6 +490,7 @@ def classify_intent(
             elapsed_ms=cached.elapsed_ms,
             cache_hit=True,
             model=cached.model,
+            reasoning=getattr(cached, "reasoning", ""),
         )
 
     # Issue #53: sanitise prompt-injection vectors BEFORE truncation

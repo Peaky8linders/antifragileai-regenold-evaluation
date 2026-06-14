@@ -15,37 +15,38 @@ Your job is to extract structured intent from natural language questions about
 AI compliance.
 
 Given a question, extract:
-1. intent: one of [obligation_check, gap_analysis, article_lookup, risk_assessment, cross_framework, general_compliance]
-2. entities: article references (e.g. "Art. 9"), risk levels, dimension names, Annex III categories
-3. risk_context: if the question implies a risk level (high, limited, minimal, unacceptable)
-4. dimension_hint: if the question relates to a specific compliance dimension
+1. reasoning: Brief step-by-step logic explaining the extraction.
+2. intent: one of [obligation_check, gap_analysis, article_lookup, risk_assessment, cross_framework, general_compliance]
+3. entities: article references (e.g. "Art. 9"), risk levels, dimension names, Annex III categories
+4. risk_context: if the question implies a risk level (high, limited, minimal, unacceptable)
+5. dimension_hint: if the question relates to a specific compliance dimension
 
 Respond with valid JSON only. No markdown, no explanation.
 
 Example questions and expected output:
 
 Q: "Does our HR screening system need a Fundamental Rights Impact Assessment?"
-{"intent": "obligation_check", "entities": ["Art. 27", "FRIA"], "risk_context": "high", "dimension_hint": "deployer_obligations", "keywords": ["HR", "screening", "FRIA"]}
+{"reasoning": "Question asks about FRIA for an HR screening system.", "intent": "obligation_check", "entities": ["Art. 27", "FRIA"], "risk_context": "high", "dimension_hint": "deployer_obligations", "keywords": ["HR", "screening", "FRIA"]}
 
 Q: "What are the data governance requirements for high-risk AI?"
-{"intent": "article_lookup", "entities": ["Art. 10"], "risk_context": "high", "dimension_hint": "data_gov", "keywords": ["data governance", "high-risk"]}
+{"reasoning": "Looking for data governance obligations specifically for high-risk systems.", "intent": "article_lookup", "entities": ["Art. 10"], "risk_context": "high", "dimension_hint": "data_gov", "keywords": ["data governance", "high-risk"]}
 
 Q: "How does our compliance score compare against NIST AI RMF?"
-{"intent": "cross_framework", "entities": ["NIST AI RMF"], "risk_context": null, "dimension_hint": null, "keywords": ["NIST", "cross-framework", "comparison"]}
+{"reasoning": "Comparing against external NIST AI RMF framework.", "intent": "cross_framework", "entities": ["NIST AI RMF"], "risk_context": null, "dimension_hint": null, "keywords": ["NIST", "cross-framework", "comparison"]}
 
 Q: "What gaps do we have in Art. 15 robustness and security?"
-{"intent": "gap_analysis", "entities": ["Art. 15"], "risk_context": "high", "dimension_hint": "security", "keywords": ["gaps", "robustness", "security"]}
+{"reasoning": "Asking about gaps in Art. 15 (robustness and cybersecurity).", "intent": "gap_analysis", "entities": ["Art. 15"], "risk_context": "high", "dimension_hint": "security", "keywords": ["gaps", "robustness", "security"]}
 
 Q: "Is our AI system classified as high-risk under the EU AI Act?"
-{"intent": "risk_assessment", "entities": ["Art. 6"], "risk_context": null, "dimension_hint": null, "keywords": ["classification", "high-risk"]}
+{"reasoning": "Asking to classify risk tier.", "intent": "risk_assessment", "entities": ["Art. 6"], "risk_context": null, "dimension_hint": null, "keywords": ["classification", "high-risk"]}
 
 Q: "What do we need to do for Art. 12 record-keeping compliance?"
-{"intent": "obligation_check", "entities": ["Art. 12"], "risk_context": "high", "dimension_hint": "logging", "keywords": ["record-keeping", "logging"]}
+{"reasoning": "Asking for compliance steps on record-keeping.", "intent": "obligation_check", "entities": ["Art. 12"], "risk_context": "high", "dimension_hint": "logging", "keywords": ["record-keeping", "logging"]}
 
 Q: "We need to process special categories of personal data to correct demographic bias."
-{"intent": "article_lookup", "entities": ["Art. 10"], "risk_context": "high", "dimension_hint": "data_gov", "keywords": ["bias", "special categories", "data governance"]}
+{"reasoning": "Mentions special categories of data and bias.", "intent": "article_lookup", "entities": ["Art. 10"], "risk_context": "high", "dimension_hint": "data_gov", "keywords": ["bias", "special categories", "data governance"]}
 Q: "Under what conditions does the AI Act permit processing of special categories of personal data?"
-{"intent": "article_lookup", "entities": ["Art. 10"], "risk_context": "high", "dimension_hint": "data_gov", "keywords": ["special categories", "bias", "data governance"]}
+{"reasoning": "Asking for conditions to process special categories of data.", "intent": "article_lookup", "entities": ["Art. 10"], "risk_context": "high", "dimension_hint": "data_gov", "keywords": ["special categories", "bias", "data governance"]}
 """
 
 
