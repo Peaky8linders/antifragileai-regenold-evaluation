@@ -343,7 +343,7 @@ def _openai_wrapper_complete_for_graph_rag(
                 "graph_rag.openai_wrapper_call_failed: %s",
                 response.error[:200],
             )
-        return None
+        raise RuntimeError(f"OpenAI wrapper failed: {response.error}")
     # R91 — truncation guard. ``finish_reason="length"`` means the model
     # hit the ``max_tokens`` ceiling before naturally stopping; the text
     # is partial output (often mid-sentence, often missing the trailing
@@ -356,11 +356,11 @@ def _openai_wrapper_complete_for_graph_rag(
     if getattr(response, "finish_reason", None) == "length":
         logger.warning(
             "graph_rag.openai_wrapper_truncated — finish_reason=length "
-            "(model=%s, completion_tokens=%d) — falling back to deterministic.",
+            "(model=%s, completion_tokens=%d) — raising error to trigger retry.",
             response.model,
             response.completion_tokens,
         )
-        return None
+        raise RuntimeError(f"OpenAI wrapper truncated: finish_reason=length (model={response.model})")
     # R102 — STRUCTURAL truncation guard. The Claude-Max
     # ``claude-code-openai-wrapper`` (CLI subprocess behind cloudflared)
     # IGNORES ``max_tokens`` and reports ``finish_reason="stop"`` EVEN when
@@ -378,12 +378,12 @@ def _openai_wrapper_complete_for_graph_rag(
         logger.warning(
             "graph_rag.openai_wrapper_truncated_structural — finish_reason=%r "
             "but text ends mid-clause (model=%s, completion_tokens=%d) — "
-            "falling back to deterministic.",
+            "raising error to trigger retry.",
             getattr(response, "finish_reason", None),
             response.model,
             response.completion_tokens,
         )
-        return None
+        raise RuntimeError(f"OpenAI wrapper structurally truncated (model={response.model})")
         
     if getattr(response, "thinking", None):
         try:
