@@ -1212,10 +1212,13 @@ _KEYWORD_ENTITY_MAP: tuple[tuple[str, str], ...] = (
     ("provider obligations", "Art. 16"),
     ("authorised representative", "Art. 22"),
     ("authorized representative", "Art. 22"),
-    ("no physical establishment", "Art. 22"),
-    ("no establishment in the Union", "Art. 22"),
-    ("outside the Union", "Art. 22"),
-    ("non-EU provider", "Art. 22"),
+    # R117 (OVF-1) — removed 4 overfit territorial keys. Three were DEAD CODE:
+    # capitalized "Union"/"EU" can never match the lower-cased question they are
+    # substring-tested against (the only capitalized keys in the whole map). The
+    # fourth, "no physical establishment", is a verbatim narrative fragment
+    # lifted from a single MedTech eval question. The Art. 22 obligation is
+    # anchored generally by "authorised representative" above, and territorial
+    # scope is handled in scope.py.
     ("importer", "Art. 23"),
     ("importer obligations", "Art. 23"),
     ("distributor", "Art. 24"),
@@ -5318,16 +5321,41 @@ def ask_compliance_question(request: GraphRAGRequest) -> GraphRAGResponse:
 
     answer_dict = {k: v for k, v in request.answers.items()} if request.answers else {}
     
-    # LogicRAG Integration (You Don't Need Pre-built Graphs for RAG)
-    import os
-    if os.environ.get("REGENOLD_LOGIC_RAG") == "1":
-        from app.engines.logic_rag import execute_logic_rag
-        context = execute_logic_rag(request.question, answer_dict)
-    else:
-        # Stage 1 — Retrieve
+    # LogicRAG Integration (env-gated REGENOLD_LOGIC_RAG, default ON via
+    # railway.toml). R117 hardening of the new LLM-driven retrieval engine:
+    #   1. FAIL-SOFT — any LogicRAG error (LLM / parse / graph) falls back to
+    #      the deterministic retrieval path, so the route never 500s. LogicRAG
+    #      sits on the critical retrieval path and is default ON.
+    #   2. LATENCY-BOUNDED — LogicRAG issues multiple serial LLM calls, so it
+    #      only fires for genuinely complex / multi-part questions; simple
+    #      questions take the fast deterministic path (restores the fast-path
+    #      bypass that commit 9dba937 inadvertently reverted).
+    #   3. risk_level is threaded through (it was hardcoded to None).
+    _risk_level = request.risk_level.value if request.risk_level else None
+    context = None
+    if os.environ.get("REGENOLD_LOGIC_RAG", "").strip() == "1":
+        from app.engines.question_complexity import is_complex_question  # noqa: PLC0415
+
+        if is_complex_question(request.question, getattr(request, "history_turn_count", 1) or 1):
+            try:
+                from app.engines.logic_rag import execute_logic_rag  # noqa: PLC0415
+
+                context = execute_logic_rag(request.question, answer_dict, risk_level=_risk_level)
+            except Exception:  # noqa: BLE001 — never let LogicRAG 500 the route
+                logger.exception("LogicRAG failed; falling back to deterministic retrieval")
+                try:
+                    from app.integrations.regenold.reasoning_trace import record_note  # noqa: PLC0415
+
+                    record_note("LogicRAG failed; deterministic fallback")
+                except Exception:  # noqa: BLE001
+                    pass
+                context = None
+
+    if context is None:
+        # Stage 1 — Retrieve (deterministic; the safe default + LogicRAG fallback)
         context = _retrieve_from_graph(
             query,
-            risk_level=request.risk_level.value if request.risk_level else None,
+            risk_level=_risk_level,
             answers=answer_dict,
         )
 

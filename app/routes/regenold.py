@@ -1279,6 +1279,13 @@ def _engine_cache_key(
             "REGENOLD_STAGE2_WEB_SEARCH",
             "REGENOLD_RUSHDB_HYBRID",
             "REGENOLD_GRAPH_BACKEND",
+            # R117 — LogicRAG (execute_logic_rag) REPLACES the entire retrieval
+            # engine when REGENOLD_LOGIC_RAG=1, and REGENOLD_LOGIC_RAG_MODEL
+            # selects the synthesis-prose model that lands in the cached
+            # GraphRAGResponse. Both flip engine output, so they MUST be in the
+            # cache identity (R30/R56/R79 cache-poisoning doctrine).
+            "REGENOLD_LOGIC_RAG",
+            "REGENOLD_LOGIC_RAG_MODEL",
         )
     )
     import json

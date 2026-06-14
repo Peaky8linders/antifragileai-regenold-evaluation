@@ -45,6 +45,43 @@ from app.data.eu_ai_act_corpus import ARTICLE_FULL_TEXT, ARTICLE_TITLE, RECITALS
 from app.data.kb import EC_CHECKER_OBLIGATION_MAP, KB_VERSION, MATURITY_DIMENSIONS
 from app.data.article_requirements_full import DIMENSION_TO_ARTICLES
 from app.data.kb_xrefs import MANUAL_XREFS, _build_xref_graph
+
+# ── SEED-02 fix: reconcile MATURITY_DIMENSIONS ids vs DIMENSION_TO_ARTICLES keys ──
+# The upstream module uses 'conformity_assessment' but MATURITY_DIMENSIONS uses 'conformity'.
+# The upstream module uses 'gpai' but MATURITY_DIMENSIONS uses 'gpai_specific'.
+# We patch aliases into the imported dict so .get(dim.id, []) resolves correctly.
+if "conformity_assessment" in DIMENSION_TO_ARTICLES:
+    DIMENSION_TO_ARTICLES["conformity"] = DIMENSION_TO_ARTICLES["conformity_assessment"]
+if "gpai" in DIMENSION_TO_ARTICLES:
+    DIMENSION_TO_ARTICLES["gpai_specific"] = DIMENSION_TO_ARTICLES["gpai"]
+
+# Dimensions that are genuinely cross-cutting and NOT pinned to specific articles —
+# intentionally omitted from DIMENSION_TO_ARTICLES.
+_INTENTIONALLY_UNMAPPED_DIMENSIONS: frozenset[str] = frozenset({
+    "agent_inventory",      # cross-cutting inventory practice
+    "chain_transparency",   # supply-chain transparency (no single article anchor)
+    "governance",           # enterprise AI governance (cross-cutting)
+    "post_market",          # post-market monitoring (cross-cutting Arts 72-75)
+    "regulatory_perimeter", # scope determination (cross-cutting)
+    "runtime_drift",        # MLOps/drift detection (cross-cutting)
+    "tool_governance",      # tool and agent governance (cross-cutting)
+})
+
+# Import-time guard: every MATURITY_DIMENSIONS id must either appear in
+# DIMENSION_TO_ARTICLES OR be declared intentionally unmapped.  If this
+# assertion fires, add the new id to DIMENSION_TO_ARTICLES (preferred) or
+# to _INTENTIONALLY_UNMAPPED_DIMENSIONS (if genuinely cross-cutting).
+_unmapped_dims = {
+    d.id
+    for d in MATURITY_DIMENSIONS
+    if d.id not in DIMENSION_TO_ARTICLES
+    and d.id not in _INTENTIONALLY_UNMAPPED_DIMENSIONS
+}
+assert not _unmapped_dims, (
+    f"DIMENSION_TO_ARTICLES is missing entries for MATURITY_DIMENSIONS ids: "
+    f"{sorted(_unmapped_dims)}.  Add entries to DIMENSION_TO_ARTICLES or to "
+    "_INTENTIONALLY_UNMAPPED_DIMENSIONS in scripts/seed_neo4j_kb.py."
+)
 from app.data.ontology import ANNEX_III_REGISTRY
 from app.data.role_obligations import ROLE_OBLIGATIONS
 from app.integrations.regenold.refs import to_user_facing as _ref_to_user_facing
@@ -211,8 +248,6 @@ class SeedPayload:
     annex_iii_nodes: list[dict]
     risk_level_nodes: list[dict]
     operator_role_nodes: list[dict]
-    dimension_nodes: list[dict]
-    question_nodes: list[dict]
     metadata_node: dict
 
     has_obligation_edges: list[dict]
@@ -221,8 +256,13 @@ class SeedPayload:
     has_recital_anchor_edges: list[dict]
     triggers_high_risk_edges: list[dict]
     applies_at_edges: list[dict]
-    belongs_to_edges: list[dict]
-    assesses_edges: list[dict]
+    # Fields added in d4a8fb3 (maturity Dimensions + Questions).
+    # Default to empty list so existing direct SeedPayload() constructors
+    # (e.g. in tests) that don't supply them continue to work.
+    dimension_nodes: list[dict] = dataclasses.field(default_factory=list)
+    question_nodes: list[dict] = dataclasses.field(default_factory=list)
+    belongs_to_edges: list[dict] = dataclasses.field(default_factory=list)
+    assesses_edges: list[dict] = dataclasses.field(default_factory=list)
 
     @property
     def total_nodes(self) -> int:

@@ -14,7 +14,17 @@ restartPolicyMaxRetries = 3
 # ``railway variables --set REGENOLD_GRAPH_2HOP=0`` if a future round
 # regresses on it.
 REGENOLD_GRAPH_2HOP = "1"
-P2P_GRAPH_RAG_PROVIDER = "groq"
+# R117 — provider reconciliation. The Groq routing for LogicRAG + Stage-2 was
+# added then SILENTLY REVERTED (commit 9dba937 reset LogicRAG to the Claude Max
+# wrapper + Sonnet and removed the Groq Stage-2 branch). With provider="groq",
+# _stage2_provider_enabled() gated Stage-2 polish on GROQ_API_KEY while the
+# actual call routes to the wrapper, so without a Groq key Stage-2 was silently
+# disabled (a split-brain). LogicRAG._call_llm always uses the wrapper too.
+# Setting this to the wrapper (the documented production path) makes the Stage-2
+# gate consistent with the code. Restore the reverted Groq routing first if the
+# Groq path is genuinely wanted. NOTE: Railway dashboard service variables
+# override this [deploy.envs] entry (the R80.2 phenomenon).
+P2P_GRAPH_RAG_PROVIDER = "openai_wrapper"
 REGENOLD_LOGIC_RAG = "1"
 
 # R98 — graph backend selector. Neo4j Aura is the durable graph backend

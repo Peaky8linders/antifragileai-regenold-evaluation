@@ -34,7 +34,15 @@ def _call_llm(system: str, user: str, max_tokens: int = 1024, temperature: float
     prov = get_openai_wrapper_provider()
     # Use a faster reasoning model to minimize latency.
     model = os.getenv("REGENOLD_LOGIC_RAG_MODEL", "claude-sonnet-4-6")
-    
+    # R117 — bound LogicRAG latency. The previous 120s timeout could hang a
+    # request for two minutes; the route budget is sub-20s. Configurable via
+    # REGENOLD_LOGIC_RAG_TIMEOUT (default 15s). On timeout the call fails soft
+    # (returns "") and LogicRAG degrades to its single-node fallback.
+    try:
+        timeout = float(os.getenv("REGENOLD_LOGIC_RAG_TIMEOUT", "15"))
+    except (TypeError, ValueError):
+        timeout = 15.0
+
     try:
         resp = prov.complete(
             OpenAIWrapperRequest(
@@ -43,7 +51,7 @@ def _call_llm(system: str, user: str, max_tokens: int = 1024, temperature: float
                 model=model,
                 max_tokens=max_tokens,
                 temperature=temperature,
-                timeout_seconds=120.0,
+                timeout_seconds=timeout,
             )
         )
         if resp.error:
@@ -57,8 +65,6 @@ def _call_llm(system: str, user: str, max_tokens: int = 1024, temperature: float
 
 def _decompose_to_dag(query: str) -> List[Dict[str, Any]]:
     """Decompose query into a DAG of subqueries."""
-    fallback = [{"id": 1, "query": query, "dependencies": []}]
-        
     user_prompt = DAG_DECOMPOSITION_USER_TEMPLATE.format(q=query)
     response_text = _call_llm(DAG_DECOMPOSITION_PROMPT_SYSTEM, user_prompt)
     
@@ -168,7 +174,9 @@ def _merge_contexts(base: GraphContext, new_ctx: GraphContext) -> None:
         base.degraded = True
 
 
-def execute_logic_rag(query: str, request_answers: dict = None) -> GraphContext:
+def execute_logic_rag(
+    query: str, request_answers: dict = None, risk_level: str | None = None
+) -> GraphContext:
     """
     Implements LogicRAG methodology:
     1. Query Logic Dependency Graph Construction
@@ -198,9 +206,9 @@ def execute_logic_rag(query: str, request_answers: dict = None) -> GraphContext:
         # Retrieve context
         parsed_query = _deterministic_parse(unified_query_str)
         rank_ctx = _retrieve_from_graph(
-            parsed_query, 
-            risk_level=None, 
-            answers=request_answers or {}
+            parsed_query,
+            risk_level=risk_level,
+            answers=request_answers or {},
         )
         
         _merge_contexts(accumulated_context, rank_ctx)
