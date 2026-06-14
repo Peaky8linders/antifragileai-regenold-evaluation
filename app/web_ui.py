@@ -2046,8 +2046,15 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
             // ── LLM Thinking ─────────────────────────────────────────────────
             if (trace.llm_thinking) {
-                const thinkingHtml = `<div class="rlog-note-line" style="white-space: pre-wrap; font-family: monospace; font-size: 0.9em; max-height: 400px; overflow-y: auto;">${escapeHtml(trace.llm_thinking)}</div>`;
-                parts.push(section('model-hdr', '🧠', 'LLM Thinking', thinkingHtml));
+                if (typeof trace.llm_thinking === 'string') {
+                    const thinkingHtml = `<div class="rlog-note-line" style="white-space: pre-wrap; font-family: monospace; font-size: 0.9em; max-height: 400px; overflow-y: auto;">${escapeHtml(trace.llm_thinking)}</div>`;
+                    parts.push(section('model-hdr', '🧠', 'LLM Thinking', thinkingHtml));
+                } else {
+                    for (const [stage, text] of Object.entries(trace.llm_thinking)) {
+                        const thinkingHtml = `<div class="rlog-note-line" style="white-space: pre-wrap; font-family: monospace; font-size: 0.9em; max-height: 400px; overflow-y: auto;">${escapeHtml(text)}</div>`;
+                        parts.push(section('model-hdr-' + stage.replace(/\\s+/g, '-'), '🧠', `LLM Thinking (${stage})`, thinkingHtml));
+                    }
+                }
             }
 
             if (parts.length === 0) {

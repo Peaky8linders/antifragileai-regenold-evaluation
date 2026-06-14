@@ -2219,8 +2219,8 @@ def _intent_anchor_set(
     intent = _classify_intent_cached(live_question)
     if intent is not None and getattr(intent, "reasoning", ""):
         try:
-            from app.integrations.regenold.reasoning_trace import record_note  # noqa: PLC0415
-            record_note(f"intent_reasoning={intent.reasoning}")
+            from app.integrations.regenold.reasoning_trace import record_llm_thinking  # noqa: PLC0415
+            record_llm_thinking(intent.reasoning, stage="Intent Classifier")
         except Exception:
             pass
 

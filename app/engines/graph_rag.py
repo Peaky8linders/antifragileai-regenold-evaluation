@@ -253,7 +253,7 @@ def _looks_structurally_truncated(text: str | None) -> bool:
 
 def _openai_wrapper_complete_for_graph_rag(
     *, system: str, user: str, max_tokens: int, temperature: float,
-    complex_question: bool = False,
+    complex_question: bool = False, stage_name: str = "Stage"
 ) -> str | None:
     """One OpenAI-compatible call (Claude Max via wrapper, etc.).
 
@@ -388,7 +388,7 @@ def _openai_wrapper_complete_for_graph_rag(
     if getattr(response, "thinking", None):
         try:
             from app.integrations.regenold.reasoning_trace import record_llm_thinking
-            record_llm_thinking(response.thinking)
+            record_llm_thinking(response.thinking, stage=stage_name)
         except Exception:
             pass
             
@@ -397,7 +397,7 @@ def _openai_wrapper_complete_for_graph_rag(
 
 def _anthropic_complete_for_graph_rag(
     *, system: str, user: str, max_tokens: int, temperature: float,
-    complex_question: bool = False,
+    complex_question: bool = False, stage_name: str = "Stage"
 ) -> str | None:
     """One Anthropic-SDK-direct chat completion. Sibling to the openai_wrapper path.
 
@@ -503,7 +503,7 @@ def _anthropic_complete_for_graph_rag(
         if thinking_text:
             try:
                 from app.integrations.regenold.reasoning_trace import record_llm_thinking
-                record_llm_thinking(thinking_text)
+                record_llm_thinking(thinking_text, stage=stage_name)
             except Exception:
                 pass
     except Exception as exc:  # noqa: BLE001
@@ -726,6 +726,7 @@ def _llm_parse_query(question: str) -> GraphQuery:
                 user=sanitized_question,
                 max_tokens=512,
                 temperature=0.0,
+                stage_name="Stage 1 (Scope & Extraction)"
             )
             if text_raw is None:
                 return _deterministic_parse(question)
@@ -743,6 +744,12 @@ def _llm_parse_query(question: str) -> GraphQuery:
             )
             if resp.error:
                 return _deterministic_parse(question)
+            if getattr(resp, "thinking", None):
+                try:
+                    from app.integrations.regenold.reasoning_trace import record_llm_thinking
+                    record_llm_thinking(resp.thinking, stage="Stage 1 (Scope & Extraction)")
+                except Exception:
+                    pass
             text = (resp.text or "").strip()
         elif provider == "gemini":
             from app.llm.openai_wrapper_provider import OpenAIWrapperRequest, get_gemini_provider
@@ -910,6 +917,7 @@ def _llm_generate_answer(
                 user=user_message,
                 max_tokens=settings.graph_rag.max_tokens,
                 temperature=settings.graph_rag.temperature,
+                stage_name="Stage 2 (Synthesis)"
             )
             if text_raw is None:
                 return _deterministic_answer(question, context)
@@ -928,6 +936,12 @@ def _llm_generate_answer(
             if resp.error:
                 logger.warning("graph_rag.groq_call_failed: %s", resp.error[:200])
                 return _deterministic_answer(question, context)
+            if getattr(resp, "thinking", None):
+                try:
+                    from app.integrations.regenold.reasoning_trace import record_llm_thinking
+                    record_llm_thinking(resp.thinking, stage="Stage 2 (Synthesis)")
+                except Exception:
+                    pass
             return validate_llm_output((resp.text or "").strip())
         elif provider == "gemini":
             from app.llm.openai_wrapper_provider import OpenAIWrapperRequest, get_gemini_provider
@@ -3792,6 +3806,7 @@ def _claude_max_enhance_answer(
                 max_tokens=max_tokens,
                 temperature=0.0,
                 complex_question=complex_q,
+                stage_name="Stage 2 (Polishing)"
             )
         if text_raw is None:
             return None
