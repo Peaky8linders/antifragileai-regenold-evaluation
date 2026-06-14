@@ -32,8 +32,8 @@ def _call_llm(system: str, user: str, max_tokens: int = 1024, temperature: float
         return ""
     
     prov = get_openai_wrapper_provider()
-    # Use a solid reasoning model, fallback to haiku for speed if needed.
-    model = os.getenv("REGENOLD_LOGIC_RAG_MODEL", "claude-sonnet-4-6")
+    # Use a faster reasoning model to minimize latency.
+    model = os.getenv("REGENOLD_LOGIC_RAG_MODEL", "claude-haiku-4-5-20251001")
     
     try:
         resp = prov.complete(
