@@ -31,7 +31,7 @@ def _call_llm(system: str, user: str, max_tokens: int = 1024, temperature: float
     
     if is_groq_provider_enabled():
         prov = get_groq_provider()
-        model = os.getenv("REGENOLD_LOGIC_RAG_MODEL_GROQ", "llama-3.3-70b-versatile")
+        model = os.getenv("REGENOLD_LOGIC_RAG_MODEL_GROQ", "llama-3.1-8b-instant")
     elif is_openai_wrapper_enabled():
         prov = get_openai_wrapper_provider()
         # Use a solid reasoning model, fallback to haiku for speed if needed.
