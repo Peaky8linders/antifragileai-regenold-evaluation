@@ -1293,6 +1293,15 @@ def _engine_cache_key(
             "REGENOLD_LOGIC_RAG_BUDGET",
             "REGENOLD_LOGIC_RAG_TIMEOUT",
             "REGENOLD_LOGIC_RAG_MAX_NODES",
+            # R-Fusion — Mixture-of-Agents Stage-2 (app/engines/fusion.py):
+            # when ON, a diverse panel + Opus 4.8 judge REPLACE the
+            # single-provider Stage-2 polish, so the master gate + judge model
+            # + panel composition all flip the cached GraphRAGResponse.answer.
+            # Per the R30/R56/R79 cache-poisoning doctrine they belong in the
+            # cache identity.
+            "REGENOLD_FUSION_STAGE2",
+            "REGENOLD_FUSION_JUDGE_MODEL",
+            "REGENOLD_FUSION_PANEL",
         )
     )
     import json

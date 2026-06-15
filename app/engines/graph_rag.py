@@ -3808,7 +3808,37 @@ def _claude_max_enhance_answer(
         except Exception:
             pass
 
-        if _use_anthropic_sdk:
+        # Fusion Stage-2 (Mixture-of-Agents): a diverse panel (Sonnet 4.6 via
+        # the Claude Max wrapper + Groq Llama 3.3 70B + Mistral Large) answers
+        # in parallel, then Claude Opus 4.8 judges + synthesises the single best
+        # final answer — all reusing this exact ``system_prompt`` + ``user_message``
+        # (which already carries the EU AI Act references block, query profile,
+        # and cross-references). Fires BEFORE the single-provider dispatch when
+        # enabled; ``fusion_complete`` returns None on any degenerate/failure
+        # path so we fall through to the canonical single-provider call below.
+        text_raw = None
+        _fusion_used = False
+        try:
+            from app.engines.fusion import (  # noqa: PLC0415
+                fusion_complete,
+                fusion_stage2_enabled,
+            )
+            if fusion_stage2_enabled():
+                _fused = fusion_complete(
+                    system=system_prompt,
+                    user=user_message,
+                    max_tokens=max_tokens,
+                    temperature=0.0,
+                    complex_question=complex_q,
+                )
+                if _fused is not None:
+                    text_raw, _fusion_used = _fused, True
+        except Exception as exc:  # noqa: BLE001 — fusion never breaks Stage-2
+            logger.warning("graph_rag.fusion_stage2_error: %s", exc)
+
+        if _fusion_used:
+            pass
+        elif _use_anthropic_sdk:
             try:
                 from app.integrations.regenold.reasoning_trace import record_note
                 from app.config import settings
