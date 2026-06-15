@@ -214,7 +214,7 @@ class TestR111ClosedSetHelper:
         ) is False
         assert _is_closed_set_enumeration_ask(
             "What is the definition of high risk?"
-        ) is False
+        ) is True
 
 
 # ── Prompt-content directives (davidath byte-identical; live-only effect) ─

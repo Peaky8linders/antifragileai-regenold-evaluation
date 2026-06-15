@@ -1112,19 +1112,26 @@ def normalise_answer_for_regenold(
         except ValueError:
             max_sentences = MAX_ANSWER_SENTENCES
 
+        _is_multi = False
+        _is_enum = False
         try:
             from app.routes.regenold import _is_closed_set_enumeration_ask
-            from app.engines.question_complexity import is_complex_question
+            from app.engines.question_complexity import is_complex_question, _is_multi_phrase
             
             _is_complex = is_complex_question(question, history_turn_count=1)
-            if _is_complex or _is_closed_set_enumeration_ask(question):
+            _is_multi = _is_multi_phrase(question)
+            _is_enum = _is_closed_set_enumeration_ask(question)
+            
+            if _is_multi or _is_enum:
+                max_sentences = 12
+            elif _is_complex:
                 _complex_cap = int(os.getenv("REGENOLD_COMPLEX_SENTENCE_CAP", "5"))
                 if _complex_cap > max_sentences:
                     max_sentences = _complex_cap
         except Exception:
             pass
 
-        max_sentences = max(1, min(max_sentences, 6))
+        max_sentences = max(1, min(max_sentences, 12))
 
     # R112 — defensive env parse (mirrors the max_sentences pattern
     # above). REGENOLD_QA_LENGTH_CAP is an operator-tuned Railway knob
@@ -1153,6 +1160,8 @@ def normalise_answer_for_regenold(
             re.IGNORECASE,
         ))
     char_cap = 600 if is_scenario else qa_cap
+    if _is_multi or _is_enum:
+        char_cap = max(char_cap, 1500)
 
     cleaned = _strip_markdown(text)
     sentences = _split_sentences(cleaned)

@@ -41,7 +41,7 @@ from evals.regenold.runner_v2 import (
     _ref_metrics,
     _REFUSAL_MARKERS,
 )
-from evals.regenold.scenarios_medtech_lifesci import MEDTECH_SCENARIOS
+from evals.regenold.scenarios_medtech_lifesci_v3 import MEDTECH_SCENARIOS_V3 as MEDTECH_SCENARIOS
 
 
 def _now_iso() -> str:

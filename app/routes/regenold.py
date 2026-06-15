@@ -5560,8 +5560,16 @@ def regenold_eu_ai_act_ask(
         # complete enumeration so the full set survives. Still stage2-gated
         # -> davidath byte-identical.
         _closed_set_ask = _is_closed_set_enumeration_ask(question)
-        if _closed_set_ask:
-            _conc_limit = max(_conc_limit, 1000)
+        _is_multi = False
+        try:
+            from app.engines.question_complexity import _is_multi_phrase
+            _is_multi = _is_multi_phrase(question)
+        except Exception:
+            pass
+
+        _relax_caps = _closed_set_ask or _is_multi
+        if _relax_caps:
+            _conc_limit = max(_conc_limit, 1500)
         try:
             _capped = answer_text
             # (1) Length backstop — clean clause/sentence boundary.
@@ -5571,7 +5579,7 @@ def regenold_eu_ai_act_ask(
             # enumerated clauses to ≤4 (matches the judge's count). Skipped
             # for a closed-set enumeration ask (Q2) so the full member list
             # is not truncated to its first 4 units.
-            if not _closed_set_ask:
+            if not _relax_caps:
                 _capped = _cap_readable_units(_capped, max_units=4)
             # Re-normalise so the 3-sentence cap, terminal-period guarantee
             # and ellipsis scrub re-apply on the truncated text.
