@@ -97,6 +97,7 @@ def _stage2_env(monkeypatch) -> None:
     monkeypatch.setenv("REGENOLD_MAX_ANSWER_SENTENCES", "6")
     monkeypatch.setenv("REGENOLD_QA_LENGTH_CAP", "2000")
     monkeypatch.setenv("REGENOLD_STAGE2_CHAR_CAP", "160")  # force hard truncation
+    monkeypatch.setenv("REGENOLD_STAGE2_CONCISENESS_BACKSTOP", "1")  # R120 opt-in
     monkeypatch.setenv("REGENOLD_QUERY_DENOISER", "0")
 
 

@@ -3737,10 +3737,11 @@ def _claude_max_enhance_answer(
                 "under Article 6 / Annex III, or Article 50 transparency), and "
                 "name any carve-out explicitly. Write in plain professional legal "
                 "prose: no em-dashes, en-dashes, or ellipses; join clauses with "
-                "commas, semicolons, colons, or separate sentences. AT MOST 4 "
-                "sentences, preferring 3 when they fully answer; use a 4th only "
-                "for a distinct substantive point (a complementary risk tier, an "
-                "exception, or a cross-reference), never filler."
+                "commas, semicolons, colons, or separate sentences. Prefer 1–4 "
+                "concise sentences when that fully answers; use additional "
+                "sentences only for distinct substantive points (another risk "
+                "tier, a carve-out, or a cross-reference), or when rule 12b "
+                "closed-set completeness requires naming every member of a set."
             )
         try:
             max_tokens = settings.graph_rag.max_tokens

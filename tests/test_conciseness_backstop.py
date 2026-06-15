@@ -1,11 +1,9 @@
-"""R104.2 — conciseness backstop tests.
+"""R104.2 / R120 — conciseness backstop tests.
 
-Covers ``_cap_readable_units`` (the deterministic ≤4-readable-unit cap that
-matches how the LLM-as-judge conciseness axis counts sentences +
-``;``/``(x)`` enumerated clauses) and its composition with the R78
-``_hard_truncate_at_clause`` length cap. Both run only on the live
-Stage-2 path (route-gated on ``stage2_landed``), so the davidath bench is
-byte-identical; these unit tests pin the text transform directly.
+Covers ``_cap_readable_units`` and composition with the R78
+``_hard_truncate_at_clause`` length cap. The route applies both only when
+``REGENOLD_STAGE2_CONCISENESS_BACKSTOP=1`` (default OFF, R120). Unit tests
+pin the text transforms directly.
 """
 from __future__ import annotations
 

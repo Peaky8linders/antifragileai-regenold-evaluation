@@ -32,7 +32,10 @@ Competition spec contract guards:
   only used the last user message; multi-turn questions silently lost
   their referent.
 * **References capped at 5** (per spec "minimal set"; example shows 2).
-* **Answer truncated to 4 sentences** (per spec "3-4 sentences max").
+* **Answer length** — competition rules encourage 1–4 concise sentences;
+  closed-set / multi-part answers may use more when completeness requires
+  it (R119 normaliser). Post-Stage-2 truncation is opt-in only
+  (``REGENOLD_STAGE2_CONCISENESS_BACKSTOP``).
 * **Default response = spec-clean** (``answer`` / ``references`` /
   ``reasoning``). Telemetry (``confidence`` / ``kb_version`` /
   ``retrieval_path`` / ``nodes_traversed`` / ``obligations_found`` /
@@ -1345,6 +1348,17 @@ def _should_ship_verbatim(question: str, history_turn_count: int) -> bool:
         return decision.mode is AnswerMode.VERBATIM
     except Exception:  # noqa: BLE001 — verbatim is the safe default
         return True
+
+
+def _stage2_conciseness_backstop_enabled() -> bool:
+    """Whether to shrink polished prose after Stage-2 lands (R120).
+
+    Default OFF. Competition rules encourage 1–4 sentences but do not
+    require chopping Sonnet output after polish; completeness and
+    professional tone beat an artificial four-sentence ceiling.
+    """
+    raw = os.getenv("REGENOLD_STAGE2_CONCISENESS_BACKSTOP", "0").strip().lower()
+    return raw in ("1", "true", "yes", "on")
 
 
 # Closed-world refusal threshold. Below this, an answer with empty
@@ -5532,25 +5546,17 @@ def regenold_eu_ai_act_ask(
         except Exception:  # noqa: BLE001 — verbatim mode never breaks the route
             logger.warning("verbatim_answer_failure", exc_info=True)
 
-    # R104.2 — live-path conciseness backstop. The LLM-as-judge conciseness
-    # axis fails answers that exceed ~4 readable sentences — run-on walls and
-    # semicolon-packed "(a)…(h)" enumerations Sonnet sometimes produces
-    # despite the BLUF prompt. The soft char cap inside
-    # ``normalise_answer_for_regenold`` is structurally immune to these:
-    # it only drops NON-citation sentences, so an all-citation wall (every
-    # sentence cites an Article) is never trimmed. When Stage-2 landed (a
-    # live Sonnet answer), hard-truncate at the latest clean clause /
-    # sentence / enumerated-item boundary so the wire answer is bounded and
-    # reads as a tight, complete ≤4-sentence response — matching the paper's
-    # reference-answer style.
-    #
-    # davidath byte-identical BY CONSTRUCTION: the deterministic TestClient
-    # bench has no wrapper → ``stage2_landed`` is always False → this block
-    # is a strict no-op there (mirrors the R93 Stage-2-augment gate).
-    # Never empties the answer (``_hard_truncate_at_clause`` always returns
-    # non-empty), so it introduces no refusals. Limit override via
-    # ``REGENOLD_STAGE2_CHAR_CAP``.
-    if _stage2_landed and answer_text:
+    # R104.2 — optional live-path conciseness backstop (R120: default OFF).
+    # When enabled, hard-truncates polished Sonnet prose to char +
+    # readable-unit limits. Competition rules encourage 1–4 sentences
+    # but do not require post-polish truncation; completeness wins when
+    # the backstop is off. Skipped for verbatim_exact_text answers.
+    if (
+        _stage2_landed
+        and answer_text
+        and _stage2_conciseness_backstop_enabled()
+        and retrieval_path != "verbatim_exact_text"
+    ):
         try:
             _conc_limit = int(os.getenv("REGENOLD_STAGE2_CHAR_CAP", "600").strip())
         except ValueError:
@@ -5594,24 +5600,12 @@ def regenold_eu_ai_act_ask(
         except Exception:  # noqa: BLE001 — never break the route on a cap
             logger.warning("stage2_conciseness_cap_failure", exc_info=True)
 
-    # R105 — post-cap reference reconciliation (refs-faithfulness). The
-    # R104.2 conciseness cap above truncates the Stage-2 prose AFTER the
-    # R72 reconcile (line ~4826) already finalised ``references`` against
-    # the UN-truncated prose — and after the Component D guard may have
-    # APPENDED a ref the (full) prose cited. A reference whose describing
-    # sentence the cap truncated away is then "cited but never described"
-    # in the FINAL shipped prose: the LLM-as-judge's refs-faithfulness
-    # penalty (r1042-conc-live measured refs 0.53 → 0.37 after #178 added
-    # the cap). Re-reconcile the wire references against the FINAL
-    # ``answer_text`` so every shipped reference is named in the answer
-    # actually returned. Same gating as the R72 pass (skip scenario-shape,
-    # honour the recall floor + REGENOLD_REFS_RECONCILE off-switch).
-    # davidath byte-identical BY CONSTRUCTION: gated on the local
-    # ``_stage2_landed`` (always False on the wrapper-less bench → strict
-    # no-op, mirroring the conciseness cap it follows).
+    # R105 — post-cap reference reconciliation (only when R104.2 backstop ran).
     if (
         _stage2_landed
         and answer_text
+        and _stage2_conciseness_backstop_enabled()
+        and retrieval_path != "verbatim_exact_text"
         and os.getenv("REGENOLD_REFS_RECONCILE", "1") in ("1", "true", "yes", "on")
         and not _looks_like_scenario_shape(question)
         and len(references) > reconcile_floor

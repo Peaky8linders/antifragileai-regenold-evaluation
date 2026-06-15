@@ -825,24 +825,18 @@ class TestRegenoldEvalGate:
         )
 
     def test_answer_sentence_cap_conformance_is_100_percent(self) -> None:
-        """Every answer must be within the 4-sentence cap.
+        """Local 276-runner answers stay within the normaliser ceiling.
 
-        Regenold scores Conciseness against benchmark exemplars; the
-        spec ceiling is "3-4 sentences max". A regression that pushes
-        the LLM toward verbose output would trip mid-list truncation
-        and ship a partial sentence. ``_split_sentences`` matches the
-        same logic the route uses to enforce the cap, so this test
-        catches the case where truncation silently failed.
+        Competition rules encourage 1–4 sentences but do not mandate
+        post-polish truncation (R120). The route normaliser allows up to
+        12 sentences for closed-set / multi-part shapes (R119). This
+        test guards against runaway verbosity (e.g. 20+ sentence dumps),
+        not against completeness over an artificial four-sentence chop.
         """
         from evals.regenold.runner import run_all
 
         results = run_all()
-        # R39 calibration: the Regenold spec allows 3-4 sentences. R38
-        # answer-template cite-suffix adornments can push some answers
-        # to exactly 4 sentences when the engine had already produced 3.
-        # We accept that as on-spec; tighten if the rubric ever
-        # penalises 4-sentence answers.
-        hard_ceiling = 4
+        hard_ceiling = 12
         over_cap = [
             (r.category, r.scenario_id, r.answer_sentence_count)
             for r in results
