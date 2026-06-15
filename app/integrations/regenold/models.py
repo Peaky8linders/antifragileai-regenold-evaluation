@@ -1111,6 +1111,19 @@ def normalise_answer_for_regenold(
             )
         except ValueError:
             max_sentences = MAX_ANSWER_SENTENCES
+
+        try:
+            from app.routes.regenold import _is_closed_set_enumeration_ask
+            from app.engines.question_complexity import is_complex_question
+            
+            _is_complex = is_complex_question(question, history_turn_count=1)
+            if _is_complex or _is_closed_set_enumeration_ask(question):
+                _complex_cap = int(os.getenv("REGENOLD_COMPLEX_SENTENCE_CAP", "5"))
+                if _complex_cap > max_sentences:
+                    max_sentences = _complex_cap
+        except Exception:
+            pass
+
         max_sentences = max(1, min(max_sentences, 6))
 
     # R112 — defensive env parse (mirrors the max_sentences pattern

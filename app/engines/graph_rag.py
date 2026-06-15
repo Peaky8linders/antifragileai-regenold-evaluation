@@ -3782,6 +3782,24 @@ def _claude_max_enhance_answer(
             from app.llm.openai_wrapper_provider import is_gemini_provider_enabled
             _use_gemini = is_gemini_provider_enabled()
 
+        system_prompt = PROMPT_HARDENING_PREFIX + ANSWER_GENERATE_SYSTEM
+        try:
+            from app.routes.regenold import _is_closed_set_enumeration_ask
+            if complex_q or _is_closed_set_enumeration_ask(question):
+                _complex_cap = int(os.getenv("REGENOLD_COMPLEX_SENTENCE_CAP", "5"))
+                if _complex_cap > 4:
+                    system_prompt = system_prompt.replace(
+                        "AT MOST 4 sentences total", f"AT MOST {_complex_cap} sentences total"
+                    ).replace(
+                        "four-sentence cap", f"{_complex_cap}-sentence cap"
+                    ).replace(
+                        "the 4th sentence", f"the {_complex_cap}th sentence"
+                    ).replace(
+                        "exceed four", f"exceed {_complex_cap}"
+                    )
+        except Exception:
+            pass
+
         if _use_anthropic_sdk:
             try:
                 from app.integrations.regenold.reasoning_trace import record_note
@@ -3793,7 +3811,7 @@ def _claude_max_enhance_answer(
                 record_note(f"stage2_model={_model} complex={complex_q}")
             except Exception: pass
             text_raw = _anthropic_complete_for_graph_rag(
-                system=PROMPT_HARDENING_PREFIX + ANSWER_GENERATE_SYSTEM,
+                system=system_prompt,
                 user=user_message,
                 max_tokens=max_tokens,
                 temperature=0.0,
@@ -3803,7 +3821,7 @@ def _claude_max_enhance_answer(
             from app.llm.openai_wrapper_provider import OpenAIWrapperRequest, get_gemini_provider
             resp = get_gemini_provider().complete(
                 OpenAIWrapperRequest(
-                    system=PROMPT_HARDENING_PREFIX + ANSWER_GENERATE_SYSTEM,
+                    system=system_prompt,
                     user=user_message,
                     model=os.getenv("REGENOLD_STAGE2_MODEL_GEMINI", "gemini-2.5-flash"),
                     max_tokens=max_tokens,
@@ -3833,7 +3851,7 @@ def _claude_max_enhance_answer(
                 text_raw = resp.text
         else:
             text_raw = _openai_wrapper_complete_for_graph_rag(
-                system=PROMPT_HARDENING_PREFIX + ANSWER_GENERATE_SYSTEM,
+                system=system_prompt,
                 user=user_message,
                 max_tokens=max_tokens,
                 temperature=0.0,
