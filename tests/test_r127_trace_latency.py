@@ -380,6 +380,10 @@ class TestR127FusionObservability:
             )
         })
         monkeypatch.setenv("REGENOLD_FUSION_GATE", "all")
+        # R129 — the fusion judge defaults to DETERMINISTIC (no LLM call, so no
+        # llm_thinking to record). This test verifies the LLM-judge thinking
+        # capture, so opt into the llm judge mode.
+        monkeypatch.setenv("REGENOLD_FUSION_JUDGE", "llm")
         monkeypatch.delenv("REGENOLD_FUSION_PANEL", raising=False)
         monkeypatch.setattr(owp, "is_openai_wrapper_enabled", lambda: True)
         monkeypatch.setattr(owp, "is_groq_provider_enabled", lambda: True)
@@ -399,7 +403,7 @@ class TestR127FusionObservability:
         finally:
             rt.deactivate()
         assert out is not None
-        # #5 — the fusion path now populates the Stage-2 thinking field.
+        # #5 — the LLM fusion judge populates the Stage-2 thinking field.
         assert "Stage 2 (Fusion judge)" in trace.llm_thinking
         assert "fusion" in trace.llm_thinking["Stage 2 (Fusion judge)"].lower()
 

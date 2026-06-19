@@ -42,24 +42,30 @@ P2P_GRAPH_RAG_ENABLE_STAGE2 = "1"
 REGENOLD_INTENT_PROVIDER = "groq"
 REGENOLD_LOGIC_RAG = "1"
 
-# R-Fusion — Mixture-of-Agents Stage-2 (app/engines/fusion.py). On every
-# Stage-2 synthesis, a diverse panel answers in parallel — Sonnet 4.6 (Claude
-# Max via the Cloudflare tunnel) + Groq Llama 3.3 70B + Mistral Large — then
-# Claude Opus 4.8 (also via Max) JUDGES the drafts (consensus / contradictions /
-# blind spots) and synthesises the single best answer, reusing the exact same
-# EU AI Act references block. The OpenRouter "Fusion" principle, run on the flat
-# Max subscription + cheap serverless tokens instead of per-completion billing.
+# R-Fusion — Mixture-of-Agents Stage-2 (app/engines/fusion.py). On a complex
+# Stage-2 synthesis, a diverse panel answers in parallel — Opus 4.8 (Claude
+# Max via the Cloudflare tunnel) + Groq Llama 3.3 70B + Mistral Large — then a
+# JUDGE picks the single best draft, reusing the exact same EU AI Act
+# references block. The OpenRouter "Fusion" principle, run on the flat Max
+# subscription + cheap serverless tokens instead of per-completion billing.
 # Requires GROQ_API_KEY + MISTRAL_API_KEY (dashboard secrets) for the full
 # 3-model panel; with fewer than 2 panel transports live it falls through to the
 # single-Sonnet Stage-2 (fail-soft, never breaks the wire). Default ON in CODE
 # (fusion.fusion_stage2_enabled) per the R80.2 dashboard-override lesson; this
 # entry documents intent + rollback. Disable with:
 #   railway variables --set REGENOLD_FUSION_STAGE2=0
+# R127 — the JUDGE is now DETERMINISTIC by default (fusion.fusion_judge_mode):
+# it SELECTS the best panel draft with a pure-Python rubric scorer + NO extra
+# LLM call, removing the second serialized Max-tunnel round-trip (panel→judge)
+# and roughly halving complex-question latency, while keeping generation 100%
+# on Max ($0). Restore the historical Sonnet SELECT-and-polish LLM judge with:
+#   railway variables --set REGENOLD_FUSION_JUDGE=llm
 # Tune the panel / judge:
 #   REGENOLD_FUSION_PANEL="sonnet,groq,mistral"   (also: opus, gemini)
-#   REGENOLD_FUSION_JUDGE_MODEL="claude-opus-4-8"
+#   REGENOLD_FUSION_JUDGE_MODEL="claude-sonnet-4-6"   (only used when JUDGE=llm)
 #   REGENOLD_FUSION_MIN_CANDIDATES="2"   REGENOLD_FUSION_TIMEOUT="60"
 REGENOLD_FUSION_STAGE2 = "1"
+REGENOLD_FUSION_JUDGE = "deterministic"
 # R124 — fusion LATENCY optimisation. The panel + judge cost 2 wrapper
 # round-trips on the single slow Max tunnel, so we (a) GATE the panel to fire
 # only on complex questions — simple questions take the cheaper single-Sonnet
@@ -73,22 +79,25 @@ REGENOLD_FUSION_STAGE2 = "1"
 REGENOLD_FUSION_GATE = "complex"
 REGENOLD_FUSION_FAST_TIMEOUT = "25"
 
-# R98 / R121 — graph backend selector. The master switch has THREE values:
-#   * "neo4j"    (default) — the hosted Neo4j Aura 2-hop CROSS_REFERENCES
-#                path (creds NEO4J_URI / NEO4J_USERNAME / NEO4J_PASSWORD in
-#                the dashboard). Keeps every RushDB surface inert.
-#   * "embedded" — R121 Orbit-pattern in-process SQLite property graph
-#                (app/graph/embedded_graph.py). Serves the same 2-hop
-#                traversal with ZERO external service: no Aura, no seed
-#                step, no duplicate-node drift (the R98 ~20× / R99.1
-#                empty-graph problems), always in sync with KB_VERSION.
+# R98 / R121 / R127 — graph backend selector. The master switch has THREE values:
+#   * "embedded" (R127 DEFAULT) — Orbit-pattern in-process SQLite property
+#                graph (app/graph/embedded_graph.py). Serves the 2-hop
+#                CROSS_REFERENCES traversal with ZERO external service: no
+#                Aura, no seed step, no duplicate-node drift (the R98 ~20× /
+#                R99.1 empty-graph problems), always in sync with KB_VERSION.
 #                Built in-process from the SAME kb_xrefs source the seeder
-#                uses → identical neighbours. Retires the Aura dependency
-#                for the additive 2-hop layer. Flip on with:
-#                  railway variables --set REGENOLD_GRAPH_BACKEND=embedded
+#                used → identical neighbours, sub-ms, $0. This is also baked
+#                as the CODE default (embedded_graph.graph_backend), so a
+#                deploy whose dashboard still pins this var to neo4j must
+#                clear it to pick up embedded. When embedded is active the
+#                Neo4j driver is gated OFF (client._should_activate) even if
+#                a stale NEO4J_URI lingers — no Aura retrieval/seed cost.
+#   * "neo4j"    — opt back into the hosted Neo4j Aura path (creds NEO4J_URI
+#                / NEO4J_USERNAME / NEO4J_PASSWORD in the dashboard):
+#                  railway variables --set REGENOLD_GRAPH_BACKEND=neo4j
 #   * "rushdb"   — re-enables the RushDB dual-path (also needs
 #                RUSHDB_AUTH_TOKEN). Opt-in only since R98 (free-trial limits).
-REGENOLD_GRAPH_BACKEND = "neo4j"
+REGENOLD_GRAPH_BACKEND = "embedded"
 
 # Auto-seed Neo4j on boot when NEO4J_URI is set. Default ON — operators
 # who want to manage the graph manually can disable with
