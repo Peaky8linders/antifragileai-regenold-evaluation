@@ -279,6 +279,7 @@ def _openai_wrapper_complete_for_graph_rag(
         from app.config import settings
         configured = settings.graph_rag.model
         complex_model = getattr(settings.graph_rag, "complex_model", "") or ""
+        stage2_model = getattr(settings.graph_rag, "stage2_model", "") or ""
         thinking_budget = int(
             getattr(settings.graph_rag, "complex_thinking_tokens", 0) or 0
         )
@@ -288,20 +289,35 @@ def _openai_wrapper_complete_for_graph_rag(
     except Exception:  # noqa: BLE001
         configured = ""
         complex_model = ""
+        stage2_model = ""
         thinking_budget = 0
         standard_thinking = 0
     base_model = configured or "claude-sonnet-4-6"
-    # R51 complex-question routing; R116 removed the Fable 5 ultra
-    # tier, so a complex question swaps to ``complex_model`` (Opus
-    # 4.8) only, else the base ``model`` (Sonnet 4.6).
-    model = complex_model if (complex_question and complex_model) else base_model
-
-    # R135 — extended-thinking budget for THIS call. Complex questions use the
-    # (Opus) ``complex_thinking_tokens``; the standard ~80% Sonnet synthesis
-    # path uses ``thinking_tokens`` so Sonnet 4.6 ALSO reasons before answering
-    # (operator directive). Stage-2 ONLY — the Stage-1 parse (JSON entity
-    # extraction) must never burn a thinking budget / risk corrupting its JSON.
+    # R139 — Stage-2 answer model routing (operator directive: ALWAYS Opus 4.8
+    # for the Stage-2 answer, moderate thinking on simple questions, extended
+    # thinking on complex ones). ``is_stage2`` keys off the caller's
+    # ``stage_name`` — only the Stage-2 polish/synthesis calls pass "Stage 2 …"
+    # (the Stage-1 parse passes "Stage 1 …"), so the JSON parse stays on the
+    # fast base model (Sonnet) with no thinking.
+    #   * complex Stage-2  → ``complex_model`` (Opus 4.8; a distinct knob so a
+    #                        future round can give the hard tier a bigger model)
+    #   * standard Stage-2 → ``stage2_model``  (Opus 4.8 — the R139 default)
+    #   * Stage-1 / other  → ``base_model``    (Sonnet 4.6)
+    # R116 removed the Fable 5 ultra tier.
     is_stage2 = "stage 2" in (stage_name or "").lower()
+    if complex_question and complex_model:
+        model = complex_model
+    elif is_stage2 and stage2_model:
+        model = stage2_model
+    else:
+        model = base_model
+
+    # R135/R139 — extended-thinking budget for THIS call. Complex questions get
+    # the EXTENDED (Opus) ``complex_thinking_tokens``; the standard ~80% Stage-2
+    # synthesis path gets the MODERATE ``thinking_tokens`` so Opus 4.8 still
+    # reasons before answering but simple-question latency stays bounded.
+    # Stage-2 ONLY — the Stage-1 parse (JSON entity extraction) must never burn
+    # a thinking budget / risk corrupting its JSON.
     if complex_question:
         eff_thinking = thinking_budget
     elif is_stage2:
@@ -473,6 +489,7 @@ def _anthropic_complete_for_graph_rag(
         from app.config import settings
         configured = settings.graph_rag.model
         complex_model = getattr(settings.graph_rag, "complex_model", "") or ""
+        stage2_model = getattr(settings.graph_rag, "stage2_model", "") or ""
         thinking_budget = int(
             getattr(settings.graph_rag, "complex_thinking_tokens", 0) or 0
         )
@@ -482,17 +499,25 @@ def _anthropic_complete_for_graph_rag(
     except Exception:  # noqa: BLE001
         configured = ""
         complex_model = ""
+        stage2_model = ""
         thinking_budget = 0
         standard_thinking = 0
     base_model = configured or "claude-sonnet-4-6"
-    # R116 removed the Fable 5 ultra tier; complex -> complex_model
-    # (Opus 4.8) only, else base ``model`` (Sonnet 4.6).
-    model = complex_model if (complex_question and complex_model) else base_model
-
-    # R135 — same Stage-2-only thinking budget as the wrapper path: complex →
-    # ``complex_thinking_tokens`` (Opus); standard Sonnet synthesis →
-    # ``thinking_tokens`` so Sonnet 4.6 also reasons; Stage-1 parse → none.
+    # R139 — mirror the wrapper path: Stage-2 answer is ALWAYS Opus 4.8.
+    # complex Stage-2 → ``complex_model`` (Opus); standard Stage-2 →
+    # ``stage2_model`` (Opus); Stage-1 parse / other → ``base_model`` (Sonnet).
+    # R116 removed the Fable 5 ultra tier.
     is_stage2 = "stage 2" in (stage_name or "").lower()
+    if complex_question and complex_model:
+        model = complex_model
+    elif is_stage2 and stage2_model:
+        model = stage2_model
+    else:
+        model = base_model
+
+    # R135/R139 — same Stage-2-only thinking budget as the wrapper path: complex
+    # → EXTENDED ``complex_thinking_tokens`` (Opus); standard Stage-2 → MODERATE
+    # ``thinking_tokens`` so Opus 4.8 also reasons; Stage-1 parse → none.
     if complex_question:
         eff_thinking = thinking_budget
     elif is_stage2:
@@ -4033,10 +4058,11 @@ def _claude_max_enhance_answer(
                 "The user is asking a classification question about a specific AI system use-case or category. "
                 "Provide a professional, objective regulatory verdict based strictly on the EU AI Act. "
                 "CRITICAL INSTRUCTION: Adhere to the BOTTOM-LINE UP FRONT (BLUF) DIRECT-ANSWER-FIRST format from your system prompt. "
-                "Lead with the concise classification VERDICT in the FIRST clause (e.g. 'Likely high-risk', 'Not high-risk', 'Prohibited', 'Limited-risk only', 'Out of scope', or 'It depends: high-risk only when [the deciding condition]'), THEN name the operative provision(s) and explain. "
-                "Do NOT open with 'Article N is the operative provision' / 'Article N read with Annex Y' and bury the verdict in a later sentence. "
+                "Lead with the concise classification VERDICT in the FIRST clause (e.g. 'Likely high-risk', 'Not high-risk', 'Prohibited', 'Limited-risk only', 'Out of scope', or a conditional verdict in formal regulatory terms such as 'High-risk only where [the deciding condition]' / 'Not high-risk unless [the deciding condition]'), THEN name the operative provision(s) and explain. "
+                "Do NOT open with a provision-naming meta-statement in ANY word order — neither 'Article N is the operative provision' NOR the reversed 'The operative provision is Article N' / 'The applicable provision is Article N' / 'Under Article N' — and do NOT bury the verdict in a later sentence. The FIRST WORDS must be the subject entity or the classification itself (e.g. 'A weight-tracking medtech system is high-risk only where it is a safety component of a regulated medical device requiring third-party conformity assessment'), NOT 'The operative provision is Article 6'. "
+                "NEVER open with the colloquial 'It depends' or any conversational hedge; lead with the classification itself, stated conditionally where the facts require it. "
                 "Do NOT use essay introductions, meta-commentary, headings, or titles (e.g., do NOT output 'EU AI Act Classification Analysis:'). "
-                "Apply logical deduction: objectively evaluate the described system against the strict definitions of prohibited or high-risk practices in the references; when the verdict turns on a fact (e.g. whether a medical device requires third-party conformity assessment), lead with 'It depends' and state that deciding condition rather than asserting a tier the facts do not establish. "
+                "Apply logical deduction: objectively evaluate the described system against the strict definitions of prohibited or high-risk practices in the references; when the verdict turns on a fact (e.g. whether a medical device requires third-party conformity assessment), state the classification as conditional on that fact in regulatory terms ('High-risk only where the device requires third-party conformity assessment') rather than asserting a tier the facts do not establish. "
                 "Write in formal, neutral regulatory language. Cite only articles and annexes from the EU AI ACT REFERENCES block.\n"
             )
         else:
@@ -4062,11 +4088,13 @@ def _claude_max_enhance_answer(
                 "question (e.g. 'Is X high-risk?', 'Does X need a conformity "
                 "assessment?'), the FIRST clause states the answer in one short "
                 "phrase ('Not always', 'No', 'Likely high-risk', 'Not high-risk', "
-                "'Only when the stated conditions hold', 'Yes, when the stated "
-                "conditions hold', or 'It depends: high-risk only when [the "
-                "deciding condition]'), THEN the operative conditions and "
+                "'Only where the stated conditions hold', 'Yes, where the stated "
+                "conditions hold', or a conditional verdict in formal regulatory "
+                "terms such as 'High-risk only where [the deciding condition]'), "
+                "THEN the operative conditions and "
                 "citations; never open with 'Article N is the operative "
-                "provision' and bury the verdict. "
+                "provision' and bury the verdict, and never with the colloquial "
+                "'It depends'. "
                 "For a practice restricted only in certain contexts, state both "
                 "the prohibited context AND its treatment elsewhere (high-risk "
                 "under Article 6 / Annex III, or Article 50 transparency), and "
@@ -4201,10 +4229,17 @@ def _claude_max_enhance_answer(
             try:
                 from app.integrations.regenold.reasoning_trace import record_note
                 from app.config import settings
-                if complex_q and hasattr(settings.graph_rag, "complex_model"):
-                    _model = settings.graph_rag.complex_model or "claude-opus-4-8"
+                # R139 — mirror the real selection in _anthropic_complete_for_graph_rag
+                # (this call passes stage_name="Stage 2 …" → is_stage2 True): complex →
+                # complex_model (Opus); standard Stage-2 → stage2_model (Opus); else base.
+                if complex_q and (settings.graph_rag.complex_model or ""):
+                    _model = settings.graph_rag.complex_model
                 else:
-                    _model = os.getenv("REGENOLD_STAGE2_MODEL_ANTHROPIC", "claude-sonnet-4-6")
+                    _model = (
+                        getattr(settings.graph_rag, "stage2_model", "")
+                        or settings.graph_rag.model
+                        or "claude-sonnet-4-6"
+                    )
                 record_note(f"stage2_model={_model} complex={complex_q}")
             except Exception: pass
             text_raw = _anthropic_complete_for_graph_rag(
@@ -4213,6 +4248,7 @@ def _claude_max_enhance_answer(
                 max_tokens=max_tokens,
                 temperature=0.0,
                 complex_question=complex_q,
+                stage_name="Stage 2 (Polishing)",
             )
         elif _use_gemini:
             from app.llm.openai_wrapper_provider import OpenAIWrapperRequest, get_gemini_provider

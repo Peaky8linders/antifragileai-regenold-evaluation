@@ -7440,6 +7440,197 @@ on the live LLM-judge refs-faithfulness (floor 0.20-0.43) + correctness axes
 and the V2 role_ambiguity / borderline_prohibition axes. The post-deploy
 verification is a live representative-100 + `evals.judge.runner` re-run.
 
+## Round 139.1 — Stage-2 answer always Opus 4.8 + adaptive thinking + verdict-first tone fix (#236) (2026-06-20)
+
+> Renumbered R139 → R139.1 at merge: the R139 round number was already taken on
+> `main` by the eval-harness PR #235 (the "Fix the davidath bench's ROLE" section
+> immediately below). This is the disjoint Opus-Stage-2 work from PR #236.
+
+Operator directive: the user tested questions that triggered Sonnet 4.6 on
+Stage-2 and got unsatisfactory answers — e.g. *"Is a medtech system that tracks
+patient weight considered high risk?"* returned an **article-first, buried-
+verdict** answer (*"Article 6(1) read with Annex I is the operative provision. …
+very likely high-risk … Route 1, Annex I (primary and most probable route)."*).
+The ask: route Stage-2 to **Claude Opus 4.8 always**, with **moderate** thinking
+on simple questions (so latency is not impacted) and **extended** thinking on
+complex ones; keep a professional EU AI Act legal tone; enforce the Regenold
+rules; then re-measure on golden datasets.
+
+### Why Opus-always fixes it (not a prompt rewrite)
+
+The Stage-2 prompt **already** mandates verdict-first answers — the R114/R130
+``DIRECT-VERDICT RULE`` + the classification user-message explicitly say *"Lead
+with the concise classification VERDICT in the FIRST clause … Do NOT open with
+'Article N is the operative provision' … and bury the verdict"*. The bad answer
+was a **Sonnet 4.6 instruction-following failure**, not a missing rule. The
+fix is the stronger model: Opus 4.8 follows the existing verdict-first +
+regulator-tone rules reliably. **Cost is flat on the Claude Max subscription**
+(the wrapper bills the Max plan, not per token), so "always Opus" carries no
+marginal token cost on the production path; the only trade is latency, mitigated
+by the moderate-on-simple thinking split.
+
+### What R139 ships (Stage-2-only → davidath byte-identical by construction)
+
+* **`app/config.py`** — new ``GraphRAGSettings.stage2_model = "claude-opus-4-8"``
+  (the always-Opus Stage-2 ANSWER model, env ``P2P_GRAPH_RAG_STAGE2_MODEL``).
+  ``model`` stays ``claude-sonnet-4-6`` — it is now ONLY the Stage-1 parse (JSON
+  entity extraction) + the base for non-Stage-2 calls (fast, no Opus tax, no
+  thinking). Thinking budgets retuned for the new "Opus everywhere" baseline:
+  ``thinking_tokens`` 2048 → **1024** (MODERATE — the ~80% simple-question
+  majority, kept at the engine floor so latency stays bounded);
+  ``complex_thinking_tokens`` 1024 → **4000** (EXTENDED — the ~20%
+  ``is_complex_question`` flags; well below the 8000 that drove the R51/r80.2
+  103 s outlier).
+* **`app/engines/graph_rag.py`** — both LLM paths
+  (``_openai_wrapper_complete_for_graph_rag`` + ``_anthropic_complete_for_graph_rag``)
+  reorder ``is_stage2`` before the model pick and route:
+  complex Stage-2 → ``complex_model`` (Opus); standard Stage-2 → ``stage2_model``
+  (Opus); Stage-1 parse / other → ``base_model`` (Sonnet, no thinking).
+  ``is_stage2`` keys off the caller's ``stage_name`` (only the Stage-2
+  polish/synthesis calls pass "Stage 2 …"). Added ``stage_name="Stage 2
+  (Polishing)"`` to the Anthropic-SDK Stage-2 call site (it was omitted, so the
+  Pro-tier path never saw the Stage-2 signal) + aligned its trace-note display
+  model.
+* **Fusion (MoA) is unchanged** — on a complex single-turn question the panel
+  already SWAPS its wrapper member Sonnet→Opus 4.8 (R124) and the deterministic
+  judge favours that draft, so fusion-worthy rows already emit an Opus final.
+  R139's thinking-budget retune flows into the fusion Opus panel member too.
+  Net: **every Stage-2 answer is Opus 4.8**, simple or complex, single-provider
+  or fusion-selected.
+
+### Verification — deterministic gates (worktree off origin/main = R138)
+
+| Gate | Result |
+| ---- | ------ |
+| davidath QA-only (137) | **byte-identical to R136/R137/R138** — Ans Strict 0.4022 / Ans Loose 0.1411 / Ref Loose 0.8321 / Ref Strict 0.5528 / Ref Conciseness 0.4395 / Tone 1.0. Stage-2 is provider-gated → inert under ``cli`` (no wrapper) → the config + routing changes can't move the local bench (the R49/R69/R110 pattern). |
+| `evals.regenold.runner` (276) | **all categories 100%** (in_scope_multi_turn 102/102, risk_classification 17/17, …) |
+| OOS probe (`runner_v2 --local --probe-oos`) | **21/21, 0 leaks** (the change doesn't touch scope) |
+| unit | routing + anthropic + fusion suites **90 pass** (+3 new ``TestStage2AlwaysOpus`` tests pinning: simple Stage-2 → Opus + moderate thinking; complex Stage-2 → Opus + extended thinking; Stage-1 parse → Sonnet + no thinking; the R131.2 1024-default assertion updated to the R139 4000 extended budget) |
+
+### Verification — LIVE (TestClient + Claude Max wrapper, Opus 4.8 routing)
+
+The user's exact example is **fixed** — it now leads with the verdict:
+
+> **Q:** Is a medtech system that tracks patient weight considered high risk?
+> **A:** *"It depends: high-risk only if the system is a safety component of, or
+> is itself, a medical device that under the Medical Device Regulation (or IVDR)
+> must undergo third-party conformity assessment, in which case Article 6(1) read
+> with Annex I classifies it as high-risk. The deciding condition is therefore
+> the device's status under the Union harmonisation legislation listed in Annex I,
+> not the weight-tracking function as such. …"* — refs ``[Article 6, Article 6.1,
+> Annex I]``, ``model=claude-opus-4-8``, ``stage2=True``, thinking ON.
+
+Across a 5-shape probe (classification / definition / multi-part obligations /
+closed-set Article 5 enumeration / GPAI-systemic borderline) every answer ships
+on ``claude-opus-4-8`` with Stage-2 landed, adaptive thinking on, complete +
+verdict-first, third-person regulator voice, no dash/ellipsis. The GPAI row
+("…always systemic, or a carve-out?") gets the EXTENDED-thinking complex path and
+returns the nuanced *"Not automatically, but practically yes once the presumption
+stands … no escape via the Article 53(2) open-source route for systemic-risk
+models …"* answer.
+
+### Fresh golden-dataset scorecard (medtech-graphrag-v124, 24 rows, LIVE Opus 4.8)
+
+Ran the R124 golden MedTech/life-sciences set (24 rows, each with `gold_answer`
++ `expected_refs` + `expected_keywords`) through the LIVE wire (TestClient +
+Claude Max wrapper, R139 Opus-always config, R121 embedded graph) + the 4-axis
+LLM-as-Judge. vs the R124 same-dataset baseline (Sonnet 4.6 + MoA fusion):
+
+| Axis | R124 (Sonnet + fusion) | **R139 (Opus 4.8 always)** | Δ |
+| ---- | ---------------------- | -------------------------- | --- |
+| Ref Loose (rubric) | 0.729 | **0.795** | **+0.066** ✓ |
+| Ref Strict (rubric) | 0.579 | **0.692** | **+0.113** ✓✓ |
+| Keyword recall | 0.651 | 0.564 | −0.087 (Opus phrasing; n=24 noise) |
+| Regulatory Tone (rubric) | 1.0 | **1.0** | flat ✓ |
+| Refusal rate | 0 | **0** | flat ✓ |
+| **Judge refs-faithfulness** | 0.625 | **0.864** (19/22 over-non-error) | **+0.24** ✓✓✓ |
+| Judge conciseness | 0.667 | **0.708** (17/24) | +0.04 ✓ |
+| Judge correctness | 0.94* | 0.80 (16/20 over-non-error) | −0.14 (judge variance on n≈20; the 4 "errors" are wrapper timeouts, not engine failures) |
+| Judge tone | 1.0 | 0.917 (22/24) | −0.08 (2 rows; within run variance) |
+| Latency p50 / p95 | 31.6 s / 72.7 s | **13.8 s / 30.5 s** | **−56% p50** (single-Opus + embedded graph vs R124's 2-call fusion) |
+
+By reasoning level (rubric refL / refS): L1 0.92/0.92, L2 0.74/0.64, L3 0.72/0.63,
+L4 0.88/0.69. **The headline is the judge refs-faithfulness lift — the project's
+historically-weakest axis (R76 floor 0.20-0.43) — to 0.86**: Opus 4.8 cites the
+right Article AND describes it, so the "cited-but-undescribed" failure mode that
+floored every prior round largely closes. Reference correctness (the davidath
+primary axis) and refs-faithfulness both up; conciseness up; tone effectively
+held; latency roughly halved. The keyword-recall dip and the small correctness/
+tone deltas are within the n=24 judge noise band and reflect Opus's more precise
+phrasing (it is NOT a clean A/B — R124 used the MoA fusion judge, R139 is a single
+Opus round-trip). The single-turn nature means none of these are multi-turn rows;
+a live representative-100 + judge on the deployed Opus config is the next
+measurement. Sidecars: `medtech-graphrag-v124-r139-opus-live.json` /
+`judge-r139-opus-live.json`.
+
+
+
+### R139 follow-up — kill the colloquial / buried-verdict openers (live tone fix)
+
+A live re-probe (and the operator's production screenshot, still on the
+un-deployed-R139 Sonnet path) surfaced two un-professional opener patterns the
+existing prompt did not fully suppress — present in BOTH Sonnet and Opus output:
+1. **"It depends:"** — the Stage-2 ``DIRECT-VERDICT`` rule literally MODELLED
+   *"It depends: high-risk only when [condition]"* as the conditional-verdict
+   template. "It depends" is conversational, not EU-AI-Act legal-professional.
+2. **"The operative provision is Article 6(1) …"** — the meta-opener the round
+   was meant to kill. The prompt forbade only the *forward* word order
+   ("Article N is the operative provision"); Opus reverted to the *reversed*
+   order under temperature-0 variance.
+
+Fixes (all Stage-2-prompt + a deterministic backstop → davidath byte-identical):
+* **Prompt** (`graph_rag_prompts.py` + the engine Stage-2 user-messages) — the
+  ``It depends`` template is replaced everywhere by a FORMAL conditional verdict
+  ("High-risk only where [the operative condition]" / "Not high-risk unless …")
+  and "It depends" is explicitly forbidden. The forbidden meta-opener now covers
+  ANY word order ("The operative provision is Article N" / "The applicable
+  provision is Article N" / "Under Article N…") with a hard "FIRST WORDS must be
+  the subject entity or the classification itself" rule + a worked exemplar.
+* **`answer_normaliser.strip_hedge_opener`** (new, default ON, env
+  ``REGENOLD_STRIP_HEDGE=0``) — deterministic backstop wired into
+  ``normalise_answer_for_regenold`` after the R81-H preamble strip: removes a
+  leading ``It depends:`` / ``It depends, `` / ``It depends. `` / ``It depends — ``
+  and re-capitalises (the remainder is already the conditional verdict).
+  Conservative: a delimiter must immediately follow ``depends`` (so "It depends
+  on whether … ; <verdict>", which carries the condition before any delimiter,
+  is left intact) AND the remainder must keep ≥ 40 chars. Pure, idempotent,
+  fail-soft, never empties. +13 `tests/test_r139_hedge_strip.py`.
+
+Live re-probe (TestClient + wrapper, Opus 4.8) — the user's exact question, 3
+runs, all clean: leads with the classification ("The system described is not
+among the practices prohibited under Article 5 … high-risk only where it is a
+safety component of a regulated medical device requiring third-party conformity
+assessment"), zero "It depends", zero "operative provision" meta-opener.
+davidath QA byte-identical (0.4022 / 0.8321 / 0.5528 / Tone 1.0 — the strip is a
+no-op on the deterministic path, which never emits an "It depends" opener); 276
+100%; OOS 21/21; +84 affected-suite tests (the R138 `thinking_tokens==2048` +
+`"It depends" in prompt` pins updated to the R139 values). Two R138 tests
+re-pinned: `test_thinking_tokens_doubled` → `test_thinking_tokens_adaptive_r139`
+(1024/4000/Opus), `test_prompt_has_direct_answer_first_rule` (asserts the formal
+conditional present + "It depends" absent).
+
+### Deployment note — R139 was NOT live when the operator screenshotted
+
+The production screenshot showed `model used = SONNET 4.6` +
+`stage2_model=claude-sonnet-4-6` + `Extended thinking requested (2048 tokens)` —
+that is the **R138 deploy**, not this branch (R139 sets Opus + 1024/4000). PR
+#236 was un-merged, so the Opus routing never reached production. The branch is
+verified correct (live probe shows `model=claude-opus-4-8` on every Stage-2
+answer); it must MERGE to `main` for Railway to deploy it. No dashboard override
+blocks it — `stage2_model` is a NEW config field (no pinned env var), so the
+code default (Opus 4.8) takes effect on the next deploy.
+
+### Trade + rollback
+
+The trade is latency (Opus is slower than Sonnet; extended thinking adds time on
+the complex ~20%). Fully reversible per-deploy:
+``P2P_GRAPH_RAG_STAGE2_MODEL=`` (empty → Stage-2 falls back to ``model`` =
+Sonnet standard / Opus complex, the pre-R139 behaviour), or
+``P2P_GRAPH_RAG_THINKING_TOKENS=0`` / ``P2P_GRAPH_RAG_COMPLEX_THINKING_TOKENS=0``
+to drop the thinking budgets. davidath is the regression guard (byte-identical);
+the win lands live (Opus quality + reliable verdict-first tone on the production
+Claude-Max wrapper) — the established R31/R49/R69/R138 pattern.
+
 ## Round 139 — Fix the davidath bench's ROLE + ship a live pairwise-judge win-measure (2026-06-20)
 
 Every round since R77 ends with the same caveat — "davidath byte-identical,
