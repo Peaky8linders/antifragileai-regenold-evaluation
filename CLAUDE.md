@@ -7795,6 +7795,182 @@ built to replace. A pairwise `ab_judge` Baseline-vs-fusion confirmation is the
 right gate before any routing flip; queued as a follow-up. The fixes ship now
 regardless (orthogonal to routing).
 
+## Round 143 — Stage-2 precision: emotion cross-tier completeness + healthcare-eligibility Annex III(5)(a) + Annex IV tech-doc reference-selection (2026-06-21)
+
+A live-eval-driven prompt-precision round. Three surgical `ANSWER_GENERATE_SYSTEM`
+([`app/data/graph_rag_prompts.py`](app/data/graph_rag_prompts.py)) edits closing
+gaps a live Antifragile/MedTech re-review surfaced, each fact-verified against the
+repo's OWN pinned official text (`provision_text.get_provision_text`) before any
+prose was written (hard rule #4). All three are **Stage-2-prompt-only → davidath
+byte-identical by construction** (the deterministic bench runs `provider=cli`, so
+`_stage2_provider_enabled()` is False and `ANSWER_GENERATE_SYSTEM` is never sent —
+the established R49/R69/R108/R111/R122/R138 pattern).
+
+### What R142 already covered (verified, NOT duplicated)
+A 3-agent verification pass (regulatory-fact check + code-surface map + davidath-
+impact scan) confirmed R142 already ships: the Art. 5(1)(h) RBI qualifier (FACTUAL
+GUARD line — *"qualify it as 'real-time remote biometric identification in publicly
+accessible spaces for law enforcement'; never list a bare ...'"*), the Art. 50
+per-paragraph actor split (50(1)/(2) provider, 50(3)/(4) deployer), the Annex
+III(5)(d) emergency-triage discipline (*"never cite it as the generic high-risk
+example for routine clinical AI"*), and — at the deterministic layer — the
+`subpoint_emitter` already emits the full emotion triple (`Article 5.1.f, Annex
+III.1.c, Article 50.3`) and the Annex IV hardware leaves (`Annex IV.1.e, Annex
+IV.2.c`). So P2-Q3 (RBI qualifier) was effectively done; the genuine remaining
+gaps were all in the Stage-2 prompt.
+
+### Fix 1 (P1-Q2) — emotion-recognition cross-tier completeness
+The BIOMETRIC/EMOTION FACTUAL GUARD gains an EMOTION-RECOGNITION CROSS-TIER
+COMPLETENESS clause: an "is emotion recognition always/ever prohibited?" question
+must map ALL THREE tiers, not just the most restrictive one — PROHIBITED only in
+the workplace or education institutions (Article 5(1)(f), medical/safety carve-out),
+NOT prohibited but HIGH-RISK under Annex III(1)(c) (emotion recognition under the
+biometrics heading) elsewhere, with the deployer's Article 50(3) duty to inform
+exposed persons; lead framing via the Article 3(39) definition. Verified: Annex
+III(1)(c) = "AI systems intended to be used for emotion recognition" (point 1
+Biometrics); Art 3(39) = "emotion recognition system"; Art 50(3) = the deployer
+duty.
+
+### Fix 2 (P1-Q4) — healthcare-eligibility Annex III(5)(a) (the positive complement)
+The MEDICAL guard gains the *positive* rule R142 lacked: a system evaluating a
+person's ELIGIBILITY for essential public assistance benefits and services,
+including healthcare, **by or on behalf of a public authority**, is high-risk under
+**Annex III(5)(a)** (eligibility for benefits), NOT under 5(d) (emergency response).
+Also **corrected** the 5(d) description to its full faithful scope (the verification
+flagged the prior text as incomplete): 5(d) covers evaluating/classifying emergency
+calls, dispatching/prioritising first-response services, AND emergency healthcare
+patient-triage — not "triage only". Plus a conservative Art. 4 AI-literacy mention
+on the limited/minimal-risk closing, gated to "only when Article 4 is among the
+supplied references, never as an invented citation" (no over-citation risk).
+
+### Fix 3 (P3-Q1 prose) — Annex IV technical-documentation reference-selection
+New REFERENCE SELECTION bullet: a TECHNICAL-DOCUMENTATION-CONTENT question
+(what the documentation must contain / what goes in Annex IV) cites Article 11
+(which requires the documentation) + the specific Annex IV sub-points the question
+targets — in particular **Annex IV(1)(e)** (the description of the hardware on which
+the system is intended to run) and **Annex IV(2)(c)** (the computational resources) —
+and must NOT pull in Article 6 or recite the two high-risk classification routes on
+a pure technical-documentation-content question. This is reference-selection prose
+(NOT a new classification topic → hard rule #3 respected), and the davidath-impact
+scan confirmed it is davidath-safe: the only 3 davidath tech-doc-content rows are
+gold Article 11 / Article 18 (zero have Article 6), so steering off Article 6
+changes no gold-scored row. (The deterministic `subpoint_emitter` 1(b)/1(d)
+additions + `_suppress_noise_anchors` Art-6 drop are DEFERRED — low-value, ref-
+conciseness risk, PDF-example-touching; the prompt rule achieves P3's intent on
+the live Stage-2 path more safely.)
+
+### Gates (worktree off origin/main = R142)
+* davidath QA bench (`--qa-only`, provider=cli) — **byte-identical to R136/R137/R138**:
+  Ans Strict 0.4022 / Ans Loose 0.1411 / Ref Loose 0.8321 / Ref Strict 0.5528 /
+  Ref Conciseness 0.4395 / Tone 1.0.
+* `evals.regenold.runner` (276) — **all categories 100%** (in_scope_multi_turn
+  102/102, risk_classification 17/17, definitional 2/2, role_obligation 2/2,
+  transparency_art50 1/1).
+* OOS probe (`runner_v2 --local --probe-oos`) — **21/21, 0 leaks** (r34_p0 5 /
+  r47_e 2 / r54_1_c2 8 / injection 3 / other_regulation 3).
+* No pinned-text test asserts the edited prompt spans; `ANSWER_GENERATE_SYSTEM`
+  imports cleanly (zero new em-dashes/ellipses; Edit 2 removed one pre-existing
+  em-dash).
+
+### Live A/B re-measurement — HONEST result: branch == baseline on the 4 probed shapes
+A focused live A/B (4 affected-shape questions through the in-process route + the
+live Claude Max **Opus 4.8** Stage-2 path, branch prompt vs `origin/main` prompt,
+single sample per arm) found the branch and baseline **equivalent** — no
+regression, but **no demonstrated win** on the probed shapes:
+
+| Shape | Branch | Baseline | Read |
+| ----- | ------ | -------- | ---- |
+| emotion-in-retail | full cross-tier (refs incl. `Annex III.1.c` + `Article 50.3`) | full cross-tier (same) | R142's generic DIRECT-VERDICT rule already maps all tiers WHEN the refs are retrieved → Fix 1 adds no marginal value here |
+| emotion "always prohibited?" | degenerate (Article-5-only, refs `[Article 5, 5.1.f]`) | degenerate (same) | `kb_fallback` surfaced only Article 5; Opus wrote a prohibition-only answer and the R72 reconcile pruned `Annex III.1.c` + `Article 50.3` as undescribed → Fix 1 inert |
+| healthcare-eligibility | Art 6(2)/Annex III verdict, no `5(a)` pin | same (+ Art 49(2)) | Annex III not retrieved → cannot cite `Annex III(5)(a)` → Fix 2 inert |
+| tech-doc hardware | Art 11 + Annex IV, no Art 6 | same, no Art 6 | baseline already avoided Article 6 on this phrasing → Fix 3 adds no marginal value here |
+
+The structural finding (robust to Opus sampling noise — it is a retrieval
+observation, not a quality delta): on 3 of 4 shapes the `kb_fallback` path
+surfaces only the **parent article**, so the prompt physically cannot pin the
+sub-point (`Annex III(1)(c)` / `(5)(a)` / `Annex IV(1)(e)`) — Stage-2 grounds
+only on the supplied refs (rule 11). And on the one full-ref case
+(emotion-in-retail) R142's generic rule already produced the cross-tier map.
+
+**What the round actually is**: correct, faithful (hard rule #4 — incl. the
+5(d) scope correction), davidath byte-identical, **harmless** (zero regression
+live), and it codifies the precise sub-point mapping — but its live payoff is
+**contingent on the deferred deterministic retrieval/verdict work**, NOT a
+standalone win. The genuine live lever for these shapes (→ R144):
+1. Surface `Annex III` + `Article 50` for the emotion "always prohibited?"
+   shape, and make the deterministic emotion classification VERDICT prose itself
+   carry the three-tier map, so Stage-2 polishes a complete answer rather than
+   regenerating a narrow Article-5-only one that the R72 reconcile then prunes
+   the sub-points from. (Touches a PDF-example topic — hard rule #3 care + a
+   davidath scenario A/B required: emotion is 24 scenarios, gold 5/6/50.)
+2. Surface `Annex III(5)(a)` on the public-authority eligibility shape.
+3. Pin `Annex IV(1)(e)` on tech-doc hardware (the R111 `subpoint_emitter`
+   already emits it; the route's R72 reconcile / ref budget drops it when the
+   answer describes it only generically).
+
+Caveat: single-sample-per-arm; the equivalence is indicative, not statistical
+(`ab_judge`'s env-flag arms cannot A/B two prompt files, so a position-swapped
+pairwise over many samples was not run). The qualitative retrieval-bottleneck
+finding does not depend on sampling.
+
+## Round 144 — deterministic root-cause fixes for the R143 live-marginal shapes (2026-06-21)
+
+The R143 live A/B showed the prompt round was harmless but marginal. A
+`systematic-debugging` Phase-1 reproduction of the 4 shapes on the
+DETERMINISTIC (`provider=cli`) path revealed THREE distinct root causes — and
+overturned the live-A/B's surface read for emotion.
+
+### Fix #1 (SHIPPED) — emotion classification: restore the R111 Stage-2 skip
+
+**Root cause (the surprise):** the deterministic emotion verdict is ALREADY
+perfect — `"Are emotion recognition systems always prohibited?"` deterministically
+returns refs `[Article 5, 5.1.f, 50.3, Annex III.1.c, Article 50]` + the exact
+cross-tier answer ("not categorically prohibited … only in workplaces/education …
+Elsewhere high-risk under Annex III and triggers Article 50 transparency"). The
+LIVE failure (degenerate Article-5-only answer) is **Stage-2 (Opus) regenerating
+the correct verdict into a narrower one**, after which the R72 reconcile prunes
+the Annex III(1)(c) + Article 50(3) sub-points. The mechanism: the **2026-06-11
+"Stage-2 for all" directive bypassed the R111 `_is_curated_authoritative_intercept`
+Stage-2 skip** (`grep` confirms it is no longer called in the engine), so the
+authoritative curated verdicts Stage-2 was proven to degrade (R111: guiding
+principles, minimal-risk, Art 6(3), R&D scope, penalties — and now emotion) run
+through Stage-2 again.
+
+**Fix** ([`app/engines/graph_rag.py`](app/engines/graph_rag.py)): restore the
+R111 authoritative-intercept Stage-2 skip in `_two_stage_generate`
+(env-reversible `REGENOLD_CURATED_STAGE2_SKIP`, default ON) + add a narrow
+`_detect_emotion_classification_inquiry` (emotion-recognition + a
+permissibility/risk-tier cue, scenario-opener-excluded) to
+`_is_curated_authoritative_intercept`. The deterministic cross-tier verdict now
+ships outright — robust to Opus sampling variance.
+
+**Verification (worktree off origin/main = R142):**
+* **davidath byte-identical by construction** — the curated gate +
+  emotion detector fire on **0 of 137 QA + 0 of 339 scenarios** (proven by a
+  full-dataset scan; route-gate exemptions + Stage-2 skip never trigger on any
+  davidath row, and Stage-2 is off on the bench anyway).
+* +46 tests pass (`tests/test_r144_emotion_curated.py` 22 new + `test_r111_qa_review.py`
+  24 — the restored skip doesn't break the existing intercepts).
+* `evals.regenold.runner` (276) — **255/255 (100%)**; OOS probe **21/21, 0 leaks**.
+* **LIVE re-probe** (Claude Max Opus Stage-2): emotion "always prohibited?"
+  flips from the degenerate Article-5-only answer (`stage2=True`, 21.2 s, refs
+  `[Article 5, 5.1.f]`) to the correct cross-tier verdict (`stage2=False`, 4.1 s,
+  refs `[Article 5, 5.1.f, 50.3, Annex III.1.c, Article 50]`) — correct, complete,
+  and 5× faster.
+
+### Fix #2 (eligibility Annex III(5)(a)) + Fix #3 (tech-doc Article 6 over-cite) — queued
+
+Phase-1 root causes (deterministic repro): **#2** the public-authority
+healthcare-eligibility shape gets a GENERIC high-risk two-route verdict (Article
+6/Annex I/Annex III), not the eligibility-specific Annex III(5)(a), and wrongly
+includes the Annex I product route → needs an eligibility-specific verdict.
+**#3** the tech-doc answer drags in `Article 6` + an off-topic "classifies on two
+routes" sentence because `_suppress_noise_anchors` keeps Article 6 when the
+question literally says "high-risk AI system" (the `high_risk` flag blocks the
+drop) → needs a tech-doc-content Article-6 drop. Both are deterministic, need a
+davidath A/B (the gold-int shape means Annex sub-points are neutral but a new
+ref affects precision), and #3 touches the tech-doc PDF example (hard rule #3).
+
 ## Round 142.1 — disable the over-citation clamp: live pairwise judge found it net-negative (2026-06-21)
 
 Ran the R139 `ab_judge` live pairwise (the proper win-measure — davidath is only
