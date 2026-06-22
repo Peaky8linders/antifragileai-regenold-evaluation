@@ -235,7 +235,10 @@ class AppSettings(BaseSettings):
     regenold: RegenoldSettings = Field(default_factory=RegenoldSettings)
     rate_limit: RateLimitSettings = Field(default_factory=RateLimitSettings)
 
-    version: str = "1.0.0"
+    # Bumped to 1.0.1 as the R147 deploy marker (2026-06-22) — surfaced on
+    # /healthz/llm + /healthz/graph so a redeploy can be VERIFIED live (the
+    # endpoints expose no git SHA). Purely cosmetic; nothing keys on it.
+    version: str = "1.0.1"
 
 
 settings = AppSettings()
