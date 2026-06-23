@@ -309,6 +309,11 @@ def _validate_intent_taxonomy() -> None:
 
 _validate_intent_taxonomy()
 
+BRIDGING_NODES: dict[str, list[str]] = {
+    "data_governance": ["GDPR Art. 9 (Special Categories of Data)"],
+    "high_risk_annex_i": ["Machinery Regulation", "Medical Device Regulation (MDR)"],
+    "quality_management_system": ["ISO 42001", "ISO 9001"],
+}
 
 @dataclass(frozen=True)
 class IntentResult:
@@ -331,6 +336,7 @@ class IntentResult:
     cache_hit: bool = False
     model: str = ""
     reasoning: str = ""
+    bridging_context: tuple[str, ...] = ()
 
 
 # ── Module-level config + state ──────────────────────────────────────────────
@@ -634,6 +640,7 @@ def _parse_intent_json(text: str) -> IntentResult | None:
         confidence=conf,
         elapsed_ms=0,  # set by caller
         reasoning=reasoning,
+        bridging_context=tuple(BRIDGING_NODES.get(intent, [])),
     )
 
 
@@ -720,6 +727,7 @@ def classify_intent(
             cache_hit=True,
             model=cached.model,
             reasoning=getattr(cached, "reasoning", ""),
+            bridging_context=getattr(cached, "bridging_context", ()),
         )
 
     # Issue #53: sanitise prompt-injection vectors BEFORE truncation
@@ -813,6 +821,7 @@ def classify_intent(
         cache_hit=False,
         model=response.model or model,
         reasoning=parsed.reasoning,
+        bridging_context=tuple(BRIDGING_NODES.get(parsed.intent, [])),
     )
     _cache_put(key, result)
     return result

@@ -926,6 +926,7 @@ class GraphContext:
     """Structured context retrieved from the compliance graph."""
     obligations: list[dict] = field(default_factory=list)
     gaps: list[dict] = field(default_factory=list)
+    bridging_context: list[str] = field(default_factory=list)
     satisfied: list[dict] = field(default_factory=list)
     dimension_info: list[dict] = field(default_factory=list)
     cross_framework: dict = field(default_factory=dict)
@@ -961,6 +962,7 @@ class GraphContext:
     # fake "LogicRAG Synthesis" article_info entry that leaked a non-resolvable
     # "(Article: LogicRAG Synthesis)" line into the Stage-2 prompt.
     synthesis_memory: str = ""
+    ast_evaluations: list[str] = field(default_factory=list)
 
 
 # ─── LLM Integration ────────────────────────────────────────────────────────
@@ -3582,6 +3584,11 @@ def _build_context_references_block(context: GraphContext) -> str:
                 for d in context.dimension_info
             )
         )
+    if context.bridging_context:
+        parts.append(
+            "\nCROSS-REGULATORY BRIDGING CONTEXT:\n"
+            + "\n".join(f"- {bridge}" for bridge in context.bridging_context)
+        )
     # R117-review — LogicRAG multi-hop synthesis. Supporting context only;
     # the explicit "cite only the Articles above" framing stops Stage-2 from
     # treating the synthesis as a citable provision.
@@ -3590,6 +3597,11 @@ def _build_context_references_block(context: GraphContext) -> str:
             "\nSYNTHESIZED MULTI-HOP ANALYSIS "
             "(supporting context — cite only the Articles above, not this synthesis):\n"
             + context.synthesis_memory
+        )
+    if getattr(context, "ast_evaluations", None):
+        parts.append(
+            "\nLEGAL AST LOGICAL EVALUATIONS (supporting context — do not cite as an Article/Annex):\n"
+            + "\n".join(f"- {eval_res}" for eval_res in context.ast_evaluations)
         )
     return "\n".join(parts) if parts else "No EU AI Act references match this query."
 
@@ -5066,6 +5078,36 @@ def ask_compliance_question(request: GraphRAGRequest) -> GraphRAGResponse:
         # No-op unless REGENOLD_SUFFICIENT_CONTEXT is on AND the gate finds the
         # first-pass context insufficient for a complex/multi-part question.
         context = _maybe_sufficient_context_hop(request, query, context, answer_dict)
+
+    if hasattr(request, "bridging_context") and request.bridging_context:
+        context.bridging_context.extend(request.bridging_context)
+
+    # Legal AST logic evaluation integration
+    try:
+        from app.engines.semantic_layer import normative_extract
+        # Convert answers to booleans where possible
+        ast_scenario = {}
+        for k, v in answer_dict.items():
+            from app.models import AssessmentAnswer
+            val_str = v.value if isinstance(v, AssessmentAnswer) else str(v)
+            val = val_str.lower().strip()
+            if val in ("yes", "true", "1"):
+                ast_scenario[k] = True
+            elif val in ("no", "false", "0"):
+                ast_scenario[k] = False
+            else:
+                ast_scenario[k] = None
+
+        # Evaluate against all entities (articles/annexes) resolved in query
+        for entity in query.entities:
+            ast_verdict = normative_extract(ast_scenario, entity)
+            if ast_verdict is not None:
+                verdict_str = f"Article/Annex {entity} logical evaluation: {'Practice prohibited / Condition met' if ast_verdict else 'Practice exempt / Condition not met'}."
+                if not hasattr(context, "ast_evaluations"):
+                    context.ast_evaluations = []
+                context.ast_evaluations.append(verdict_str)
+    except Exception as exc:
+        logger.debug("Failed AST evaluation in ask_compliance_question: %s", exc)
 
     # Stage 1 + 2 — Generate
     resolved_q = getattr(request, "resolved_question", None) or request.question

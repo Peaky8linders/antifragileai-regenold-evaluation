@@ -52,6 +52,7 @@ class GraphRAGRequest(BaseModel):
     short coreferent). Default 1 keeps single-turn callers unaffected.
     """
     resolved_question: str | None = Field(default=None, max_length=2_000)
+    bridging_context: list[str] = Field(default_factory=list)
 
 
 class GraphRAGResponse(BaseModel):
