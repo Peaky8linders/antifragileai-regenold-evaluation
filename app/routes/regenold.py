@@ -1868,6 +1868,17 @@ def _try_extractive_answer(
     # relevance, so the first article yielding a sentence wins.
     # (``preferred_refs`` is handled by the R68 block above.)
     seen_refs: set[str] = set()
+    
+    # Resolve intent for dynamic score fusion
+    intent_label: str | None = None
+    try:
+        from app.routes.regenold import _classify_intent_cached  # local import to avoid circular if any
+        intent_obj = _classify_intent_cached(question)
+        if intent_obj:
+            intent_label = getattr(intent_obj, "intent", None)
+    except Exception:
+        pass
+
     for c in engine_citations[:3]:
         ref = getattr(c, "article_ref", "") or ""
         if not ref or ref in seen_refs:
@@ -1890,7 +1901,7 @@ def _try_extractive_answer(
                 rerank_sentences as _vrr,
             )
             if _vrr_enabled():
-                fused = _vrr(question, ref, sentence)
+                fused = _vrr(question, ref, sentence, intent=intent_label)
                 if fused:
                     return fused
         except Exception:  # noqa: BLE001 — never let rerank break the route
@@ -4234,6 +4245,7 @@ def regenold_eu_ai_act_ask(
         0,
         sum(1 for m in req.messages if m.role in ("user", "assistant")) - 1,
     )
+    intent_res = _classify_intent_cached(resolved_question or question)
     rag_req = GraphRAGRequest(
         question=question,
         # Regenold's use case is "about the regulation"; do not force a tenant-specific
@@ -4242,6 +4254,7 @@ def regenold_eu_ai_act_ask(
         system_description=system_context,
         history_turn_count=_history_turn_count,
         resolved_question=resolved_question,
+        bridging_context=list(intent_res.bridging_context) if intent_res else [],
     )
 
     # Round 28 — response memoisation (LLM Wiki v2 gist pattern). The

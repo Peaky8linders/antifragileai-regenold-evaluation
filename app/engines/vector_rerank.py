@@ -233,6 +233,7 @@ def rerank_sentences(
     article_ref: str,
     bm25_top_sentence: str | None,
     *,
+    intent: str | None = None,
     k: int = 5,
     rrf_k: int = 60,
 ) -> str | None:
@@ -242,23 +243,34 @@ def rerank_sentences(
     rerank is unavailable. Caller should fall back to
     ``bm25_top_sentence`` in the ``None`` case.
 
-    Fusion: Reciprocal Rank Fusion (Cormack et al. SIGIR 2009) with
-    ``k=60`` smoothing. The BM25 pick contributes rank 1 (best);
-    vector results contribute their search rank. Top-1 after fusion
-    wins. This composition is well-studied as one of the strongest
-    deterministic hybrid baselines.
+    Fusion: Dynamic Intent-based Score Fusion. 
+    BM25 pick gets a fixed sparse score of 1.0. 
+    Vector results get their cosine similarity [0, 1] as dense score.
+    Weights dynamically shift based on intent classification.
     """
     if not is_enabled():
         return None
     vec_hits = _SEARCHER.search_within_article(query, article_ref, k=k)
     if not vec_hits:
         return None
-    # Combine vector + BM25 ranks via RRF.
+
+    # Dynamic Intent Weighting
+    w_sparse = 0.5
+    w_dense = 0.5
+    if intent in ("article_lookup", "definition", "role_obligations", "penalty_inquiry"):
+        w_sparse = 0.8
+        w_dense = 0.2
+    elif intent in ("conceptual", "gap_analysis", "cross_framework", "classification"):
+        w_sparse = 0.2
+        w_dense = 0.8
+
     scores: dict[str, float] = {}
     if bm25_top_sentence:
-        scores[bm25_top_sentence] = 1.0 / (rrf_k + 1)
-    for rank, (sent, _vec_score) in enumerate(vec_hits, start=1):
-        scores[sent] = scores.get(sent, 0.0) + 1.0 / (rrf_k + rank)
+        scores[bm25_top_sentence] = w_sparse * 1.0
+
+    for sent, vec_score in vec_hits:
+        scores[sent] = scores.get(sent, 0.0) + (w_dense * vec_score)
+
     if not scores:
         return None
     return max(scores.items(), key=lambda t: t[1])[0]

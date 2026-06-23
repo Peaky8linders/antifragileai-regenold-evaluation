@@ -367,3 +367,29 @@ def cross_reference_context(
             if len(out) >= max_items:
                 return out
     return out
+
+# ──────────────────────────────────────────────────────────────────────────
+# Capability 3 — Normative Extraction (The Legal AST Leap).
+# ──────────────────────────────────────────────────────────────────────────
+
+def normative_extract(scenario: dict, article_ref: str) -> bool | None:
+    """Evaluate a user scenario against the Legal AST for the given article.
+
+    The architecture's "Semantic Layer Leap": instead of flat text retrieval,
+    we map heavily conditional articles (like Art. 5 prohibitions) into a
+    boolean abstract syntax tree (AST) and explicitly evaluate the user's
+    scenario against those conditions.
+
+    Returns:
+        True: The scenario matches the conditions (e.g., practice is prohibited).
+        False: The scenario explicitly does not match or hits an exception.
+        None: Insufficient context or article not supported by AST yet.
+    """
+    try:
+        from app.engines.legal_ast import parse_article_to_ast, evaluate_ast
+        ast = parse_article_to_ast(article_ref)
+        if ast is None:
+            return None
+        return evaluate_ast(ast, scenario)
+    except Exception:
+        return None
