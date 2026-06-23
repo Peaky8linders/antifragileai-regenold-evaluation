@@ -1,0 +1,445 @@
+"""Per-request reasoning trace for the R50 ``?include_reasoning=true`` mode.
+
+The Regenold competition spec (page 4) says the ``reasoning`` response
+field "*can always be used (e.g. with your system prompt) — but it
+will not be considered and might increase latency*". The judge ignores
+its content.
+
+R50 turns that field into a self-diagnosis hook for the LLM-as-Judge
+runner (`evals/judge/`). When the caller passes
+``?include_reasoning=true``, every decision site in the pipeline
+appends a typed record to a process-local trace held on a
+``ContextVar`` — and the route serialises the whole trace as a JSON
+string in ``reasoning``. The judge can then read this alongside the
+predicted answer / refs to attribute failures to specific code paths
+("Sonnet polish drifted off the cited Art. 13 stub", "scope-gate
+refused a coreferent multi-turn final", "near_oos pattern correctly
+fired", etc.).
+
+## Hard rules
+
+* Pure-stdlib; same-package imports only.
+* Zero overhead when ``include_reasoning=False`` (default) — the
+  ``ContextVar`` defaults to a sentinel ``None`` and every recorder
+  call short-circuits via a single ``if trace is None: return``.
+* Thread + async safe — ``ContextVar`` is the only correct mechanism
+  here. FastAPI runs handlers in a thread pool by default; a
+  module-level singleton would leak state between requests.
+* JSON-serialisable shape — every value goes through ``json.dumps``
+  with no custom encoders. Tuples render as lists; dataclasses
+  flatten via ``asdict``.
+
+## Schema (kept stable for the LLM-as-Judge)
+
+The trace shape mirrors the design from the R50 research agent:
+
+::
+
+    {
+        "schema_version": "r50.1",
+        "scope": {"verdict": "in_scope", "evidence": "..."},
+        "anchors_used": ["Article 13"],
+        "intent_label": "obligational",
+        "retrieval_path": "normal",
+        "top_k_bm25": [{"ref": "Article 13", "score": 12.4, "source": "kb"}, ...],
+        "xref_expand_added": ["Article 14"],
+        "graph_2hop_added": [],
+        "compound_roles": ["provider", "deployer"],
+        "guards_fired": ["r48_consistency", "r49a_grounded_prose"],
+        "stage2_polish": true,
+        "engine_confidence": 0.81,
+        "cache_hit": false,
+        "notes": ["near_oos_detected=Digital Services Act", ...]
+    }
+
+Any field MAY be absent — judges should treat missing keys as
+"unknown", not zero. The schema_version lets the judge runner detect
+breaking changes between rounds.
+"""
+from __future__ import annotations
+
+import json
+from contextvars import ContextVar
+from dataclasses import dataclass, field
+from typing import Any
+
+SCHEMA_VERSION: str = "r50.1"
+
+
+# ── ContextVar wiring ───────────────────────────────────────────────────
+
+
+@dataclass
+class ReasoningTrace:
+    """Mutable per-request scratch pad.
+
+    The route enables this when ``?include_reasoning=true`` lands;
+    every recorder call below short-circuits when the active
+    ``ContextVar`` slot is ``None``, so the deterministic path stays
+    free of trace overhead in normal production.
+    """
+
+    scope: dict[str, Any] = field(default_factory=dict)
+    anchors_used: list[str] = field(default_factory=list)
+    intent_label: str | None = None
+    retrieval_path: str | None = None
+    top_k_bm25: list[dict[str, Any]] = field(default_factory=list)
+    xref_expand_added: list[str] = field(default_factory=list)
+    graph_2hop_added: list[str] = field(default_factory=list)
+    compound_roles: list[str] = field(default_factory=list)
+    guards_fired: list[str] = field(default_factory=list)
+    stage2_polish: bool | None = None
+    engine_confidence: float | None = None
+    cache_hit: bool | None = None
+    query_denoiser: dict[str, Any] = field(default_factory=dict)
+    # R110 — Sufficient-Context gate audit lineage. One entry per bounded
+    # decomposition sub-query: the sub-query text, the refs it surfaced, the
+    # retrieval source, and the gate reason. This is the glass-box provenance
+    # that rebuts the "agentic RAG is a black box" criticism — every extra
+    # retrieval hop is inspectable. Empty (and dropped from the serialised
+    # payload) unless the R110 gate actually fired.
+    sub_queries: list[dict[str, Any]] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)
+    llm_thinking: dict[str, str] = field(default_factory=dict)
+
+    def to_json_dict(self) -> dict[str, Any]:
+        """Render to a JSON-serialisable dict with the schema version."""
+        out: dict[str, Any] = {"schema_version": SCHEMA_VERSION}
+        # Only emit fields the route actually populated to keep the
+        # payload compact and the judge prompt focused. Empty
+        # collections are dropped; explicit None values are dropped.
+        if self.scope:
+            out["scope"] = self.scope
+        if self.anchors_used:
+            out["anchors_used"] = list(self.anchors_used)
+        if self.intent_label is not None:
+            out["intent_label"] = self.intent_label
+        if self.retrieval_path is not None:
+            out["retrieval_path"] = self.retrieval_path
+        if self.top_k_bm25:
+            out["top_k_bm25"] = list(self.top_k_bm25)
+        if self.xref_expand_added:
+            out["xref_expand_added"] = list(self.xref_expand_added)
+        if self.graph_2hop_added:
+            out["graph_2hop_added"] = list(self.graph_2hop_added)
+        if self.compound_roles:
+            out["compound_roles"] = list(self.compound_roles)
+        if self.guards_fired:
+            out["guards_fired"] = list(self.guards_fired)
+        if self.stage2_polish is not None:
+            out["stage2_polish"] = self.stage2_polish
+        if self.engine_confidence is not None:
+            out["engine_confidence"] = self.engine_confidence
+        if self.cache_hit is not None:
+            out["cache_hit"] = self.cache_hit
+        if self.query_denoiser:
+            out["query_denoiser"] = dict(self.query_denoiser)
+        if self.sub_queries:
+            out["sub_queries"] = list(self.sub_queries)
+        if self.notes:
+            out["notes"] = list(self.notes)
+        if self.llm_thinking:
+            out["llm_thinking"] = dict(self.llm_thinking)
+        return out
+
+    def to_json_string(self) -> str:
+        """Render to a compact JSON string suitable for the ``reasoning``
+        wire field. ``separators=(',', ':')`` keeps the payload tight —
+        the field is shipped on every request, so every char counts.
+        """
+        return json.dumps(self.to_json_dict(), separators=(",", ":"))
+
+
+_CURRENT: ContextVar[ReasoningTrace | None] = ContextVar(
+    "regenold_reasoning_trace", default=None,
+)
+
+
+def activate() -> ReasoningTrace:
+    """Activate a fresh trace for the current request context.
+
+    Called by the route handler when ``?include_reasoning=true`` is set.
+    Returns the new trace so the route can grab a direct reference for
+    final serialisation (the ``ContextVar`` get + None check would also
+    work, but the direct handle keeps the route's flow obvious).
+    """
+    trace = ReasoningTrace()
+    _CURRENT.set(trace)
+    return trace
+
+
+def deactivate() -> None:
+    """Clear the trace from the current request context.
+
+    Defensive — FastAPI's request-scoped middleware will normally clean
+    up via ``ContextVar`` semantics on its own, but a paranoid
+    ``try/finally`` in the route is cheaper than chasing a leaked
+    trace from a misbehaving middleware.
+    """
+    _CURRENT.set(None)
+
+
+def current() -> ReasoningTrace | None:
+    """Return the active trace, or ``None`` when reasoning is off.
+
+    Recorder helpers below call this and short-circuit on ``None``,
+    so the deterministic pipeline pays zero cost when the caller
+    didn't opt in.
+    """
+    return _CURRENT.get()
+
+
+# ── Recorder helpers ────────────────────────────────────────────────────
+#
+# Each recorder is a pure-stdlib function that either appends to the
+# active trace OR returns silently when no trace is active. The
+# call-sites in the route / scope / engine should use these instead
+# of touching the ContextVar directly — keeps the contract narrow
+# and makes the JSON schema migration story tractable.
+
+
+def record_scope(verdict_label: str, evidence: str = "",
+                 *, near_oos_framework: str = "") -> None:
+    trace = current()
+    if trace is None:
+        return
+    payload: dict[str, Any] = {"verdict": verdict_label}
+    if evidence:
+        payload["evidence"] = evidence[:200]
+    if near_oos_framework:
+        payload["near_oos_framework"] = near_oos_framework
+    trace.scope = payload
+
+
+def record_anchors(anchors: list[str] | tuple[str, ...]) -> None:
+    trace = current()
+    if trace is None:
+        return
+    trace.anchors_used = list(anchors)
+
+
+def record_intent(label: str | None) -> None:
+    trace = current()
+    if trace is None or not label:
+        return
+    trace.intent_label = label
+
+
+def record_retrieval_path(path: str) -> None:
+    trace = current()
+    if trace is None:
+        return
+    trace.retrieval_path = path
+
+
+def record_top_k(items: list[dict[str, Any]]) -> None:
+    """Record the top-K BM25 hits surfaced by ``kb_search``.
+
+    Each item should be ``{ref, score, source}``. The recorder
+    truncates to 8 entries — beyond that the JSON payload bloats the
+    reasoning field and the judge gets distracted from the load-
+    bearing top-3.
+    """
+    trace = current()
+    if trace is None:
+        return
+    trace.top_k_bm25 = list(items)[:8]
+
+
+def record_xref_expand(added: list[str] | tuple[str, ...]) -> None:
+    trace = current()
+    if trace is None or not added:
+        return
+    trace.xref_expand_added = list(added)
+
+
+def record_graph_2hop(added: list[str] | tuple[str, ...]) -> None:
+    trace = current()
+    if trace is None or not added:
+        return
+    trace.graph_2hop_added = list(added)
+
+
+def record_compound_roles(roles: list[str] | tuple[str, ...]) -> None:
+    trace = current()
+    if trace is None or not roles:
+        return
+    trace.compound_roles = list(roles)
+
+
+def record_guard(guard_id: str) -> None:
+    """Append a guard-fired marker. Duplicates are dropped to keep the
+    payload from blowing up when the same guard runs in a loop."""
+    trace = current()
+    if trace is None or not guard_id:
+        return
+    if guard_id not in trace.guards_fired:
+        trace.guards_fired.append(guard_id)
+
+
+def record_stage2(polish_landed: bool) -> None:
+    trace = current()
+    if trace is None:
+        return
+    trace.stage2_polish = polish_landed
+
+
+def record_confidence(value: float) -> None:
+    trace = current()
+    if trace is None:
+        return
+    trace.engine_confidence = round(float(value), 3)
+
+
+def record_cache_hit(hit: bool) -> None:
+    trace = current()
+    if trace is None:
+        return
+    trace.cache_hit = hit
+
+
+def record_note(text: str) -> None:
+    """Free-text annotation slot. Use sparingly — the judge prompt
+    has a finite token budget and notes compete with the structured
+    fields for attention."""
+    trace = current()
+    if trace is None or not text:
+        return
+    if len(trace.notes) < 32:  # cap at 32 — full-detail analysis mode
+        trace.notes.append(text)  # no truncation; full reasoning output
+
+
+def record_llm_thinking(thinking_text: str, stage: str = "Stage") -> None:
+    """Record extended-thinking logs returned by the provider."""
+    trace = current()
+    if trace is None or not thinking_text:
+        return
+    trace.llm_thinking[stage] = thinking_text
+
+
+def record_query_denoiser(
+    *,
+    fired: bool,
+    latency_ms: int = 0,
+    rewritten_chars: int = 0,
+    fallback_reason: str | None = None,
+    model: str | None = None,
+    provider: str | None = None,
+) -> None:
+    """Record R86 Query De-Noiser outcome (R87-A observability).
+
+    Captures whether the multi-turn rewrite landed or fell back to the
+    history-concatenation path. ``fallback_reason`` is one of:
+
+    * ``"disabled"`` — env gate off
+    * ``"single_turn"`` — no history to rewrite
+    * ``"no_provider"`` — neither Groq nor wrapper configured
+    * ``"provider_error"`` — wrapper / Groq returned ``error``
+    * ``"empty_text"`` — provider returned blank text
+    * ``"length_out_of_bounds"`` — rewrite < 10 or > 500 chars
+    * ``"exception"`` — uncaught error in the rewrite path
+
+    ``fired=True`` means the rewrite replaced the concatenated history;
+    ``fired=False`` means the caller used the existing fallback path.
+    Either way the route lands an answer — this just lets the judge
+    attribute multi-turn retrieval drift to de-noiser non-firing.
+    """
+    trace = current()
+    if trace is None:
+        return
+    payload: dict[str, Any] = {"fired": bool(fired)}
+    if latency_ms > 0:
+        payload["latency_ms"] = int(latency_ms)
+    if rewritten_chars > 0:
+        payload["rewritten_chars"] = int(rewritten_chars)
+    if fallback_reason:
+        payload["fallback_reason"] = str(fallback_reason)[:64]
+    if model:
+        payload["model"] = str(model)[:64]
+    if provider:
+        payload["provider"] = str(provider)[:32]
+    trace.query_denoiser = payload
+
+
+def record_sub_query(
+    text: str,
+    *,
+    refs: list[str] | tuple[str, ...] | None = None,
+    source: str | None = None,
+    reason: str | None = None,
+) -> None:
+    """Record one R110 Sufficient-Context decomposition sub-query.
+
+    The glass-box audit lineage for the bounded multi-hop retrieval gate:
+    each call captures a sub-query the gate fired, the references it
+    surfaced (``refs``), the retrieval ``source`` (``"kb"`` / ``"graph"``),
+    and the gate ``reason`` (``"uncovered_explicit_refs"`` /
+    ``"multi_phrase_decompose"``). Serialised into the ``reasoning`` wire
+    field under ``sub_queries`` and persisted in the audit chain — so every
+    extra retrieval hop, and every source it touched, is inspectable.
+
+    Capped at 8 entries (the gate itself caps at :func:`max_sub_queries`,
+    well below this). Zero overhead when the trace is inactive.
+    """
+    trace = current()
+    if trace is None or not text:
+        return
+    if len(trace.sub_queries) >= 8:
+        return
+    entry: dict[str, Any] = {"q": str(text)[:400]}
+    if refs:
+        entry["refs"] = [str(r) for r in refs][:24]
+    if source:
+        entry["source"] = str(source)[:16]
+    if reason:
+        entry["reason"] = str(reason)[:48]
+    trace.sub_queries.append(entry)
+
+
+def record_cite_describe_guard(
+    dropped_refs: list[str] | tuple[str, ...],
+    reasons: dict[str, str] | None = None,
+) -> None:
+    """Record the R66-B cite-describe guard outcome.
+
+    Surfaced via :func:`record_guard` so the ``guards_fired`` audit
+    list captures the activation, plus a structured ``notes`` entry
+    enumerating each dropped ref + the per-ref reason string. Skipped
+    when the trace is off OR no refs were dropped (the off-path of
+    the env-gated wrapper is a sub-µs no-op for the deterministic
+    bench).
+    """
+    trace = current()
+    if trace is None:
+        return
+    record_guard("r66b_cite_describe_guard")
+    if not dropped_refs:
+        return
+    # One compact note line per dropped ref so the judge can attribute
+    # a missing citation to this guard rather than to a retrieval miss.
+    # Filter the informational ``__measurement_unavailable__`` rows out
+    # of the user-visible drop list.
+    for ref in dropped_refs:
+        reason = ""
+        if reasons and ref in reasons:
+            reason = reasons[ref]
+        record_note(
+            f"cite_describe_drop ref={ref}"
+            + (f" reason={reason}" if reason else "")
+        )
+
+
+_IS_MULTITURN_VAR: ContextVar[bool] = ContextVar("is_multiturn", default=False)
+_HAS_LISTING_INTENT_VAR: ContextVar[bool] = ContextVar("has_listing_intent", default=False)
+
+def set_multiturn(val: bool) -> None:
+    _IS_MULTITURN_VAR.set(val)
+
+def set_listing_intent(val: bool) -> None:
+    _HAS_LISTING_INTENT_VAR.set(val)
+
+def is_multiturn() -> bool:
+    return _IS_MULTITURN_VAR.get()
+
+def has_listing_intent() -> bool:
+    return _HAS_LISTING_INTENT_VAR.get()

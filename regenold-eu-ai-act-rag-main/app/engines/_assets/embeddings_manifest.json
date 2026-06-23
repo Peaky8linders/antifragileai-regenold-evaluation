@@ -1,0 +1,21 @@
+{
+  "assets": {
+    "embeddings": "article_sentences_embed.npy",
+    "metadata": "article_sentences_meta.json",
+    "svd_basis": "embed_svd_model.npy",
+    "vocab": "embed_vocab.json"
+  },
+  "generated_date": "2026-05-16",
+  "min_df": 2,
+  "min_sent_tokens": 3,
+  "sha256_hashes": {
+    "article_sentences_embed.npy": "46b4d5f13f241028a0b4453941c7bbfd4d55408fa8a97683eb2d6e6ca52d971a",
+    "article_sentences_meta.json": "b4252326791ed87d73738e2754a0fe7fcecf965b45ffaeba7b60d8fcabbf30f0",
+    "embed_svd_model.npy": "c30c1f9edaa43c4eafac36be63183da88d17894a9b11c07d8f8bf9db98af6328",
+    "embed_vocab.json": "d80b6db94b715c76fc07214de3e029676deaab533df2cb7392b51817b2f0fa12"
+  },
+  "total_sentences": 919,
+  "vector_dim": 128,
+  "version": "1.0",
+  "vocab_size": 1661
+}

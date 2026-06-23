@@ -1,11 +1,16 @@
 import os
+from dotenv import load_dotenv
+load_dotenv()
 
-log_path = r"C:\Users\th3un\.gemini\antigravity\brain\0f64dfb9-3e11-40b0-9dcb-21614f8373c0\.system_generated\tasks\task-668.log"
+from app.graph.client import get_graph_client
 
-if os.path.exists(log_path):
-    with open(log_path, "r", encoding="utf-8") as f:
-        lines = f.readlines()
-    for j in range(180, 220):
-        print(f"{j+1}: {lines[j].strip()}")
+client = get_graph_client()
+print(f"Client enabled: {client.enabled}")
+if client.enabled:
+    print(f"Health check status: {client.health_check()}")
+    res = client.execute_read("MATCH (n) RETURN labels(n) as lbl, count(n) as cnt")
+    print("Graph node counts:")
+    for row in res:
+        print(f"  {row['lbl']}: {row['cnt']}")
 else:
-    print("Log file not found.")
+    print("Graph client is not enabled.")
