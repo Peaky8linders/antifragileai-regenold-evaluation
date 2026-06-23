@@ -72,6 +72,8 @@ class TestEmbeddedTwoHopWired:
         monkeypatch.setenv("REGENOLD_GRAPH_2HOP", "1")
         monkeypatch.setenv("REGENOLD_GRAPH_BACKEND", "embedded")
         monkeypatch.delenv("NEO4J_URI", raising=False)
+        from app.integrations.regenold.reasoning_trace import set_multiturn
+        set_multiturn(False)
         from app.engines import graph_expand_2hop as g2
 
         assert g2.is_enabled() is True

@@ -114,7 +114,7 @@ class TestChatWrapperDetection:
         (pre-R112 behaviour preserved for genuine OpenAI configs)."""
         monkeypatch.delenv("COHERE_API_KEY", raising=False)
         monkeypatch.delenv("OPENAI_API_BASE", raising=False)
-        monkeypatch.delenv("REGENOLD_EXTERNAL_EMBEDDINGS", raising=False)
+        monkeypatch.setenv("REGENOLD_EXTERNAL_EMBEDDINGS", "1")
         monkeypatch.setenv("OPENAI_API_KEY", "sk-real")
         assert ee._get_provider() == "openai"
         assert ee.is_available() is True
@@ -124,7 +124,7 @@ class TestNegativeProbeCache:
     def test_openai_failure_cached_no_second_post(self, monkeypatch) -> None:
         monkeypatch.delenv("COHERE_API_KEY", raising=False)
         monkeypatch.delenv("OPENAI_API_BASE", raising=False)
-        monkeypatch.delenv("REGENOLD_EXTERNAL_EMBEDDINGS", raising=False)
+        monkeypatch.setenv("REGENOLD_EXTERNAL_EMBEDDINGS", "1")
         monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
 
         calls = {"n": 0}

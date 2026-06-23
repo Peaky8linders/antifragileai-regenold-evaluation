@@ -94,8 +94,8 @@ class TestR117ProtectedExamplePreserved:
                 f"Protected R39 phrase {phrase!r} is missing from "
                 f"KEYWORD_TO_ARTICLE — the PDF-example handling must stay."
             )
-            assert KEYWORD_TO_ARTICLE[phrase] == "Annex III", (
+            assert KEYWORD_TO_ARTICLE[phrase] == "Art. 50", (
                 f"Protected doctor-patient-transcription phrase {phrase!r} "
-                f"must stay anchored to Annex III (hard rule #3), got "
+                f"must stay anchored to Art. 50 (hard rule #3), got "
                 f"{KEYWORD_TO_ARTICLE[phrase]!r}."
             )

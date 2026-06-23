@@ -127,7 +127,7 @@ class TestFactualGuards:
         g = ANSWER_GENERATE_SYSTEM.lower()
         # Annex III(5)(d) narrowed to emergency triage; never the generic
         # high-risk healthcare example.
-        assert "emergency healthcare patient triage" in g
+        assert "emergency healthcare patient-triage" in g
         assert "never cite it as the generic high-risk example" in g
 
     def test_social_scoring_guard_still_present(self):

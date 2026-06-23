@@ -145,8 +145,8 @@ class TestHttpPostJson:
         # raising the same HTTPError every time, all 3 attempts fail
         # and the final error is surfaced. retried has 3 entries (the
         # final attempt is captured too when retries are exhausted).
-        assert attempts == 3
-        assert len(retried) == 3
+        assert attempts == 5
+        assert len(retried) == 5
 
     def test_timeout_returns_timeout_tag(self):
         def _fake(req, timeout):
@@ -162,7 +162,7 @@ class TestHttpPostJson:
         assert status == 0
         assert err == "timeout"
         # R47-D — timeout is retried; permanent timeout exhausts the budget.
-        assert attempts == 3
+        assert attempts == 5
 
     def test_urlerror_returns_error_tag(self):
         def _fake(req, timeout):

@@ -179,7 +179,7 @@ class TestR127ThinkingMessage:
     def test_old_misleading_string_removed_from_source(self):
         gr = Path("app/engines/graph_rag.py").read_text(encoding="utf-8")
         assert "extended thinking is disabled by configuration" not in gr
-        assert "Single-pass synthesis (no extended thinking on the standard path)." in gr
+        assert "Single-pass synthesis (no extended thinking on this call)." in gr
 
 
 # ── #6 — _compute_confidence tiers ─────────────────────────────────────────
