@@ -44,6 +44,8 @@ NODE_ANNEX_III_CATEGORY: Final = "AnnexIIICategory"
 NODE_RISK_LEVEL: Final = "RiskLevel"
 NODE_OPERATOR_ROLE: Final = "OperatorRole"
 NODE_KB_METADATA: Final = "KBMetadata"
+NODE_PARAGRAPH: Final = "Paragraph"
+NODE_POINT: Final = "Point"
 # Parent-CodexAI assessment schema (seeded but unused by the Regenold wire).
 NODE_DIMENSION: Final = "Dimension"
 NODE_QUESTION: Final = "Question"
@@ -60,6 +62,8 @@ SEEDED_NODE_LABELS: Final[frozenset[str]] = frozenset(
         NODE_RISK_LEVEL,
         NODE_OPERATOR_ROLE,
         NODE_KB_METADATA,
+        NODE_PARAGRAPH,
+        NODE_POINT,
         NODE_DIMENSION,
         NODE_QUESTION,
     }
@@ -74,6 +78,8 @@ REL_HAS_OBLIGATION: Final = "HAS_OBLIGATION"
 REL_HAS_DEFINITION: Final = "HAS_DEFINITION"  # Article → Definition
 REL_CROSS_REFERENCES: Final = "CROSS_REFERENCES"  # Article/Annex ↔ Article/Annex
 REL_HAS_RECITAL_ANCHOR: Final = "HAS_RECITAL_ANCHOR"  # Article → Recital
+REL_HAS_PARAGRAPH: Final = "HAS_PARAGRAPH"  # Article/Annex → Paragraph
+REL_HAS_POINT: Final = "HAS_POINT"  # Paragraph → Point
 REL_TRIGGERS_HIGH_RISK_UNDER: Final = "TRIGGERS_HIGH_RISK_UNDER"  # AnnexIIICategory → Article
 REL_APPLIES_AT: Final = "APPLIES_AT"  # Obligation → RiskLevel
 # Parent-CodexAI assessment schema (seeded but unused by the Regenold wire).
@@ -90,6 +96,8 @@ SEEDED_REL_TYPES: Final[frozenset[str]] = frozenset(
         REL_HAS_DEFINITION,
         REL_CROSS_REFERENCES,
         REL_HAS_RECITAL_ANCHOR,
+        REL_HAS_PARAGRAPH,
+        REL_HAS_POINT,
         REL_TRIGGERS_HIGH_RISK_UNDER,
         REL_APPLIES_AT,
         REL_BELONGS_TO,

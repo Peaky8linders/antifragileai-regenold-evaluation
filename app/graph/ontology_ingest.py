@@ -175,6 +175,10 @@ def ingest_ontology() -> None:
 
     client.execute_write_batch(queries)
     logger.info("Successfully ingested ontology into Neo4j graph.")
+    
+    # 5. Ingest Legal AST (Ontology Leap)
+    from app.engines.legal_ast import ingest_legal_ast
+    ingest_legal_ast()
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)

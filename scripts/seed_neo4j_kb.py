@@ -658,6 +658,25 @@ SET d.kind = $kind,
     d.text = $text
 """
 
+_CYPH_MERGE_OBLIGATION = """
+MERGE (o:Obligation {id: $id})
+SET o.text = $text,
+    o.risk_level = $risk_level,
+    o.roles = $roles
+"""
+
+_MERGE_PARAGRAPH = """
+MERGE (p:Paragraph {id: $id})
+SET p.number = $number,
+    p.text = $text
+"""
+
+_MERGE_POINT = """
+MERGE (pt:Point {id: $id})
+SET pt.letter = $letter,
+    pt.text = $text
+"""
+
 _CYPHER_OBLIGATION = """
 MERGE (o:Obligation {id: $id})
 SET o.article_ref = $article_ref,
@@ -726,11 +745,24 @@ MERGE (s)-[r:CROSS_REFERENCES]->(t)
 SET r.source = $edge_source
 """
 
-_CYPHER_HAS_RECITAL_ANCHOR = """
+_CYPH_MERGE_HAS_RECITAL_ANCHOR = """
 MATCH (a:Article {id: $source_id})
 MATCH (r:Recital {id: $target_id})
 MERGE (a)-[:HAS_RECITAL_ANCHOR]->(r)
 """
+
+_MERGE_HAS_PARAGRAPH = """
+MATCH (a:Article {id: $source_id})
+MATCH (p:Paragraph {id: $target_id})
+MERGE (a)-[:HAS_PARAGRAPH]->(p)
+"""
+
+_MERGE_HAS_POINT = """
+MATCH (p:Paragraph {id: $source_id})
+MATCH (pt:Point {id: $target_id})
+MERGE (p)-[:HAS_POINT]->(pt)
+"""
+
 
 _CYPHER_TRIGGERS_HIGH_RISK = """
 MATCH (c:AnnexIIICategory {id: $source_id})

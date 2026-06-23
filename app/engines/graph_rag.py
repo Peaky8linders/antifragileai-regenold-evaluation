@@ -5082,9 +5082,8 @@ def ask_compliance_question(request: GraphRAGRequest) -> GraphRAGResponse:
     if hasattr(request, "bridging_context") and request.bridging_context:
         context.bridging_context.extend(request.bridging_context)
 
-    # Legal AST logic evaluation integration
+    # Deterministic Pre-Filtering & Citation Injection (The Ontology Leap)
     try:
-        from app.engines.semantic_layer import normative_extract
         # Convert answers to booleans where possible
         ast_scenario = {}
         for k, v in answer_dict.items():
@@ -5098,7 +5097,47 @@ def ask_compliance_question(request: GraphRAGRequest) -> GraphRAGResponse:
             else:
                 ast_scenario[k] = None
 
-        # Evaluate against all entities (articles/annexes) resolved in query
+        if "Annex III" in query.entities or query.risk_context == "high_risk_annex_iii":
+            from app.graph.client import get_graph_client
+            client = get_graph_client()
+            if client.enabled:
+                cypher = """
+                MATCH (a:Article {id: 'article_6'})-[:HAS_PARAGRAPH]->(p:Paragraph {id: 'article_6_3'})-[:HAS_POINT]->(pt:Point)
+                RETURN pt.id AS point_id, pt.letter AS letter, pt.text AS text
+                """
+                results = client.execute_read(cypher)
+                for rec in results:
+                    letter = rec.get("letter")
+                    text = rec.get("text")
+                    point_id = rec.get("point_id")
+                    
+                    # Check if the exemption condition is met in the user's answers
+                    # Matches by point ID or by substring overlap between the point text and the answer keys
+                    condition_met = ast_scenario.get(point_id) is True
+                    if not condition_met:
+                        for k, v in ast_scenario.items():
+                            if v is True and (k.lower() in text.lower() or text.lower() in k.lower()):
+                                condition_met = True
+                                break
+                                
+                    if condition_met:
+                        exact_citation = f"Article 6(3)({letter})"
+                        verdict_str = f"{exact_citation} logical evaluation: Practice exempt / Condition met for '{text}'."
+                        if not hasattr(context, "ast_evaluations"):
+                            context.ast_evaluations = []
+                        context.ast_evaluations.append(verdict_str)
+                        
+                        # Mechanically inject perfect citation into RAG context
+                        context.article_info.append({
+                            "id": point_id,
+                            "article": exact_citation,
+                            "text": f"Exception to high-risk classification under {exact_citation}: The system performs a {text}."
+                        })
+                        context.nodes_traversed += 3
+                        context.edges_followed += 2
+
+        # Evaluate against other entities using legacy normative_extract if applicable
+        from app.engines.semantic_layer import normative_extract
         for entity in query.entities:
             ast_verdict = normative_extract(ast_scenario, entity)
             if ast_verdict is not None:
@@ -5107,7 +5146,7 @@ def ask_compliance_question(request: GraphRAGRequest) -> GraphRAGResponse:
                     context.ast_evaluations = []
                 context.ast_evaluations.append(verdict_str)
     except Exception as exc:
-        logger.debug("Failed AST evaluation in ask_compliance_question: %s", exc)
+        logger.debug("Failed deterministic pre-filtering / AST evaluation: %s", exc)
 
     # Stage 1 + 2 — Generate
     resolved_q = getattr(request, "resolved_question", None) or request.question

@@ -74,7 +74,7 @@ _TITLES: dict[str, str] = {**OFFICIAL_ARTICLE_TITLES, **OFFICIAL_ANNEX_TITLES}
 _PARA_RE = re.compile(r"(?:^|(?<=[\n;.!?])\s+)(\d{1,2})\.\s+")
 # Lettered list item: ``: (a) `` / ``; (b) `` — leading punctuation marks
 # a real list item, not a back-reference like "point (h) of ...".
-_SUBPOINT_RE = re.compile(r"[:;]\s+\(([a-z]{1,4})\)\s")
+_SUBPOINT_RE = re.compile(r"[:;]\s+(?:or\s+|and\s+)?\(([a-z]{1,4})\)\s")
 # Annex numbered item: ``: 1. Foo`` / ``. 2. Bar`` followed by a capital.
 _ANNEX_ITEM_RE = re.compile(r"(?:^|[.:;]\s)(\d{1,2})\.\s+(?=[A-Z])")
 # Art. 3 definition: ``apply: (1) '…' means`` / ``; (2) …`` — parenthesised
