@@ -209,10 +209,10 @@ CYPHER_TEMPLATES = {
     ),
     "obligations_for_article_with_xrefs": (
         "MATCH (a:Article {id: $article_id}) "
-        "OPTIONAL MATCH (a)-[:CROSS_REFERENCES*0..1]-(b:Article) "
+        "OPTIONAL MATCH (a)-[:CROSS_REFERENCES*0..1]->(b:Article) "
         "MATCH (b)-[:HAS_OBLIGATION]->(o:Obligation) "
         "RETURN DISTINCT o.id AS id, o.text AS text, o.article_ref AS article, "
-        "o.paragraph_ref AS paragraph"
+        "o.paragraph_ref AS paragraph ORDER BY o.article_ref, o.paragraph_ref, o.id"
     ),
     "questions_for_dimension": (
         "MATCH (q:Question)-[:BELONGS_TO]->(d:Dimension {id: $dimension_id}) "

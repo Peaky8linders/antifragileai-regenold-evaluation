@@ -1410,17 +1410,18 @@ def _deterministic_parse(question: str) -> GraphQuery:
 
     # Detect intent
     intent = "general_compliance"
-    if any(w in q_lower for w in ["gap", "missing", "lacking", "need"]):
+    import re
+    if re.search(r'\b(?:gap|missing|lacking)\b', q_lower):
         intent = "gap_analysis"
-    elif any(w in q_lower for w in ["obligation", "require", "must", "need to"]):
+    elif re.search(r'\b(?:obligation|require|must|need to)\b', q_lower):
         intent = "obligation_check"
-    elif any(w in q_lower for w in ["definition", "define", "what is a", "what is an"]):
+    elif re.search(r'\b(?:definition|define|what is a|what is an)\b', q_lower):
         intent = "article_lookup"
-    elif any(w in q_lower for w in ["article", "art."]):
+    elif re.search(r'\b(?:article|art\.)\b', q_lower):
         intent = "article_lookup"
-    elif any(w in q_lower for w in ["risk", "classify", "classification"]):
+    elif re.search(r'\b(?:risk|classify|classification)\b', q_lower):
         intent = "risk_assessment"
-    elif any(w in q_lower for w in ["nist", "iso", "framework", "cross"]):
+    elif re.search(r'\b(?:nist|iso|framework|cross)\b', q_lower):
         intent = "cross_framework"
 
     # Extract article + annex references — accept BOTH `Art. 13` / `Art 13`
@@ -1516,10 +1517,6 @@ def _deterministic_parse(question: str) -> GraphQuery:
             entities.insert(0, "Art. 3")
     except Exception as exc:  # noqa: BLE001 — fail-soft
         logger.debug("r127_role_definitional_anchor_failed: %s", exc)
-
-    if any(w in q_lower for w in ["definition", "define", "what is a", "what is an"]):
-        if "Art. 3" not in entities:
-            entities.insert(0, "Art. 3")
 
     # R112 — collision-prone entries (the "fines" → "defines" family) are
     # matched with word boundaries via _KEYWORD_ENTITY_BOUNDARY_RES; every
@@ -2389,8 +2386,11 @@ def _seed_role_obligation_obligations(context: GraphContext, role_id: str, risk_
     """
     def _sort_key(r: str) -> int:
         low = r.lower()
-        if any(s in low for s in ("art. 3", "art. 5", "art. 6", "art. 16", "art. 43", "annex i", "annex iii")):
+        if low in ("art. 3", "art. 5", "art. 6", "art. 16", "art. 43", "annex i", "annex iii"):
             return 0
+        for p in ("art. 3", "art. 5", "art. 6", "art. 16", "art. 43", "annex i", "annex iii"):
+            if low.startswith(f"{p}(") or low.startswith(f"{p} ") or low.startswith(f"{p}:"):
+                return 0
         return 1
 
     synthetic = [
@@ -3396,7 +3396,7 @@ def _retrieve_from_kb(
         from app.data.kb_xrefs import cross_refs
         seen_articles = {o["article"] for o in context.obligations}
         for primary in list(query.entities):
-            for xref in cross_refs(primary, limit=10):
+            for xref in cross_refs(primary, limit=2):
                 if xref in seen_articles:
                     continue
                 xref_mapping = EC_CHECKER_OBLIGATION_MAP.get(xref)

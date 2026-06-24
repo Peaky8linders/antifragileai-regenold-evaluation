@@ -1106,9 +1106,9 @@ _CLASSIFICATION_TOPICS: list[dict] = [
         "name": "annex_i_safety_component",
         "patterns": [
             re.compile(
-                r"(mri|x[-\s]ray|ct\s+scan|ecg|ekg|defibrillator|infusion\s+pump|"
+                r"\b(mri|x[-\s]ray|ct\s+scan|ecg|ekg|defibrillator|infusion\s+pump|"
                 r"surgical\s+robot|medical\s+device|in\s+vitro\s+diagnostic|ivd|"
-                r"melanoma|dermoscopy|cancer\s+diag|diagnostic\s+(?:imaging|software)|oncology)",
+                r"melanoma|dermoscopy|cancer\s+diag|diagnostic\s+(?:imaging|software)|oncology)\b",
                 re.IGNORECASE,
             ),
             re.compile(
