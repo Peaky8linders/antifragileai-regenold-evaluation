@@ -248,13 +248,18 @@ _KEYWORD_ENTITY_MAP: tuple[tuple[str, str], ...] = (
     ("6 months", "Art. 19"),
     # Annex I products / safety component (high-risk under Art. 6(1))
     ("safety component", "Art. 6"),
+    ("safety component", "Annex I"),
     ("product safety", "Annex I"),
     ("union harmonisation", "Annex I"),
     ("union harmonization", "Annex I"),
     ("mdr", "Annex I"),
     ("ivdr", "Annex I"),
     ("medical device", "Annex I"),
+    ("medical device", "Art. 6"),
     ("medical devices", "Annex I"),
+    ("health insurance", "Annex III"),
+    ("emergency triage", "Annex III"),
+    ("public healthcare", "Annex III"),
     # GPAI classification + procedure (Arts. 51, 52, 54)
     ("10^25", "Art. 51"),
     ("flops threshold", "Art. 51"),
@@ -1075,13 +1080,35 @@ _CLASSIFICATION_TOPICS: list[dict] = [
         ),
         "refs": ["Annex III", "Art. 6", "Art. 27"],
     },
+    # ── Annex III(5) — Access to and enjoyment of essential private and public services ───────────────
+    {
+        "name": "annex_iii_5_services",
+        "patterns": [
+            re.compile(
+                r"(public\s+assistance|healthcare\s+benefits|health\s+insurance|"
+                r"life\s+insurance|emergency\s+triage|patient\s+triage)",
+                re.IGNORECASE,
+            ),
+        ],
+        "answer": (
+            "AI systems intended to be used by public authorities to evaluate the eligibility "
+            "of natural persons for essential public assistance benefits and services, or "
+            "for risk assessment and pricing in relation to life and health insurance, or "
+            "to evaluate and classify emergency calls (e.g. patient triage), are high-risk "
+            "under Annex III(5). They must comply with the full Chapter III Section 2 "
+            "obligations. Public authorities or bodies using such systems must conduct a "
+            "Fundamental Rights Impact Assessment under Article 27."
+        ),
+        "refs": ["Annex III", "Art. 6", "Art. 27"],
+    },
     # ── Annex I — safety component of regulated product ───────────────
     {
         "name": "annex_i_safety_component",
         "patterns": [
             re.compile(
                 r"(mri|x[-\s]ray|ct\s+scan|ecg|ekg|defibrillator|infusion\s+pump|"
-                r"surgical\s+robot|medical\s+device|in\s+vitro\s+diagnostic|ivd)",
+                r"surgical\s+robot|medical\s+device|in\s+vitro\s+diagnostic|ivd|"
+                r"melanoma|dermoscopy|cancer\s+diag|diagnostic\s+(?:imaging|software)|oncology)",
                 re.IGNORECASE,
             ),
             re.compile(

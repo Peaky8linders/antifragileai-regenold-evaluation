@@ -1002,7 +1002,7 @@ def _llm_parse_query(question: str) -> GraphQuery:
             text_raw = _openai_wrapper_complete_for_graph_rag(
                 system=system_prompt,
                 user=sanitized_question,
-                max_tokens=512,
+                max_tokens=2048,
                 temperature=0.0,
                 stage_name="Stage 1 (Scope & Extraction)"
             )
@@ -1016,7 +1016,7 @@ def _llm_parse_query(question: str) -> GraphQuery:
                     system=system_prompt,
                     user=sanitized_question,
                     model=os.getenv("REGENOLD_STAGE1_MODEL_GROQ", "llama-3.3-70b-versatile"),
-                    max_tokens=512,
+                    max_tokens=2048,
                     temperature=0.0,
                 )
             )
@@ -1042,7 +1042,7 @@ def _llm_parse_query(question: str) -> GraphQuery:
                     system=system_prompt,
                     user=sanitized_question,
                     model=os.getenv("REGENOLD_STAGE1_MODEL_GEMINI", "gemini-2.5-flash"),
-                    max_tokens=512,
+                    max_tokens=2048,
                     temperature=0.0,
                 )
             )
@@ -1055,7 +1055,7 @@ def _llm_parse_query(question: str) -> GraphQuery:
                 return _deterministic_parse(question)
             response = client.messages.create(
                 model=settings.graph_rag.model,
-                max_tokens=512,
+                max_tokens=2048,
                 temperature=0.0,
                 system=system_prompt,
                 messages=[{"role": "user", "content": sanitized_question}],
@@ -1414,6 +1414,8 @@ def _deterministic_parse(question: str) -> GraphQuery:
         intent = "gap_analysis"
     elif any(w in q_lower for w in ["obligation", "require", "must", "need to"]):
         intent = "obligation_check"
+    elif any(w in q_lower for w in ["definition", "define", "what is a", "what is an"]):
+        intent = "article_lookup"
     elif any(w in q_lower for w in ["article", "art."]):
         intent = "article_lookup"
     elif any(w in q_lower for w in ["risk", "classify", "classification"]):
@@ -1514,6 +1516,10 @@ def _deterministic_parse(question: str) -> GraphQuery:
             entities.insert(0, "Art. 3")
     except Exception as exc:  # noqa: BLE001 — fail-soft
         logger.debug("r127_role_definitional_anchor_failed: %s", exc)
+
+    if any(w in q_lower for w in ["definition", "define", "what is a", "what is an"]):
+        if "Art. 3" not in entities:
+            entities.insert(0, "Art. 3")
 
     # R112 — collision-prone entries (the "fines" → "defines" family) are
     # matched with word boundaries via _KEYWORD_ENTITY_BOUNDARY_RES; every
@@ -2381,13 +2387,19 @@ def _seed_role_obligation_obligations(context: GraphContext, role_id: str, risk_
     real KB substance per ref (see :func:`_stage2_ref_substance`) so the
     Stage-2 model describes each cited article rather than echo a marker.
     """
+    def _sort_key(r: str) -> int:
+        low = r.lower()
+        if any(s in low for s in ("art. 3", "art. 5", "art. 6", "art. 16", "art. 43", "annex i", "annex iii")):
+            return 0
+        return 1
+
     synthetic = [
         {
             "id": f"role-obligation-{role_id}-{risk_id}-{ref}",
             "text": _stage2_ref_substance(ref, question),
             "article": ref,
         }
-        for ref in refs
+        for ref in sorted(refs, key=_sort_key)
     ]
     context.obligations = synthetic
     context.article_info = []
@@ -3143,7 +3155,7 @@ def _retrieve_from_graph(
             if entity.startswith("Art."):
                 art_id = entity.replace("Art. ", "article_").replace("Art.", "article_")
                 art_obls = client.execute_read(
-                    CYPHER_TEMPLATES["obligations_for_article"],
+                    CYPHER_TEMPLATES["obligations_for_article_with_xrefs"],
                     {"article_id": art_id},
                 )
                 if art_obls:
@@ -3384,7 +3396,7 @@ def _retrieve_from_kb(
         from app.data.kb_xrefs import cross_refs
         seen_articles = {o["article"] for o in context.obligations}
         for primary in list(query.entities):
-            for xref in cross_refs(primary, limit=2):
+            for xref in cross_refs(primary, limit=10):
                 if xref in seen_articles:
                     continue
                 xref_mapping = EC_CHECKER_OBLIGATION_MAP.get(xref)
@@ -4341,7 +4353,7 @@ def _claude_max_enhance_answer(
         try:
             max_tokens = settings.graph_rag.max_tokens
         except Exception:  # noqa: BLE001
-            max_tokens = 512
+            max_tokens = 2048
 
         # R51 — complex-question routing. The complexity gate runs on
         # the live question + history depth. When it fires AND the
