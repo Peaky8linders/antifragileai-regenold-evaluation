@@ -4534,6 +4534,47 @@ def _claude_max_enhance_answer(
                 complex_question=complex_q,
                 stage_name="Stage 2 (Polishing)"
             )
+
+        if text_raw is None and not _use_gemini and not _fusion_used:
+            try:
+                from app.llm.openai_wrapper_provider import is_gemini_provider_enabled, get_gemini_provider, OpenAIWrapperRequest
+                if is_gemini_provider_enabled():
+                    try:
+                        from app.integrations.regenold.reasoning_trace import record_note
+                        record_note("stage2_primary_failed_fallback_gemini")
+                    except Exception:
+                        pass
+                    
+                    resp = get_gemini_provider().complete(
+                        OpenAIWrapperRequest(
+                            system=system_prompt,
+                            user=user_message,
+                            model=os.getenv("REGENOLD_STAGE2_MODEL_GEMINI", "gemini-2.5-flash"),
+                            max_tokens=max_tokens,
+                            temperature=0.0,
+                        )
+                    )
+                    if resp.error:
+                        logger.warning("graph_rag.gemini_fallback_stage2_call_failed: %s", resp.error[:200])
+                    elif getattr(resp, "finish_reason", None) == "length":
+                        logger.warning(
+                            "graph_rag.gemini_fallback_stage2_truncated — finish_reason=length "
+                            "(completion_tokens=%d) — falling back to deterministic.",
+                            resp.completion_tokens,
+                        )
+                    elif _looks_structurally_truncated(resp.text):
+                        logger.warning(
+                            "graph_rag.gemini_fallback_stage2_truncated_structural — "
+                            "finish_reason=%r but text ends mid-clause "
+                            "(completion_tokens=%d) — falling back to deterministic.",
+                            getattr(resp, "finish_reason", None),
+                            resp.completion_tokens,
+                        )
+                    else:
+                        text_raw = resp.text
+            except Exception as e:
+                logger.warning("graph_rag.gemini_fallback_error: %s", str(e))
+
         if text_raw is None:
             return None
         validated = validate_llm_output(text_raw.strip())
