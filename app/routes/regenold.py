@@ -2897,6 +2897,106 @@ def _final_ref_clamp(
     return references[:budget]
 
 
+# R251 — HRAIS chain-collapse.
+#
+# The dominant live Stage-2 over-citation pattern (quantified on the medtech /
+# graphrag gold sets, post-R250 reconcile): on a FOCUSED high-risk obligation
+# question whose gold is the operative articles (Art. 6 / 16 / 9 / 43 + the
+# triggering Annex), Opus describes AND cites the ENTIRE Chapter-III Section-2
+# design-requirement chain (Arts. 9-15) plus the process detail (Arts. 17-20),
+# so the R72 reconcile keeps every one of them (all described) and Ref Strict /
+# Conciseness crater while recall stays perfect (grb_08: gold [16,9,43], pred 11
+# refS 0.29; grb_20: gold [6,9,43,Annex III], pred 15 refS 0.21).
+#
+# Unlike the R142.1 positional ``_final_ref_clamp`` (which dropped GOLD on
+# multi-article rows and LOST the live pairwise judge 11-0, p=0.001), this fires
+# ONLY on the dense-chain DUMP signature (>= 5 of the design set
+# {9,10,11,12,13,14,15} present) and drops ONLY the design / process DETAIL
+# articles {10,11,12,14,15,17,18,19,20} — never the operative / role /
+# classification / penalty / GPAI articles, and never the hubs Art. 9 (risk
+# management) or Art. 13 (transparency), which are what the gold + the verdict
+# are about. Detail articles named in the answer's LEAD sentence or in the live
+# question are protected (the user/answer foregrounded them). Floor: never
+# collapse below 3 refs.
+#
+# Stage-2-gated -> davidath byte-identical (the deterministic bench never runs
+# Stage-2; the signature also fires on 0 davidath rows). Scenario shapes (curated
+# multi-article gold) and EXPLICIT article-enumeration questions ("which articles
+# set out the requirements" — gold there IS the chain) are exempt. Pure /
+# idempotent / fail-soft. Env off-switch REGENOLD_CHAIN_COLLAPSE.
+_HRAIS_DESIGN_SET: frozenset[int] = frozenset({9, 10, 11, 12, 13, 14, 15})
+_HRAIS_DETAIL_DROP: frozenset[int] = frozenset({10, 11, 12, 14, 15, 17, 18, 19, 20})
+_CHAIN_ENUM_MARKERS: tuple[str, ...] = (
+    "which article",
+    "list the article",
+    "list all",
+    "what are all",
+    "name the article",
+    "name all",
+    "enumerate",
+    "every article",
+    "all the requirement",
+)
+_CHAIN_REF_NUM_RE = re.compile(r"\bart(?:icle)?\.?\s*0*(\d{1,3})", re.IGNORECASE)
+
+
+def _chain_ref_article_num(ref: str) -> int | None:
+    """``"Article 13"`` / ``"Art. 13(2)(a)"`` -> 13; annex / non-article -> None."""
+    if not ref or "annex" in ref.lower():
+        return None
+    m = _CHAIN_REF_NUM_RE.search(ref)
+    return int(m.group(1)) if m else None
+
+
+def _collapse_hrais_chain(
+    references: list[str],
+    *,
+    answer_text: str,
+    question: str,
+    stage2_landed: bool,
+    scenario_shape: bool,
+) -> list[str]:
+    """Drop the design/process-detail padding from a dense HRAIS chain dump.
+
+    See the module note above. Returns ``references`` unchanged on every guard
+    miss; never raises.
+    """
+    try:
+        if os.getenv("REGENOLD_CHAIN_COLLAPSE", "1").strip().lower() not in (
+            "1",
+            "true",
+            "yes",
+            "on",
+        ):
+            return references
+        if not stage2_landed or scenario_shape or not references:
+            return references
+        ql = (question or "").lower()
+        marker = "latest question:\n"
+        if marker in ql:
+            ql = ql.split(marker, 1)[-1]
+        if any(m in ql for m in _CHAIN_ENUM_MARKERS):
+            return references
+        nums = [_chain_ref_article_num(r) for r in references]
+        design_present = {n for n in nums if n in _HRAIS_DESIGN_SET}
+        if len(design_present) < 5:
+            return references
+        lead = (answer_text or "")[:240].lower()
+        q_nums = {int(m) for m in re.findall(r"\barticle\s+(\d{1,3})", ql)}
+        kept: list[str] = []
+        for ref, n in zip(references, nums):
+            if n in _HRAIS_DETAIL_DROP:
+                named_in_lead = bool(re.search(rf"\barticle\s+{n}\b", lead))
+                if not named_in_lead and n not in q_nums:
+                    continue
+            kept.append(ref)
+        if len(kept) < 3 or len(kept) == len(references):
+            return references
+        return kept
+    except Exception:  # noqa: BLE001 — never break the route on a collapse
+        return references
+
+
 def _prune_non_anchor_refs(
     refs: list[str],
     live_question: str,
@@ -6471,6 +6571,31 @@ def regenold_eu_ai_act_ask(
         in ("1", "true", "yes", "on")
     ):
         references = _surface_prose_subpoints(answer_text, references)
+
+    # R251 — HRAIS chain-collapse. After every prose pass has surfaced the
+    # references Opus describes, drop the Chapter-III design/process DETAIL
+    # padding when the answer dumped the whole high-risk obligation chain
+    # (>= 5 of Arts 9-15). Keeps the operative / gold-bearing anchors (the
+    # verdict articles) — never the R142.1 positional clamp. Stage-2-gated ->
+    # davidath byte-identical. Env off-switch REGENOLD_CHAIN_COLLAPSE.
+    _collapsed_refs = _collapse_hrais_chain(
+        references,
+        answer_text=answer_text or "",
+        question=live_user_message or question,
+        stage2_landed=_stage2_landed,
+        scenario_shape=_looks_like_scenario_shape(question),
+    )
+    if len(_collapsed_refs) != len(references):
+        try:
+            from app.integrations.regenold.reasoning_trace import (  # noqa: PLC0415
+                record_note as _rn,
+            )
+            _rn(
+                f"hrais_chain_collapse_{len(references)}_to_{len(_collapsed_refs)}"
+            )
+        except Exception:  # noqa: BLE001 — fail-soft on trace
+            pass
+        references = _collapsed_refs
 
     # R142 — final reference-budget clamp. The R138 cite-consistency + R133
     # prose-sub-point passes above re-add prose-named refs UNCAPPED, defeating

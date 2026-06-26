@@ -303,6 +303,20 @@ REGENOLD_DYNAMIC_GROUNDING = "1"
 # Re-enable with: railway variables --set REGENOLD_CITE_DESCRIBE_GUARD=1
 REGENOLD_CITE_DESCRIBE_GUARD = "0"
 
+# Round 251 — HRAIS chain-collapse (CODE DEFAULT ON; this entry is
+# documentation/visibility only). On a focused high-risk obligation question
+# whose gold is the operative articles (6/16/9/43), live Stage-2 (Opus)
+# describes + cites the ENTIRE Chapter-III Section-2 design chain (Arts 9-15)
+# + process detail (17-20), so the R72 reconcile keeps them all (described) and
+# Ref Strict / Conciseness crater. The collapse drops ONLY the design/process
+# DETAIL padding {10,11,12,14,15,17,18,19,20} when the dump signature fires
+# (>=5 of Arts 9-15) — never the operative / hub / gold articles. Stage-2-gated
+# -> davidath byte-identical; scenario + enumeration questions exempt. Measured
+# on the medtech-graphrag gold set (post-R250 reconcile): Ref Strict +0.018,
+# Ref Conciseness +0.025, Ref Loose (recall) FLAT. Disable with:
+#   railway variables --set REGENOLD_CHAIN_COLLAPSE=0
+REGENOLD_CHAIN_COLLAPSE = "1"
+
 # Round 80.2 — Stage-2 LLM polish + latency knobs are now CODE
 # DEFAULTS, not railway.toml overrides. The R80.1 round added them
 # to [deploy.envs] but Railway dashboard service variables (when

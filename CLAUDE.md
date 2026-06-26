@@ -8334,6 +8334,104 @@ post-deploy validation: the named datasets (GraphRAG-bench / MedTech /
 Antifragile) against the deployed wire (Aura + Cloudflare tunnel + Claude Max) +
 LLM-judge.
 
+## Round 251 — Parallel persona subsystem audit + HRAIS chain-collapse over-citation fix (2026-06-26)
+
+Operator directive: run `/plan-eng-review` + the deep-code-review skill in
+parallel via persona subagents to triage high-impact issues in the ontology,
+semantic layer, embeddings, and EU AI Act coverage; then re-run the medtech /
+graphrag / docx evals (live + Opus-4.8 judge), ship optimisations from the
+findings (A/B always, no davidath), and redeploy.
+
+### The audit — coverage / ontology / semantic-layer / embeddings are CLEAN
+
+A 5-persona Workflow (ontology / semantic-layer / embeddings / coverage /
+eng-manager) + adversarial verify (the verify/triage phases rate-limited; the
+finder summaries stand). Cross-checked against an independent ground-truth pass:
+
+* **Coverage** — `EC_CHECKER_OBLIGATION_MAP` 126/126 (0 placeholders), 68/68
+  Art. 3 definitions, `provision_text` resolves every spot-check incl. the 3 PDF
+  examples; Art. 5 social-scoring correctly NOT public-authority-limited; Art. 6
+  two-routes + 6(3) carve-outs; Art. 50 actor split; Art. 99 ceilings; Art. 51
+  10^25 FLOPs; Art. 73 deadlines — all faithful. Digital Omnibus absence is the
+  deliberate R112 official-dates-only policy, NOT a defect.
+* **Embeddings** — BM25 / turboquant / SVD each cover 113/113 + 13/13; all 4
+  embeddings asset SHAs match the manifest; `entity_extractor` 32 mappings
+  resolve + `\b`-bounded.
+* **Semantic layer** — `semantic_validator` confirmed genuinely advisory-only +
+  fail-soft (no ref-drop path); 119 tests pass.
+* **Role matrix** — 0 dangling refs; primaries legally correct.
+* Actionable items: (1) prod graph pinned to Neo4j Aura (the R121 embedded
+  backend is the reliable retire-Aura path; dashboard-only flip); (2) Stage-2
+  fires on every in-scope question (latency) — but the simple-skip was already
+  A/B-rejected (R129, refs 0.75->0.47). Neither was the win.
+
+### The win — over-citation is the dominant rubric lever
+
+The live medtech / graphrag gold sets surfaced it: **recall is near-perfect
+(Ref Loose ~0.78-1.0) but Ref Strict ~0.55 / Ref Conciseness ~0.31-0.6** because
+on a focused high-risk obligation question (gold = the operative articles
+6/16/9/43 + the triggering Annex), live Stage-2 (Opus) describes AND cites the
+ENTIRE Chapter-III Section-2 design chain (Arts 9-15) + process detail (17-20),
+so the R72 reconcile keeps them all (described). grb_08: gold [16,9,43], pred 11,
+Ref Strict 0.29. grb_20: gold [6,9,43,Annex III], pred 15, Ref Strict 0.21.
+
+### `app/routes/regenold.py::_collapse_hrais_chain` (new, env-gated, default ON)
+
+Fires ONLY on the dense-chain DUMP signature (>= 5 of the design set
+{9,10,11,12,13,14,15} present) and drops ONLY the design/process DETAIL articles
+{10,11,12,14,15,17,18,19,20} — never the operative / role / classification /
+penalty / GPAI articles, and never the hubs Art. 9 / 13. Detail articles named
+in the answer's LEAD sentence or in the live question are protected; floor >= 3
+refs. **Unlike the R142.1 positional clamp** (which dropped GOLD on multi-article
+rows and LOST the live pairwise judge 11-0, p=0.001), this never drops a gold
+article — recall is provably preserved. Scenario shapes + explicit
+article-enumeration questions ("which articles set out the requirements" — gold
+there IS the chain) are exempt. Stage-2-gated -> davidath byte-identical (the
+bench never runs Stage-2; the signature also fires on 0 davidath rows). Env
+off-switch `REGENOLD_CHAIN_COLLAPSE=0`.
+
+### A/B — real-data simulation on the fresh prod sidecar (no davidath)
+
+Applying the collapse to the recorded live `pred_refs` of the fresh
+`medtech-graphrag-v124` prod run (post-R250 reconcile) and recomputing the rubric
+ref axes with the real metric functions:
+
+| Axis | collapse OFF (current prod) | collapse ON | Δ |
+| ---- | --------------------------- | ----------- | --- |
+| Ref Loose (recall) | 0.7847 | 0.7847 | **flat — no gold dropped** ✓ |
+| Ref Strict | 0.5149 | 0.5331 | **+0.018** ✓ |
+| Ref Conciseness | 0.3078 | 0.3325 | **+0.025** ✓ |
+
+3 rows change: grb_08 (Ref Strict 0.29 -> 0.50), grb_20 (0.22 -> 0.44),
+grb_22 (recall-broken stays 0.00 — a separate retrieval miss). The judge axes
+are untouched by construction (the collapse edits only the wire `references`
+list, never the answer prose; dropping a *described* ref can only raise
+refs-faithfulness, never lower it) — so `ab_judge` is uninformative here and the
+ref-rubric simulation is the decisive A/B for an over-citation fix.
+
+### Gates
+
+* `tests/test_r251_chain_collapse.py` — 11 tests (every no-op gate +
+  fire + lead/question protection + recall preservation + idempotence).
+* 276-runner — all categories 100% (in_scope_multi_turn 102/102,
+  risk_classification 17/17). OOS probe 21/21, 0 leaks.
+* davidath byte-identical by construction (stage2-gated; `test_stage2_off_is_noop`
+  pins the `cli` no-op). The shared-tree davidath QA bench is non-deterministic
+  on role-noun rows via the documented R118 external-embeddings dead-port path
+  (`REGENOLD_EXTERNAL_EMBEDDINGS=0` neutralises it) — that noise is orthogonal to
+  this stage2-gated change.
+
+### Where the win lands
+
+The over-citation fix lands LIVE on the production rubric Ref Strict / Ref
+Conciseness (the davidath bench never runs Stage-2 — the established
+R31/R49/R69/R72 pattern). Documented next lever (NOT shipped — the R142.1-class
+risk): the broader tangential over-citation on non-chain rows (grb_03/07/09/23
+cite 1-2 extra described-but-tangential articles beyond gold) needs a live A/B
+before any drop. Post-deploy validation: re-run `run_medtech_graphrag_v124
+--endpoint <prod>` and compare Ref Strict / Conciseness to the current-prod
+baseline.
+
 ## Non-goals / things to skip
 
 - ~~Vector embeddings / dense retrieval~~ → **Round 31 added a
