@@ -2828,16 +2828,15 @@ def _deterministic_answer(question: str, context: GraphContext) -> str:
             # the anchor the enumeration — the whole point of the answer — is
             # exactly that sentence (R114, Antifragile Q7 wire regression).
             "answer": (
-                "Under Article 1's purpose of promoting human-centric and "
-                "trustworthy AI while ensuring a high level of protection of "
-                "health, safety, fundamental rights, democracy, and the rule of "
-                "law, the EU AI Act reflects seven guiding principles: "
-                "human agency and oversight; technical robustness and safety; "
-                "privacy and data governance; transparency; diversity, "
-                "non-discrimination and fairness; social and environmental "
-                "wellbeing; and accountability. Article 4 operationalises these "
-                "principles by requiring providers and deployers to ensure a "
-                "sufficient level of AI literacy among their staff."
+                "The seven guiding principles of the EU AI Act are articulated "
+                "in Recital 27 (the trustworthy-AI framework) and inform the "
+                "human-centric purpose of Article 1: human agency and oversight; "
+                "technical robustness and safety; privacy and data governance; "
+                "transparency; diversity, non-discrimination and fairness; "
+                "social and environmental wellbeing; and accountability. "
+                "Article 4 operationalises these principles by requiring "
+                "providers and deployers to ensure a sufficient level of AI "
+                "literacy among their staff."
             ),
             "refs": ["Art. 1", "Art. 4"],
         }
