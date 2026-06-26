@@ -8491,6 +8491,81 @@ via `REGENOLD_KB_PRIMARY_RETRIEVAL=0`. Post-deploy validation: re-run the
 antifragile-docx + graphrag-paper live evals + the Opus-4.8 LLM-judge against the
 deployed wire.
 
+## Round 253-postdeploy — live re-measurement confirms the R250-R253 stack landed; plateau on clean davidath-safe levers (2026-06-26)
+
+Self-paced optimisation-loop closeout. After R250 (R72 reconcile restore) +
+R251 (HRAIS chain-collapse) + R252 (KB-primary retrieval) + R253 (guiding-
+principles Recital-27 attribution) all deployed, a fresh live measurement
+against the production wire (Aura graph + Cloudflare tunnel + Claude Max,
+Opus-4.8 Stage-2) decisively confirmed the cumulative lift and surfaced no
+remaining clean davidath-safe lever.
+
+### Live wire re-probes — the three named weak axes are RESOLVED
+* **Wrong-Article cluster (R252)** — `?include_reasoning=true` probes:
+  "how should users be informed…" → `[Article 50.1, Article 50]`;
+  "deployer obligations" → `[Article 26, …]` (lead); "importer obligations"
+  → `[Article 23, …]` (lead). All via `retrieval_path: kb_fallback` — the
+  blunt Neo4j risk-tier dump is retired, the entire live retrieval anchors
+  correctly. (The earlier `[Article 10, 11, 12]` mis-anchor is gone.)
+* **Guiding-principles (R253)** — wire ships `[Article 1, Article 4]` (the
+  q07 gold; Article 1 is NOT dropped — the prior `[Article 4]`-only reading
+  was a stale/pre-R253 cache measurement), correct Recital-27 attribution,
+  `stage2_polish: False` (R144 curated skip).
+
+### medtech-graphrag-v124 gold set (24 rows, LIVE prod, gold-ref rubric)
+| Axis | R251-prod baseline | **r253-postdeploy-prod** | Δ |
+| ---- | ------------------ | ------------------------ | --- |
+| Ref Loose | 0.785 | **0.8958** | +0.111 |
+| Ref Strict | 0.515 (OFF) / 0.533 sim-ON | **0.6555** | +0.14 vs OFF |
+| Ref Conciseness | 0.308 (OFF) / 0.333 sim-ON | **0.4355** | +0.10 vs OFF |
+| Keyword Recall | — | **0.6972** | — |
+| Tone / Refusal | 1.0 / 0 | **1.0 / 0** | flat |
+
+R252 (correct anchors) compounded better than the R251 sidecar-sim predicted
+(correct anchors amplify the chain-collapse). 0 HTTP failures.
+
+### Opus-4.8 LLM-judge on the same fresh sidecar (via the Claude Max wrapper)
+| Judge axis | Loop's documented weak baseline | **r253-postdeploy-prod** | Δ |
+| ---------- | ------------------------------- | ------------------------ | --- |
+| **Refs-faithfulness** | **0.60** (loop #1 axis) | **0.875** (21/24) | **+0.275** |
+| **Correctness** | **0.70** | **0.9167** (22/24, factual 0.920) | **+0.22** |
+| Conciseness | — | **0.9167** (22/24) | — |
+| Tone | — | **1.0** (24/24) | — |
+
+0 judge errors (3 retries, all recovered). Strongest comprehensive judge
+scorecard the project has measured — the refs-faithfulness floor the loop was
+built to lift (0.60) is now 0.875.
+
+### Plateau determination — no clean davidath-safe lever remains
+The 5 residual judge fails are a heterogeneous single-row long tail, NOT a
+systematic cluster:
+* **grb_17** (refL=refS=0.00) — the doctor-patient **ambient-scribe** question
+  (a protected PDF example, hard rule #3) on this repo's OWN medtech eval gold
+  (`[Article 50]`). The engine's deterministic verdict mis-classifies a pure
+  scribe as high-risk (Article 6.1 two-route); Opus regenerates that and the
+  R72 reconcile drops the un-described Article 50. **Deliberately NOT fixed** —
+  flipping the doctor-patient-transcription classification to match an in-house
+  eval's gold is exactly the topic-specific-tuning-of-a-protected-example +
+  overfit-to-own-eval that hard rule #3 and the R109 discipline forbid (the
+  competition penalises overfit hardest on the 3 PDF examples; scope.py already
+  anchors Art. 50 per R117-FOLLOWUP — the residual is the protected high-risk
+  verdict, untouchable).
+* 2 one-off Opus generation slips (truncated cite-but-don't-describe Art. 27/86;
+  sub-point 6.1-vs-6(2)/6(3) granularity mismatch) — stochastic generation
+  variance, not a deterministic engine/retrieval bug.
+* 1 factual-attribution nuance (six-month retention floor → Art. 19/26 not
+  Art. 12) + 2 conciseness slips (one bare "No."; one >4 sentences) — single
+  rows on the in-house eval.
+
+The remaining structural surface — tangential over-citation of *described* refs
+on non-chain rows — is the R251-documented, R142.1-class trade that needs a live
+pairwise `ab_judge` campaign (never drop a GOLD ref), NOT a single davidath-safe
+fix. Both loop stopping conditions are met: judge axes plateaued at strong
+levels (refs 0.875 / correctness 0.917 / conciseness 0.917 / tone 1.0) and no
+clean davidath-safe lever remains. Sidecars:
+`evals/bench/results/medtech-graphrag-v124-r253-postdeploy-prod.json` +
+`judge-r253-postdeploy-prod.json`.
+
 ## Non-goals / things to skip
 
 - ~~Vector embeddings / dense retrieval~~ → **Round 31 added a
