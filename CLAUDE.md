@@ -8432,6 +8432,65 @@ before any drop. Post-deploy validation: re-run `run_medtech_graphrag_v124
 --endpoint <prod>` and compare Ref Strict / Conciseness to the current-prod
 baseline.
 
+## Round 252 — KB-primary retrieval: retire the blunt Neo4j risk-tier dump (2026-06-26)
+
+The live retrieval was anchoring the WRONG articles on topic / role /
+transparency questions — the visible symptom was the R251 antifragile-eval
+wrong-Article cluster (q05/q10/q11/q16/q18). Root cause, from a live
+`?include_reasoning=true` trace: *"How should users be informed when interacting
+with AI systems?"* (gold **Article 50**) shipped `[Article 10, Article 11,
+Article 12]` with `retrieval_path: neo4j`. The seeded Neo4j Aura graph's blunt
+`obligations_for_risk_level` query DUMPS the generic high-risk obligation chain
+(Arts. 9-15) for any risk tier — so a transparency / role / topic question that
+maps to a single operative article got buried under the chain. The in-memory KB
+path correctly anchors **Article 50** for the same question. The R99.1
+empty-success KB fallback never rescues this because the dump is **non-empty**
+(it returns the wrong-but-present chain), so `_retrieve_from_graph` ships it.
+
+### The fix — KB primary, graph additive-only
+
+`app/engines/graph_rag.py::_kb_primary_retrieval_enabled()` (env
+`REGENOLD_KB_PRIMARY_RETRIEVAL`, **default ON**). When ON and Neo4j is enabled,
+the new `_retrieve_from_graph` branch returns `_retrieve_from_kb(...)` — the
+byte-identical davidath-bench retrieval path — then runs the live
+post-processing (`_populate_semantic_statements` +
+`_expand_referenced_annexes_and_recitals`) so the Neo4j-only enrichment is not
+lost. The blunt `obligations_for_risk_level` primary dump is dropped. Crucially,
+the **additive 2-hop graph expansion STILL fires** inside `_retrieve_from_kb` →
+`top_articles_by_relevance` (the R35 "purely additive, never displaces a BM25
+winner" path), so the precision-safe cross-reference contribution of the graph
+is kept — only the wrong-shaped primary dump is removed. Set
+`REGENOLD_KB_PRIMARY_RETRIEVAL=0` to restore the legacy Neo4j-primary retrieval.
+
+Cache-key: `REGENOLD_KB_PRIMARY_RETRIEVAL` folded into `_engine_cache_key`'s
+`engine_flags` blob (the R30/R56/R79 cache-poisoning doctrine — any input that
+flips engine behaviour must be in the key).
+
+### Why davidath is byte-identical (by construction)
+
+The deterministic bench runs with no Neo4j → `client.enabled` is False →
+`_retrieve_from_graph` already takes the KB path and the new gate branch is
+**never reached locally**. The 276-runner is inert for the same reason (it is
+already on the KB path). Tests: `tests/test_r252_kb_primary_retrieval.py`.
+
+### Trajectory
+
+This is the systematic version of the R136/R137 finding ("the Neo4j Aura graph
+is a production liability" — duplicate-node drift, empty-graph zero-retrieval,
+ops cost) and the R121 embedded-backend trajectory: where the embedded backend
+retires Aura for the 2-hop layer, R252 demotes the hosted graph from a blunt
+primary retriever to the additive layer it is actually precision-safe at.
+
+### Where the win lands
+
+LIVE on the production Neo4j path — the entire live retrieval now anchors
+correctly. The q05/q10/q11/q16/q18 antifragile wrong-Article cluster (the R251
+eval's visible symptom) was the surface of this dump. davidath is the regression
+guard, not the win surface (the established R31/R49/R69/R136 pattern). Reversible
+via `REGENOLD_KB_PRIMARY_RETRIEVAL=0`. Post-deploy validation: re-run the
+antifragile-docx + graphrag-paper live evals + the Opus-4.8 LLM-judge against the
+deployed wire.
+
 ## Non-goals / things to skip
 
 - ~~Vector embeddings / dense retrieval~~ → **Round 31 added a

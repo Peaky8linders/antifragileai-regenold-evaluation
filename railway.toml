@@ -317,6 +317,16 @@ REGENOLD_CITE_DESCRIBE_GUARD = "0"
 #   railway variables --set REGENOLD_CHAIN_COLLAPSE=0
 REGENOLD_CHAIN_COLLAPSE = "1"
 
+# R252: in-memory KB primary retrieval; graph additive-only. =0 restores legacy Neo4j primary.
+# On the live Neo4j path, the blunt obligations_for_risk_level risk-tier DUMP
+# surfaced the WRONG articles on topic/role/transparency questions (live trace:
+# "How should users be informed…" → [Article 10, 11, 12] via retrieval_path:neo4j,
+# gold Article 50; the in-memory KB path correctly anchors Article 50). With this
+# ON the engine uses the KB as PRIMARY retrieval (the byte-identical davidath path)
+# and keeps Neo4j as the additive 2-hop layer only. davidath byte-identical (the
+# bench has no Neo4j → the gate branch is never reached locally); the win lands LIVE.
+REGENOLD_KB_PRIMARY_RETRIEVAL = "1"
+
 # Round 80.2 — Stage-2 LLM polish + latency knobs are now CODE
 # DEFAULTS, not railway.toml overrides. The R80.1 round added them
 # to [deploy.envs] but Railway dashboard service variables (when

@@ -1171,6 +1171,10 @@ def _engine_cache_key(
             "P2P_GRAPH_RAG_ENABLE_STAGE2",
             "REGENOLD_GRAPH_2HOP",
             "REGENOLD_GRAPH_AWARE",
+            # R252 — KB-primary vs legacy Neo4j-primary retrieval flips the
+            # engine's retrieved articles (and thus the answer), so it must
+            # be in the cache key (R30/R56/R79 cache-poisoning doctrine).
+            "REGENOLD_KB_PRIMARY_RETRIEVAL",
             "REGENOLD_ENTITY_BOOST",
             "REGENOLD_ENTITY_BOOST_FACTOR_ROLE",
             "REGENOLD_ENTITY_BOOST_FACTOR_CONCEPT",

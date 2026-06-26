@@ -646,10 +646,16 @@ class TestGraphRetrievalDegraded:
     ``_compute_confidence`` must report low confidence on a degraded
     context."""
 
-    def test_graph_exception_falls_back_to_kb_and_marks_degraded(self) -> None:
+    def test_graph_exception_falls_back_to_kb_and_marks_degraded(self, monkeypatch) -> None:
         """An exception in ``execute_read`` must be caught, the function
         must fall back to KB retrieval, and the returned context must
-        carry ``degraded=True``."""
+        carry ``degraded=True``.
+
+        R252 — pin ``REGENOLD_KB_PRIMARY_RETRIEVAL=0`` so the LEGACY Neo4j
+        primary-retrieval path (whose issue-#55 exception->degraded fallback
+        this test guards) actually runs; the default-ON KB-primary gate would
+        otherwise short-circuit to the KB path before any ``execute_read``."""
+        monkeypatch.setenv("REGENOLD_KB_PRIMARY_RETRIEVAL", "0")
         # Build a fake client that's enabled but raises on every read.
         class _ExplodingClient:
             enabled = True
@@ -776,9 +782,14 @@ class TestGraphEmptyResultFallback:
             "result, not a degraded backend — must not set degraded=True"
         )
 
-    def test_graph_nonempty_result_is_kept(self) -> None:
+    def test_graph_nonempty_result_is_kept(self, monkeypatch) -> None:
         """Regression guard: when the graph DOES return obligations, the
-        fallback must NOT fire (graph result is kept, KB does not override)."""
+        fallback must NOT fire (graph result is kept, KB does not override).
+
+        R252 — pin ``REGENOLD_KB_PRIMARY_RETRIEVAL=0`` so the LEGACY Neo4j
+        primary-retrieval path runs; the default-ON KB-primary gate would
+        otherwise bypass the graph entirely and ship the KB context."""
+        monkeypatch.setenv("REGENOLD_KB_PRIMARY_RETRIEVAL", "0")
         sentinel = [{"id": "graph_obl_1", "text": "from graph", "article": "Art. 9"}]
 
         class _RichClient:

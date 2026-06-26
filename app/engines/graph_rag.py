@@ -3088,6 +3088,25 @@ def _deterministic_answer(question: str, context: GraphContext) -> str:
 
 # ─── Graph Retrieval ─────────────────────────────────────────────────────────
 
+def _kb_primary_retrieval_enabled() -> bool:
+    """R252 — when ON (default), the live engine uses the in-memory KB as the
+    PRIMARY retrieval (the byte-identical bench path) and keeps the Neo4j graph
+    as the additive 2-hop layer only. (The additive 2-hop expansion fires in the
+    PARSE phase — `_deterministic_parse`'s BM25 fallback -> `top_articles_by_relevance`,
+    gated independently on `REGENOLD_GRAPH_2HOP` — populating `query.entities`
+    that `_retrieve_from_kb` then consumes; it is NOT re-run inside
+    `_retrieve_from_kb`.) Retires the blunt `obligations_for_risk_level` risk-tier
+    dump that surfaced wrong articles on topic/role/transparency questions.
+    Reversible via REGENOLD_KB_PRIMARY_RETRIEVAL=0 to restore the legacy Neo4j
+    primary retrieval."""
+    return os.getenv("REGENOLD_KB_PRIMARY_RETRIEVAL", "1").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
+
 def _retrieve_from_graph(
     query: GraphQuery,
     risk_level: str | None = None,
@@ -3121,6 +3140,34 @@ def _retrieve_from_graph(
         # default, so this is the steady-state codepath for most
         # deploys.
         return _retrieve_from_kb(query, risk_level)
+
+    # R252 — KB-primary retrieval (default ON). The live Neo4j PRIMARY
+    # retrieval (`obligations_for_risk_level`) is a blunt risk-tier DUMP:
+    # for a topic / role / transparency question it returns the ENTIRE
+    # high-risk obligation chain (Arts 9-15) regardless of the question's
+    # actual subject, and because that result is non-empty the R99
+    # empty-success fallback never fires — so the wire ships the wrong
+    # cluster. Live `?include_reasoning=true` proof: "How should users be
+    # informed when interacting with AI systems?" (gold Article 50) shipped
+    # [10,11,12] via retrieval_path=neo4j, while the in-memory KB path
+    # correctly anchors Article 50. The KB path is the byte-identical bench
+    # path + R99's "reliable floor", and the precision-safe additive 2-hop
+    # graph expansion still fires in the PARSE phase (`_deterministic_parse`'s
+    # BM25 fallback -> `top_articles_by_relevance`, gated independently on
+    # REGENOLD_GRAPH_2HOP) and is carried in `query.entities` into
+    # `_retrieve_from_kb` (the graph use the architecture intended, R35
+    # "purely additive, never displaces a winner"). So retire the blunt
+    # primary graph retrieval and keep the graph additive-only, while
+    # PRESERVING the live post-processing (embeddings + annex/recital
+    # expansion) the neo4j path applied. davidath byte-identical BY
+    # CONSTRUCTION — the bench has no Neo4j, so `client.enabled` is False
+    # above and this branch is never reached there. Reversible via
+    # REGENOLD_KB_PRIMARY_RETRIEVAL=0 (restores the legacy Neo4j primary).
+    if _kb_primary_retrieval_enabled():
+        context = _retrieve_from_kb(query, risk_level)
+        _populate_semantic_statements(context, query.raw_question)
+        _expand_referenced_annexes_and_recitals(context)
+        return context
 
     effective_risk = query.risk_context or risk_level or "high"
     if effective_risk and not effective_risk.startswith("risk_"):
