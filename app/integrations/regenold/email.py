@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +39,16 @@ except ImportError:  # pragma: no cover
 
 
 def _get_api_key() -> str | None:
-    return os.getenv("RESEND_API_KEY") or os.getenv("EMAIL_RESEND_API_KEY")
+    raw = os.getenv("RESEND_API_KEY") or os.getenv("EMAIL_RESEND_API_KEY")
+    if not raw:
+        return None
+    # Env-var copy/paste frequently introduces a stray leading/trailing
+    # newline or wrapped whitespace. An API key never contains whitespace,
+    # and a newline in the value corrupts the ``Authorization: Bearer <key>``
+    # header (Resend rejects the request before it is sent). Strip ALL
+    # whitespace so the key works regardless of how it is stored.
+    cleaned = "".join(raw.split())
+    return cleaned or None
 
 
 def _get_from_address() -> str:
@@ -241,4 +251,9 @@ def probe_send(to_email: str) -> tuple[bool, str]:
             msg_id = str(getattr(resp, "id", "") or "")
         return True, (f"sent id={msg_id}" if msg_id else "sent")
     except Exception as exc:  # noqa: BLE001 — diagnostic only, never raise
-        return False, f"{type(exc).__name__}: {exc}"[:400]
+        detail = f"{type(exc).__name__}: {exc}"
+        # Defence-in-depth: some SDK errors echo the malformed Authorization
+        # header (which contains the key). Never let a Resend token reach the
+        # wire / logs via the probe.
+        detail = re.sub(r"re_[A-Za-z0-9_-]+", "re_***", detail)
+        return False, detail[:400]
