@@ -244,7 +244,9 @@ def test_bogus_key_still_403s_when_partner_key_configured(client: TestClient) ->
 def test_email_not_configured_is_noop(monkeypatch: pytest.MonkeyPatch) -> None:
     from app.integrations.regenold import email as lexy_email
 
-    monkeypatch.delenv("SENDGRID_API_KEY", raising=False)
+    # Resend (the legit-ai provider) — no key configured → no-op.
+    monkeypatch.delenv("RESEND_API_KEY", raising=False)
+    monkeypatch.delenv("EMAIL_RESEND_API_KEY", raising=False)
     assert lexy_email.is_configured() is False
     # Must not raise and must return False when unconfigured.
     assert lexy_email.send_welcome_email(to_email="x@y.com", api_key="lexy_sk_z", name="X") is False

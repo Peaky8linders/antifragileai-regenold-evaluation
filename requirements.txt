@@ -61,3 +61,10 @@ neo4j>=5.0
 # pure-NumPy reference implementation.
 turboquant-py>=0.1.0,<1.0
 rushdb>=2.0.0
+
+# Lexy sign-up funnel — transactional welcome email via Resend (same
+# provider + ``RESEND_API_KEY`` env as the parent legit-ai
+# app/email_service.py). Optional: app/integrations/regenold/email.py
+# lazily imports it and no-ops (returns False) when the package or key
+# is absent, so the funnel still issues the API key in the HTTP response.
+resend>=2.26.0

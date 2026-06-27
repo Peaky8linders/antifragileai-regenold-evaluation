@@ -148,7 +148,7 @@ def signin(request: Request, body: SigninRequest) -> AccountResponse:
             },
         )
     # Optional convenience copy of the key by email (best-effort, no-op
-    # without SendGrid). The key is always returned in the response too.
+    # without Resend). The key is always returned in the response too.
     email_sent = False
     try:
         if lexy_email.is_configured():
