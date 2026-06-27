@@ -18,6 +18,7 @@ from slowapi.middleware import SlowAPIMiddleware
 from app.config import settings
 from app.llm import resolve_provider
 from app.rate_limit import limiter, rate_limit_handler
+from app.routes.auth import auth_router
 from app.routes.regenold import regenold_router
 
 logger = logging.getLogger(__name__)
@@ -64,6 +65,7 @@ api_v1.state.limiter = limiter
 api_v1.add_exception_handler(RateLimitExceeded, rate_limit_handler)
 api_v1.add_middleware(SlowAPIMiddleware)
 api_v1.include_router(regenold_router)
+api_v1.include_router(auth_router)
 
 
 app.mount("/api/v1", api_v1)
@@ -1070,23 +1072,28 @@ def info() -> dict[str, str]:
         "version": settings.version,
         "docs": "/docs",
         "ui": "/",
+        "chat_ui": "/app",
+        "signup_endpoint": "/api/v1/regenold/auth/signup",
         "ask_endpoint": "/api/v1/regenold/eu-ai-act/ask",
     }
 
 
-# ─── Interactive web UI (Lexy) ───────────────────────────────────────────
-# Registered LAST so its ``GET /`` (the chat landing page) and
-# ``GET /lexy_avatar.png`` mount on the root app after ``/api/v1`` and the
-# ``/healthz*`` probes are already bound — no path collision. The UI is a
-# static, self-contained HTML page; it injects NO server-side secret (the
-# reviewer supplies their own API key, persisted client-side). Failure to
-# register the UI must never block the API, so it is best-effort.
+# ─── Sign-up funnel (/) + interactive Lexy chat (/app) ───────────────────
+# Registered LAST so they mount on the root app after ``/api/v1`` and the
+# ``/healthz*`` probes are already bound — no path collision. Both are
+# static, self-contained HTML pages that inject NO server-side secret
+# (keys are minted by the API at runtime; the user's key rides the URL
+# fragment into the chat). Funnel owns ``/``; chat owns ``/app``.
+# Failure to register the UI must never block the API, so it is
+# best-effort.
 try:
+    from app.funnel_ui import register_funnel_routes
     from app.web_ui import register_web_routes
 
-    register_web_routes(app)
+    register_web_routes(app)        # /app + /lexy_avatar.png
+    register_funnel_routes(app)     # /
 except Exception as _ui_exc:  # noqa: BLE001 — UI is optional; never block the API
     logger.warning(
-        "regenold.startup web_ui registration skipped: %s — API unaffected",
+        "regenold.startup web/funnel UI registration skipped: %s — API unaffected",
         _ui_exc,
     )

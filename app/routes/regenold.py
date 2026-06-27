@@ -93,6 +93,7 @@ from app.engines.sentence_index import (
 from app.evidence.models import EvidenceEntryType
 from app.evidence.store import get_evidence_store
 from app.integrations.regenold.auth import (
+    is_known_regenold_key,
     optional_regenold_api_key,
     validate_regenold_api_key,
 )
@@ -1563,7 +1564,7 @@ def _regenold_rate_key(request: Request) -> str:
     traffic cannot exhaust a partner's privileged 60/min budget.
     """
     api_key = request.headers.get("X-Regenold-Api-Key", "")
-    if api_key and validate_regenold_api_key(api_key):
+    if api_key and is_known_regenold_key(api_key):
         return f"{_RATE_KEY_PREFIX_AUTHED}{_hash16(api_key)}"
     return f"{_RATE_KEY_PREFIX_ANON}{_hash16(_client_addr(request))}"
 

@@ -9,20 +9,28 @@ from fastapi.responses import FileResponse, HTMLResponse
 logger = logging.getLogger(__name__)
 
 def register_web_routes(app: FastAPI) -> None:
-    """Mounts the interactive web interface and avatar routes on the FastAPI application."""
+    """Mounts the interactive Lexy chat UI + avatar routes.
+
+    The chat UI now lives at ``/app`` (the sign-up funnel owns ``/`` —
+    see :func:`app.funnel_ui.register_funnel_routes`). After a sign-up /
+    sign-in the funnel redirects to ``/app#key=<lexy_sk_...>``; the chat
+    reads the key from the URL fragment (never sent to the server) into
+    ``localStorage['regenold_api_key']`` and strips the URL.
+    """
 
     # Absolute path to the lexy_avatar.png image in the workspace root
     avatar_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "lexy_avatar.png"))
 
-    @app.get("/", response_class=HTMLResponse)
+    @app.get("/app", response_class=HTMLResponse)
     def read_web_ui() -> str:
         # SECURITY: never inject the partner API key into the served HTML.
         # This page is reachable unauthenticated on the public endpoint, so
         # baking ``P2P_REGENOLD_API_KEY`` into the markup would leak it to
-        # every visitor. The reviewer pastes their own key into the config
-        # field (persisted client-side in localStorage); the browser sends
-        # it as the ``X-Regenold-Api-Key`` header on the same-origin
-        # ``/api/v1`` call. The template ships with an EMPTY key field.
+        # every visitor. The user's own funnel-issued key arrives via the
+        # ``#key=`` URL fragment (or is pasted into the config field) and is
+        # persisted client-side in localStorage; the browser sends it as the
+        # ``X-Regenold-Api-Key`` header on the same-origin ``/api/v1`` call.
+        # The template ships with an EMPTY key field.
         return HTML_TEMPLATE
 
     @app.get("/lexy_avatar.png")
