@@ -700,6 +700,31 @@ def healthz() -> dict[str, str]:
     return {"status": "ok", "version": settings.version}
 
 
+@app.get("/healthz/email")
+def healthz_email(
+    probe: int = 0, to: str = "lexy-health-probe@example.com"
+) -> dict[str, object]:
+    """Lexy welcome-email (Resend) health probe.
+
+    Config-only by default (no token cost, no send) — reports whether the
+    ``resend`` package is installed, the ``RESEND_API_KEY`` is present, and
+    the from-address. With ``?probe=1`` it fires ONE real Resend send to
+    ``to`` and returns the exact success id or the failure reason (so an
+    operator can tell 'resend not installed' / 'key missing' / 'domain not
+    verified' apart). Always HTTP 200 — alert on ``configured=false`` or
+    ``send_ok=false``.
+    """
+    from app.integrations.regenold import email as lexy_email
+
+    payload: dict[str, object] = {"version": settings.version}
+    payload.update(lexy_email.diagnostics())
+    if probe:
+        ok, detail = lexy_email.probe_send(to)
+        payload["send_ok"] = ok
+        payload["send_detail"] = detail
+    return payload
+
+
 @app.get("/healthz/llm")
 def healthz_llm() -> dict[str, object]:
     """Live LLM-path probe — verifies the configured provider can actually answer.

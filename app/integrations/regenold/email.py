@@ -189,3 +189,56 @@ def send_welcome_email(*, to_email: str, api_key: str, name: str = "") -> bool:
     except Exception as exc:  # noqa: BLE001 — email is best-effort, never raise
         logger.warning("lexy.email_failed to=%s err=%s", to_email, exc)
         return False
+
+
+# ── Diagnostics (for /healthz/email — never returns the API key) ───────────────
+
+
+def diagnostics() -> dict[str, object]:
+    """Config-only health snapshot for the ``/healthz/email`` probe.
+
+    Booleans + the (non-secret) from-address / app-url only — NEVER the
+    ``RESEND_API_KEY``. Lets an operator tell apart "resend package not
+    installed" vs "key not set" vs "configured" without a live send.
+    """
+    return {
+        "provider": "resend",
+        "resend_available": _resend_available,
+        "api_key_present": bool(_get_api_key()),
+        "configured": is_configured(),
+        "from_address": _get_from_address(),
+        "app_url": _app_url(),
+    }
+
+
+def probe_send(to_email: str) -> tuple[bool, str]:
+    """Attempt ONE real Resend send for diagnostics; return ``(ok, detail)``.
+
+    ``detail`` is the Resend message id on success, or a truncated
+    exception string on failure (e.g. a domain-not-verified / 403 from
+    Resend) — no secrets. Surfaces WHY delivery fails to the operator via
+    ``/healthz/email?probe=1``. Never raises.
+    """
+    if not _resend_available:
+        return False, "resend package not installed"
+    key = _get_api_key()
+    if not key:
+        return False, "RESEND_API_KEY not set"
+    try:
+        resend.api_key = key  # type: ignore[union-attr]
+        resp = resend.Emails.send(  # type: ignore[union-attr]
+            {
+                "from": _get_from_address(),
+                "to": to_email,
+                "subject": "Lexy email health probe",
+                "html": "<p>Lexy /healthz/email probe — please ignore.</p>",
+                "tags": [{"name": "category", "value": "lexy_health_probe"}],
+            }
+        )
+        if isinstance(resp, dict):
+            msg_id = str(resp.get("id") or resp.get("data") or "")
+        else:
+            msg_id = str(getattr(resp, "id", "") or "")
+        return True, (f"sent id={msg_id}" if msg_id else "sent")
+    except Exception as exc:  # noqa: BLE001 — diagnostic only, never raise
+        return False, f"{type(exc).__name__}: {exc}"[:400]
