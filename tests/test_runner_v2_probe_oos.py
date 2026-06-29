@@ -268,6 +268,14 @@ def _reset_rate_limit() -> None:
         pass
 
 
+@pytest.fixture(autouse=True)
+def _enable_topic_filter(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The EU AI Act subject-topic refusal is opt-in (``REGENOLD_TOPIC_FILTER``);
+    # the production default answers every question. The OOS probe is the
+    # verification harness for that refusal feature, so enable it here.
+    monkeypatch.setenv("REGENOLD_TOPIC_FILTER", "1")
+
+
 @pytest.fixture
 def _configured_key():
     prev = settings.regenold.api_key

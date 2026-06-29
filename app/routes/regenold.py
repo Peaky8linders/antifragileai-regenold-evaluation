@@ -148,6 +148,7 @@ from app.integrations.regenold.reasoning_trace import (
 )
 from app.integrations.regenold.scope import (
     ConversationVerdict,
+    ScopeReason,
     classify_conversation,
     refusal_copy_for,
     text_has_injection,
@@ -3249,6 +3250,57 @@ def _build_telemetry_reasoning(
     )
 
 
+# ── EU AI Act subject-topic filter toggle ───────────────────────────────
+#
+# The scope gate (``classify_conversation``) refuses any question it judges
+# is not an EU AI Act question — greetings ("hi, what can you do?"),
+# other-regulation asks, near-OOS adjacent frameworks (DSA / NIS2 / PLD /
+# CRA), and "no matching obligation" nonsense — by shipping
+# ``refusal_copy_for(verdict)`` instead of an answer. In production this
+# subject-topic filter false-positived on naturally-phrased, legitimate
+# questions, so it is DISABLED by default: the route answers every question
+# and lets the RAG engine ground it in the regulation. Set
+# ``REGENOLD_TOPIC_FILTER=1`` (or ``true`` / ``yes`` / ``on``) to restore
+# the legacy subject-matter refusals.
+#
+# Two refusal classes are NOT subject-topic filtering and always stand,
+# regardless of the toggle:
+#   * PROMPT_INJECTION    — a security guard, not a topic gate.
+#   * NON_EXISTENT_ARTICLE — a helpful in-domain correction ("Article 200
+#     does not exist; did you mean Article 112 or Article 113?").
+_ALWAYS_REFUSE_SCOPE_REASONS = frozenset(
+    {ScopeReason.PROMPT_INJECTION, ScopeReason.NON_EXISTENT_ARTICLE}
+)
+
+
+def _topic_filter_enabled() -> bool:
+    """True when the legacy EU AI Act subject-topic refusal is active.
+
+    Default OFF — the route answers every question; only the security /
+    helpful-correction refusal classes survive (see
+    ``_ALWAYS_REFUSE_SCOPE_REASONS``).
+    """
+    return os.getenv("REGENOLD_TOPIC_FILTER", "0").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
+
+def _scope_refusal_active(reason: ScopeReason) -> bool:
+    """Whether an out-of-scope ``reason`` should still ship a refusal.
+
+    Security + helpful-correction reasons always refuse. Subject-topic
+    reasons (CONVERSATIONAL / OTHER_REGULATION / NEAR_OOS /
+    EMPTY_OR_NONSENSE) refuse only when the topic filter is explicitly
+    re-enabled via ``REGENOLD_TOPIC_FILTER``.
+    """
+    if reason in _ALWAYS_REFUSE_SCOPE_REASONS:
+        return True
+    return _topic_filter_enabled()
+
+
 def _build_scope_refusal_response(
     *,
     scope: ConversationVerdict,
@@ -4337,7 +4389,7 @@ def regenold_eu_ai_act_ask(
     )
     if scope.anchor_articles:
         _trace_anchors(list(scope.anchor_articles))
-    if not scope.in_scope:
+    if not scope.in_scope and _scope_refusal_active(scope.reason):
         _trace_retrieval_path("scope_refusal")
         return _build_scope_refusal_response(
             scope=scope,
@@ -4349,6 +4401,12 @@ def regenold_eu_ai_act_ask(
             system_context=system_context,
             history_turns=req.messages,
         )
+    if not scope.in_scope:
+        # Subject-topic filter disabled (the default): a non-injection,
+        # non-correction out-of-scope verdict no longer refuses. Fall
+        # through and let the RAG engine ground an answer in the
+        # regulation. Record the suppressed reason for the reasoning trace.
+        _trace_note(f"topic_filter_suppressed: {scope.reason.value}")
 
     # R51 — count prior user+assistant turns so the engine's complex-
     # question gate can fire on multi-turn finals (3+ turns + short

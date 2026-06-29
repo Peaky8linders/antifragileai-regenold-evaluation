@@ -243,7 +243,10 @@ class TestRouteSynthesisDefault:
         body = r.json()
         assert body.get("retrieval_path") == "verbatim_exact_text", body.get("retrieval_path")
 
-    def test_out_of_scope_still_refused(self) -> None:
+    def test_out_of_scope_still_refused(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # The subject-topic refusal is opt-in (``REGENOLD_TOPIC_FILTER``);
+        # enable it so this off-topic question takes the refusal path.
+        monkeypatch.setenv("REGENOLD_TOPIC_FILTER", "1")
         c = _client()
         r = c.post(
             "/api/v1/regenold/eu-ai-act/ask",

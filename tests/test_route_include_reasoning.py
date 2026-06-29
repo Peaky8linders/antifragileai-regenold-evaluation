@@ -105,10 +105,15 @@ class TestIncludeReasoning:
         assert without.get("references") == with_.get("references")
 
     def test_out_of_scope_question_still_gets_reasoning(
-        self, _client: TestClient
+        self, _client: TestClient, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Scope-refusal paths ALSO populate the reasoning trace —
-        critical for diagnosing why a question was refused."""
+        critical for diagnosing why a question was refused.
+
+        The subject-topic refusal is opt-in (``REGENOLD_TOPIC_FILTER``);
+        enable it here so this exercises the refusal-route trace.
+        """
+        monkeypatch.setenv("REGENOLD_TOPIC_FILTER", "1")
         resp = _client.post(
             "/api/v1/regenold/eu-ai-act/ask?include_reasoning=true",
             json=[{"role": "user", "content": "What is the capital of France?"}],

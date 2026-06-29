@@ -489,12 +489,22 @@ class TestRefusalCopy:
 
 
 class TestRouteScopeRefusal:
-    """Pin the scope-refusal behaviour on the live endpoint."""
+    """Pin the scope-refusal behaviour on the live endpoint.
+
+    The EU AI Act subject-topic refusal (OTHER_REGULATION / CONVERSATIONAL
+    / NEAR_OOS / EMPTY_OR_NONSENSE) is now OPT-IN — disabled by default so
+    legitimate naturally-phrased questions are never refused (see
+    ``tests/test_topic_filter.py`` for the default-answer contract). The
+    topic-refusal tests below set ``REGENOLD_TOPIC_FILTER=1`` to exercise
+    the legacy refusal path. The security (NON_EXISTENT_ARTICLE) +
+    in-scope tests are unaffected by the toggle.
+    """
 
     def setup_method(self) -> None:
         settings.regenold.api_key = SecretStr("regenold-scope-test-key")
 
-    def test_off_topic_gdpr_refuses(self) -> None:
+    def test_off_topic_gdpr_refuses(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("REGENOLD_TOPIC_FILTER", "1")
         c = _authed_client()
         r = c.post(
             "/api/v1/regenold/eu-ai-act/ask",
@@ -520,7 +530,8 @@ class TestRouteScopeRefusal:
         assert "Art. 200" not in body["answer"]
         assert "113" in body["answer"]
 
-    def test_conversational_refuses(self) -> None:
+    def test_conversational_refuses(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("REGENOLD_TOPIC_FILTER", "1")
         c = _authed_client()
         r = c.post(
             "/api/v1/regenold/eu-ai-act/ask",
@@ -531,8 +542,9 @@ class TestRouteScopeRefusal:
         assert body["references"] == []
         assert "EU AI Act" in body["answer"]
 
-    def test_telemetry_path_no_match(self) -> None:
+    def test_telemetry_path_no_match(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Refusal in telemetry mode → ``retrieval_path="no_match"``."""
+        monkeypatch.setenv("REGENOLD_TOPIC_FILTER", "1")
         c = _authed_client()
         r = c.post(
             "/api/v1/regenold/eu-ai-act/ask?include_telemetry=true",
@@ -616,8 +628,11 @@ class TestRouteScopeRefusal:
         # Art. 200 must not leak into references (reference validation gate).
         assert not any("200" in ref for ref in (body.get("references") or []))
 
-    def test_audit_chain_records_scope_reason(self) -> None:
+    def test_audit_chain_records_scope_reason(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """The chain entry stamps the scope_reason for forensic filter."""
+        monkeypatch.setenv("REGENOLD_TOPIC_FILTER", "1")
         from app.evidence.store import get_evidence_store
 
         store = get_evidence_store()
@@ -655,7 +670,20 @@ class TestRegenoldEvalGate:
     * ``test_no_baseline_category_below_75_percent``: per-category
       floor at 75% on round-1-3 categories.
     * Reference-format / sentence-cap / refs-within-max all 100%.
+
+    The 276-scenario suite includes OOS categories (``off_topic_regulation``
+    / ``conversational`` / ``regulation_confusion`` / ``out_of_scope_carveouts``)
+    whose expected behaviour is a refusal. That refusal is now opt-in
+    behind ``REGENOLD_TOPIC_FILTER`` (the production default answers every
+    question — see ``tests/test_topic_filter.py``), so these wire-shape +
+    scope-filter regression gates run with the filter ENABLED.
     """
+
+    @pytest.fixture(autouse=True)
+    def _enable_topic_filter(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # The eval suite's OOS scenarios assert refusals; exercise them
+        # against the (now opt-in) legacy subject-topic filter.
+        monkeypatch.setenv("REGENOLD_TOPIC_FILTER", "1")
 
     def test_eval_pass_rate_at_least_70_percent(self) -> None:
         """Overall deterministic-path floor.

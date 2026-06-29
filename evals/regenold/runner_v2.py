@@ -1023,6 +1023,14 @@ def main(argv: list[str] | None = None) -> int:
 
     # ── --probe-oos branch (R56-B) ─────────────────────────────────────
     if args.probe_oos:
+        # The EU AI Act subject-topic refusal is opt-in
+        # (``REGENOLD_TOPIC_FILTER``) — the production default answers
+        # every question. The OOS probe is the verification harness for
+        # that refusal feature, so enable it for the probe run unless the
+        # operator pinned it explicitly.
+        import os  # noqa: PLC0415 — lazy; only the probe mode needs it
+
+        os.environ.setdefault("REGENOLD_TOPIC_FILTER", "1")
         payload = run_probe_oos_only(
             endpoint=endpoint,
             api_key=args.api_key,

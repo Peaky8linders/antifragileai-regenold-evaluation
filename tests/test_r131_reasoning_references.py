@@ -135,9 +135,15 @@ class TestRouteReferencesMatchWire:
 
 
 class TestRefusalAndDefault:
-    def test_refusal_has_no_references_key(self, _client: TestClient) -> None:
+    def test_refusal_has_no_references_key(
+        self, _client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """OOS refusal ships empty references → the trace drops the key
-        (not an empty list)."""
+        (not an empty list).
+
+        The subject-topic refusal is opt-in (``REGENOLD_TOPIC_FILTER``);
+        enable it so this off-topic question takes the refusal path."""
+        monkeypatch.setenv("REGENOLD_TOPIC_FILTER", "1")
         body = _client.post(
             "/api/v1/regenold/eu-ai-act/ask?include_reasoning=true",
             json=[{"role": "user", "content": "Tell me a joke about cats."}],

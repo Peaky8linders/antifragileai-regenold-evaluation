@@ -200,11 +200,15 @@ class TestRouteConsistencyGuard:
         )
 
     def test_out_of_scope_question_still_refuses(
-        self, _client: TestClient
+        self, _client: TestClient, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """The guard MUST NOT lift answers on legitimately out-of-scope
         questions. The scope-gate refusal path keeps ``references``
-        empty, so the guard's ``if references`` precondition skips it."""
+        empty, so the guard's ``if references`` precondition skips it.
+
+        The subject-topic refusal is opt-in (``REGENOLD_TOPIC_FILTER``);
+        enable it so the OOS question takes the refusal path under test."""
+        monkeypatch.setenv("REGENOLD_TOPIC_FILTER", "1")
         resp = _client.post(
             "/api/v1/regenold/eu-ai-act/ask",
             json=[

@@ -8566,6 +8566,68 @@ clean davidath-safe lever remains. Sidecars:
 `evals/bench/results/medtech-graphrag-v124-r253-postdeploy-prod.json` +
 `judge-r253-postdeploy-prod.json`.
 
+## Round 255 — Remove the EU AI Act subject-topic filter (answer every question by default) (2026-06-29)
+
+Operator directive: real users' questions ~2 h prior were being refused with
+the scope copy *"This assistant answers EU AI Act questions only (Regulation
+2024/1689). Try a regulatory question…"* — remove the subject-topic filter so
+the RAG answers properly. A `systematic-debugging` reproduction against deployed
+Railway confirmed the root cause: the route's `if not scope.in_scope:` branch
+([`app/routes/regenold.py`](app/routes/regenold.py)) ships
+`refusal_copy_for(scope.verdict)` for ANY out-of-scope verdict —
+`CONVERSATIONAL` (greetings / not-a-regulatory-question), `OTHER_REGULATION`,
+`NEAR_OOS` (DSA/NIS2/PLD/CRA), `EMPTY_OR_NONSENSE` — and these false-positived on
+naturally-phrased questions. (Production answered explicit in-scope questions
+fine; only greetings + genuinely off-topic refused, but the operator's call was
+to remove the gate entirely.)
+
+### The fix — opt-in topic filter, default OFF
+New `REGENOLD_TOPIC_FILTER` env gate (default OFF) + two helpers in the route:
+`_topic_filter_enabled()` + `_scope_refusal_active(reason)`. The refusal
+decision becomes `if not scope.in_scope and _scope_refusal_active(scope.reason)`.
+Two refusal classes are NOT subject-topic filtering and ALWAYS stand, regardless
+of the toggle: **`PROMPT_INJECTION`** (a security guard) and
+**`NON_EXISTENT_ARTICLE`** (the helpful "Article 200 doesn't exist; did you mean
+112/113?" correction). A suppressed topic-refusal records a
+`topic_filter_suppressed: <reason>` reasoning-trace note and falls through to the
+engine, which grounds an answer in the regulation. `scope.py`'s classifier is
+**untouched** — it still powers `scope.anchor_articles` (retrieval) + the
+security/correction refusals + the reasoning-trace scope block. Rollback:
+`REGENOLD_TOPIC_FILTER=1` restores the legacy refusals.
+
+### Why davidath / the wire is byte-identical
+The change touches ONLY the `not scope.in_scope` branch. Every davidath QA +
+scenario row (and every in-scope eval) passes the scope gate (`in_scope=True`),
+so the branch is never reached → byte-identical by construction. Confirmed: the
+276-runner in-scope categories are 100% identical (in_scope_multi_turn 102/102,
+risk_classification 17/17, etc.).
+
+### Tests — the OOS-refusal contract moved behind the flag
+A full-suite A/B (branch vs pristine `main`, identical deterministic env) proved
+**zero net regressions**: branch introduced exactly 8 failures, all OOS-refusal
+ROUTE tests (the classifier-level OOS *probe* tests `classify_scope` directly and
+were unaffected); baseline-only failures = 0 (the 49 baseline failures are the
+documented pre-existing `provider=cli` Stage-2 / off-switch env artifacts). All 8
+were updated to pin the now-opt-in contract behind `REGENOLD_TOPIC_FILTER=1`:
+`TestRouteScopeRefusal` (×4) + `TestRegenoldEvalGate` (autouse fixture) in
+`test_regenold_scope.py`; the OOS-trace test in `test_route_include_reasoning.py`;
+`test_consistency_guard`, `test_r100_synthesis_default`, `test_r131_reasoning_references`
+(one OOS test each); and `test_runner_v2_probe_oos.py` (module autouse fixture).
+The `runner_v2 --probe-oos` CLI now self-enables the filter
+(`os.environ.setdefault`) since it IS the verification harness for the refusal
+feature. New `tests/test_topic_filter.py` (16 tests) pins the new default
+(answer) + the rollback. New default verified live against production: greetings
+/ off-topic now answer; in-scope answers unchanged; prompt-injection still refuses.
+
+### Gates
+- Full suite — branch == baseline (49 pre-existing env-artifact failures;
+  +8 introduced OOS tests all fixed; 0 baseline-only).
+- 276-runner (`REGENOLD_TOPIC_FILTER=1`) — all categories 100%.
+- OOS probe (`runner_v2 --local --probe-oos`, self-enabled filter) — 21/21,
+  0 leaks.
+- davidath — byte-identical by construction (refusal branch unreached on
+  in-scope rows).
+
 ## Non-goals / things to skip
 
 - ~~Vector embeddings / dense retrieval~~ → **Round 31 added a
