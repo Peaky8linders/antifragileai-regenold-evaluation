@@ -463,39 +463,10 @@ def _openai_wrapper_complete_for_graph_rag(
                 "Re-seed the wrapper's OAuth token by running login.bat. ",
             )
         elif "out of extra usage" in _err_low or "credit balance" in _err_low or "api_status_429" in _err_low:
-            logger.warning(
-                "graph_rag.openai_wrapper_maxxed_out — Claude Max subscription "
-                "exhausted/rate-limited (%s). Falling back to Groq Qwen 3.6 with reasoning.",
-                response.error[:100],
+            logger.error(
+                "graph_rag.openai_wrapper_quota_exhausted — LLM quota limits reached: %s. ",
+                response.error[:200],
             )
-            try:
-                from app.llm.openai_wrapper_provider import get_groq_provider, OpenAIWrapperRequest
-                groq_resp = get_groq_provider().complete(
-                    OpenAIWrapperRequest(
-                        system=system,
-                        user=user,
-                        model="qwen/qwen3.6-27b",
-                        max_tokens=safe_max_tokens,
-                        temperature=temperature,
-                        reasoning_effort="high",
-                    )
-                )
-                if not groq_resp.error:
-                    logger.info("graph_rag.groq_fallback_success model=%s", groq_resp.model)
-                    if getattr(groq_resp, "thinking", None):
-                        try:
-                            from app.integrations.regenold.reasoning_trace import record_llm_thinking
-                            record_llm_thinking(
-                                f"Fallback to Groq Qwen reasoning: {groq_resp.thinking}",
-                                stage=stage_name,
-                            )
-                        except Exception:
-                            pass
-                    return groq_resp.text
-                else:
-                    logger.warning("graph_rag.groq_fallback_failed error=%s", groq_resp.error)
-            except Exception as e:
-                logger.warning("graph_rag.groq_fallback_exception: %s", e)
         elif (
             # The wrapper masks an expired Claude-Max OAuth token (the bundled
             # Claude Code CLI returns HTTP 401 "Invalid authentication
@@ -529,6 +500,59 @@ def _openai_wrapper_complete_for_graph_rag(
                 "graph_rag.openai_wrapper_call_failed: %s",
                 response.error[:200],
             )
+        # ── Groq Qwen 3.6 automatic fallback ────────────────────────────
+        # When the Claude Max wrapper fails for ANY reason (rate limit,
+        # quota exhaustion, 500/401/403 outage, network error, CLI error),
+        # attempt a fallback to Groq Qwen 3.6 with reasoning tokens before
+        # raising RuntimeError and falling back to deterministic. This
+        # keeps Stage-1/2 LLM-powered answers alive even when the Claude
+        # Max subscription is maxxed out or the tunnel is down.
+        try:
+            from app.llm.openai_wrapper_provider import is_groq_provider_enabled
+            if is_groq_provider_enabled():
+                logger.warning(
+                    "graph_rag.groq_auto_fallback — Claude Max wrapper failed (%s). "
+                    "Attempting Groq Qwen 3.6 with reasoning.",
+                    response.error[:80],
+                )
+                from app.llm.openai_wrapper_provider import get_groq_provider, OpenAIWrapperRequest
+                groq_resp = get_groq_provider().complete(
+                    OpenAIWrapperRequest(
+                        system=system,
+                        user=user,
+                        model="qwen/qwen3.6-27b",
+                        max_tokens=safe_max_tokens,
+                        temperature=temperature,
+                        reasoning_effort="high",
+                    )
+                )
+                if not groq_resp.error:
+                    logger.info(
+                        "graph_rag.groq_auto_fallback_success model=%s elapsed=%dms",
+                        groq_resp.model, groq_resp.elapsed_ms,
+                    )
+                    if getattr(groq_resp, "thinking", None):
+                        try:
+                            from app.integrations.regenold.reasoning_trace import record_llm_thinking
+                            record_llm_thinking(
+                                groq_resp.thinking,
+                                stage=stage_name,
+                            )
+                        except Exception:
+                            pass
+                    try:
+                        from app.integrations.regenold.reasoning_trace import record_note
+                        record_note("groq_auto_fallback_success")
+                    except Exception:
+                        pass
+                    return groq_resp.text
+                else:
+                    logger.warning(
+                        "graph_rag.groq_auto_fallback_failed error=%s",
+                        groq_resp.error[:200],
+                    )
+        except Exception as e:
+            logger.warning("graph_rag.groq_auto_fallback_exception: %s", e)
         raise RuntimeError(f"OpenAI wrapper failed: {response.error}")
     # R91 — truncation guard. ``finish_reason="length"`` means the model
     # hit the ``max_tokens`` ceiling before naturally stopping; the text
