@@ -697,11 +697,49 @@ def _maybe_warm_indexes() -> None:
 
 @app.get("/healthz")
 def healthz() -> dict[str, object]:
-    from app.llm.openai_wrapper_provider import is_groq_provider_enabled
+    from app.llm.openai_wrapper_provider import is_groq_provider_enabled, get_groq_provider, OpenAIWrapperRequest
+    fallback_status = None
+    fallback_error = None
+    fallback_text = None
+    fallback_finish_reason = None
+    fallback_model = None
+    
+    if is_groq_provider_enabled():
+        try:
+            prov = get_groq_provider()
+            resp = prov.complete(
+                OpenAIWrapperRequest(
+                    system="You are a regulation expert. Answer concisely.",
+                    user="What is a general purpose AI model under the AI Act?",
+                    model="qwen/qwen3.6-27b",
+                    max_tokens=1024,
+                    temperature=0.0,
+                    reasoning_effort="default",
+                )
+            )
+            fallback_model = resp.model
+            fallback_finish_reason = resp.finish_reason
+            if resp.error:
+                fallback_status = "error"
+                fallback_error = resp.error
+            else:
+                fallback_status = "ok"
+                fallback_text = resp.text
+        except Exception as e:
+            fallback_status = "exception"
+            fallback_error = str(e)
+            
     return {
         "status": "ok",
         "version": settings.version,
         "is_groq_enabled": is_groq_provider_enabled(),
+        "fallback_test": {
+            "status": fallback_status,
+            "error": fallback_error,
+            "finish_reason": fallback_finish_reason,
+            "model": fallback_model,
+            "text": fallback_text[:500] if fallback_text else None,
+        }
     }
 
 
