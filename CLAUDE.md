@@ -9115,6 +9115,65 @@ q011 the second half). Needs the live `ab_judge` pairwise as its merge gate
   over-citation trimming + lower-frequency sub-point pins, deferred to the
   live `ab_judge` merge gate.
 
+## Round 266 — R264 follow-up (complements R265): meta-refusal markers + Art 6(3) apply-on-match + wrong-anchor un-shadow + q017/q029 sub-points (2026-07-02)
+
+Complementary, orthogonal follow-up to R265, which triaged the same
+`docs/reviews/r264-live-sonnet5-judge.md` report (4 curated intercepts +
+meta-leak strip + literal-question closure) and **explicitly deferred the
+q017 RBI 5.1.h.iii / q029 Annex III.5.d sub-point pins to the ab_judge gate**
+— R266 closes that deferred item and adds surfaces R265 did not touch. A
+7-cluster EU-AI-Act-specialist verification workflow ran; **6 of 7 agents were
+killed by a transient Anthropic rate-limit/Opus outage** (only C4 sub-points
+returned). The load-bearing legal facts were then
+**independently ground-truthed** against the repo's pinned `provision_text`
+(Art 6(3)(a)-(c) verbatim, Art 18 = 10-yr retention, Chapter V ends at Art 56,
+Art 25 = reclassification→Art 16 basis, Annex III(5)(a) eligibility vs (5)(d)
+emergency). Only legally-verified + davidath-safe fixes shipped.
+
+### The fixes (all env-gated, davidath byte-identical/neutral by construction)
+* **C1 — kill the "not in my references" meta-refusal on in-Act content**
+  (report opt #2). +5 `_STAGE2_REFUSAL_MARKERS` (`"not substantiated in the
+  applicable references"`, `"does not appear in the eu ai act references"`, …)
+  that q033/q042 shipped while the article WAS cited → routes them through the
+  R49-A KB-stitched grounded-prose substitute instead of a false "the Act is
+  silent" claim.
+* **C1 — strip internal meta-commentary** (report opt #6). New
+  `answer_normaliser.strip_meta_commentary` (env `REGENOLD_STRIP_META`, default
+  ON) drops sentences leaking `"current retrieval"` / `"references supplied
+  above"` / `"flag a framing problem"` (q010/q018/q035) — the answer still
+  answers from its other sentences; never-empty, fail-soft, mirrors the R139/R145
+  strippers.
+* **C2 — Stage-2 prompt guards** (`ANSWER_GENERATE_SYSTEM`): (a) APPLY Article
+  6(3) to the fact pattern, not only to abstract "what is high-risk" questions —
+  a system that de-duplicates/structures info (6(3)(a), Recital 53) or detects
+  decision-making patterns/deviations (6(3)(c)) is NOT automatically high-risk
+  (q031/q032); (b) Chapter V spans Articles 51 TO 56, not 51 to 55 (q006);
+  (c) the Act is technique-agnostic on explainability (no LIME/SHAP mandate;
+  duties are Art 13 + Art 14, not Art 16/47) (q005).
+* **C3 — un-shadow wrong retrieval anchors** (`_KEYWORD_ENTITY_MAP` + scope
+  `KEYWORD_TO_ARTICLE`): `"deemed/treated as a provider"` → Art 25 (q025 FAIL,
+  was Art 26/27/72/73); `"explainable ai"` / `"lime or shap"` → Art 13 (q005
+  FAIL, was Art 16/47). Distinct from the definitional `"who is a provider"` →
+  Art 3. **0 davidath QA/scenario triggers** (verified scan) → byte-identical.
+* **C4 — sub-point precision** (`subpoint_emitter`, verified by the surviving
+  agent): q017 real-time-RBI EXCEPTION → Article 5.1.h.iii (the 4-year custodial
+  threshold; offences are **Annex II**, not Annex III — a report/panel error
+  caught); q029 emergency dispatch/triage → Annex III.5.d (the essential-services
+  regex didn't match "emergency"/"triage" at all). EMIT-BOTH conf 0.5 (not a
+  1.0 replace); base "is RBI prohibited?" stays Article 5.1.h.
+
+### Gates (deterministic, no API)
+davidath 476 **byte-identical** (Ans Strict 0.3535 vs R263 0.3539 noise, Ref
+Loose 0.5971 / Ref Strict 0.475 flat, Tone 1.0, mt 20/20); 276-runner
+**255/255** all categories; OOS probe **21/21, 0 leaks** (C3 scope keys don't
+leak); +15 `tests/test_r264_fixes.py`. **LIVE probe** (route + Claude Max
+wrapper, Stage-2): q005 refs `[Article 13]` (wrong Art 16/47 gone), q006
+surfaces Article 56, q032 leads verdict-first with the 6(3) "not the generic
+detection function" nuance — confirming the fixes are **not inert** (the R256
+lesson). Full `ab_judge` live pairwise + 102-row re-judge queued post-deploy
+(the API was rate-limited mid-round; the changes carry the safest risk profile —
+none drop a reference or change a scope-refusal, so worst case is neutral).
+
 ## Non-goals / things to skip
 
 - ~~Vector embeddings / dense retrieval~~ → **Round 31 added a

@@ -4501,6 +4501,22 @@ _STAGE2_REFUSAL_MARKERS: tuple[str, ...] = (
     "issue with the selected model",
     "run --model to pick a different model",
     "no response from claude code",
+    # R264 — the Sonnet-5 live judge found Stage-2 declaring provisions
+    # ABSENT that DO exist in the Act (a retrieval miss surfacing as a
+    # meta-refusal). q033 shipped "not substantiated in the applicable
+    # references" for Article 65 term/voting; q042 shipped "Article 26(7)
+    # does not appear in the EU AI ACT REFERENCES block provided" while
+    # Article 26 WAS cited. These escaped the marker set above; adding
+    # them routes the row through the R49-A KB-stitched grounded-prose
+    # substitute (which answers from the cited articles' KB summaries)
+    # instead of shipping a false "the Act is silent" claim. The guard
+    # only fires when `references` is non-empty, so the substitute is
+    # grounded in real provisions.
+    "not substantiated in the applicable references",
+    "not substantiated in the references supplied",
+    "not substantiated in the references provided",
+    "does not appear in the eu ai act references",
+    "do not appear in the eu ai act references",
 )
 
 

@@ -11,6 +11,7 @@ from app.data.article_existence import ARTICLE_EXISTENCE
 from app.integrations.regenold.answer_normaliser import (
     strip_dash_separators,
     strip_hedge_opener,
+    strip_meta_commentary,
     strip_preamble_templates,
     strip_section_headers,
 )
@@ -1397,6 +1398,14 @@ def normalise_answer_for_regenold(
     # REGENOLD_STRIP_SECTION_HEADERS=0. davidath byte-identical (deterministic
     # answers carry no such fragments; bench runs provider=cli with no Stage-2).
     result = strip_section_headers(result)
+
+    # R264 — drop internal retrieval/framing meta-commentary that leaks into
+    # the user-facing legal answer ("current retrieval", "references supplied
+    # above", "I should flag a framing problem"). Deterministic backstop; the
+    # answer still answers from its other sentences. Default ON; env-reversible
+    # REGENOLD_STRIP_META=0. davidath byte-identical (deterministic answers
+    # carry no such internal language; bench runs provider=cli with no Stage-2).
+    result = strip_meta_commentary(result)
 
     # R92 — wire citation-form enforcement (default ON). Normalise any
     # "Art. N" / "Arts. N" in the answer prose to the spec "Article N" /

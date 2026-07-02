@@ -1454,6 +1454,16 @@ KEYWORD_TO_ARTICLE: dict[str, str] = {
     "substantial modification": "Art. 3",
     "ai system definition": "Art. 3",
     "definition of ai": "Art. 3",
+    # R264 — reclassification / role-flip (deemed a provider) → Art. 25 (q025).
+    "deemed a provider": "Art. 25",
+    "deemed to be a provider": "Art. 25",
+    "treated as a provider": "Art. 25",
+    "seen as a provider": "Art. 25",
+    # R264 — explainability is technique-agnostic (no LIME/SHAP mandate);
+    # duties are Art. 13 transparency + Art. 14 human oversight (q005).
+    "explainable ai": "Art. 13",
+    "explainability technique": "Art. 13",
+    "lime or shap": "Art. 13",
     "risk management system": "Art. 9",
     "risk management": "Art. 9",
     "data and data governance": "Art. 10",

@@ -574,6 +574,28 @@ _KEYWORD_ENTITY_MAP: tuple[tuple[str, str], ...] = (
     ("definition of distributor", "Art. 3"),
     ("who is considered a provider", "Art. 3"),
     ("who is considered a deployer", "Art. 3"),
+    # ── Article 25 (when a deployer/importer/distributor is DEEMED a
+    #    provider — the reclassification / role-flip basis, q025) ────────
+    #    NOTE: distinct from the definitional "who is (considered) a
+    #    provider" → Art. 3 above; these are the OBLIGATION-flip triggers.
+    ("deemed a provider", "Art. 25"),
+    ("deemed to be a provider", "Art. 25"),
+    ("considered to be a provider", "Art. 25"),
+    ("treated as a provider", "Art. 25"),
+    ("deemed to be a provider of a high-risk", "Art. 25"),
+    ("effectively seen as a provider", "Art. 25"),
+    ("seen as a provider by the authorities", "Art. 25"),
+    ("become a provider", "Art. 25"),
+    # ── Article 13 / 14 (explainability — the Act is technique-agnostic;
+    #    no LIME/SHAP mandate; duties are transparency + human oversight,
+    #    q005) — un-shadows the wrong Art. 16 / 47 BM25 winner ───────────
+    ("explainable ai", "Art. 13"),
+    ("explainability technique", "Art. 13"),
+    ("explainability techniques", "Art. 13"),
+    ("lime or shap", "Art. 13"),
+    ("lime and shap", "Art. 13"),
+    ("shap or lime", "Art. 13"),
+    ("interpretability of high-risk", "Art. 13"),
     # ── Article 18 (documentation retention — 10 year duty) ──────────
     ("how long must providers keep technical documentation", "Art. 18"),
     ("technical documentation retention", "Art. 18"),

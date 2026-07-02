@@ -59,6 +59,24 @@ SUBPOINT_TOPIC_MAP: tuple[tuple[re.Pattern[str], tuple[tuple[str, float], ...]],
      (("Article 5.1.g", 1.0),)),
     (re.compile(r"\breal[- ]time (?:remote )?biometric identification|live biometric ident", re.I),
      (("Article 5.1.h", 1.0),)),
+    # R264 (q017) — the specific Article 5(1)(h)(iii) exception leaf carries the
+    # "listed serious offence punishable by a custodial sentence of at least
+    # four years" threshold (offences referred to in Annex II, NOT Annex III).
+    # Emit the leaf alongside the Article 5 base (conf 0.5 = EMIT-BOTH, not a
+    # 1.0 REPLACE) ONLY on the exception/carve-out shape, so the base
+    # "is real-time RBI prohibited?" question stays Article 5.1.h.
+    (re.compile(
+        r"(?:real[- ]time (?:remote )?biometric|live biometric)"
+        r".{0,90}"
+        r"(?:exception|exempt|permitted|allowed|strictly necessary|"
+        r"which specific|custodial|four[- ]year|serious offence)|"
+        r"(?:exception|carve[- ]?out|strictly necessary|custodial|"
+        r"four[- ]year)"
+        r".{0,90}"
+        r"(?:real[- ]time (?:remote )?biometric|live biometric)",
+        re.I,
+     ),
+     (("Article 5.1.h.iii", 0.5),)),
 
     # Art. 6 / Annex III — high-risk categories
     (re.compile(r"\bcritical infrastructure|water|gas|electricity|heating|transport", re.I),
@@ -69,6 +87,19 @@ SUBPOINT_TOPIC_MAP: tuple[tuple[re.Pattern[str], tuple[tuple[str, float], ...]],
      (("Annex III.4", 1.0),)),
     (re.compile(r"\bessential (?:public|private) services|welfare benefits|credit scor|insurance", re.I),
      (("Annex III.5", 1.0),)),
+    # R264 (q029) — emergency-dispatch / triage is the operative Annex III(5)(d)
+    # leaf, NOT the parent Annex III(5). The essential-services regex above does
+    # not match "emergency dispatch" / "triage" / "emergency call" phrasing at
+    # all, so this dedicated entry surfaces the specific leaf. EMIT-BOTH (0.5)
+    # alongside the Annex III base.
+    (re.compile(
+        r"\bemergency (?:call|dispatch|dispatching|response|triage)\b|"
+        r"\bdispatch(?:ing)? of emergency\b|"
+        r"\bfirst[- ]response service|"
+        r"\bpatient triage\b|\btriage system",
+        re.I,
+     ),
+     (("Annex III.5.d", 0.5),)),
     (re.compile(r"\blaw enforcement|police|criminal investigation", re.I),
      (("Annex III.6", 1.0),)),
     (re.compile(r"\bmigration|asylum|border control", re.I),

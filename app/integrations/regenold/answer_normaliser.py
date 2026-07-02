@@ -61,6 +61,7 @@ __all__ = [
     "strip_dash_separators",
     "strip_hedge_opener",
     "strip_section_headers",
+    "strip_meta_commentary",
 ]
 
 
@@ -457,6 +458,73 @@ def strip_section_headers(text: str) -> str:
         remainder = " ".join(s.strip() for s in kept if s.strip()).strip()
         # Never-empty / substance-floor guard.
         if not remainder or len(remainder) < _MIN_SECTION_REMAINDER:
+            return text
+        out = _capitalise_first_letter(remainder)
+        return out if out and out.strip() else text
+    except Exception:
+        return text
+
+
+# R264 — internal-process meta-commentary leak. The Sonnet-5 live judge flagged
+# answers that substantively ANSWER the question but leak internal-system
+# language into the user-facing legal prose: q010 "...current retrieval
+# surfaces...", q018 "...the references supplied above...", q035 "I should flag
+# a framing problem...". These phrases never occur in a professional EU AI Act
+# legal answer — they are the model narrating its own retrieval/framing. Unlike
+# a refusal marker (which routes to the R49-A grounded-prose substitute), these
+# rows carry a real answer; we only DROP the leaking sentence. High-precision,
+# sentence-level, never-empty, fail-soft. Env-reversible ``REGENOLD_STRIP_META=0``.
+_META_COMMENTARY_MARKERS: tuple[str, ...] = (
+    "current retrieval",
+    "references supplied above",
+    "reference supplied above",
+    "references provided above",
+    "the retrieved context",
+    "flag a framing problem",
+    "i note a framing problem",
+    "based on the retrieval",
+)
+
+_MIN_META_REMAINDER = 80
+
+
+def strip_meta_commentary(text: str) -> str:
+    """R264 — drop sentences that leak internal retrieval/framing commentary.
+
+    Removes a whole sentence when it contains an internal-only marker
+    (``"current retrieval"``, ``"references supplied above"``, ``"flag a framing
+    problem"``, …) that never belongs in a user-facing legal answer. The answer
+    still answers the question from its other sentences. Conservative + fail-
+    soft: keeps ≥ 1 non-marker sentence and ≥ 80 chars of substance, else returns
+    the input unchanged; idempotent. Env-reversible ``REGENOLD_STRIP_META=0``.
+    """
+    import os  # noqa: PLC0415 — local to keep the module import surface lean
+
+    if os.getenv("REGENOLD_STRIP_META", "1").strip().lower() in (
+        "0",
+        "false",
+        "no",
+        "off",
+    ):
+        return text
+    if not text or not text.strip():
+        return text
+    try:
+        low_all = text.lower()
+        if not any(m in low_all for m in _META_COMMENTARY_MARKERS):
+            return text
+        sentences = _SENTENCE_BOUNDARY_RE.split(text.strip())
+        if len(sentences) < 2:
+            return text
+        kept = [
+            s
+            for s in sentences
+            if not any(m in s.lower() for m in _META_COMMENTARY_MARKERS)
+        ]
+        if len(kept) == len(sentences):
+            return text
+        remainder = " ".join(s.strip() for s in kept if s.strip()).strip()
+        if not remainder or len(remainder) < _MIN_META_REMAINDER:
             return text
         out = _capitalise_first_letter(remainder)
         return out if out and out.strip() else text
