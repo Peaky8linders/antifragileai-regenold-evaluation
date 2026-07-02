@@ -697,11 +697,32 @@ def _maybe_warm_indexes() -> None:
 
 @app.get("/healthz")
 def healthz() -> dict[str, object]:
-    from app.llm.openai_wrapper_provider import is_groq_provider_enabled
+    from app.llm.openai_wrapper_provider import is_groq_provider_enabled, get_groq_provider
+    groq_models = []
+    groq_base = ""
+    error = None
+    if is_groq_provider_enabled():
+        try:
+            prov = get_groq_provider()
+            groq_base = prov._base_url
+            # Query the models list
+            headers = prov._headers()
+            r = prov._client.get("/models", headers=headers)
+            if r.status_code == 200:
+                models_data = r.json()
+                groq_models = [m["id"] for m in models_data.get("data", [])]
+            else:
+                error = f"HTTP {r.status_code}: {r.text[:200]}"
+        except Exception as e:
+            error = str(e)
+            
     return {
         "status": "ok",
         "version": settings.version,
         "is_groq_enabled": is_groq_provider_enabled(),
+        "groq_base": groq_base,
+        "groq_models": groq_models,
+        "groq_error": error,
     }
 
 
