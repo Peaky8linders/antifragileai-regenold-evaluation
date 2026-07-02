@@ -63,6 +63,12 @@ def _enable_groq(monkeypatch, text: str = "", error: str | None = None) -> _Fake
     fake = _FakeGroq(text, error)
     monkeypatch.setattr(owp, "is_groq_provider_enabled", lambda: True)
     monkeypatch.setattr(owp, "get_groq_provider", lambda: fake)
+    # R267.1 — these tests assert Groq is the SOLE general-assistant provider
+    # (fake.calls == 1 / Groq-error -> decline). Disable the Gemini + Mistral
+    # fallbacks so the assertions hold regardless of whether GEMINI_API_KEY /
+    # MISTRAL_API_KEY happen to be present in the runner env.
+    monkeypatch.setattr(owp, "is_gemini_provider_enabled", lambda: False)
+    monkeypatch.setattr(owp, "is_mistral_provider_enabled", lambda: False)
     return fake
 
 

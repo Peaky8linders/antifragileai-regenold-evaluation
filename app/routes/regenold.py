@@ -3474,60 +3474,103 @@ def _general_answer_enabled() -> bool:
     )
 
 
-def _general_assistant_answer(question: str) -> str | None:
-    """Answer a benign off-topic question via Groq Qwen 3.6.
+def _general_llm_candidates() -> list[tuple[object, str]]:
+    """Ordered ``(provider, model)`` fallback chain for general (non-RAG) text.
 
-    Returns the answer text, or ``None`` when Groq is not wired / errors —
-    the caller then falls back to the branded Lexy decline (no crash). This
-    is NEVER called for prompt-injection input (that is pushed back upstream),
-    and the general-assistant system prompt hardens against embedded
-    instructions as defence-in-depth.
+    R267.1 — Groq ``qwen/qwen3.6-27b`` is primary (operator directive), then
+    Gemini flash + Mistral large as fast, separately-quota'd fallbacks. The
+    Groq free/dev tier has a daily tokens-per-day cap (``api_status_429``,
+    ``Limit 200000``) that, when exhausted, previously forced the branded
+    decline for every benign off-topic question (and the multi-turn denoiser's
+    ``provider_error``). With a fallback chain a Groq TPD outage degrades to
+    Gemini/Mistral instead of failing. Each provider is included only when its
+    API key is wired; each is acquired in its own guard so one singleton's init
+    failure cannot drop the rest.
+    """
+    from app.llm.openai_wrapper_provider import (  # noqa: PLC0415
+        get_gemini_provider,
+        get_groq_provider,
+        get_mistral_provider,
+        is_gemini_provider_enabled,
+        is_groq_provider_enabled,
+        is_mistral_provider_enabled,
+    )
+
+    out: list[tuple[object, str]] = []
+    for enabled_fn, getter, env_key, default_model in (
+        (is_groq_provider_enabled, get_groq_provider,
+         "REGENOLD_GENERAL_MODEL_GROQ", "qwen/qwen3.6-27b"),
+        (is_gemini_provider_enabled, get_gemini_provider,
+         "REGENOLD_GENERAL_MODEL_GEMINI", "gemini-2.5-flash"),
+        (is_mistral_provider_enabled, get_mistral_provider,
+         "REGENOLD_GENERAL_MODEL_MISTRAL", "mistral-large-latest"),
+    ):
+        try:
+            if enabled_fn():
+                out.append((getter(), os.getenv(env_key, default_model)))
+        except Exception:  # noqa: BLE001 — one provider's init must not drop the chain
+            logger.debug("general_llm: provider init failed", exc_info=True)
+    return out
+
+
+def _general_assistant_answer(question: str) -> str | None:
+    """Answer a benign off-topic question via the general-LLM fallback chain.
+
+    Returns the answer text, or ``None`` when no provider is wired / every
+    provider errors — the caller then falls back to the branded Lexy decline
+    (no crash). This is NEVER called for prompt-injection input (that is pushed
+    back upstream), and the general-assistant system prompt hardens against
+    embedded instructions as defence-in-depth. ``reasoning_effort`` is NOT set
+    here — the provider auto-injects ``none`` for Qwen and nothing for
+    Gemini/Mistral (sending it to a non-reasoning model would 400).
     """
     q = (question or "").strip()
     if not q:
         return None
-    try:
-        from app.llm.openai_wrapper_provider import (
-            OpenAIWrapperRequest,
-            get_groq_provider,
-            is_groq_provider_enabled,
-        )
+    candidates = _general_llm_candidates()
+    if not candidates:
+        return None
+    from app.llm.openai_wrapper_provider import OpenAIWrapperRequest  # noqa: PLC0415
+    from app.security.prompt_guard import validate_llm_output  # noqa: PLC0415
 
-        if not is_groq_provider_enabled():
-            return None
-        resp = get_groq_provider().complete(
-            OpenAIWrapperRequest(
-                system=_GENERAL_ASSISTANT_SYSTEM,
-                user=q,
-                model=os.getenv("REGENOLD_GENERAL_MODEL_GROQ", "qwen/qwen3.6-27b"),
-                max_tokens=512,
-                temperature=0.2,
-                reasoning_effort="none",
-                timeout_seconds=25.0,
+    for provider, model in candidates:
+        try:
+            resp = provider.complete(
+                OpenAIWrapperRequest(
+                    system=_GENERAL_ASSISTANT_SYSTEM,
+                    user=q,
+                    model=model,
+                    max_tokens=512,
+                    temperature=0.2,
+                    timeout_seconds=25.0,
+                )
             )
-        )
+        except Exception as exc:  # noqa: BLE001 — try the next provider in the chain
+            logger.warning("general_assistant_exception model=%s: %s", model, exc)
+            continue
         if resp.error or not (resp.text or "").strip():
             logger.warning(
-                "general_assistant_groq_failed error=%s",
+                "general_assistant_failed model=%s error=%s",
+                model,
                 (resp.error or "empty_text")[:150],
             )
-            return None
-        from app.security.prompt_guard import validate_llm_output
-
+            continue
+        # Strip any leaked <think> block, markdown emphasis, and dash
+        # separators for wire consistency with the AI Act answers.
         text = validate_llm_output((resp.text or "").strip())
-        # Light polish for wire consistency with the AI Act answers: drop
-        # markdown emphasis and dash separators (best-effort).
         text = text.replace("**", "").replace("__", "")
         try:
-            from app.integrations.regenold.answer_normaliser import strip_dash_separators
+            from app.integrations.regenold.answer_normaliser import (  # noqa: PLC0415
+                strip_dash_separators,
+            )
 
             text = strip_dash_separators(text)
         except Exception:  # noqa: BLE001 — tone polish is best-effort
             pass
-        return text.strip() or None
-    except Exception as exc:  # noqa: BLE001 — fail-soft to the branded decline
-        logger.warning("general_assistant_groq_exception: %s", exc)
-        return None
+        text = text.strip()
+        if text:
+            return text
+    return None
 
 
 def _build_scope_refusal_response(
@@ -4032,9 +4075,13 @@ def _rewrite_multiturn_query(
     try:
         from app.llm.openai_wrapper_provider import (  # noqa: PLC0415
             OpenAIWrapperRequest,
+            get_gemini_provider,
             get_groq_intent_provider,
+            get_mistral_provider,
             get_openai_wrapper_provider,
+            is_gemini_provider_enabled,
             is_groq_intent_provider_enabled,
+            is_mistral_provider_enabled,
             is_openai_wrapper_enabled,
         )
     except ImportError:
@@ -4074,6 +4121,37 @@ def _rewrite_multiturn_query(
             ))
     except Exception:  # noqa: BLE001 — singleton init must not crash route
         logger.debug("query_denoiser: groq provider init failed", exc_info=True)
+    # R267.1 — Gemini flash + Mistral large are fast (1-2 s), separately-
+    # quota'd fallbacks inserted BETWEEN Groq and the slow wrapper. When Groq
+    # hits its daily TPD 429 cap these keep the multi-turn rewrite working
+    # instead of dropping through to the ~10 s Claude Max wrapper, which the
+    # fail-fast per-provider timeout below always times out on (that timeout —
+    # a wrapper ``provider_error model=claude-haiku-4-5-...`` — was the exact
+    # symptom the operator flagged).
+    try:
+        if is_gemini_provider_enabled():
+            any_configured = True
+            candidates.append((
+                get_gemini_provider(),
+                os.environ.get(
+                    "REGENOLD_DENOISER_MODEL_GEMINI", "gemini-2.5-flash"
+                ),
+                "gemini",
+            ))
+    except Exception:  # noqa: BLE001 — singleton init must not crash route
+        logger.debug("query_denoiser: gemini provider init failed", exc_info=True)
+    try:
+        if is_mistral_provider_enabled():
+            any_configured = True
+            candidates.append((
+                get_mistral_provider(),
+                os.environ.get(
+                    "REGENOLD_DENOISER_MODEL_MISTRAL", "mistral-large-latest"
+                ),
+                "mistral",
+            ))
+    except Exception:  # noqa: BLE001 — singleton init must not crash route
+        logger.debug("query_denoiser: mistral provider init failed", exc_info=True)
     try:
         if is_openai_wrapper_enabled():
             any_configured = True
@@ -4118,13 +4196,14 @@ def _rewrite_multiturn_query(
                 # fallback chain is at most two such calls.
                 max_tokens=100,
                 temperature=0.0,
-                # R264 — 2.0 s (was 1.0 s). Qwen 3.6 27B via Groq is
-                # ~500-750 ms typical; the extra second of headroom absorbs
-                # network jitter so a transient slow RTT no longer trips the
-                # fail-fast into a spurious "provider_error" (the exact
-                # symptom the operator flagged). Still negligible against the
-                # ~28 s multi-turn p50; the chain is at most two such calls.
-                timeout_seconds=2.0,
+                # R267.1 — 3.0 s (was R264's 2.0 s). Qwen 3.6 27B via Groq is
+                # ~500-750 ms typical and Gemini flash ~2.1 s, so the extra
+                # second of headroom lets the Gemini fallback complete under the
+                # fail-fast instead of tripping a spurious "provider_error".
+                # Still negligible against the ~28 s multi-turn p50; the fast
+                # providers (Groq/Gemini/Mistral) succeed well before the slow
+                # ~10 s wrapper candidate is ever reached.
+                timeout_seconds=3.0,
             )
             resp = provider.complete(req)
             last_latency = (time.monotonic_ns() - start_ns) // 1_000_000
