@@ -1976,9 +1976,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             let detectedModel = '';
             let isComplex = false;
             (trace.notes || []).forEach(n => {
-                const m = n.match(/stage2_model[=:]\s*(\S+)/i);
+                const m = n.match(/stage2_model[=:]\\s*(\\S+)/i);
                 if (m) detectedModel = m[1];
-                if (/complex[=:]?\s*true/i.test(n)) isComplex = true;
+                if (/complex[=:]?\\s*true/i.test(n)) isComplex = true;
             });
             // Also check stage2_polish landed + complex inference from guards/notes
             if (!detectedModel && trace.stage2_polish) {
