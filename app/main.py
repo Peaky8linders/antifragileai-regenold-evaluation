@@ -697,98 +697,11 @@ def _maybe_warm_indexes() -> None:
 
 @app.get("/healthz")
 def healthz() -> dict[str, object]:
-    from app.llm.openai_wrapper_provider import is_groq_provider_enabled, get_groq_provider, OpenAIWrapperRequest
-    groq_models = []
-    groq_base = ""
-    error = None
-    probe_high_status = None
-    probe_high_error = None
-    probe_high_text = None
-    probe_high_thinking = None
-    probe_none_status = None
-    probe_none_error = None
-    probe_none_text = None
-    
-    if is_groq_provider_enabled():
-        try:
-            prov = get_groq_provider()
-            groq_base = prov._base_url
-            
-            # 1. Models list
-            headers = prov._headers()
-            r = prov._client.get("/models", headers=headers)
-            if r.status_code == 200:
-                models_data = r.json()
-                groq_models = [m["id"] for m in models_data.get("data", [])]
-            else:
-                error = f"Models HTTP {r.status_code}: {r.text[:200]}"
-                
-            # 2. Live Probe with reasoning_effort="default"
-            try:
-                resp_high = prov.complete(
-                    OpenAIWrapperRequest(
-                        system="Reply with OK",
-                        user="Hello",
-                        model="qwen/qwen3.6-27b",
-                        max_tokens=50,
-                        temperature=0.0,
-                        reasoning_effort="default",
-                    )
-                )
-                if resp_high.error:
-                    probe_high_error = resp_high.error
-                    probe_high_status = "error"
-                else:
-                    probe_high_status = "ok"
-                    probe_high_text = resp_high.text
-                    probe_high_thinking = resp_high.thinking
-            except Exception as e:
-                probe_high_status = "exception"
-                probe_high_error = str(e)
-                
-            # 3. Live Probe with reasoning_effort="none"
-            try:
-                resp_none = prov.complete(
-                    OpenAIWrapperRequest(
-                        system="Reply with OK",
-                        user="Hello",
-                        model="qwen/qwen3.6-27b",
-                        max_tokens=50,
-                        temperature=0.0,
-                        reasoning_effort="none",
-                    )
-                )
-                if resp_none.error:
-                    probe_none_error = resp_none.error
-                    probe_none_status = "error"
-                else:
-                    probe_none_status = "ok"
-                    probe_none_text = resp_none.text
-            except Exception as e:
-                probe_none_status = "exception"
-                probe_none_error = str(e)
-                
-        except Exception as e:
-            error = str(e)
-            
+    from app.llm.openai_wrapper_provider import is_groq_provider_enabled
     return {
         "status": "ok",
         "version": settings.version,
         "is_groq_enabled": is_groq_provider_enabled(),
-        "groq_base": groq_base,
-        "groq_models": groq_models,
-        "groq_error": error,
-        "probe_high": {
-            "status": probe_high_status,
-            "error": probe_high_error,
-            "text": probe_high_text,
-            "thinking": probe_high_thinking,
-        },
-        "probe_none": {
-            "status": probe_none_status,
-            "error": probe_none_error,
-            "text": probe_none_text,
-        }
     }
 
 
