@@ -3421,17 +3421,14 @@ def _deterministic_answer(question: str, context: GraphContext) -> str:
         verdict = {
             "name": "explainability_scope",
             "answer": (
-                "No. The EU AI Act does not mandate any specific explainable-AI "
-                "technique such as LIME or SHAP, and is technique-agnostic. It "
-                "sets outcome-based requirements for high-risk AI systems: they "
-                "must be sufficiently transparent for deployers to interpret "
-                "their output under Article 13, which also requires the "
-                "instructions for use to give information relevant to explaining "
-                "that output. They must allow effective human oversight under "
-                "Article 14, and achieve appropriate accuracy, robustness and "
-                "cybersecurity under Article 15. How a provider meets those "
-                "obligations, including the choice of any interpretability "
-                "method, is left to the provider."
+                "No, the EU AI Act mandates no specific explainable-AI "
+                "technique such as LIME or SHAP, and Article 13 instead "
+                "requires only that high-risk AI systems be sufficiently "
+                "transparent for deployers to interpret their output. Article "
+                "14 requires effective human oversight, and Article 15 "
+                "requires appropriate accuracy, robustness and cybersecurity. "
+                "The Act is technique-agnostic, so the choice of any "
+                "interpretability method is left to the provider."
             ),
             "refs": ["Art. 13", "Art. 14", "Art. 15"],
         }
