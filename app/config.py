@@ -254,11 +254,7 @@ class AppSettings(BaseSettings):
     regenold: RegenoldSettings = Field(default_factory=RegenoldSettings)
     rate_limit: RateLimitSettings = Field(default_factory=RateLimitSettings)
 
-    # Bumped to 1.0.4 — Groq Qwen 3.6 auto-fallback on ALL Claude Max
-    # wrapper failures (429/quota/500/401/403/network/CLI). The fallback
-    # fires after diagnostic logging, before the RuntimeError raise, so
-    # Stage-1/2 stays LLM-powered even when the tunnel is down.
-    version: str = "1.0.4"
+    version: str = "1.0.5"
 
 
 settings = AppSettings()

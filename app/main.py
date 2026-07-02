@@ -696,8 +696,13 @@ def _maybe_warm_indexes() -> None:
 
 
 @app.get("/healthz")
-def healthz() -> dict[str, str]:
-    return {"status": "ok", "version": settings.version}
+def healthz() -> dict[str, object]:
+    from app.llm.openai_wrapper_provider import is_groq_provider_enabled
+    return {
+        "status": "ok",
+        "version": settings.version,
+        "is_groq_enabled": is_groq_provider_enabled(),
+    }
 
 
 @app.get("/healthz/email")
