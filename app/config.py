@@ -254,12 +254,11 @@ class AppSettings(BaseSettings):
     regenold: RegenoldSettings = Field(default_factory=RegenoldSettings)
     rate_limit: RateLimitSettings = Field(default_factory=RateLimitSettings)
 
-    # Bumped to 1.0.3 as the R264 (2026-07-02) deploy marker — Groq Stage-0
-    # intent + de-noiser off deprecated Llama 3.3 70B onto qwen/qwen3.6-27b,
-    # plus the Stage-2 UI model-label fix (claude-sonnet-5 → "Sonnet 5").
-    # Surfaced on /healthz/llm + /healthz/graph so a redeploy can be VERIFIED
-    # live (the endpoints expose no git SHA). Purely cosmetic; nothing keys on it.
-    version: str = "1.0.3"
+    # Bumped to 1.0.4 — Groq Qwen 3.6 auto-fallback on ALL Claude Max
+    # wrapper failures (429/quota/500/401/403/network/CLI). The fallback
+    # fires after diagnostic logging, before the RuntimeError raise, so
+    # Stage-1/2 stays LLM-powered even when the tunnel is down.
+    version: str = "1.0.4"
 
 
 settings = AppSettings()
