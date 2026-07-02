@@ -551,8 +551,18 @@ def _openai_wrapper_complete_for_graph_rag(
                         "graph_rag.groq_auto_fallback_failed error=%s",
                         groq_resp.error[:200],
                     )
+                    try:
+                        from app.integrations.regenold.reasoning_trace import record_note
+                        record_note(f"groq_fallback_failed: {groq_resp.error[:100]}")
+                    except Exception:
+                        pass
         except Exception as e:
             logger.warning("graph_rag.groq_auto_fallback_exception: %s", e)
+            try:
+                from app.integrations.regenold.reasoning_trace import record_note
+                record_note(f"groq_fallback_exception: {str(e)[:100]}")
+            except Exception:
+                pass
         raise RuntimeError(f"OpenAI wrapper failed: {response.error}")
     # R91 — truncation guard. ``finish_reason="length"`` means the model
     # hit the ``max_tokens`` ceiling before naturally stopping; the text
