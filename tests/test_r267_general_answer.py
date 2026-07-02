@@ -135,3 +135,34 @@ def test_ambiguous_rescue_routes_to_rag_not_groq(monkeypatch: pytest.MonkeyPatch
     b = _ask(_client(), "What's the best restaurant in Rome?")  # ambiguous CONVERSATIONAL
     assert fake.calls == []  # rescued -> engine, general assistant not used
     assert b["answer"]  # engine produced some answer
+
+
+def test_general_assistant_with_telemetry_does_not_500(monkeypatch: pytest.MonkeyPatch) -> None:
+    # R267.1 regression: benign off-topic answered by the general assistant sets
+    # retrieval_path="general_assistant"; with ?include_telemetry=true that value
+    # is validated against RegenoldAskResponse.retrieval_path (a Literal). Before
+    # the fix the Literal lacked "general_assistant" -> pydantic ValidationError
+    # -> HTTP 500 (the exact production error the operator hit).
+    monkeypatch.delenv("REGENOLD_GENERAL_ANSWER", raising=False)
+    monkeypatch.setattr(route, "decide_ambiguous_oos", lambda q: (False, ""))
+    _enable_groq(monkeypatch, "The capital of France is Paris.")
+    r = _client().post(
+        "/api/v1/regenold/eu-ai-act/ask?include_reasoning=true&include_telemetry=true",
+        json=[{"role": "user", "content": "What is the capital of France?"}],
+        headers={"X-Regenold-Api-Key": "k"},
+    )
+    assert r.status_code == 200, r.text
+    b = r.json()
+    assert "Paris" in b["answer"]
+    assert b["references"] == []
+    assert b["retrieval_path"] == "general_assistant"
+
+
+def test_response_model_accepts_general_assistant_retrieval_path() -> None:
+    # Unit-level guard on the wire contract itself.
+    from app.integrations.regenold.models import RegenoldAskResponse
+
+    out = RegenoldAskResponse(
+        answer="x", references=[], retrieval_path="general_assistant"
+    )
+    assert out.retrieval_path == "general_assistant"

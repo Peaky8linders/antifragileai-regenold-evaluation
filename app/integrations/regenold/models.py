@@ -140,6 +140,7 @@ class RegenoldAskResponse(BaseModel):
         "zero_retrieval_fallback",
         "consistency_guard",
         "verbatim_exact_text",
+        "general_assistant",
         None,
     ] | None = Field(
         default=None,
@@ -154,7 +155,10 @@ class RegenoldAskResponse(BaseModel):
             "'try rephrasing' template), "
             "consistency_guard (R48 — the answer prose contradicted "
             "the non-empty references list, so the route replaced the "
-            "prose with a grounded summary built from the references)."
+            "prose with a grounded summary built from the references), "
+            "general_assistant (R267 — a benign off-topic question "
+            "answered by the general LLM assistant, not the AI Act "
+            "engine; references is empty)."
         ),
     )
     nodes_traversed: int | None = Field(
