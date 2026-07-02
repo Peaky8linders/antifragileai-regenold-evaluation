@@ -523,7 +523,7 @@ def _openai_wrapper_complete_for_graph_rag(
                         model="qwen/qwen3.6-27b",
                         max_tokens=safe_max_tokens,
                         temperature=temperature,
-                        reasoning_effort="high",
+                        reasoning_effort="default",
                     )
                 )
                 if not groq_resp.error:

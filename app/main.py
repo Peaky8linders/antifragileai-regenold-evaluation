@@ -723,7 +723,7 @@ def healthz() -> dict[str, object]:
             else:
                 error = f"Models HTTP {r.status_code}: {r.text[:200]}"
                 
-            # 2. Live Probe with reasoning_effort="high"
+            # 2. Live Probe with reasoning_effort="default"
             try:
                 resp_high = prov.complete(
                     OpenAIWrapperRequest(
@@ -732,7 +732,7 @@ def healthz() -> dict[str, object]:
                         model="qwen/qwen3.6-27b",
                         max_tokens=50,
                         temperature=0.0,
-                        reasoning_effort="high",
+                        reasoning_effort="default",
                     )
                 )
                 if resp_high.error:
