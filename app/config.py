@@ -173,7 +173,7 @@ class GraphRAGSettings(BaseSettings):
       * R80.2: reduced 2500 → 1024 (current).
     """
 
-    thinking_tokens: int = 2048
+    thinking_tokens: int = 4000
     """``max_thinking_tokens`` — the **MODERATE** thinking budget for the
     STANDARD Stage-2 synthesis path: the ~80% of questions the complexity gate
     does NOT flag. As of R139 these run on Opus 4.8 (:attr:`stage2_model`), not

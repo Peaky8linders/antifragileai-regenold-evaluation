@@ -3011,14 +3011,14 @@ def _detect_reclassification_inquiry(question: str) -> bool:
 # "What is the European Artificial Intelligence Board?" / standing-sub-group
 # rows (gold Article 65) do NOT carry, so the deterministic bench is byte-identical.
 _AI_BOARD_RE = re.compile(
-    r"artificial\s+intelligence\s+board|\bthe\s+board\b|\bai\s+board\b",
+    r"artificial\s+intelligence\s+board|(?<!across )\b(?:the|a)\s+board\b|\bai\s+board\b",
     re.IGNORECASE,
 )
 _AI_BOARD_GOVERNANCE_CUE_RE = re.compile(
     r"\brenewable\b|\brenewal\b|\brules\s+of\s+procedure\b"
     r"|\bvoting\s+threshold\b|\bvoting\s+majority\b|\btwo[-\s]thirds\b"
     r"|\bhow\s+long\b|\bterm\s+(?:length|of\s+(?:office|the\s+mandate)|is)\b"
-    r"|\bmember\s+term\b|\bdesignat\w*\b|\bimpartial\w*\b|\bstakeholder\s+interest"
+    r"|\bmember(?:'s)?\s+term\b|\bdesignat\w*\b|\bimpartial\w*\b|\bstakeholder\s+interest"
     r"|\bwho\s+(?:designates|appoints|nominates)\b",
     re.IGNORECASE,
 )
