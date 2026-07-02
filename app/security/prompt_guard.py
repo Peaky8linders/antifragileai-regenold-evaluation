@@ -24,6 +24,12 @@ _TAGS_TO_STRIP = re.compile(
 _INSTR_TAGS = re.compile(r"\[INST\]|\[/INST\]|<<SYS>>|<</SYS>>", re.IGNORECASE)
 _USER_QUERY_TAGS = re.compile(r"</?user_query>", re.IGNORECASE)
 
+# Qwen 3 (and similar open-reasoning models) can leak their chain-of-thought
+# as a literal <think>…</think> block at the start of the generated text when
+# reasoning is not fully disabled server-side.  Strip it defensively here so
+# every call-site that goes through validate_llm_output() is protected.
+_THINK_BLOCK_RE = re.compile(r"<think>.*?</think>\s*", re.DOTALL | re.IGNORECASE)
+
 
 def sanitize_for_llm(user_input: str, *, context_type: str = "query") -> str:
     """Strip control chars, model-delimiter sequences, and prompt-tag spans.
@@ -50,7 +56,15 @@ def validate_llm_output(text: str | None) -> str:
     decides whether an empty string means "Stage-2 produced no output"
     (a failure) or "engine wants to short-circuit" (intentional). Issue
     #42 caught the former case being silently treated as a success.
+
+    Defensive strip: Qwen 3 models on Groq can leak raw chain-of-thought
+    tokens into ``content`` as a ``<think>…</think>`` block when
+    ``reasoning_effort`` is non-zero.  Strip it so callers always receive
+    the final answer only.
     """
     if text is None:
         return ""
-    return text or ""
+    if not text:
+        return ""
+    stripped = _THINK_BLOCK_RE.sub("", text).strip()
+    return stripped or text  # fall back to original if stripping emptied it

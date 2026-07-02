@@ -566,7 +566,7 @@ def _openai_wrapper_complete_for_graph_rag(
                         model="qwen/qwen3.6-27b",
                         max_tokens=groq_max_tokens,
                         temperature=temperature,
-                        reasoning_effort="default",
+                        reasoning_effort="none",  # R264: disable Qwen chain-of-thought — "default" leaks raw thinking tokens into resp.text
                     )
                 )
                 if not groq_resp.error:
@@ -588,7 +588,7 @@ def _openai_wrapper_complete_for_graph_rag(
                         record_note("groq_auto_fallback_success")
                     except Exception:
                         pass
-                    return groq_resp.text
+                    return validate_llm_output((groq_resp.text or "").strip())
                 else:
                     logger.warning(
                         "graph_rag.groq_auto_fallback_failed error=%s",
