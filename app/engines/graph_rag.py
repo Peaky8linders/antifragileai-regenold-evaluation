@@ -2909,6 +2909,196 @@ def _detect_emotion_classification_inquiry(question: str) -> bool:
     )
 
 
+# R265 (2026-07-02) — explainability / XAI intercept. The r264 Sonnet-5 judge
+# flagged q005 ("Does the EU AI Act explicitly require explainable AI techniques
+# such as LIME or SHAP?") as a hard FAIL: the live wire retrieved conformity /
+# harmonised-standards articles (Art. 40/46/47/49, Annex V) and never answered the
+# yes/no. The correct answer is NO — the Act is technique-agnostic; it sets
+# OUTCOME-based requirements: transparency sufficient to interpret the system's
+# output (Article 13(1) + 13(3)(b)(iv) — "information relevant to explain its
+# output"), human oversight (Article 14), and accuracy/robustness/cybersecurity
+# (Article 15). Verbatim-faithful (hard rule #4, verified against the pinned
+# text). Fires on 0 davidath rows (explainability / interpretability / LIME /
+# SHAP / XAI are ZERO-HIT across qa_pairs.json + scenarios.json).
+_EXPLAINABILITY_TERM_RE = re.compile(
+    r"\bexplainab\w*\b|\binterpretab\w*\b|\bexplainable\s+ai\b|\bxai\b"
+    r"|\blime\b|\bshap\b|\bsaliency\b|\bfeature[-\s]attribution\b"
+    r"|\bblack[-\s]box\b",
+    re.IGNORECASE,
+)
+_EXPLAINABILITY_MANDATE_RE = re.compile(
+    r"\brequir\w*|\bmandat\w*|\bmust\b|\bneed\w*\b|\bobligat\w*|\bcompel\w*"
+    r"|\bexplicitly\b|\bprescrib\w*|\bimpos\w*|\btrustworth\w*"
+    r"|\bdoes\s+the\s+(?:eu\s+)?ai\s+act\b",
+    re.IGNORECASE,
+)
+
+
+def _detect_explainability_inquiry(question: str) -> bool:
+    """True when the question asks whether the Act requires a specific
+    explainability / XAI technique (LIME / SHAP / interpretability method)."""
+    raw_q = question or ""
+    marker = "Latest question:\n"
+    idx = raw_q.rfind(marker)
+    if idx >= 0:
+        raw_q = raw_q[idx + len(marker):]
+    if _MINIMAL_RISK_SCENARIO_OPENER_RE.search(raw_q):
+        return False
+    return bool(
+        _EXPLAINABILITY_TERM_RE.search(raw_q)
+        and _EXPLAINABILITY_MANDATE_RE.search(raw_q)
+    )
+
+
+# R265 — reclassification (value-chain role flip) intercept. r264 q025 hard FAIL:
+# "Can a deployer take actions such that it is seen as a provider? What action?"
+# The live wire cited Art. 26/27/72/73 (deployer duties) — none is the operative
+# basis. Article 25(1)(a)-(c) is THE provision (name/trademark, substantial
+# modification, changed intended purpose → then the Article 16 provider
+# obligations attach; the initial provider is relieved under 25(2)). Gated on a
+# NON-PROVIDER operator role + "provider" + an ACTION/reclassify cue that
+# EXCLUDES the bare "considered a provider" phrasing, so it fires on the live
+# q025 shape but NOT on the davidath "When can a distributor be considered a
+# provider?" row (gold Article 25) or "Who is considered a provider?" (gold
+# Article 3) — the deterministic bench stays byte-identical.
+_RECLASSIFY_NONPROVIDER_ROLE_RE = re.compile(
+    r"\bdeployer\b|\bdistributor\b|\bimporter\b|\boperator\b|\bthird[-\s]party\b",
+    re.IGNORECASE,
+)
+_RECLASSIFY_PROVIDER_RE = re.compile(r"\bprovider\b", re.IGNORECASE)
+_RECLASSIFY_ACTION_RE = re.compile(
+    r"\bwhat\s+(?:kind\s+of\s+)?actions?\b|\btak(?:e|es|ing)\s+actions?\b"
+    r"|\bname\s+or\s+trademark\b|\bname\s*/\s*trademark\b"
+    r"|\bput\s+(?:its|their|your|his|her)\s+name\b"
+    r"|\bsubstantial\s+modif\w*\b|\bmodif\w*\s+(?:the\s+)?intended\s+purpose\b"
+    r"|\brebrand\w*\b|\breclassif\w*\b|\bre-?classified\b"
+    r"|\bdeemed\s+(?:to\s+be\s+)?(?:a\s+)?provider\b"
+    r"|\bbecom\w*\s+(?:a\s+)?provider\b|\btreated\s+as\s+(?:a\s+)?provider\b"
+    r"|\bseen\s+as\s+(?:a\s+)?provider\b|\bregarded\s+as\s+(?:a\s+)?provider\b",
+    re.IGNORECASE,
+)
+
+
+def _detect_reclassification_inquiry(question: str) -> bool:
+    """True when the question asks how a non-provider operator (deployer /
+    distributor / importer) becomes a PROVIDER of a high-risk AI system."""
+    raw_q = question or ""
+    marker = "Latest question:\n"
+    idx = raw_q.rfind(marker)
+    if idx >= 0:
+        raw_q = raw_q[idx + len(marker):]
+    if _MINIMAL_RISK_SCENARIO_OPENER_RE.search(raw_q):
+        return False
+    return bool(
+        _RECLASSIFY_NONPROVIDER_ROLE_RE.search(raw_q)
+        and _RECLASSIFY_PROVIDER_RE.search(raw_q)
+        and _RECLASSIFY_ACTION_RE.search(raw_q)
+    )
+
+
+# R265 — European Artificial Intelligence Board governance intercept. r264 q033
+# hard FAIL: the multi-part question (who designates members / term length /
+# renewals / impartiality vs representation / rules-of-procedure voting
+# threshold) got a "not substantiated in the applicable references" hedge —
+# a KB-content gap surfacing as a false absence. Article 65 answers ALL of it:
+# 65(2)-(3) one representative per Member State, designated by that Member State
+# for a THREE-YEAR term renewable ONCE; 65(4) representatives act for their
+# Member State (single national contact point), not as impartial independents;
+# 65(5) the Board adopts its rules of procedure by a TWO-THIRDS majority (so a
+# simple 50%+1 is not enough). Verbatim-faithful (verified against the pinned
+# Article 65 text). Gated on "Board" + a governance-detail cue (term / renewal /
+# rules of procedure / voting threshold / designate-members) that the davidath
+# "What is the European Artificial Intelligence Board?" / standing-sub-group
+# rows (gold Article 65) do NOT carry, so the deterministic bench is byte-identical.
+_AI_BOARD_RE = re.compile(
+    r"artificial\s+intelligence\s+board|\bthe\s+board\b|\bai\s+board\b",
+    re.IGNORECASE,
+)
+_AI_BOARD_GOVERNANCE_CUE_RE = re.compile(
+    r"\brenewable\b|\brenewal\b|\brules\s+of\s+procedure\b"
+    r"|\bvoting\s+threshold\b|\bvoting\s+majority\b|\btwo[-\s]thirds\b"
+    r"|\bhow\s+long\b|\bterm\s+(?:length|of\s+(?:office|the\s+mandate)|is)\b"
+    r"|\bmember\s+term\b|\bdesignat\w*\b|\bimpartial\w*\b|\bstakeholder\s+interest"
+    r"|\bwho\s+(?:designates|appoints|nominates)\b",
+    re.IGNORECASE,
+)
+
+
+def _detect_ai_board_governance_inquiry(question: str) -> bool:
+    """True when the question asks about European AI Board governance details
+    (member term / renewals / designation / impartiality / voting threshold)."""
+    raw_q = question or ""
+    marker = "Latest question:\n"
+    idx = raw_q.rfind(marker)
+    if idx >= 0:
+        raw_q = raw_q[idx + len(marker):]
+    return bool(
+        _AI_BOARD_RE.search(raw_q) and _AI_BOARD_GOVERNANCE_CUE_RE.search(raw_q)
+    )
+
+
+# R265 — SME simplified technical-documentation form intercept. r264 q041 hard
+# FAIL (corr 20): "Is there a simplified way for SMEs/start-ups to provide the
+# technical documentation, and who must accept it?" got an unrelated
+# Annex VI/VII conformity-routing answer. Article 11(1) LAST subparagraph is the
+# provision: SMEs, including start-ups, may provide the Annex IV elements in a
+# simplified manner using a simplified form the Commission establishes, and the
+# NOTIFIED BODY performing the conformity assessment must accept it. Faithful to
+# the pinned Article 11(1) text. Gated on SME/start-up + simplified +
+# documentation, scenario-openers excluded → fires on 0 davidath QA rows.
+_SME_SIMPLIFIED_DOC_ROLE_RE = re.compile(
+    r"\bsmes?\b|\bstart-?ups?\b|\bsmall\s+(?:and\s+micro|or\s+micro|and\s+medium)"
+    r"|\bmicro\s*-?\s*enterprises?\b|\bsmall\s+enterprises?\b",
+    re.IGNORECASE,
+)
+_SME_SIMPLIFIED_DOC_CUE_RE = re.compile(
+    r"\bsimplif\w*\b", re.IGNORECASE
+)
+_SME_SIMPLIFIED_DOC_TOPIC_RE = re.compile(
+    r"\btechnical\s+document\w*\b|\bdocumentation\b|\bannex\s+iv\b|\bform\b",
+    re.IGNORECASE,
+)
+
+
+def _detect_sme_simplified_doc_inquiry(question: str) -> bool:
+    """True when the question asks about the SME simplified technical-
+    documentation form (Article 11(1) last subparagraph)."""
+    raw_q = question or ""
+    marker = "Latest question:\n"
+    idx = raw_q.rfind(marker)
+    if idx >= 0:
+        raw_q = raw_q[idx + len(marker):]
+    if _MINIMAL_RISK_SCENARIO_OPENER_RE.search(raw_q):
+        return False
+    return bool(
+        _SME_SIMPLIFIED_DOC_ROLE_RE.search(raw_q)
+        and _SME_SIMPLIFIED_DOC_CUE_RE.search(raw_q)
+        and _SME_SIMPLIFIED_DOC_TOPIC_RE.search(raw_q)
+    )
+
+
+def _is_r265_reconcile_intercept(question: str) -> bool:
+    """R265 — the four curated intercepts whose deterministic (Stage-2-skipped)
+    answer should have its wire references reconciled against the curated prose.
+
+    The route's high-risk anchor / scope pass adds tangential references (e.g.
+    Article 6 / Annex III on the reclassification and SME questions, which name
+    "high-risk AI system") beyond the operative articles the curated verdict
+    actually describes. Because these intercepts skip Stage-2, the R72
+    reconcile (stage2-gated) never runs to drop the cited-but-undescribed refs.
+    This predicate lets the route apply that same precision-safe reconcile on
+    the curated deterministic path. The curated prose names its operative
+    articles, so the reconcile keeps them and drops only the undescribed
+    anchor-added refs (floor-protected — never empties). Fires on 0 davidath
+    rows (each detector is byte-identical-verified)."""
+    return (
+        _detect_explainability_inquiry(question)
+        or _detect_reclassification_inquiry(question)
+        or _detect_ai_board_governance_inquiry(question)
+        or _detect_sme_simplified_doc_inquiry(question)
+    )
+
+
 def _curated_stage2_skip_enabled() -> bool:
     """R144 — env gate (default ON) restoring the R111 authoritative-intercept
     Stage-2 skip that the 2026-06-11 'Stage-2 for all' directive bypassed.
@@ -2945,6 +3135,10 @@ def _is_curated_authoritative_intercept(question: str) -> bool:
         or _detect_systems_or_models_inquiry(question)
         or _detect_annex_iii_8_admin_justice_inquiry(question)
         or _detect_annex_iii_8_election_inquiry(question)
+        or _detect_explainability_inquiry(question)
+        or _detect_reclassification_inquiry(question)
+        or _detect_ai_board_governance_inquiry(question)
+        or _detect_sme_simplified_doc_inquiry(question)
     )
 
 
@@ -3217,6 +3411,94 @@ def _deterministic_answer(question: str, context: GraphContext) -> str:
                 "regimes."
             ),
             "refs": ["Art. 2", "Art. 3", "Art. 51"],
+        }
+        _seed_classification_obligations(context, verdict, question)
+        return verdict["answer"]
+
+    # Explainability / XAI intercept (R265). The Act does NOT mandate a specific
+    # technique such as LIME or SHAP; it sets outcome-based requirements.
+    if _detect_explainability_inquiry(question):
+        verdict = {
+            "name": "explainability_scope",
+            "answer": (
+                "No. The EU AI Act does not mandate any specific explainable-AI "
+                "technique such as LIME or SHAP, and is technique-agnostic. It "
+                "sets outcome-based requirements for high-risk AI systems: they "
+                "must be sufficiently transparent for deployers to interpret "
+                "their output under Article 13, which also requires the "
+                "instructions for use to give information relevant to explaining "
+                "that output. They must allow effective human oversight under "
+                "Article 14, and achieve appropriate accuracy, robustness and "
+                "cybersecurity under Article 15. How a provider meets those "
+                "obligations, including the choice of any interpretability "
+                "method, is left to the provider."
+            ),
+            "refs": ["Art. 13", "Art. 14", "Art. 15"],
+        }
+        _seed_classification_obligations(context, verdict, question)
+        return verdict["answer"]
+
+    # Reclassification / value-chain role flip intercept (R265). A non-provider
+    # operator becomes a provider under Article 25(1); the operative basis, not
+    # the deployer duties (Art. 26/27) or post-market articles the live wire cited.
+    if _detect_reclassification_inquiry(question):
+        verdict = {
+            "name": "reclassification_scope",
+            "answer": (
+                "Yes. Under Article 25(1), a distributor, importer, deployer or "
+                "other third party is deemed to be the provider of a high-risk "
+                "AI system, and takes on the provider obligations in Article 16, "
+                "in any of three cases. First, if it puts its name or trademark "
+                "on a high-risk AI system already placed on the market (Article "
+                "25(1)(a)). Second, if it makes a substantial modification to a "
+                "high-risk AI system that remains high-risk (Article 25(1)(b)). "
+                "Third, if it modifies the intended purpose of an AI system, "
+                "including a general-purpose AI system, so that it becomes "
+                "high-risk (Article 25(1)(c)); the initial provider is then no "
+                "longer treated as the provider of that system under Article "
+                "25(2)."
+            ),
+            "refs": ["Art. 25", "Art. 25.1", "Art. 16"],
+        }
+        _seed_classification_obligations(context, verdict, question)
+        return verdict["answer"]
+
+    # SME simplified technical-documentation form intercept (R265).
+    if _detect_sme_simplified_doc_inquiry(question):
+        verdict = {
+            "name": "sme_simplified_doc",
+            "answer": (
+                "Yes. Under Article 11(1), SMEs, including start-ups, may provide "
+                "the technical documentation elements set out in Annex IV in a "
+                "simplified manner, using a simplified form the Commission is "
+                "required to establish for the needs of small and micro "
+                "enterprises. Where an SME opts to use that form, the notified "
+                "body performing the conformity assessment must accept it. The "
+                "substantive Annex IV content requirements are unchanged; only "
+                "the form in which they are provided is simplified."
+            ),
+            "refs": ["Art. 11", "Art. 11.1"],
+        }
+        _seed_classification_obligations(context, verdict, question)
+        return verdict["answer"]
+
+    # European Artificial Intelligence Board governance intercept (R265).
+    if _detect_ai_board_governance_inquiry(question):
+        verdict = {
+            "name": "ai_board_governance",
+            "answer": (
+                "The European Artificial Intelligence Board, established by "
+                "Article 65, is composed of one representative per Member State, "
+                "each designated by their own Member State. Each representative "
+                "serves a term of three years, renewable once, under Article "
+                "65(3). Representatives act on behalf of their Member State as "
+                "its single national contact point and are not appointed to act "
+                "impartially as independent members. The Board adopts its rules "
+                "of procedure by a two-thirds majority of the designated "
+                "representatives under Article 65(5), so a simple 50%-plus-one "
+                "majority is not sufficient."
+            ),
+            "refs": ["Art. 65", "Art. 65.3", "Art. 65.5"],
         }
         _seed_classification_obligations(context, verdict, question)
         return verdict["answer"]

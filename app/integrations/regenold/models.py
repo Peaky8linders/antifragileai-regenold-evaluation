@@ -569,6 +569,47 @@ _META_LEAK_SUBSTRINGS: tuple[str, ...] = (
     "based on what i know",
 )
 
+# R265 (2026-07-02) — internal-plumbing / retrieval-scaffolding phrases the
+# r264 Sonnet-5 judge caught leaking onto the LIVE wire: q010 "current
+# retrieval", q018 "references supplied above", q025 "tell me and I will flag
+# that the block does not support a complete answer", q033 "not substantiated
+# in the applicable references", q042 "the query profile". A regulator answer
+# never legitimately emits these. Verified ABSENT from the base list and
+# ZERO-HIT on the davidath scoring inputs (qa_pairs.json + scenarios.json) and
+# kb.py. Env-gated ``REGENOLD_STRIP_META`` (default ON) for ab_judge
+# reversibility. Per-sentence drop (never empties the answer — the floor in
+# ``normalise_answer_for_regenold`` preserves the highest-value sentence).
+_META_LEAK_SUBSTRINGS_R265: tuple[str, ...] = (
+    "not substantiated in the applicable references",
+    "not substantiated in the references",
+    "the eu ai act references block",
+    "eu ai act references block",
+    "references block provided",
+    "the references block",
+    "references supplied above",
+    "does not appear in the references",
+    "does not appear in the eu ai act",
+    "current retrieval",
+    "query profile",
+    "i will flag",
+    "i should flag",
+    "the block does not support",
+    "does not support a complete answer",
+    "tell me and i will",
+    "please re-run the query",
+    "no specific eu ai act references were matched",
+)
+
+
+def _strip_meta_r265_enabled() -> bool:
+    """R265 meta-leak extension gate (default ON; ``=0`` reverts to the base list)."""
+    return os.getenv("REGENOLD_STRIP_META", "1").strip().lower() not in {
+        "0",
+        "off",
+        "false",
+        "no",
+    }
+
 # Sentence-anchor markers from the deterministic / markdown-headed
 # answer. Stripped at the leading edge of a sentence (don't drop the
 # whole sentence, just the marker prefix). Accepts both `:` and `.`
@@ -629,7 +670,13 @@ def _sentence_has_meta_leak(sentence: str) -> bool:
     :data:`_META_LEAK_SUBSTRINGS` (case-insensitive substring match).
     """
     low = sentence.lower()
-    return any(s in low for s in _META_LEAK_SUBSTRINGS)
+    if any(s in low for s in _META_LEAK_SUBSTRINGS):
+        return True
+    if _strip_meta_r265_enabled() and any(
+        s in low for s in _META_LEAK_SUBSTRINGS_R265
+    ):
+        return True
+    return False
 
 
 def _strip_sentence_opener(sentence: str) -> str:

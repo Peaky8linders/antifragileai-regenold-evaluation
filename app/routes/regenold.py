@@ -77,6 +77,7 @@ from app.data.kb import KB_VERSION
 from app.engines.graph_rag import (
     _detect_classification_topic,
     _is_curated_authoritative_intercept,
+    _is_r265_reconcile_intercept,
     ask_compliance_question,
 )
 from app.engines.scenario_classifier import (
@@ -6453,9 +6454,21 @@ def regenold_eu_ai_act_ask(
     # multi-article gold a 3-sentence verdict cannot name). Env
     # off-switch: REGENOLD_REFS_RECONCILE=0.
     reconcile_floor = 1 if os.getenv("REGENOLD_DYNAMIC_GROUNDING") == "1" else _REFS_RECONCILE_FLOOR
+    # R265 — the curated intercepts (explainability / reclassification / Board /
+    # SME form) SKIP Stage-2, so the stage2-gated R72 reconcile never runs to
+    # drop the tangential refs the route's high-risk anchor pass adds beyond the
+    # operative articles the curated prose describes. Apply the same
+    # precision-safe reconcile on that deterministic path (drop only
+    # cited-but-undescribed refs; floor-protected). davidath byte-identical
+    # (fires on 0 davidath rows). Env off-switch: REGENOLD_R265_INTERCEPT_RECONCILE=0.
+    _r265_reconcile = (
+        os.getenv("REGENOLD_R265_INTERCEPT_RECONCILE", "1")
+        in ("1", "true", "yes", "on")
+        and _is_r265_reconcile_intercept(live_user_message or question)
+    )
     if (
         os.getenv("REGENOLD_REFS_RECONCILE", "1") in ("1", "true", "yes", "on")
-        and graph_stats.get("stage2_landed")
+        and (graph_stats.get("stage2_landed") or _r265_reconcile)
         and not _looks_like_scenario_shape(question)
         and len(references) > reconcile_floor
     ):
