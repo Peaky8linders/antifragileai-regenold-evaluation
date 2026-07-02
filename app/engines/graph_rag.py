@@ -334,7 +334,36 @@ def _stage2_answer_headroom() -> int:
         return 2048
 
 
+def _get_groq_compressed_system_prompt() -> str:
+    """Return a highly compressed version of the Stage-2 system prompt for Groq's low TPM/token limits."""
+    return (
+        "You are an EU AI Act Legal Specialist (Regulation 2024/1689).\n"
+        "Provide professional, legal analysis grounded in the regulation's verified articles and annexes.\n\n"
+        "RULES:\n"
+        "1. Cite only the exact Article or Annex provided in references. Use format: 'Article N' or 'Annex R', "
+        "optionally with sub-points (e.g. 'Article 3.2', 'Annex III.2'). Do NOT use 'Art.' and do NOT use parentheses "
+        "for paragraphs (e.g. use 'Article 3.2', not 'Article 3(2)').\n"
+        "2. Write the answer as ONE continuous, cohesive paragraph of plain prose. Write AT MOST 4 sentences total.\n"
+        "3. Do NOT use markdown headers, bullet points, bold text, tables, or any formatting. Plain text only.\n"
+        "4. Bottom-Line Up Front (BLUF): Lead with the direct verdict first (e.g. 'Yes', 'No', 'Likely high-risk', 'Not high-risk', "
+        "'Prohibited', 'Out of scope', or a conditional verdict like 'High-risk only where...') in the first clause. "
+        "Never open with 'It depends' or 'Article N is the operative provision'.\n"
+        "5. State the risk tier with its verbatim name ('prohibited', 'high-risk', 'limited risk', 'minimal risk') and use 'not high-risk' "
+        "if it sits outside the high-risk tiers.\n"
+        "6. Use EU AI Act terminology: 'provider', 'deployer', 'authorised representative', 'operator'; NEVER use 'user', 'customer', "
+        "'developer', 'creator'.\n"
+        "7. For emotion recognition, it is prohibited only in workplace/education (Article 5(1)(f)); outside those, it is high-risk under "
+        "Annex III(1)(c) triggering Article 50(3) transparency.\n"
+        "8. Biometric categorisation (Article 5(1)(g)) prohibition applies only if inferring sensitive attributes (race, political opinions, "
+        "trade union membership, religious beliefs, sex life, sexual orientation).\n"
+        "9. Emergency triage is high-risk under Annex III(5)(d); clinical-trial participant selection is not high-risk unless it determines "
+        "access to essential healthcare.\n"
+        "10. Do not reference the source of your information (e.g. do not say 'the graph', 'references', 'the data provided')."
+    )
+
+
 def _openai_wrapper_complete_for_graph_rag(
+
     *, system: str, user: str, max_tokens: int, temperature: float,
     complex_question: bool = False, stage_name: str = "Stage"
 ) -> str | None:
@@ -526,9 +555,13 @@ def _openai_wrapper_complete_for_graph_rag(
                     suffix_len = len(user) - prefix_len if len(user) < 10000 else 2000
                     groq_user = user[:prefix_len] + "\n\n... [TRUNCATED FOR GROQ CONTEXT LIMIT] ...\n\n" + user[-suffix_len:]
                 
+                groq_system = system
+                if len(system) > 10000:
+                    groq_system = _get_groq_compressed_system_prompt()
+
                 groq_resp = get_groq_provider().complete(
                     OpenAIWrapperRequest(
-                        system=system,
+                        system=groq_system,
                         user=groq_user,
                         model="qwen/qwen3.6-27b",
                         max_tokens=groq_max_tokens,
@@ -1298,9 +1331,12 @@ def _llm_generate_answer(
             return validate_llm_output(text_raw.strip())
         elif provider == "groq":
             from app.llm.openai_wrapper_provider import OpenAIWrapperRequest, get_groq_provider
+            groq_system = full_system
+            if len(full_system) > 10000:
+                groq_system = _get_groq_compressed_system_prompt()
             resp = get_groq_provider().complete(
                 OpenAIWrapperRequest(
-                    system=full_system,
+                    system=groq_system,
                     user=user_message,
                     model=os.getenv("REGENOLD_STAGE2_MODEL_GROQ", "qwen/qwen3.6-27b"),  # R264: Llama 3.3 70B deprecated
                     max_tokens=settings.graph_rag.max_tokens,
