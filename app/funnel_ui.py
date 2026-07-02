@@ -78,7 +78,11 @@ FUNNEL_TEMPLATE = """<!DOCTYPE html>
         .wrap { position: relative; z-index: 1; max-width: 1080px; margin: 0 auto; padding: 32px 24px 64px; }
         header.top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 56px; }
         .brand { display: flex; align-items: center; gap: 12px; }
-        .brand img { width: 40px; height: 40px; border-radius: 12px; border: 1px solid var(--border-glow); box-shadow: 0 0 24px var(--accent-glow); }
+        .brand-avatar { position: relative; width: 46px; height: 46px; flex-shrink: 0; }
+        .brand-avatar img { position: relative; z-index: 1; width: 46px; height: 46px; border-radius: 50%; object-fit: cover; border: 2px solid var(--accent-cyan); box-shadow: 0 0 18px var(--accent-glow); background: var(--bg-secondary); display: block; }
+        .brand-avatar-glow { position: absolute; inset: -5px; border-radius: 50%; background: radial-gradient(circle, var(--accent-glow) 0%, transparent 70%); z-index: 0; animation: brand-pulse 3s infinite ease-in-out; pointer-events: none; }
+        .brand-status-dot { position: absolute; z-index: 2; bottom: 1px; right: 1px; width: 11px; height: 11px; background: #10b981; border: 2px solid var(--bg-primary); border-radius: 50%; box-shadow: 0 0 6px #10b981; }
+        @keyframes brand-pulse { 0%, 100% { opacity: .45; transform: scale(1); } 50% { opacity: .8; transform: scale(1.08); } }
         .brand .wordmark { font-family: 'Instrument Serif', Georgia, serif; font-weight: 400; font-size: 26px; letter-spacing: -0.01em; }
         .brand .wordmark span { color: var(--accent-cyan); }
         .brand-text { display: flex; flex-direction: column; gap: 2px; }
@@ -89,6 +93,9 @@ FUNNEL_TEMPLATE = """<!DOCTYPE html>
         .eyebrow { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--accent-cyan); background: rgba(14, 165, 233,0.08); border: 1px solid var(--border-glow); padding: 6px 14px; border-radius: 999px; margin-bottom: 20px; }
         h1 { font-family: 'Instrument Serif', Georgia, serif; font-weight: 400; font-size: clamp(36px, 5vw, 54px); line-height: 1.05; letter-spacing: -0.01em; margin-bottom: 18px; }
         h1 .grad { background: linear-gradient(120deg, var(--accent-cyan), var(--accent-blue)); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+        .powered-by { font-size: 15px; font-weight: 500; color: var(--text-secondary); margin: -6px 0 18px; }
+        .powered-by a { color: var(--accent-cyan); font-weight: 700; text-decoration: none; }
+        .powered-by a:hover { text-decoration: underline; }
         .sub { font-size: 17px; color: var(--text-secondary); max-width: 520px; margin-bottom: 28px; }
         .features { list-style: none; display: grid; gap: 14px; margin-top: 8px; }
         .features li { display: flex; gap: 12px; align-items: flex-start; font-size: 15px; color: var(--text-secondary); }
@@ -155,7 +162,11 @@ FUNNEL_TEMPLATE = """<!DOCTYPE html>
     <div class="wrap">
         <header class="top">
             <div class="brand">
-                <img src="/lexy_avatar.png" alt="Lexy" onerror="this.style.display='none'">
+                <div class="brand-avatar">
+                    <span class="brand-avatar-glow" aria-hidden="true"></span>
+                    <img src="/lexy_avatar.png" alt="Lexy" onerror="this.parentElement.style.display='none'">
+                    <span class="brand-status-dot" aria-hidden="true"></span>
+                </div>
                 <div class="brand-text">
                     <div class="wordmark">Lex<span>y</span></div>
                     <div class="brand-tag">EU AI Act Virtual Assistant</div>
@@ -166,7 +177,8 @@ FUNNEL_TEMPLATE = """<!DOCTYPE html>
 
         <section class="hero">
             <div>
-                <h1>Understand the <span class="grad">EU AI Act</span> in plain language.</h1>
+                <h1>EU AI Act <span class="grad">Q&amp;A RAG</span> system</h1>
+                <p class="powered-by">Powered by <a href="https://antifragile-ai.net" target="_blank" rel="noopener noreferrer">Antifragile.AI</a></p>
                 <p class="sub">Ask any EU AI Act question. Get a plain-language answer, cited to the exact Articles and Annexes.</p>
                 <ul class="features">
                     <li><i data-lucide="scale" style="width:18px;height:18px"></i><span><strong>Grounded in the regulation.</strong> Every answer cites the operative Articles &amp; Annexes.</span></li>
