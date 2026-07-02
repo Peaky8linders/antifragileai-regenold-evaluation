@@ -462,11 +462,40 @@ def _openai_wrapper_complete_for_graph_rag(
                 "graph_rag.openai_wrapper_not_logged_in — Sonnet path is DOWN. "
                 "Re-seed the wrapper's OAuth token by running login.bat. ",
             )
-        elif "out of extra usage" in _err_low or "credit balance" in _err_low:
-            logger.error(
-                "graph_rag.openai_wrapper_quota_exhausted — LLM quota limits reached: %s. ",
-                response.error[:200],
+        elif "out of extra usage" in _err_low or "credit balance" in _err_low or "api_status_429" in _err_low:
+            logger.warning(
+                "graph_rag.openai_wrapper_maxxed_out — Claude Max subscription "
+                "exhausted/rate-limited (%s). Falling back to Groq Qwen 3.6 with reasoning.",
+                response.error[:100],
             )
+            try:
+                from app.llm.openai_wrapper_provider import get_groq_provider, OpenAIWrapperRequest
+                groq_resp = get_groq_provider().complete(
+                    OpenAIWrapperRequest(
+                        system=system,
+                        user=user,
+                        model="qwen/qwen3.6-27b",
+                        max_tokens=safe_max_tokens,
+                        temperature=temperature,
+                        reasoning_effort="high",
+                    )
+                )
+                if not groq_resp.error:
+                    logger.info("graph_rag.groq_fallback_success model=%s", groq_resp.model)
+                    if getattr(groq_resp, "thinking", None):
+                        try:
+                            from app.integrations.regenold.reasoning_trace import record_llm_thinking
+                            record_llm_thinking(
+                                f"Fallback to Groq Qwen reasoning: {groq_resp.thinking}",
+                                stage=stage_name,
+                            )
+                        except Exception:
+                            pass
+                    return groq_resp.text
+                else:
+                    logger.warning("graph_rag.groq_fallback_failed error=%s", groq_resp.error)
+            except Exception as e:
+                logger.warning("graph_rag.groq_fallback_exception: %s", e)
         elif (
             # The wrapper masks an expired Claude-Max OAuth token (the bundled
             # Claude Code CLI returns HTTP 401 "Invalid authentication
