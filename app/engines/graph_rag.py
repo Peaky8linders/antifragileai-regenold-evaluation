@@ -516,7 +516,6 @@ def _openai_wrapper_complete_for_graph_rag(
                     response.error[:80],
                 )
                 from app.llm.openai_wrapper_provider import get_groq_provider, OpenAIWrapperRequest
-                groq_resp = get_groq_provider().complete(
                 # Groq Qwen 3.6 has a strict 4,096 total token limit (prompt + completion).
                 # Cap completion tokens and truncate large reference context if needed.
                 groq_max_tokens = min(safe_max_tokens, 1024)
