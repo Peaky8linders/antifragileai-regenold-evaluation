@@ -151,7 +151,7 @@ def test_resolve_picks_groq_when_groq_configured(monkeypatch) -> None:
     selection = ic._resolve_intent_provider()
     assert selection is not None
     provider, model = selection
-    assert model == ic._DEFAULT_GROQ_MODEL  # llama-3.3-70b-versatile
+    assert model == ic._DEFAULT_GROQ_MODEL  # R264: qwen/qwen3.6-27b
     assert provider is owp.get_groq_intent_provider()
 
 
@@ -198,7 +198,7 @@ def test_classify_routes_through_groq_when_enabled(monkeypatch) -> None:
 
     assert result is not None
     assert result.intent == "penalty_inquiry"
-    assert captured_models == ["llama-3.3-70b-versatile"]
+    assert captured_models == ["qwen/qwen3.6-27b"]  # R264 default
 
 
 def test_classify_does_not_call_wrapper_when_groq_active(monkeypatch) -> None:
@@ -220,7 +220,7 @@ def test_classify_does_not_call_wrapper_when_groq_active(monkeypatch) -> None:
         def complete(self, _req):
             return OpenAIWrapperResponse(
                 text='{"intent": "definition", "primary_anchor": "Art. 3", "alternate_anchors": [], "confidence": 0.85}',
-                model="llama-3.3-70b-versatile",
+                model="qwen/qwen3.6-27b",
                 elapsed_ms=90,
             )
 
@@ -276,5 +276,5 @@ def test_cache_key_separates_groq_and_wrapper_results(monkeypatch) -> None:
     operator A/Bing the two paths back-to-back would see the second result
     cache-hit on the first's value."""
     haiku_key = ic._cache_key("What is GPAI?", "claude-haiku-4-5-20251001")
-    groq_key = ic._cache_key("What is GPAI?", "llama-3.3-70b-versatile")
+    groq_key = ic._cache_key("What is GPAI?", "qwen/qwen3.6-27b")
     assert haiku_key != groq_key

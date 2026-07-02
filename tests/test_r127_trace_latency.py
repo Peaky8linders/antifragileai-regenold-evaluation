@@ -370,7 +370,7 @@ class TestR127FusionObservability:
             ),
         })
         groq = _FakeProvider({
-            "llama-3.3-70b-versatile": lambda r: OpenAIWrapperResponse(
+            "qwen/qwen3.6-27b": lambda r: OpenAIWrapperResponse(
                 text="Deployers must inform people under Article 50."
             )
         })

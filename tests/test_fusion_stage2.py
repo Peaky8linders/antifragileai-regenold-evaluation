@@ -236,7 +236,7 @@ def test_fusion_complete_happy_path(monkeypatch):
         ),
     })
     groq = _FakeProvider({
-        "llama-3.3-70b-versatile": lambda r: OpenAIWrapperResponse(
+        "qwen/qwen3.6-27b": lambda r: OpenAIWrapperResponse(
             text="Deployers must inform people under Article 50."
         )
     })
@@ -283,7 +283,7 @@ def test_fusion_complete_judge_error_returns_none(monkeypatch):
         ),
     })
     ok = _FakeProvider({
-        "llama-3.3-70b-versatile": lambda r: OpenAIWrapperResponse(text="draft B"),
+        "qwen/qwen3.6-27b": lambda r: OpenAIWrapperResponse(text="draft B"),
         "mistral-large-latest": lambda r: OpenAIWrapperResponse(text="draft C"),
     })
     _wire_three_transports(monkeypatch, wrapper=wrapper, groq=ok, mistral=ok)
@@ -299,7 +299,7 @@ def test_fusion_complete_judge_empty_returns_none(monkeypatch):
         ),
     })
     ok = _FakeProvider({
-        "llama-3.3-70b-versatile": lambda r: OpenAIWrapperResponse(text="draft B"),
+        "qwen/qwen3.6-27b": lambda r: OpenAIWrapperResponse(text="draft B"),
         "mistral-large-latest": lambda r: OpenAIWrapperResponse(text="draft C"),
     })
     _wire_three_transports(monkeypatch, wrapper=wrapper, groq=ok, mistral=ok)
@@ -316,7 +316,7 @@ def test_fusion_complete_judge_truncated_returns_none(monkeypatch):
         ),
     })
     ok = _FakeProvider({
-        "llama-3.3-70b-versatile": lambda r: OpenAIWrapperResponse(text="draft B"),
+        "qwen/qwen3.6-27b": lambda r: OpenAIWrapperResponse(text="draft B"),
         "mistral-large-latest": lambda r: OpenAIWrapperResponse(text="draft C"),
     })
     _wire_three_transports(monkeypatch, wrapper=wrapper, groq=ok, mistral=ok)
@@ -349,7 +349,7 @@ def test_fusion_complete_complex_adds_opus_panel_member(monkeypatch):
         "claude-opus-4-8": _track,
     })
     groq = _FakeProvider({
-        "llama-3.3-70b-versatile": lambda r: OpenAIWrapperResponse(text="draft groq"),
+        "qwen/qwen3.6-27b": lambda r: OpenAIWrapperResponse(text="draft groq"),
     })
     mistral = _FakeProvider({
         "mistral-large-latest": lambda r: OpenAIWrapperResponse(text="draft mistral"),
@@ -447,7 +447,7 @@ def test_fusion_complete_gate_complex_fires_complex(monkeypatch):
         "claude-opus-4-8": lambda r: OpenAIWrapperResponse(text="opus draft"),
     })
     ok = _FakeProvider({
-        "llama-3.3-70b-versatile": lambda r: OpenAIWrapperResponse(text="groq draft"),
+        "qwen/qwen3.6-27b": lambda r: OpenAIWrapperResponse(text="groq draft"),
         "mistral-large-latest": lambda r: OpenAIWrapperResponse(text="mistral draft"),
     })
     _wire_three_transports(monkeypatch, wrapper=wrapper, groq=ok, mistral=ok)
@@ -466,7 +466,7 @@ def test_fusion_complete_gate_all_fires_on_simple(monkeypatch):
         ),
     })
     ok = _FakeProvider({
-        "llama-3.3-70b-versatile": lambda r: OpenAIWrapperResponse(text="b"),
+        "qwen/qwen3.6-27b": lambda r: OpenAIWrapperResponse(text="b"),
         "mistral-large-latest": lambda r: OpenAIWrapperResponse(text="c"),
     })
     _wire_three_transports(monkeypatch, wrapper=wrapper, groq=ok, mistral=ok)
@@ -597,7 +597,7 @@ class TestDeterministicJudge:
 
         wrapper = _FakeProvider({"claude-sonnet-4-6": _sonnet_panel_only})
         ok = _FakeProvider({
-            "llama-3.3-70b-versatile": lambda r: OpenAIWrapperResponse(
+            "qwen/qwen3.6-27b": lambda r: OpenAIWrapperResponse(
                 text="Groq draft about Article 50 transparency here."
             ),
             "mistral-large-latest": lambda r: OpenAIWrapperResponse(
@@ -657,7 +657,7 @@ class TestR131_3FusionThinking:
 
         wrapper = _FakeProvider({"claude-opus-4-8": _opus_panel})
         groq = _FakeProvider({
-            "llama-3.3-70b-versatile": lambda r: OpenAIWrapperResponse(
+            "qwen/qwen3.6-27b": lambda r: OpenAIWrapperResponse(
                 text="GPAI is systemic under Article 51."
             )
         })
@@ -704,7 +704,7 @@ class TestR131_3FusionThinking:
 
         wrapper = _FakeProvider({"claude-opus-4-8": _opus_panel})
         groq = _FakeProvider({
-            "llama-3.3-70b-versatile": lambda r: OpenAIWrapperResponse(text="Art 51.")
+            "qwen/qwen3.6-27b": lambda r: OpenAIWrapperResponse(text="Art 51.")
         })
         mistral = _FakeProvider({
             "mistral-large-latest": lambda r: OpenAIWrapperResponse(text="Art 51.")

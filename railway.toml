@@ -421,7 +421,7 @@ REGENOLD_KB_PRIMARY_RETRIEVAL = "1"
 # REGENOLD_INTENT_PROVIDER = "groq"
 # GROQ_API_KEY             = "gsk_..."          # set via railway variables, not toml
 # GROQ_API_BASE            = "https://api.groq.com/openai/v1"    # default
-# REGENOLD_INTENT_MODEL_GROQ = "llama-3.3-70b-versatile"          # default
+# REGENOLD_INTENT_MODEL_GROQ = "qwen/qwen3.6-27b"                 # default (R264; Llama 3.3 70B deprecated 2026-08-16)
 # GROQ_TIMEOUT_SECONDS     = "5"                                  # default
 
 # RushDB graph — OPT-IN ONLY since R98 (it hit free-trial limits). To

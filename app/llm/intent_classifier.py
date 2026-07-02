@@ -342,11 +342,17 @@ class IntentResult:
 # ── Module-level config + state ──────────────────────────────────────────────
 
 _DEFAULT_MODEL = os.getenv("REGENOLD_INTENT_MODEL", "claude-haiku-4-5-20251001")
-# Round 52: Groq fallback model. Llama 3.3 70B Versatile is the most-tested
-# Groq endpoint for legal-RAG tasks (per Reddit r/legaltech Oct 2025
-# survey + Vals.ai LegalBench). Override via REGENOLD_INTENT_MODEL_GROQ.
+# Round 52: Groq Stage-0 model. R264 — swapped off Llama 3.3 70B Versatile
+# (Groq deprecated it 2026-06-30, decommission 2026-08-16) to
+# ``qwen/qwen3.6-27b``, Groq's recommended replacement. Live-measured on the
+# real Stage-0 prompt (n=10 EU-AI-Act intents): 5/5 JSON valid, 5/5 intent +
+# anchor correct, p50 722 ms — with ``reasoning_effort=none`` auto-injected by
+# the provider (Qwen is a hybrid reasoning model; unconstrained it burns the
+# 250-token budget on hidden reasoning and truncates). GPT-OSS 120B was the
+# faster-but-equal alternative; Qwen chosen per operator directive. Override
+# via REGENOLD_INTENT_MODEL_GROQ.
 _DEFAULT_GROQ_MODEL = os.getenv(
-    "REGENOLD_INTENT_MODEL_GROQ", "llama-3.3-70b-versatile"
+    "REGENOLD_INTENT_MODEL_GROQ", "qwen/qwen3.6-27b"
 )
 _TIMEOUT_SECONDS = float(os.getenv("REGENOLD_INTENT_TIMEOUT", "2.5"))
 _CACHE_MAX = int(os.getenv("REGENOLD_INTENT_CACHE_MAX", "2048"))

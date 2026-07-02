@@ -111,7 +111,7 @@ logger = logging.getLogger(__name__)
 _PANEL_REGISTRY: dict[str, tuple[str, str]] = {
     "sonnet": ("claude-sonnet-4-6", "wrapper"),
     "opus": ("claude-opus-4-8", "wrapper"),
-    "groq": ("llama-3.3-70b-versatile", "groq"),
+    "groq": ("qwen/qwen3.6-27b", "groq"),  # R264: Llama 3.3 70B deprecated
     "mistral": ("mistral-large-latest", "mistral"),
     "gemini": ("gemini-2.5-flash", "gemini"),
 }

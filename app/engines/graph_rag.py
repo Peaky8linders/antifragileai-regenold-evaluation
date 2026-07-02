@@ -1024,7 +1024,7 @@ def _llm_parse_query(question: str) -> GraphQuery:
                 OpenAIWrapperRequest(
                     system=system_prompt,
                     user=sanitized_question,
-                    model=os.getenv("REGENOLD_STAGE1_MODEL_GROQ", "llama-3.3-70b-versatile"),
+                    model=os.getenv("REGENOLD_STAGE1_MODEL_GROQ", "qwen/qwen3.6-27b"),  # R264: Llama 3.3 70B deprecated
                     max_tokens=2048,
                     temperature=0.0,
                 )
@@ -1229,7 +1229,7 @@ def _llm_generate_answer(
                 OpenAIWrapperRequest(
                     system=full_system,
                     user=user_message,
-                    model=os.getenv("REGENOLD_STAGE2_MODEL_GROQ", "llama-3.3-70b-versatile"),
+                    model=os.getenv("REGENOLD_STAGE2_MODEL_GROQ", "qwen/qwen3.6-27b"),  # R264: Llama 3.3 70B deprecated
                     max_tokens=settings.graph_rag.max_tokens,
                     temperature=settings.graph_rag.temperature,
                 )

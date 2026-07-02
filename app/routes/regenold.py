@@ -3965,10 +3965,14 @@ def _rewrite_multiturn_query(
             any_configured = True
             candidates.append((
                 get_groq_intent_provider(),
-                # Groq's Llama 3.3 70B Versatile is the same Stage-0 model
-                # R52 uses; matches the de-noiser's "fast rewrite" budget.
+                # Groq's qwen/qwen3.6-27b is the same Stage-0 model R264
+                # swapped the intent classifier to (Llama 3.3 70B was
+                # deprecated 2026-06-30). ``reasoning_effort=none`` is
+                # auto-injected by the provider so Qwen emits the short
+                # rewrite directly without a hidden reasoning trace eating
+                # the tight budget (live: 34 tokens, 489 ms at max_tokens=100).
                 os.environ.get(
-                    "REGENOLD_DENOISER_MODEL_GROQ", "llama-3.3-70b-versatile"
+                    "REGENOLD_DENOISER_MODEL_GROQ", "qwen/qwen3.6-27b"
                 ),
                 "groq",
             ))
@@ -4018,7 +4022,13 @@ def _rewrite_multiturn_query(
                 # fallback chain is at most two such calls.
                 max_tokens=100,
                 temperature=0.0,
-                timeout_seconds=1.0,
+                # R264 — 2.0 s (was 1.0 s). Qwen 3.6 27B via Groq is
+                # ~500-750 ms typical; the extra second of headroom absorbs
+                # network jitter so a transient slow RTT no longer trips the
+                # fail-fast into a spurious "provider_error" (the exact
+                # symptom the operator flagged). Still negligible against the
+                # ~28 s multi-turn p50; the chain is at most two such calls.
+                timeout_seconds=2.0,
             )
             resp = provider.complete(req)
             last_latency = (time.monotonic_ns() - start_ns) // 1_000_000

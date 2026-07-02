@@ -254,10 +254,12 @@ class AppSettings(BaseSettings):
     regenold: RegenoldSettings = Field(default_factory=RegenoldSettings)
     rate_limit: RateLimitSettings = Field(default_factory=RateLimitSettings)
 
-    # Bumped to 1.0.2 as the 2026-06-30 Sonnet-5-routing deploy marker —
-    # surfaced on /healthz/llm + /healthz/graph so a redeploy can be VERIFIED
+    # Bumped to 1.0.3 as the R264 (2026-07-02) deploy marker — Groq Stage-0
+    # intent + de-noiser off deprecated Llama 3.3 70B onto qwen/qwen3.6-27b,
+    # plus the Stage-2 UI model-label fix (claude-sonnet-5 → "Sonnet 5").
+    # Surfaced on /healthz/llm + /healthz/graph so a redeploy can be VERIFIED
     # live (the endpoints expose no git SHA). Purely cosmetic; nothing keys on it.
-    version: str = "1.0.2"
+    version: str = "1.0.3"
 
 
 settings = AppSettings()

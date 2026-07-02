@@ -79,6 +79,22 @@ class OpenAIWrapperRequest(BaseModel):
     change.
     """
 
+    reasoning_effort: str = ""
+    """R264 — OpenAI/Groq ``reasoning_effort`` passthrough for open reasoning
+    models. Groq's ``qwen/qwen3.6-27b`` and ``openai/gpt-oss-*`` are hybrid
+    reasoning models that, left unconstrained, spend the whole ``max_tokens``
+    budget on a hidden reasoning trace and truncate (``finish_reason=length``)
+    before emitting the JSON / rewrite — breaking the Stage-0 intent classifier
+    and the multi-turn de-noiser. Setting this controls that: ``"none"``
+    (Qwen — no reasoning) / ``"low"`` (GPT-OSS — minimal reasoning) restores
+    fast, clean, complete output.
+
+    Empty (default) + a Groq reasoning model → :meth:`_OpenAIWrapperProvider.complete`
+    auto-injects the right value per model family. Empty + a Claude model
+    (the wrapper path) sends nothing — ``reasoning_effort`` is not an Anthropic
+    parameter, so it is NEVER attached to a ``claude-*`` request.
+    """
+
 
 class OpenAIWrapperResponse(BaseModel):
     text: str = ""
@@ -268,6 +284,21 @@ class _OpenAIWrapperProvider:
             "stream": False,
         }
         body["messages"] = [m for m in body["messages"] if m is not None]
+
+        # R264 — reasoning_effort for Groq open reasoning models. Explicit
+        # request value wins; else auto-inject per model family. NEVER attach
+        # to a ``claude-*`` request (not an Anthropic parameter) so the Claude
+        # Max wrapper path stays byte-identical.
+        _model_lc = (req.model or "").lower()
+        if not _model_lc.startswith("claude") and "claude-" not in _model_lc:
+            effort = (req.reasoning_effort or "").strip().lower()
+            if not effort:
+                if "qwen" in _model_lc:
+                    effort = "none"
+                elif "gpt-oss" in _model_lc:
+                    effort = "low"
+            if effort:
+                body["reasoning_effort"] = effort
 
         # Per-request timeout override — the intent classifier wants a
         # short 2.5 s budget for its fast-fail behaviour but the

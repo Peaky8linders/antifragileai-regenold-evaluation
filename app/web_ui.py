@@ -1972,7 +1972,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
             // Detect which Stage-2 model was used from the notes array.
             // The engine records e.g. "stage2_model=claude-opus-4-8 complex=true"
-            // or "stage2_model=claude-sonnet-4-6 complex=false" in notes.
+            // or "stage2_model=claude-sonnet-5 complex=false" in notes.
             let detectedModel = '';
             let isComplex = false;
             (trace.notes || []).forEach(n => {
@@ -1985,28 +1985,36 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 // Fall back to reading the note that records which model was used
                 (trace.notes || []).forEach(n => {
                     if (/opus.?4/i.test(n)) detectedModel = 'claude-opus-4';
-                    else if (/sonnet/i.test(n)) detectedModel = 'claude-sonnet-4-6';
-                    else if (/groq|llama/i.test(n)) detectedModel = 'groq-llama';
+                    else if (/sonnet/i.test(n)) detectedModel = 'claude-sonnet-5';
+                    else if (/groq|llama|qwen/i.test(n)) detectedModel = 'groq';
                 });
             }
             if (!detectedModel && trace.stage2_polish === true) detectedModel = 'claude-opus-4-8'; // default
-            if (!detectedModel && trace.stage2_polish === false) detectedModel = 'claude-sonnet-4-6';
+            if (!detectedModel && trace.stage2_polish === false) detectedModel = 'claude-sonnet-5';
 
             function modelClass(m) {
                 if (!m) return 'sonnet';
                 if (/opus/i.test(m)) return 'opus';
-                if (/groq|llama/i.test(m)) return 'groq';
+                if (/groq|llama|qwen|gpt-oss/i.test(m)) return 'groq';
                 if (/gemini/i.test(m)) return 'gemini';
                 return 'sonnet';
             }
 
+            // R264 — the Stage-2 answer model is Sonnet 5 (simple) or Opus 4.8
+            // (complex); Sonnet 4.6 is retired. The prior fallthrough returned
+            // 'Sonnet 4.6' for ANY unrecognised string, so the correctly-recorded
+            // 'claude-sonnet-5' note rendered as "Sonnet 4.6" in the UI.
             function modelLabel(m) {
-                if (!m) return 'Sonnet 4.6';
+                if (!m) return 'Sonnet 5';
                 if (/opus.*4.*8/i.test(m)) return '★ Opus 4.8';
                 if (/opus/i.test(m)) return '★ Opus';
-                if (/groq|llama/i.test(m)) return '⚡ Groq Llama';
+                if (/sonnet.*4/i.test(m)) return 'Sonnet 4.6';
+                if (/sonnet/i.test(m)) return 'Sonnet 5';
+                if (/gpt-oss/i.test(m)) return '⚡ Groq GPT-OSS';
+                if (/qwen/i.test(m)) return '⚡ Groq Qwen 3.6';
+                if (/groq|llama/i.test(m)) return '⚡ Groq';
                 if (/gemini/i.test(m)) return '✨ Gemini 3.1';
-                return 'Sonnet 4.6';
+                return 'Sonnet 5';
             }
 
             function section(hdrClass, icon, title, bodyHTML) {
