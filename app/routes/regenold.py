@@ -6498,6 +6498,19 @@ def regenold_eu_ai_act_ask(
         and not _is_classification_topic
         and not _is_general_verdict
         and not _extractive_fired
+        # R267.3 — a curated authoritative intercept (Article 25
+        # reclassification, guiding principles, Art 6(3), penalties, …) is a
+        # hand-authored, complete verdict. Running the ref-description
+        # augmenter over it bolts garbled, mid-clause-truncated, and
+        # DUPLICATED KB-stub fragments onto it for the tangential refs the
+        # high-risk anchor pass added (live q025: "Under Annex III, Eight
+        # high-risk use-case categories: biometrics, critical infrastructure."
+        # appended TWICE — once for "Annex III", once for "Annex III.3" — plus
+        # an Article 11 stub). Skipping the augmenter here also un-blocks the
+        # R265 `_is_r265_reconcile_intercept` pass to drop those tangential
+        # refs (the augmenter had made them "described", defeating reconcile).
+        # Fires on 0 davidath rows (curated intercepts never match there).
+        and not _is_curated_intercept
         and not (getattr(rag_res, "graph_stats", {}) or {}).get("stage2_landed")
     ):
         try:

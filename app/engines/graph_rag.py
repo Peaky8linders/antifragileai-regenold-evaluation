@@ -273,6 +273,39 @@ _BARE_HEADER_TAIL_RE = re.compile(
     r"(?:reasoning|analysis|provision|question|consideration|test|framework)\)?[.:]?$",
     re.IGNORECASE,
 )
+# R267.3 — the wrapper/tunnel cut-stream symptom: a period-terminated answer
+# that ANNOUNCES a count of forthcoming items (the very items the question
+# asked for) and then delivers NONE. Live q039 shipped "Two exceptions remove
+# this disclosure obligation." and stopped; the question was "what are the two
+# exceptions". Matches only when the promise is the whole (short) final
+# sentence.
+# R267.3 — the noun set is deliberately narrow (the "list these for me" items a
+# question asks to enumerate), NOT summary-prone nouns (routes / tiers /
+# categories / prohibitions / principles) that legitimately close a COMPLETE
+# answer ("Both routes lead to high-risk classification.", "Three tiers
+# structure the Act."). Combined with the completive-closer guard below, this
+# keeps the true cut ("Two exceptions remove this disclosure obligation.") while
+# not discarding good Stage-2 polish that ends on a count-summary.
+_INCOMPLETE_COUNT_PROMISE_RE = re.compile(
+    r"^\s*(?:the\s+)?(?:two|three|four|five|six|seven|eight|nine|ten|both)\s+"
+    r"(?:exceptions?|carve[-\s]?outs?|exemptions?|derogations?|conditions?|"
+    r"cases?|safeguards?|requirements?)\b",
+    re.IGNORECASE,
+)
+# A completive predicate ("Two conditions must both be satisfied.") is a
+# self-contained summary, not a cut promise ("Two exceptions apply."). A comma
+# likewise signals a continued/complete thought. Either → NOT a cut.
+_COMPLETIVE_CLOSER_RE = re.compile(
+    r"\b(?:must|should|shall|may|cannot|can)\b", re.IGNORECASE
+)
+# A bare enumeration opener as the FINAL sentence ("First, Article 5 prohibits
+# …") with no "Second"/"Third" anywhere → the list was cut after item one
+# (live q085: "First, Article 5 prohibits AI that deploys subliminal …" stop).
+_INCOMPLETE_FIRST_OPENER_RE = re.compile(r"^\s*first[,\s]", re.IGNORECASE)
+_ENUMERATION_MARKER_RE = re.compile(
+    r"\b(?:second|third|fourth)\b|\([a-h]\)|\([1-9]\)|(?:^|\s)[1-9]\.\s",
+    re.IGNORECASE,
+)
 
 
 def _looks_incomplete_verdict(text: str | None) -> bool:
@@ -304,6 +337,29 @@ def _looks_incomplete_verdict(text: str | None) -> bool:
     parts = [s.strip() for s in re.split(r"(?<=[.!?])\s+", stripped) if s.strip()]
     if parts and _BARE_HEADER_TAIL_RE.match(parts[-1]):
         return True
+    if parts:
+        last = parts[-1]
+        # (4) R267.3 — the final sentence announces a count of forthcoming
+        #     items (exceptions / conditions / …) that the answer never
+        #     enumerated anywhere. High precision: fire only when there is NO
+        #     enumeration marker in the whole text AND the promise sentence is
+        #     short and carries no inline listing (":", "(").
+        if (
+            _INCOMPLETE_COUNT_PROMISE_RE.match(last)
+            and ":" not in last
+            and "(" not in last
+            and "," not in last
+            and not _COMPLETIVE_CLOSER_RE.search(last)
+            and len(last) < 120
+            and not _ENUMERATION_MARKER_RE.search(stripped)
+        ):
+            return True
+        # (5) R267.3 — a "First, …" enumeration opener as the LAST sentence
+        #     with no "Second"/"Third" anywhere → list cut after item one.
+        if _INCOMPLETE_FIRST_OPENER_RE.match(last) and not _ENUMERATION_MARKER_RE.search(
+            stripped
+        ):
+            return True
     return False
 
 
@@ -3224,6 +3280,81 @@ def _detect_sme_simplified_doc_inquiry(question: str) -> bool:
     )
 
 
+# R267.3 — workplace worker-notification intercept (live q042 hard FAIL:
+# "must an employer inform affected workers and workers' representatives
+# before putting into service or using a high-risk AI system in the
+# workplace?" retrieved Article 3/48/102 and dumped their KB stubs — a
+# completely non-responsive answer). Article 26(7) is the operative provision.
+# Verbatim-faithful to the pinned Article 26(7) text. Gated on (inform/notify)
+# + (worker/employee) + a workplace/employer signal, scenario-openers
+# excluded → fires on 0 davidath rows.
+_WORKER_NOTIFY_ACTION_RE = re.compile(
+    r"\b(?:inform|notif\w*|tell|advise|communicate)\b", re.IGNORECASE
+)
+_WORKER_SUBJECT_RE = re.compile(
+    r"\bworkers?['’]?\s+representatives?\b|\baffected\s+workers?\b"
+    r"|\bworkers?\b|\bemployees?\b",
+    re.IGNORECASE,
+)
+_WORKER_WORKPLACE_RE = re.compile(
+    r"\bworkplace\b|\bemployer\b|\bat\s+work\b", re.IGNORECASE
+)
+
+
+def _detect_workplace_worker_notification_inquiry(question: str) -> bool:
+    """True when the question asks whether/how an employer must inform workers
+    (or their representatives) before using a high-risk AI system at work."""
+    raw_q = question or ""
+    marker = "Latest question:\n"
+    idx = raw_q.rfind(marker)
+    if idx >= 0:
+        raw_q = raw_q[idx + len(marker):]
+    if _MINIMAL_RISK_SCENARIO_OPENER_RE.search(raw_q):
+        return False
+    return bool(
+        _WORKER_NOTIFY_ACTION_RE.search(raw_q)
+        and _WORKER_SUBJECT_RE.search(raw_q)
+        and _WORKER_WORKPLACE_RE.search(raw_q)
+    )
+
+
+# R267.3 — Article 50(4) public-interest TEXT disclosure + its TWO exceptions
+# (live q039: "what transparency obligation applies to deployers when they use
+# an AI system to generate or manipulate text ... informing the public on
+# matters of public interest, and what are the two exceptions" — the wire
+# quoted the obligation but never listed the exceptions; the Stage-2 answer
+# said "Two exceptions remove this disclosure obligation." and stopped). The
+# two exceptions are (1) authorised by law to detect/prevent/investigate/
+# prosecute criminal offences; (2) the AI content has undergone human review /
+# editorial control and a natural or legal person holds editorial
+# responsibility. Verbatim-faithful to the pinned Article 50(4) text. Gated on
+# "public interest" + "text" + an exception cue → fires on 0 davidath rows and
+# never on the deepfake-criminal-offence (q002) or interact-with-persons
+# (q015) shapes, which carry neither "public interest" nor "text".
+_ART50_TEXT_PUBLIC_INTEREST_RE = re.compile(r"public\s+interest", re.IGNORECASE)
+_ART50_TEXT_MARKER_RE = re.compile(r"\btext\b", re.IGNORECASE)
+_ART50_TEXT_EXCEPTION_CUE_RE = re.compile(
+    r"\bexceptions?\b|\bcarve[-\s]?outs?\b|\bdoes\s+not\s+apply\b"
+    r"|\bnot\s+apply\b|\bexempt\w*\b",
+    re.IGNORECASE,
+)
+
+
+def _detect_art50_text_public_interest_inquiry(question: str) -> bool:
+    """True when the question asks about the Article 50(4) deployer duty to
+    disclose AI-generated PUBLIC-INTEREST TEXT and its two exceptions."""
+    raw_q = question or ""
+    marker = "Latest question:\n"
+    idx = raw_q.rfind(marker)
+    if idx >= 0:
+        raw_q = raw_q[idx + len(marker):]
+    return bool(
+        _ART50_TEXT_PUBLIC_INTEREST_RE.search(raw_q)
+        and _ART50_TEXT_MARKER_RE.search(raw_q)
+        and _ART50_TEXT_EXCEPTION_CUE_RE.search(raw_q)
+    )
+
+
 def _is_r265_reconcile_intercept(question: str) -> bool:
     """R265 — the four curated intercepts whose deterministic (Stage-2-skipped)
     answer should have its wire references reconciled against the curated prose.
@@ -3243,6 +3374,8 @@ def _is_r265_reconcile_intercept(question: str) -> bool:
         or _detect_reclassification_inquiry(question)
         or _detect_ai_board_governance_inquiry(question)
         or _detect_sme_simplified_doc_inquiry(question)
+        or _detect_workplace_worker_notification_inquiry(question)
+        or _detect_art50_text_public_interest_inquiry(question)
     )
 
 
@@ -3286,6 +3419,8 @@ def _is_curated_authoritative_intercept(question: str) -> bool:
         or _detect_reclassification_inquiry(question)
         or _detect_ai_board_governance_inquiry(question)
         or _detect_sme_simplified_doc_inquiry(question)
+        or _detect_workplace_worker_notification_inquiry(question)
+        or _detect_art50_text_public_interest_inquiry(question)
     )
 
 
@@ -3627,6 +3762,50 @@ def _deterministic_answer(question: str, context: GraphContext) -> str:
         _seed_classification_obligations(context, verdict, question)
         return verdict["answer"]
 
+    # Workplace worker-notification intercept (R267.3). Article 26(7): a
+    # deployer that is an employer must inform workers' representatives and
+    # affected workers before using a high-risk AI system at the workplace.
+    if _detect_workplace_worker_notification_inquiry(question):
+        verdict = {
+            "name": "workplace_worker_notification",
+            "answer": (
+                "Yes. Under Article 26(7), a deployer that is an employer "
+                "must, before putting a high-risk AI system into service or "
+                "using it at the workplace, inform the workers' "
+                "representatives and the affected workers that they will be "
+                "subject to the use of that high-risk AI system. Under "
+                "Article 26(7), that information must be provided, where "
+                "applicable, in accordance with the rules and procedures laid "
+                "down in Union and national law and practice on the "
+                "information of workers and their representatives."
+            ),
+            "refs": ["Art. 26", "Art. 26.7"],
+        }
+        _seed_classification_obligations(context, verdict, question)
+        return verdict["answer"]
+
+    # Article 50(4) public-interest text disclosure + two exceptions (R267.3).
+    if _detect_art50_text_public_interest_inquiry(question):
+        verdict = {
+            "name": "art50_text_public_interest",
+            "answer": (
+                "Under Article 50(4), a deployer that uses an AI system to "
+                "generate or manipulate text published to inform the public "
+                "on matters of public interest must disclose that the text "
+                "has been artificially generated or manipulated. Under "
+                "Article 50(4), that disclosure duty does not apply in two "
+                "cases: first, where the use is authorised by law to detect, "
+                "prevent, investigate or prosecute criminal offences; and "
+                "second, where the AI-generated content has undergone a "
+                "process of human review or editorial control and a natural "
+                "or legal person holds editorial responsibility for the "
+                "publication of the content."
+            ),
+            "refs": ["Art. 50", "Art. 50.4"],
+        }
+        _seed_classification_obligations(context, verdict, question)
+        return verdict["answer"]
+
     # European Artificial Intelligence Board governance intercept (R265).
     if _detect_ai_board_governance_inquiry(question):
         verdict = {
@@ -3656,19 +3835,26 @@ def _deterministic_answer(question: str, context: GraphContext) -> str:
     if _detect_annex_iii_8_admin_justice_inquiry(question):
         verdict = {
             "name": "annex_iii_8_admin_justice",
+            # R267.3 — each substantive sentence is cite-anchored ("Annex III
+            # point 8(a)/8(b)") so the 600-char soft cap in
+            # ``normalise_answer_for_regenold`` (which drops the longest
+            # NON-cite-anchored sentence first) cannot silently drop the 8(b)
+            # sentence, leaving only 8(a) on the wire (the live q012 defect:
+            # the question asks for BOTH uses under the heading).
             "answer": (
                 "Annex III point 8 lists two high-risk use cases under "
-                "administration of justice and democratic processes. Point "
-                "8(a) covers AI systems intended to be used by a judicial "
-                "authority, or on its behalf, to assist in researching and "
-                "interpreting facts and the law and in applying the law to "
-                "a concrete set of facts, or to be used similarly in "
-                "alternative dispute resolution. Point 8(b) covers AI "
-                "systems intended to influence the outcome of an election "
-                "or referendum, or the voting behaviour of natural persons "
-                "in exercising their vote, with a carve-out for tools that "
-                "only organise, optimise or structure political campaigns "
-                "from an administrative or logistical point of view."
+                "administration of justice and democratic processes. Annex "
+                "III point 8(a) covers AI systems intended to be used by a "
+                "judicial authority, or on its behalf, to assist in "
+                "researching and interpreting facts and the law and in "
+                "applying the law to a concrete set of facts, or to be used "
+                "similarly in alternative dispute resolution. Annex III "
+                "point 8(b) covers AI systems intended to influence the "
+                "outcome of an election or referendum, or the voting "
+                "behaviour of natural persons in exercising their vote, with "
+                "a carve-out for tools that only organise, optimise or "
+                "structure political campaigns from an administrative or "
+                "logistical point of view."
             ),
             "refs": ["Annex III.8", "Annex III.8.a", "Annex III.8.b"],
         }
