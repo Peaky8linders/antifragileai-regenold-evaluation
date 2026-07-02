@@ -588,6 +588,7 @@ def _openai_wrapper_complete_for_graph_rag(
                         record_note("groq_auto_fallback_success")
                     except Exception:
                         pass
+                    from app.security.prompt_guard import validate_llm_output
                     return validate_llm_output((groq_resp.text or "").strip())
                 else:
                     logger.warning(

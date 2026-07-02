@@ -1548,7 +1548,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             
             // Post-process to render citations as interactive badges
             // Match exactly Article N or Annex X with word boundaries
-            safeHtml = safeHtml.replace(/\b(Article\s+[0-9]+(?:\.[0-9a-zA-Z]+)?|Annex\s+[IVXLCDM]+(?:\.[0-9a-zA-Z]+)?)\b/gi, '<span class="cite-badge">$1</span>');
+            safeHtml = safeHtml.replace(/\\b(Article\\s+[0-9]+(?:\\.[0-9a-zA-Z]+)?|Annex\\s+[IVXLCDM]+(?:\\.[0-9a-zA-Z]+)?)\\b/gi, '<span class="cite-badge">$1</span>');
             return safeHtml;
         }
 
