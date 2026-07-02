@@ -259,6 +259,55 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             overflow-y: auto;
         }
 
+        /* Sidebar footer — contact / social / legal */
+        .sidebar-footer {
+            padding: 16px 20px;
+            border-top: 1px solid var(--border-glass);
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            flex-shrink: 0;
+        }
+        .sidebar-social {
+            display: flex;
+            gap: 8px;
+        }
+        .sidebar-social a {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 30px;
+            height: 30px;
+            border-radius: 8px;
+            border: 1px solid var(--border-glass);
+            background: rgba(15, 23, 42, 0.04);
+            color: var(--text-muted);
+            transition: var(--transition-speed);
+        }
+        .sidebar-social a:hover {
+            color: var(--accent-cyan);
+            border-color: var(--border-glow);
+        }
+        .sidebar-social svg {
+            width: 15px;
+            height: 15px;
+            fill: currentColor;
+        }
+        .sidebar-legal {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px 10px;
+        }
+        .sidebar-legal a {
+            font-size: 11px;
+            color: var(--text-muted);
+            text-decoration: none;
+            transition: color var(--transition-speed);
+        }
+        .sidebar-legal a:hover {
+            color: var(--accent-cyan);
+        }
+
         .section-title {
             font-family: 'Inter', sans-serif;
             font-size: 11px;
@@ -1304,6 +1353,21 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                     <input type="password" id="cfg-api-key" class="form-input" value="" placeholder="Paste your X-Regenold-Api-Key" autocomplete="off">
                     <div style="font-size: 11px; color: var(--text-muted); margin-top: 6px; line-height: 1.4;">Stored only in this browser (localStorage). Never sent anywhere except this API.</div>
                 </div>
+            </div>
+        </div>
+
+        <div class="sidebar-footer">
+            <div class="sidebar-social">
+                <a href="https://www.linkedin.com/company/antifragile-ai" target="_blank" rel="noopener noreferrer" aria-label="Antifragile.AI on LinkedIn" title="LinkedIn"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg></a>
+                <a href="https://x.com/antifragileai" target="_blank" rel="noopener noreferrer" aria-label="Antifragile.AI on X" title="X"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg></a>
+                <a href="mailto:support@antifragile-ai.net" aria-label="Email Antifragile.AI" title="Email"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M1.5 8.67v8.58a3 3 0 003 3h15a3 3 0 003-3V8.67l-8.928 5.493a3 3 0 01-3.144 0L1.5 8.67z"/><path d="M22.5 6.908V6.75a3 3 0 00-3-3h-15a3 3 0 00-3 3v.158l9.714 5.978a1.5 1.5 0 001.572 0L22.5 6.908z"/></svg></a>
+            </div>
+            <div class="sidebar-legal">
+                <a href="https://antifragile-ai.net/legal/privacy" target="_blank" rel="noopener noreferrer">Privacy</a>
+                <a href="https://antifragile-ai.net/legal/terms" target="_blank" rel="noopener noreferrer">Terms</a>
+                <a href="https://antifragile-ai.net/legal/dpa" target="_blank" rel="noopener noreferrer">DPA</a>
+                <a href="https://antifragile-ai.net/legal/security" target="_blank" rel="noopener noreferrer">Security</a>
+                <a href="https://antifragile-ai.net/contact" target="_blank" rel="noopener noreferrer">Contact</a>
             </div>
         </div>
     </div>

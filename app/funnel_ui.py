@@ -129,8 +129,23 @@ FUNNEL_TEMPLATE = """<!DOCTYPE html>
         .keybox .save-note { font-size: 12px; color: var(--text-muted); margin: 12px 0 4px; }
         .divider { display: flex; align-items: center; gap: 12px; margin: 22px 0; color: var(--text-muted); font-size: 12px; }
         .divider::before, .divider::after { content: ""; flex: 1; height: 1px; background: var(--border-glass); }
-        footer { margin-top: 56px; text-align: center; font-size: 12px; color: var(--text-muted); }
-        footer .disc { max-width: 640px; margin: 0 auto 10px; }
+        .site-footer { margin-top: 64px; padding-top: 40px; border-top: 1px solid var(--border-glass); }
+        .footer-grid { display: grid; grid-template-columns: 1.6fr 1fr 1.3fr; gap: 40px; }
+        @media (max-width: 720px) { .footer-grid { grid-template-columns: 1fr; gap: 28px; } }
+        .footer-logo { display: inline-flex; align-items: center; gap: 8px; font-family: 'Instrument Serif', Georgia, serif; font-size: 21px; letter-spacing: -0.01em; }
+        .footer-logo i, .footer-logo .dot { color: var(--accent-cyan); }
+        .footer-tagline { font-size: 13px; color: var(--text-muted); margin: 12px 0 18px; max-width: 340px; line-height: 1.55; }
+        .footer-social { display: flex; gap: 10px; }
+        .footer-social a { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 10px; border: 1px solid var(--border-glass); background: var(--bg-glass); color: var(--text-secondary); transition: color .2s, border-color .2s, box-shadow .2s, transform .12s; }
+        .footer-social a:hover { color: var(--accent-cyan); border-color: var(--border-glow); box-shadow: 0 0 14px var(--accent-glow); transform: translateY(-1px); }
+        .footer-social svg { width: 17px; height: 17px; fill: currentColor; }
+        .footer-col h3 { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--text-secondary); margin-bottom: 14px; }
+        .footer-col ul { list-style: none; display: grid; gap: 10px; }
+        .footer-col a { font-size: 14px; color: var(--text-muted); text-decoration: none; transition: color .2s; }
+        .footer-col a:hover { color: var(--accent-cyan); }
+        .footer-bottom { margin-top: 36px; padding-top: 20px; border-top: 1px solid var(--border-glass); font-size: 12px; color: var(--text-muted); }
+        .footer-bottom .disc { max-width: 660px; line-height: 1.5; margin-bottom: 14px; }
+        .footer-bottom-row { display: flex; flex-wrap: wrap; gap: 8px 20px; justify-content: space-between; align-items: center; }
         .trust { display: flex; flex-wrap: wrap; gap: 10px 22px; justify-content: center; margin-top: 24px; font-size: 12px; color: var(--text-muted); }
         .trust span { display: inline-flex; align-items: center; gap: 6px; }
         .trust i { width: 14px; height: 14px; color: var(--accent-cyan); }
@@ -211,9 +226,43 @@ FUNNEL_TEMPLATE = """<!DOCTYPE html>
             </div>
         </section>
 
-        <footer>
-            <p class="disc">Lexy provides general guidance on the EU AI Act, not legal advice. Consult qualified counsel for binding compliance decisions.</p>
-            <p>Regulation (EU) 2024/1689 · Grounded Q&amp;A</p>
+        <footer class="site-footer">
+            <div class="footer-grid">
+                <div class="footer-brand">
+                    <div class="footer-logo"><i data-lucide="shield-check" style="width:20px;height:20px"></i> Antifragile<span class="dot">.AI</span></div>
+                    <p class="footer-tagline">EU AI Act path-to-production compliance. Grounded, cited answers on Regulation (EU) 2024/1689.</p>
+                    <div class="footer-social">
+                        <a href="https://www.linkedin.com/company/antifragile-ai" target="_blank" rel="noopener noreferrer" aria-label="Antifragile.AI on LinkedIn" title="LinkedIn"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg></a>
+                        <a href="https://x.com/antifragileai" target="_blank" rel="noopener noreferrer" aria-label="Antifragile.AI on X" title="X"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg></a>
+                        <a href="mailto:support@antifragile-ai.net" aria-label="Email Antifragile.AI" title="Email"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M1.5 8.67v8.58a3 3 0 003 3h15a3 3 0 003-3V8.67l-8.928 5.493a3 3 0 01-3.144 0L1.5 8.67z"/><path d="M22.5 6.908V6.75a3 3 0 00-3-3h-15a3 3 0 00-3 3v.158l9.714 5.978a1.5 1.5 0 001.572 0L22.5 6.908z"/></svg></a>
+                    </div>
+                </div>
+                <div class="footer-col">
+                    <h3>Legal</h3>
+                    <ul>
+                        <li><a href="https://antifragile-ai.net/legal/privacy" target="_blank" rel="noopener noreferrer">Privacy Policy</a></li>
+                        <li><a href="https://antifragile-ai.net/legal/terms" target="_blank" rel="noopener noreferrer">Terms of Service</a></li>
+                        <li><a href="https://antifragile-ai.net/legal/dpa" target="_blank" rel="noopener noreferrer">Data Processing Addendum</a></li>
+                        <li><a href="https://antifragile-ai.net/legal/security" target="_blank" rel="noopener noreferrer">Security</a></li>
+                    </ul>
+                </div>
+                <div class="footer-col">
+                    <h3>Contact</h3>
+                    <ul>
+                        <li><a href="https://antifragile-ai.net/contact" target="_blank" rel="noopener noreferrer">Contact form</a></li>
+                        <li><a href="mailto:sales@antifragile-ai.net">sales@antifragile-ai.net</a></li>
+                        <li><a href="mailto:compliance@antifragile-ai.net">compliance@antifragile-ai.net</a></li>
+                        <li><a href="mailto:privacy@antifragile-ai.net">privacy@antifragile-ai.net</a></li>
+                    </ul>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p class="disc">Lexy provides general guidance on the EU AI Act, not legal advice. Consult qualified counsel for binding compliance decisions.</p>
+                <div class="footer-bottom-row">
+                    <span>&copy; <span id="footer-year">2026</span> Antifragile.AI &middot; Lexy</span>
+                    <span>Regulation (EU) 2024/1689 &middot; Grounded Q&amp;A</span>
+                </div>
+            </div>
         </footer>
     </div>
 
@@ -311,6 +360,10 @@ FUNNEL_TEMPLATE = """<!DOCTYPE html>
             if (!key) { showMsg(msg, 'Paste your API key first.'); return; }
             openLexy(key);
         });
+
+        // Footer copyright year
+        var _fy = document.getElementById('footer-year');
+        if (_fy) _fy.textContent = new Date().getFullYear();
 
         if (window.lucide) lucide.createIcons();
     </script>
