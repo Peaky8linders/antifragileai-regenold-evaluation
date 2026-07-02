@@ -517,11 +517,22 @@ def _openai_wrapper_complete_for_graph_rag(
                 )
                 from app.llm.openai_wrapper_provider import get_groq_provider, OpenAIWrapperRequest
                 groq_resp = get_groq_provider().complete(
+                # Groq Qwen 3.6 has a strict 4,096 total token limit (prompt + completion).
+                # Cap completion tokens and truncate large reference context if needed.
+                groq_max_tokens = min(safe_max_tokens, 1024)
+                groq_user = user
+                if len(system) + len(user) > 11000:
+                    # Preserve start (system description, references) and end (draft answer + instructions)
+                    prefix_len = 8000
+                    suffix_len = len(user) - prefix_len if len(user) < 10000 else 2000
+                    groq_user = user[:prefix_len] + "\n\n... [TRUNCATED FOR GROQ CONTEXT LIMIT] ...\n\n" + user[-suffix_len:]
+                
+                groq_resp = get_groq_provider().complete(
                     OpenAIWrapperRequest(
                         system=system,
-                        user=user,
+                        user=groq_user,
                         model="qwen/qwen3.6-27b",
-                        max_tokens=safe_max_tokens,
+                        max_tokens=groq_max_tokens,
                         temperature=temperature,
                         reasoning_effort="default",
                     )
