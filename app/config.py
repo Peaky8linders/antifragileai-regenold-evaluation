@@ -173,11 +173,24 @@ class GraphRAGSettings(BaseSettings):
       * R80.2: reduced 2500 → 1024 (current).
     """
 
-    thinking_tokens: int = 4000
+    thinking_tokens: int = 2048
     """``max_thinking_tokens`` — the **MODERATE** thinking budget for the
     STANDARD Stage-2 synthesis path: the ~80% of questions the complexity gate
-    does NOT flag. As of R139 these run on Opus 4.8 (:attr:`stage2_model`), not
-    Sonnet.
+    does NOT flag. Complex questions use the larger EXTENDED
+    :attr:`complex_thinking_tokens` instead.
+
+    **2026-07-03 — RESTORED to 2048 (revert un-validated 4000 drift).** Commit
+    ``433727a`` (bundled with an unrelated AI-Board regex fix) had bumped this
+    to 4000 with no A/B — collapsing the moderate(simple)/extended(complex)
+    split (both budgets became 4000) and leaving two pinned tests red
+    (``test_thinking_tokens_adaptive_r139`` / ``test_thinking_tokens_default``
+    both assert 2048). A live measurement proved the thinking budget is NOT a
+    latency lever: 4000 vs 1024 vs 0 (thinking-off) is a wall-clock wash on
+    simple questions — the budget is a ceiling the model does not fill, and
+    latency is ~99% the Claude Max wrapper per-call floor, not thinking. With
+    no latency benefit AND no quality evidence for the higher budget, restored
+    to the last tested/documented value (R148, 2048). Reversible per-deploy via
+    ``P2P_GRAPH_RAG_THINKING_TOKENS``.
 
     **R148 — default 2048 (operator directive: bump from 1024).** The operator
     asked to raise the standard-path thinking budget from 1024 "to get better

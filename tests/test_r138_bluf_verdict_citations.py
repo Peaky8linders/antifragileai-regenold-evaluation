@@ -44,9 +44,14 @@ def test_thinking_tokens_adaptive_r139() -> None:
     # the EXTENDED complex budget 1024 → 4000.
     # R148 — standard-path budget bumped back 1024 → 2048 (operator directive:
     # more deliberation "to get better answers"; reversible via env).
+    # 2026-07-03 — restored to 2048 after an un-validated 4000 drift (433727a)
+    # that left this assertion red; the thinking budget is a proven latency
+    # non-lever, so the moderate(2048)/extended(4000) split is restored.
     assert settings.graph_rag.thinking_tokens == 2048
     assert settings.graph_rag.complex_thinking_tokens == 4000
-    assert settings.graph_rag.stage2_model == "claude-opus-4-8"
+    # R261 switched the standard Stage-2 model Opus 4.8 → Sonnet 5 (with
+    # reasoning); this assertion tracked that change.
+    assert settings.graph_rag.stage2_model == "claude-sonnet-5"
 
 
 # ── Change 1 — BLUF verdict-first prompt ──────────────────────────────────
