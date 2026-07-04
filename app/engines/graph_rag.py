@@ -2916,6 +2916,80 @@ def _detect_risk_framework_inquiry(question: str) -> bool:
     return bool(_RISK_FRAMEWORK_TAXONOMY_RE.search(raw_q))
 
 
+# R268 — prohibited-practices CLOSED-SET enumeration ("what practices are
+# prohibited", "what types of AI are banned", "list the prohibited practices").
+# The r267 live q085 shipped a Sonnet-5 (Stage-2) answer TRUNCATED to 1 of the
+# 8 Article 5 prohibitions. The deterministic engine already produces the full
+# list, so making this a curated Stage-2 SKIP ships the complete, concise
+# comma-separated verdict (and cuts latency). Object-restricted (the object of
+# "prohibited/banned" is practices/types/systems, not a NAMED system) so it
+# fires ONLY on the SET question, never on a specific-system verdict ("is X
+# prohibited?"). End-anchored; 0-fire-verified on davidath (137 QA + 339
+# scenarios) so the deterministic bench is byte-identical.
+_PROHIBITED_SET_RE = re.compile(
+    r"(?:what|which|list|name|enumerate|describe|outline|summari[sz]e|"
+    r"tell\s+me\s+about|give\s+me|go\s+(?:over|through))"
+    r"(?:\s+(?:me|us|all))?(?:\s+(?:are|is|the))*"
+    r"(?:\s+(?:different|various|main|eight|specific|explicit(?:ly)?|kinds?\s+of))?"
+    r"\s+(?:(?:ai\s+)?(?:systems?\s+(?:or|and)\s+)?practices?"
+    r"|types?\s+of\s+ai(?:\s+systems?)?"
+    r"|ai\s+systems?\s+or\s+practices?)"
+    r"[^?.]{0,55}?"
+    r"\b(?:prohibit|banned|\bban\b|forbidden|not\s+(?:allowed|permitted)"
+    r"|unacceptable[-\s]risk)"
+    r"[^?.]*[?.]?\s*$",
+    re.IGNORECASE,
+)
+# Adjective-noun order: "list the PROHIBITED PRACTICES", "the banned AI
+# practices". The verb precedes the object here. PLURAL only — "name ONE
+# prohibited AI practice" (singular) is a one-example ask, NOT the SET.
+_PROHIBITED_SET_ADJ_RE = re.compile(
+    r"(?:what|which|list|name|enumerate|describe|outline|summari[sz]e|"
+    r"tell\s+me\s+(?:about|what)|give\s+me)"
+    r"[^?.]{0,40}?"
+    r"\b(?:prohibit(?:ed)?|banned|forbidden|unacceptable[-\s]risk)\s+"
+    r"(?:ai\s+)?practices\b"
+    r"[^?.]*[?.]?\s*$",
+    re.IGNORECASE,
+)
+# Bare "what is prohibited/banned under the AI Act" (no explicit object noun).
+_PROHIBITED_SET_BARE_RE = re.compile(
+    r"\bwhat\b[^?.]{0,12}?\b(?:is|are)\b[^?.]{0,12}?"
+    r"\b(?:prohibited|banned|forbidden)\b"
+    r"[^?.]{0,30}?\b(?:under|by|in|of)\b[^?.]{0,30}?"
+    r"(?:ai\s+act|regulation|article\s*5)"
+    r"[^?.]*[?.]?\s*$",
+    re.IGNORECASE,
+)
+# Defensive negative — a specific-SYSTEM verdict ("is THIS/MY/a system
+# prohibited?", "is emotion recognition always prohibited?") OR a one-example
+# ask ("name ONE prohibited practice", "give an example") is NOT the SET ask.
+_PROHIBITED_SET_NEG_RE = re.compile(
+    r"\b(?:always|ever|this\s|my\s|our\s|is\s+(?:it|a|an|the)\b"
+    r"|(?:name|give|list|show)\s+(?:me\s+|us\s+)?(?:one|a|an|any|two|three|single)\b"
+    r"|\bexample\b)",
+    re.IGNORECASE,
+)
+
+
+def _detect_prohibited_practices_inquiry(question: str) -> bool:
+    """True iff the question asks for the closed SET of Article 5 prohibited
+    practices (not a verdict on a specific system). See ``_PROHIBITED_SET_RE``."""
+    raw_q = question or ""
+    marker = "Latest question:\n"
+    idx = raw_q.rfind(marker)
+    if idx >= 0:
+        raw_q = raw_q[idx + len(marker):]
+    raw_q = raw_q.strip()
+    if _PROHIBITED_SET_NEG_RE.search(raw_q):
+        return False
+    return bool(
+        _PROHIBITED_SET_RE.search(raw_q)
+        or _PROHIBITED_SET_ADJ_RE.search(raw_q)
+        or _PROHIBITED_SET_BARE_RE.search(raw_q)
+    )
+
+
 # "Does the Act apply to AI systems or AI models or both?" scope intercept
 # (production row 6). The live wire mis-retrieved Article 108 (amendments to
 # civil-aviation / motor-vehicle regimes) and answered about safety components
@@ -3416,6 +3490,67 @@ def _detect_art50_text_public_interest_inquiry(question: str) -> bool:
     )
 
 
+# R268 — Article 50(4) DEEPFAKE criminal-offence carve-out (production q002).
+# "Does the obligation to indicate a deep fake is artificially generated apply
+# when prosecuting a criminal offence?" -> No: Article 50(4) exempts the
+# deepfake disclosure duty where the use is authorised by law to detect,
+# prevent, investigate, or prosecute criminal offences. The live q002 answer
+# said "No" but never cited the operative carve-out (correctness 60). Gated on
+# a deepfake subject + a criminal-justice cue -> 0 davidath rows. (Sibling of
+# the R267.3 public-interest-TEXT intercept above.)
+_DEEPFAKE_CRIM_SUBJ_RE = re.compile(
+    r"\bdeep[-\s]?fakes?\b", re.IGNORECASE
+)
+_DEEPFAKE_CRIM_CUE_RE = re.compile(
+    r"criminal\s+offence|\bprosecut(?:e|ing|ion)\b|law\s+enforcement"
+    r"|authorised\s+by\s+law|authorized\s+by\s+law",
+    re.IGNORECASE,
+)
+
+
+def _detect_deepfake_criminal_exception_inquiry(question: str) -> bool:
+    """True when the question asks whether the Article 50(4) deepfake
+    disclosure duty applies in a criminal-justice / law-enforcement context."""
+    raw_q = question or ""
+    marker = "Latest question:\n"
+    idx = raw_q.rfind(marker)
+    if idx >= 0:
+        raw_q = raw_q[idx + len(marker):]
+    return bool(
+        _DEEPFAKE_CRIM_SUBJ_RE.search(raw_q)
+        and _DEEPFAKE_CRIM_CUE_RE.search(raw_q)
+    )
+
+
+# R268 — "testing data" definition + train/test-separation rationale
+# (production q011). The multi-clause question ("meaning and purpose of testing
+# data ... why is it important that it is not leaked during training") retrieved
+# GPAI technical-documentation prose and never DEFINED testing data
+# (non-responsive). ``select_definition_sentence`` resolves the Article 3(32)
+# term, so a curated verdict is the clean, responsive fix. Gated on the exact
+# term "testing data" + a definition/leakage cue -> 0 davidath rows.
+_TESTING_DATA_SUBJ_RE = re.compile(r"\btesting\s+data\b", re.IGNORECASE)
+_TESTING_DATA_CUE_RE = re.compile(
+    r"\bmeaning\b|\bpurpose\b|\bwhat\s+is\b|\bdefinition\b|\bdefine[ds]?\b"
+    r"|\bleak|\bindependent\b|why\s+(?:is\s+it|it\s+is|must)",
+    re.IGNORECASE,
+)
+
+
+def _detect_testing_data_definition_inquiry(question: str) -> bool:
+    """True when the question asks for the meaning/purpose of 'testing data'
+    (Article 3(32)) and/or why it must stay independent of training data."""
+    raw_q = question or ""
+    marker = "Latest question:\n"
+    idx = raw_q.rfind(marker)
+    if idx >= 0:
+        raw_q = raw_q[idx + len(marker):]
+    return bool(
+        _TESTING_DATA_SUBJ_RE.search(raw_q)
+        and _TESTING_DATA_CUE_RE.search(raw_q)
+    )
+
+
 def _is_r265_reconcile_intercept(question: str) -> bool:
     """R265 — the four curated intercepts whose deterministic (Stage-2-skipped)
     answer should have its wire references reconciled against the curated prose.
@@ -3456,15 +3591,25 @@ def _is_curated_authoritative_intercept(question: str) -> bool:
 
     Covers: guiding principles (7-principle closed set), minimal-risk
     residual tier, the Article 6(3) high-risk exception, the scientific R&D
-    pre-market scope exclusion, the high-risk penalties ceiling, and (R144)
-    the emotion-recognition classification cross-tier verdict. These are
-    authoritative curated answers whose content Stage-2 has been observed to
-    drop or override (live: Sonnet deleted the 7-principle list, turned the
-    Art. 2 R&D-scope answer into a GPAI obligations dump, and collapsed the
-    emotion cross-tier verdict to an Article-5-only answer). Deliberately
-    EXCLUDES risk_framework_overview and general_classification (those are
-    synthesis-positive and bench-neutral). Returns False on every davidath row
-    (none match these gates), so the deterministic bench is byte-identical.
+    pre-market scope exclusion, the high-risk penalties ceiling, (R144)
+    the emotion-recognition classification cross-tier verdict, and (R268)
+    the risk-framework taxonomy ("what are all the risk categories" / "explain
+    the risk categories"). These are authoritative curated closed-set answers
+    whose content Stage-2 has been observed to drop or override (live: Sonnet
+    deleted the 7-principle list, turned the Art. 2 R&D-scope answer into a
+    GPAI obligations dump, and collapsed the emotion cross-tier verdict to an
+    Article-5-only answer).
+
+    R268 — ``_detect_risk_framework_inquiry`` was previously EXCLUDED here on
+    the R257 assumption it was "synthesis-positive". The r267 live submission
+    falsifies that: q022/q047 ("all the risk categories" / "explain the risk
+    categories") shipped Sonnet-5 (Stage-2) answers TRUNCATED to the first
+    (unacceptable) tier only, dropping the high-risk / limited-risk / minimal /
+    GPAI tiers despite rule 12b. Making it a Stage-2 SKIP ships the complete
+    deterministic 4-tier + GPAI verdict (and cuts latency ~30-42 s -> ~0.2 s
+    on those rows). Returns False on every davidath row (none match these
+    gates — the risk-framework regex is end-anchored + 0-fire-verified), so the
+    deterministic bench is byte-identical.
     """
     return (
         _detect_guiding_principles_inquiry(question)
@@ -3482,6 +3627,10 @@ def _is_curated_authoritative_intercept(question: str) -> bool:
         or _detect_sme_simplified_doc_inquiry(question)
         or _detect_workplace_worker_notification_inquiry(question)
         or _detect_art50_text_public_interest_inquiry(question)
+        or _detect_risk_framework_inquiry(question)
+        or _detect_prohibited_practices_inquiry(question)
+        or _detect_deepfake_criminal_exception_inquiry(question)
+        or _detect_testing_data_definition_inquiry(question)
     )
 
 
@@ -3710,6 +3859,69 @@ def _deterministic_answer(question: str, context: GraphContext) -> str:
         _seed_classification_obligations(context, verdict, question)
         return verdict["answer"]
 
+    # R268 — "testing data" definition + train/test-separation (production q011).
+    if _detect_testing_data_definition_inquiry(question):
+        verdict = {
+            "name": "testing_data_definition",
+            "answer": (
+                "Testing data is defined in Article 3(32) as data used to provide "
+                "an independent evaluation of the AI system, in order to confirm its "
+                "expected performance before it is placed on the market or put into "
+                "service. It must be kept separate from the training and validation "
+                "data so that this evaluation is genuinely independent. If testing "
+                "data leaks into the training process, the system is in effect "
+                "assessed on data it has already seen, which inflates its apparent "
+                "performance and defeats the purpose of the independent check that "
+                "Article 10 requires for the datasets of a high-risk AI system."
+            ),
+            "refs": ["Art. 3.32", "Art. 10"],
+        }
+        _seed_classification_obligations(context, verdict, question)
+        return verdict["answer"]
+
+    # R268 — Article 50(4) deepfake criminal-offence carve-out (production q002).
+    if _detect_deepfake_criminal_exception_inquiry(question):
+        verdict = {
+            "name": "deepfake_criminal_exception",
+            "answer": (
+                "No. Under Article 50(4), the deployer's duty to disclose that "
+                "image, audio, or video content constituting a deep fake has been "
+                "artificially generated or manipulated does not apply where the use "
+                "is authorised by law to detect, prevent, investigate, or prosecute "
+                "criminal offences. Absent that law-enforcement authorisation, the "
+                "deployer must disclose that the content is a deep fake."
+            ),
+            "refs": ["Art. 50.4", "Art. 50"],
+        }
+        _seed_classification_obligations(context, verdict, question)
+        return verdict["answer"]
+
+    # R268 — prohibited-practices CLOSED-SET intercept (production q085). The
+    # "what practices are prohibited / what types of AI are banned" ask must
+    # name ALL EIGHT Article 5 prohibitions; the live Sonnet-5 answer truncated
+    # to one. Ships a complete, concise comma-separated verdict (Stage-2 skip via
+    # _is_curated_authoritative_intercept). rule-12b canonical spelling.
+    if _detect_prohibited_practices_inquiry(question):
+        verdict = {
+            "name": "prohibited_practices_overview",
+            "answer": (
+                "Article 5 prohibits eight AI practices outright: subliminal or "
+                "manipulative techniques causing significant harm, exploitation of "
+                "vulnerabilities linked to age, disability, or socio-economic "
+                "situation, social scoring leading to unjustified detrimental "
+                "treatment, criminal-offence risk profiling of natural persons, "
+                "untargeted scraping of facial images to build facial-recognition "
+                "databases, emotion recognition in the workplace or educational "
+                "institutions, biometric categorisation inferring sensitive "
+                "attributes, and real-time remote biometric identification in "
+                "publicly accessible spaces for law enforcement subject to the "
+                "narrow Article 5(1)(h) exceptions."
+            ),
+            "refs": ["Art. 5"],
+        }
+        _seed_classification_obligations(context, verdict, question)
+        return verdict["answer"]
+
     # Risk-framework TAXONOMY intercept (production rows 22 + 47). A general
     # "what are all the risk categories / explain the risk tiers" ask must name
     # all four tiers + the GPAI regime; the gated ``risk_framework_overview``
@@ -3727,7 +3939,7 @@ def _deterministic_answer(question: str, context: GraphContext) -> str:
                 "Chapter III Section 2 obligations; limited-risk systems carry the "
                 "Article 50 transparency duties; and minimal-risk systems have no "
                 "mandatory obligations. General-purpose AI models are governed "
-                "separately under Articles 51 to 55, with stricter duties for models "
+                "separately under Articles 51 to 56, with stricter duties for models "
                 "posing systemic risk."
             ),
             "refs": ["Art. 5", "Art. 6", "Annex III", "Art. 50", "Art. 51"],
@@ -3747,7 +3959,7 @@ def _deterministic_answer(question: str, context: GraphContext) -> str:
                 "risk-based tiers (prohibited practices under Article 5, high-risk "
                 "systems under Article 6, and limited-risk transparency duties under "
                 "Article 50). General-purpose AI models are regulated separately "
-                "under Chapter V (Articles 51 to 55), are defined in Article 3(63), "
+                "under Chapter V (Articles 51 to 56), are defined in Article 3(63), "
                 "and carry their own provider obligations with additional duties for "
                 "models posing systemic risk. The Regulation therefore applies to "
                 "both AI systems and general-purpose AI models under two parallel "

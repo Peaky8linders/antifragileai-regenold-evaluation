@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from app.data.article_existence import ARTICLE_EXISTENCE
 from app.integrations.regenold.answer_normaliser import (
+    repair_elided_citation_anchors,
     strip_dash_separators,
     strip_hedge_opener,
     strip_meta_commentary,
@@ -1416,6 +1417,14 @@ def normalise_answer_for_regenold(
     # REGENOLD_STRIP_META=0. davidath byte-identical (deterministic answers
     # carry no such internal language; bench runs provider=cli with no Stage-2).
     result = strip_meta_commentary(result)
+
+    # R268 — repair a mid-sentence citation-anchor the Stage-2 model elided
+    # ("...harmonisation legislation listed in which/here/such as ..." dropped
+    # "Annex I"; "...practices banned under which ..." dropped "Article 5").
+    # Narrowly anchored; default ON; env-reversible REGENOLD_REPAIR_ELISION=0.
+    # davidath byte-identical (deterministic answers write "listed in Annex I"
+    # correctly; bench runs provider=cli with no Stage-2).
+    result = repair_elided_citation_anchors(result)
 
     # R92 — wire citation-form enforcement (default ON). Normalise any
     # "Art. N" / "Arts. N" in the answer prose to the spec "Article N" /
