@@ -1215,6 +1215,9 @@ def _engine_cache_key(
         os.getenv(v, "").strip().lower()
         for v in (
             "P2P_GRAPH_RAG_ENABLE_STAGE2",
+            # R270 — opus-for-all flips the Stage-2 answer MODEL (Sonnet 5 vs
+            # Opus 4.8) for standard questions → flips GraphRAGResponse.answer.
+            "REGENOLD_OPUS_FOR_ALL",
             "REGENOLD_GRAPH_2HOP",
             "REGENOLD_GRAPH_AWARE",
             # R252 — KB-primary vs legacy Neo4j-primary retrieval flips the

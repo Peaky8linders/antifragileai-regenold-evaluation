@@ -9276,6 +9276,50 @@ existing R268 tests green. Env-reversible `REGENOLD_MULTI_ARTICLE_ENTITIES=0`.
 The live win lands on the "obligations under Articles X, Y, and Z" Oxford-comma
 shape (davidath is the regression guard, not the win surface — the R268 pattern).
 
+## Round 270 — opus-for-all Stage-2: ab_judge WASH → shipped default-OFF (2026-07-04)
+
+Investigated (operator ask: "check latest fixes like fast mode for opus 4.8")
+whether routing STANDARD Stage-2 to Opus 4.8 (not just the ~20% complex hits)
+is a free quality lever. Rationale: latency is wrapper-floor bound (per the
+[[project_fast_mode_not_latency_lever]] + [[project_thinking_budget_not_latency_lever]]
+findings — fast mode + thinking budget are both measured washes because ~99%
+of wall-clock is the Claude-Max wrapper per-call floor, NOT token generation),
+so through the tunnel Opus 4.8 ≈ Sonnet 5 wall-clock (~0.99x). The only open
+question was quality.
+
+New env knob `REGENOLD_OPUS_FOR_ALL` (default **OFF**) in
+[`_opus_for_all_enabled`](app/engines/graph_rag.py): when ON, the standard
+Stage-2 model resolves to `complex_model` (Opus 4.8) instead of `stage2_model`
+(Sonnet 5). Both model-selection sites (`_openai_wrapper_complete_for_graph_rag`
++ `_anthropic_complete_for_graph_rag`) route through it; extended thinking is
+UNAFFECTED (still gated on `complex_question` + `complex_thinking_tokens`, so a
+standard question gets Opus with only the MODERATE `thinking_tokens=2048`).
+Folded into `_engine_cache_key` (R30/R56/R79 doctrine — it flips the answer).
+
+**Live ab_judge — the merge gate ([[feedback_ab_judge_not_davidath]]).**
+`paper_st_v4`, n=6, position-swapped pairwise, Sonnet-4-6 judge, live wrapper,
+baseline (`{}`=Sonnet-5 standard) vs branch (`REGENOLD_OPUS_FOR_ALL=1`=Opus-4.8):
+
+| axis | Opus wins | Sonnet wins | tie | verdict |
+| ---- | --------- | ----------- | --- | ------- |
+| correctness | 1 | 0 | 5 | branch leans (ns, p=1.0) |
+| refs | 1 | 0 | 5 | branch leans (ns, p=1.0) |
+| conciseness | 2 | 3 | 1 | baseline leans (ns, p=1.0) |
+| tone | 0 | 2 | 4 | baseline leans (ns, p=0.5) |
+
+**WASH** — nothing near significance (n=6 can't establish it), and Opus trades a
+1-row lean on correctness/refs for a lean AGAINST the rubric's conciseness/tone
+axes (both already saturated — r267 judge had tone 91.2). Direct corroboration
+from the live-prod smart sample: the Opus complex rows ran 1162-1330 chars vs
+250-590 for the Sonnet standard rows — Opus is measurably more verbose, the
+conciseness-vs-gold risk. Per the [[project_r142_clamp_disabled_routing]]
+discipline (don't flip a stable, validated competition system on noise-level
+evidence), the knob ships **default OFF** — production stays Sonnet-5 standard /
+Opus-4.8 complex. One-flip optionality preserved (`REGENOLD_OPUS_FOR_ALL=1`) if
+a future round re-A/Bs at higher n or under a correctness-weighted rubric.
++10 `tests/test_r270_opus_for_all.py` (default-OFF + toggle + cache-key). Fast
+mode itself remains a separately-measured wash (Opus-only, wrapper-floor bound).
+
 ## Non-goals / things to skip
 
 - ~~Vector embeddings / dense retrieval~~ → **Round 31 added a

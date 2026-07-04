@@ -418,6 +418,26 @@ def _get_groq_compressed_system_prompt() -> str:
     )
 
 
+def _opus_for_all_enabled() -> bool:
+    """R270 — route STANDARD Stage-2 answers to the complex model (Opus 4.8)
+    too, not just ``is_complex_question`` hits. **Default OFF** (standard
+    Stage-2 stays on ``stage2_model`` = Sonnet 5).
+
+    Rationale (measured 2026-07-04): through the Claude-Max wrapper, Sonnet 5
+    and Opus 4.8 have comparable wall-clock latency (~0.99x) because latency is
+    wrapper-floor bound, not token-generation bound — so the stronger model
+    carries ~no latency penalty. Enabling it (``REGENOLD_OPUS_FOR_ALL=1``) is a
+    quality lever at ~neutral latency; the crude ``_is_multi_phrase`` sentence
+    heuristic (R118 audit) no longer gates model quality. Extended thinking is
+    unaffected — it stays gated on ``complex_question`` + ``complex_thinking_tokens``,
+    so a standard question gets Opus with only the MODERATE ``thinking_tokens``.
+    In the engine cache key (R30/R56/R79). Ship-gated on an ``ab_judge`` pass.
+    """
+    return os.environ.get("REGENOLD_OPUS_FOR_ALL", "0").strip().lower() in {
+        "1", "true", "yes", "on",
+    }
+
+
 def _openai_wrapper_complete_for_graph_rag(
 
     *, system: str, user: str, max_tokens: int, temperature: float,
@@ -472,10 +492,15 @@ def _openai_wrapper_complete_for_graph_rag(
     #   * Stage-1 / other  → ``base_model``    (Sonnet 4.6)
     # R116 removed the Fable 5 ultra tier.
     is_stage2 = "stage 2" in (stage_name or "").lower()
+    # R270 (default OFF) — opus-for-all routes standard Stage-2 to the complex
+    # model (Opus 4.8) instead of ``stage2_model`` (Sonnet 5).
+    _std_model = (
+        complex_model if (_opus_for_all_enabled() and complex_model) else stage2_model
+    )
     if complex_question and complex_model:
         model = complex_model
-    elif is_stage2 and stage2_model:
-        model = stage2_model
+    elif is_stage2 and _std_model:
+        model = _std_model
     else:
         model = base_model
 
@@ -799,10 +824,15 @@ def _anthropic_complete_for_graph_rag(
     # ``stage2_model`` (Opus); Stage-1 parse / other → ``base_model`` (Sonnet).
     # R116 removed the Fable 5 ultra tier.
     is_stage2 = "stage 2" in (stage_name or "").lower()
+    # R270 (default OFF) — opus-for-all routes standard Stage-2 to the complex
+    # model (Opus 4.8) instead of ``stage2_model`` (Sonnet 5).
+    _std_model = (
+        complex_model if (_opus_for_all_enabled() and complex_model) else stage2_model
+    )
     if complex_question and complex_model:
         model = complex_model
-    elif is_stage2 and stage2_model:
-        model = stage2_model
+    elif is_stage2 and _std_model:
+        model = _std_model
     else:
         model = base_model
 
