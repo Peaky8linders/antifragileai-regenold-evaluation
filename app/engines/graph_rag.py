@@ -1569,6 +1569,47 @@ def _is_role_contrast_obligation(text_lower: str) -> bool:
     )
 
 
+# R268 — widened explicit-article extraction. The pre-R268 pattern
+# ``(?:Art\.?|Article)\s*(\d{1,3})`` dropped explicitly-named articles on the
+# two commonest multi-article shapes: the plural "Articles 13 and 50" (the
+# trailing "s" broke ``Article\s*\d`` → captured NEITHER number) and the list
+# "Article 13 and 50" (only the number directly after the token → captured
+# only 13). This token mirrors scope.py's proven ``_ARTICLE_REF_RE`` (Art /
+# Art. / Article / Articles / Artikel) and captures a comma/and/or number
+# list; the caller pulls EVERY number out of the list.
+_MULTI_ARTICLE_MENTION_RE = re.compile(
+    # Art / Art. / Arts / Arts. / Article / Articles / Artikel(s) / Artikeln.
+    r"\bArt(?:icles?|ikels?|ikeln|s)?\.?\s*"
+    r"(\d{1,3}(?:\s*(?:,|&|/|\band\b|\bor\b)\s*\d{1,3}){0,8})",
+    re.IGNORECASE,
+)
+
+# R268 — the symmetric list bug on annexes: the pre-R268
+# ``\bAnnex\s+([IVXLC]+)\b`` findall already caught a REPEATED-token form
+# ("Annex III and Annex IV" → two matches) but missed the plural
+# "Annexes III and IV" and the single-token list "Annex III and IV" (only
+# "III"). This token accepts "Annex"/"Annexes" + a comma/and/or Roman list;
+# the caller pulls EVERY Roman numeral out. "and"/"or" carry no
+# ``[IVXLC]`` letters, so the per-item ``findall`` skips the separators.
+_MULTI_ANNEX_MENTION_RE = re.compile(
+    r"\bAnnex(?:es)?\s+"
+    r"([IVXLC]+(?:\s*(?:,|&|/|\band\b|\bor\b)\s*[IVXLC]+){0,8})",
+    re.IGNORECASE,
+)
+
+
+def _multi_article_entities_enabled() -> bool:
+    """R268 — env gate for the widened multi-article entity extraction.
+
+    Default ON. Set ``REGENOLD_MULTI_ARTICLE_ENTITIES=0`` to restore the
+    pre-R268 single-article regex (instant rollback / A/B). Folded into
+    ``_engine_cache_key`` (R30/R56/R79/R263.2 cache-poisoning doctrine).
+    """
+    return os.environ.get(
+        "REGENOLD_MULTI_ARTICLE_ENTITIES", "1"
+    ).strip().lower() not in {"0", "false", "no", "off"}
+
+
 def _deterministic_parse(question: str) -> GraphQuery:
     """Parse question using keyword matching when LLM is unavailable."""
     # R79 — normalise Unicode dashes / non-breaking spaces before the
@@ -1607,12 +1648,32 @@ def _deterministic_parse(question: str) -> GraphQuery:
     # surfacing depends on `query.entities` carrying them through so
     # retrieval can find article-specific obligations. (`re` is imported
     # at module scope above — no shadow import here.)
-    article_nums = re.findall(
-        r"\b(?:Art\.?|Article)\s*(\d{1,3})\b", question, re.IGNORECASE,
-    )
-    annex_romans = re.findall(
-        r"\bAnnex\s+([IVXLC]+)\b", question, re.IGNORECASE,
-    )
+    # R268 — the widened path (default) captures plural "Articles" + a
+    # comma/and/or number list ("Articles 13 and 50" → [13, 50]); the pre-R268
+    # path stays behind the env gate for A/B / rollback. Without this, a
+    # question like "…obligations under Articles 13 and 50?" grounded only ONE
+    # article — the other reached the wire via the scope-anchor path but its KB
+    # obligation substance never entered the Stage-2 context, so Stage-2
+    # described it only intermittently and the R72 reconcile dropped the
+    # undescribed citation.
+    if _multi_article_entities_enabled():
+        article_nums = [
+            n
+            for m in _MULTI_ARTICLE_MENTION_RE.finditer(question)
+            for n in re.findall(r"\d{1,3}", m.group(1))
+        ]
+        annex_romans = [
+            r
+            for m in _MULTI_ANNEX_MENTION_RE.finditer(question)
+            for r in re.findall(r"[IVXLC]+", m.group(1))
+        ]
+    else:
+        article_nums = re.findall(
+            r"\b(?:Art\.?|Article)\s*(\d{1,3})\b", question, re.IGNORECASE,
+        )
+        annex_romans = re.findall(
+            r"\bAnnex\s+([IVXLC]+)\b", question, re.IGNORECASE,
+        )
     entities: list[str] = []
     seen: set[str] = set()
     for n in article_nums:

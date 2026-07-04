@@ -1224,6 +1224,10 @@ def _engine_cache_key(
             "REGENOLD_ENTITY_BOOST",
             "REGENOLD_ENTITY_BOOST_FACTOR_ROLE",
             "REGENOLD_ENTITY_BOOST_FACTOR_CONCEPT",
+            # R268 — widened multi-article entity extraction changes the
+            # engine's parsed entities → surfaced obligations → refs, so it
+            # must be in the cache key (R30/R56/R79/R263.2 doctrine).
+            "REGENOLD_MULTI_ARTICLE_ENTITIES",
             "REGENOLD_SCORE_FUSION",
             "REGENOLD_SCORE_FUSION_ALPHA",
             "REGENOLD_TURBOQUANT_OUTLIER_CHANNELS",

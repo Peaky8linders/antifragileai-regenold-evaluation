@@ -9174,6 +9174,62 @@ lesson). Full `ab_judge` live pairwise + 102-row re-judge queued post-deploy
 (the API was rate-limited mid-round; the changes carry the safest risk profile —
 none drop a reference or change a scope-refusal, so worst case is neutral).
 
+## Round 268 — multi-article-list entity extraction: ground EVERY named article (2026-07-04)
+
+A live probe (transparency obligations "under Articles 13 and 50") shipped an
+Art. 50-only answer and dropped Article 13. `systematic-debugging` traced it to
+`_deterministic_parse`'s explicit-article regex
+`(?:Art\.?|Article)\s*(\d{1,3})`: on the two commonest multi-article shapes —
+the plural "**Articles** 13 and 50" (trailing "s" broke `Article\s*\d` →
+captured NEITHER number) and the list "Article 13 **and 50**" (only the number
+after the token → captured only 13) — the named articles never became
+`query.entities`, so their KB obligation substance never reached the Stage-2
+grounding context. The engine then fell back to BM25/keyword anchors (often the
+**wrong** articles) and the answer covered only whichever provision a keyword
+surfaced; the second article, carried only via the route anchor path, was
+described intermittently (Opus parametric recovery + Component D) and the R72
+reconcile then dropped the undescribed citation. Not 13/50-specific — it hit
+the whole "obligations under Articles X and Y" class.
+
+### The fix (general, env-gated `REGENOLD_MULTI_ARTICLE_ENTITIES`, default ON)
+`app/engines/graph_rag.py` — `_MULTI_ARTICLE_MENTION_RE` (Art / Art. / Arts. /
+Article / Articles / Artikel + a comma/and/or number list) and the symmetric
+`_MULTI_ANNEX_MENTION_RE` (Annex/Annexes + Roman list) replace the
+single-capture regexes; the parser pulls EVERY number/numeral out of the list.
+Cache-key folds in `REGENOLD_MULTI_ARTICLE_ENTITIES` (R30/R56/R79/R263.2
+doctrine). `=0` restores the pre-R268 regex.
+
+### Decision by live `ab_judge`, NOT davidath (hard rule #6)
+**0 rows of any curated benchmark** (davidath, ab_judge probe_set-120,
+medtech-graphrag-v124, graphrag-bench) use the multi-article-LIST shape — so the
+fix is byte-identical there and its effect is unmeasurable on them. Authored
+`evals/regenold/scenarios_multiarticle_r268.py` (12 gold-bearing rows, diverse
+article pairs/triples + an annex list, all 12 fire) + wired it as an ab_judge
+source. Live position-swapped pairwise (Sonnet judge, wrapper Stage-2), baseline
+`=0` vs branch `=1`:
+
+| Axis | B-win (fix) | A-win (OFF) | tie | win% B | p | verdict |
+| ---- | ----------- | ----------- | --- | ------ | - | ------- |
+| correctness | 6 | 5 | 1 | 0.545 | 1.000 | branch leans (ns) |
+| refs | 7 | 5 | 0 | 0.583 | 0.774 | branch leans (ns) |
+| conciseness | 5 | 2 | 5 | 0.714 | 0.453 | branch leans (ns) |
+| tone | 6 | 2 | 4 | 0.750 | 0.289 | branch leans (ns) |
+
+**Branch leans win on all 4 axes, ZERO regression** (the opposite of R142.1's
+0-11 p=0.001 loss). Per-row inspection: the lean is modest because on some rows
+the OFF path's keyword/anchor recovery + Opus-4.8 parametric knowledge happen to
+surface both articles anyway (near-tie noise); on rows where recovery FAILS
+(ma_10 "Articles 53 and 55" → OFF grounded only `[53, 53.1, Annex XI, XII]`,
+**dropping Article 55 / the whole systemic-risk regime**; ON grounded
+`[53, 55, 51, …]`) the fix wins clearly. The pre-R268 path is a fragile lottery
+(model + Component-D dependent); the fix makes correct grounding deterministic.
+
+### Gates
+davidath QA **byte-identical** (0/137 pred_answer+pred_refs diffs, gate ON vs
+OFF — the 0-trigger-row proof, empirically confirmed); 276-runner **all
+categories 100%**; OOS probe **21/21, 0 leaks**; +13 `tests/test_r268_multiarticle.py`
++ touched-surface suite green. Env-reversible `REGENOLD_MULTI_ARTICLE_ENTITIES=0`.
+
 ## Non-goals / things to skip
 
 - ~~Vector embeddings / dense retrieval~~ → **Round 31 added a

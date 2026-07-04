@@ -110,6 +110,10 @@ _PRIMARY_SOURCES: tuple[tuple[str, str, bool], ...] = (
     # R149 — lower-risk-tier classification (minimal / limited verdict
     # completion + prohibited-practice disjunction routing).
     ("evals.regenold.scenarios_lower_risk_v149", "lower_risk_v149", False),
+    # R268 — multi-article-list obligation shape ("...under Articles X and
+    # Y?"). No other benchmark covers it, so it is the only sample that
+    # exercises the R268 multi-article entity fix under ab_judge.
+    ("evals.regenold.scenarios_multiarticle_r268", "multiarticle_r268", False),
 )
 
 
