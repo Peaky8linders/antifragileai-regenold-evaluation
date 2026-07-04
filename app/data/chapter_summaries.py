@@ -230,6 +230,7 @@ _BROAD_KEYWORD_CHAPTER_MAP: tuple[tuple[str, str], ...] = (
     ("post market monitoring", "IX"),
     ("serious incident reporting", "IX"),
     ("market surveillance", "IX"),
+    ("market surveilance", "IX"),  # R268 — tolerate the single-L misspelling (r267 q020)
     # Chapter X — codes of conduct
     ("code of conduct", "X"),
     ("commission guidelines", "X"),

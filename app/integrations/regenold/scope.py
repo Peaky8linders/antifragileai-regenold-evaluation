@@ -1507,6 +1507,12 @@ KEYWORD_TO_ARTICLE: dict[str, str] = {
     "european ai board": "Art. 65",
     "national competent authority": "Art. 70",
     "market surveillance": "Art. 74",
+    # R268 — tolerate the common single-L misspelling (r267 q020 shipped an
+    # Art. 43 derogation answer because "market surveilance" missed the
+    # "market surveillance" anchor above). Correct spelling already routes to
+    # Art. 74; this just extends the same route to the typo. Cannot appear in
+    # davidath (no misspelled gold) -> byte-identical.
+    "market surveilance": "Art. 74",
     # R76 — Art. 78 is "Confidentiality"; davidath qa_080 asks about
     # confidentiality obligations and surfaced market-surveillance
     # neighbours instead. Listed in _SCOPE_WEAK_KEYWORDS below so a bare
