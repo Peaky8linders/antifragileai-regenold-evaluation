@@ -147,7 +147,10 @@ from app.integrations.regenold.reasoning_trace import (
 from app.integrations.regenold.reasoning_trace import (
     record_stage2 as _trace_stage2,
 )
-from app.integrations.regenold.lexy_gate import decide_ambiguous_oos
+from app.integrations.regenold.lexy_gate import (
+    classify_safety_intent,
+    decide_ambiguous_oos,
+)
 from app.integrations.regenold.scope import (
     ConversationVerdict,
     ScopeReason,
@@ -3449,6 +3452,21 @@ def _scope_refusal_active(reason: ScopeReason) -> bool:
     return _topic_filter_enabled()
 
 
+def _safety_refusal_copy(safety: str) -> str:
+    """Branded refusal copy for a dangerous / adversarial intent verdict.
+
+    ``"dangerous"`` -> the harmful-request decline; ``"adversarial"`` and the
+    fail-soft ``""`` (regex-flagged injection with no LLM verdict) -> the
+    adversarial / injection pushback.
+    """
+    from app.integrations.regenold.scope import (  # noqa: PLC0415
+        LEXY_ADVERSARIAL,
+        LEXY_DANGEROUS,
+    )
+
+    return LEXY_DANGEROUS if safety == "dangerous" else LEXY_ADVERSARIAL
+
+
 # R267 — Lexy answers benign off-topic questions with the Groq Qwen-3.6
 # general assistant instead of declining. Only adversarial / prompt-injection
 # input is pushed back (see the route branch). This env flag (DEFAULT ON)
@@ -4742,69 +4760,96 @@ def regenold_eu_ai_act_ask(
                 answer_override=answer_override,
             )
 
-        # R267 — Lexy is a helpful general assistant, not a rigid refuser:
-        #   * PROMPT_INJECTION → branded pushback (the ONLY hard refusal;
-        #     injection input is NEVER forwarded to the general assistant).
-        #   * GREETING / NON_EXISTENT_ARTICLE → branded helpful reply
-        #     (self-introduction / "did you mean Article N?" correction).
-        #   * every other off-topic reason (CONVERSATIONAL / OTHER_REGULATION
-        #     / NEAR_OOS / EMPTY_OR_NONSENSE) → a clear, correct answer from
-        #     the Groq Qwen-3.6 general assistant — EXCEPT when the ambiguous
-        #     CONVERSATIONAL bucket is a genuine keyword-less AI Act question
-        #     the LLM gate rescues to the full RAG engine.
-        # REGENOLD_GENERAL_ANSWER=0 restores the R256 branded-decline behaviour.
-        if _scope_reason == ScopeReason.PROMPT_INJECTION:
-            return _refuse()
+        # R271 — the refusal-to-answer decision is driven by INTENT DETECTION.
+        # Operator directive (2026-07-04): Lexy refuses ONLY when the prompt's
+        # intent is dangerous or adversarial. Everything else is answered:
+        #   * benign off-topic → Groq/Gemini/Mistral general assistant (or the
+        #     ambiguous-bucket rescue to full RAG for a keyword-less AI Act Q);
+        #   * GREETING → friendly self-intro; NON_EXISTENT_ARTICLE → "did you
+        #     mean Article N?" correction (helpful replies, not refusals).
+        #
+        # The LLM safety gate (classify_safety_intent) is the AUTHORITY; the
+        # deterministic PROMPT_INJECTION regex is a fast prior + fail-soft
+        # fallback — when the gate is unavailable ("") the regex verdict
+        # stands, so the no-LLM bench + the OOS-leak probe stay byte-identical.
+        # REGENOLD_SAFETY_GATE=0 reverts to the pure R267 regex behaviour.
+        _live_q = scope.live_question or question
+        _safety = (
+            ""
+            if _scope_reason in (ScopeReason.GREETING, ScopeReason.NON_EXISTENT_ARTICLE)
+            else classify_safety_intent(_live_q)
+        )
+        _gate_safe = _safety == "safe"
+
+        # Refuse ONLY for dangerous / adversarial intent:
+        #   * the gate positively flags it on ANY reason, OR
+        #   * the regex PROMPT_INJECTION prior fired AND the gate did not
+        #     positively rescue it as safe (fail-soft: gate unavailable → the
+        #     regex refusal stands, so a real injection is never let through).
+        if _safety in ("adversarial", "dangerous") or (
+            _scope_reason == ScopeReason.PROMPT_INJECTION and not _gate_safe
+        ):
+            _trace_note(f"safety_refusal: {_safety or 'regex_injection'}")
+            return _refuse(_safety_refusal_copy(_safety))
+
+        # GREETING / NON_EXISTENT_ARTICLE → helpful branded reply (self-intro /
+        # article correction), not a refusal-to-answer.
         if _scope_reason in (ScopeReason.GREETING, ScopeReason.NON_EXISTENT_ARTICLE):
             return _refuse()
 
-        # Remaining reasons are benign off-topic. The ambiguous step-8
-        # CONVERSATIONAL bucket may be a genuine keyword-less AI Act question:
-        # consult the LLM gate ONCE and route a rescued question to full RAG.
-        _rescued_to_rag = False
-        _gate_clause = ""
-        _is_ambiguous = (
-            _scope_reason == ScopeReason.CONVERSATIONAL
-            and getattr(scope.verdict, "ambiguous", False)
-        )
-        if _is_ambiguous:
-            _gate_in_scope, _gate_clause = decide_ambiguous_oos(scope.live_question or question)
-            if _gate_in_scope:
-                _rescued_to_rag = True
-                _trace_note("lexy_oos_rescue: in_scope")
-
-        if not _rescued_to_rag:
-            if _general_answer_enabled():
-                _ga = _general_assistant_answer(scope.live_question or question)
-                if _ga:
-                    _trace_retrieval_path("general_assistant")
-                    _trace_note(f"general_answer: {_scope_reason.value}")
-                    return _build_scope_refusal_response(
-                        scope=scope,
-                        include_telemetry=include_telemetry,
-                        include_reasoning=include_reasoning,
-                        request=request,
-                        api_key=api_key,
-                        question=question,
-                        system_context=system_context,
-                        history_turns=req.messages,
-                        answer_override=_ga,
-                        retrieval_path_override="general_assistant",
-                        confidence_override=0.5,
-                    )
-                _trace_note("general_answer_unavailable")
-            # General-answer OFF, or Groq unavailable → R256 branded decline
-            # (respecting REGENOLD_TOPIC_FILTER for a full rollback).
-            if _scope_refusal_active(_scope_reason):
-                _override = (
-                    lexy_tailored_oos_refusal(_gate_clause)
-                    if (_is_ambiguous and _gate_clause)
-                    else None
-                )
-                return _refuse(_override)
-            _trace_note(f"topic_filter_suppressed: {_scope_reason.value}")
+        # A regex-flagged injection the gate rescued as SAFE is a false
+        # positive (a legitimate compliance question that tripped the pattern)
+        # — treat it as in-scope and let the RAG engine answer; fall through.
+        if _scope_reason == ScopeReason.PROMPT_INJECTION and _gate_safe:
+            _trace_note("safety_gate: injection_false_positive_rescued")
         else:
-            _trace_note("topic_filter_suppressed: ambiguous_rescued_to_rag")
+            # Benign off-topic. The ambiguous step-8 CONVERSATIONAL bucket may
+            # be a genuine keyword-less AI Act question: consult the scope gate
+            # ONCE and route a rescued question to full RAG.
+            _rescued_to_rag = False
+            _gate_clause = ""
+            _is_ambiguous = (
+                _scope_reason == ScopeReason.CONVERSATIONAL
+                and getattr(scope.verdict, "ambiguous", False)
+            )
+            if _is_ambiguous:
+                _gate_in_scope, _gate_clause = decide_ambiguous_oos(_live_q)
+                if _gate_in_scope:
+                    _rescued_to_rag = True
+                    _trace_note("lexy_oos_rescue: in_scope")
+
+            if not _rescued_to_rag:
+                if _general_answer_enabled():
+                    _ga = _general_assistant_answer(_live_q)
+                    if _ga:
+                        _trace_retrieval_path("general_assistant")
+                        _trace_note(f"general_answer: {_scope_reason.value}")
+                        return _build_scope_refusal_response(
+                            scope=scope,
+                            include_telemetry=include_telemetry,
+                            include_reasoning=include_reasoning,
+                            request=request,
+                            api_key=api_key,
+                            question=question,
+                            system_context=system_context,
+                            history_turns=req.messages,
+                            answer_override=_ga,
+                            retrieval_path_override="general_assistant",
+                            confidence_override=0.5,
+                        )
+                    _trace_note("general_answer_unavailable")
+                # General-answer OFF, or no general LLM → R256 branded decline
+                # (respecting REGENOLD_TOPIC_FILTER for a full rollback).
+                if _scope_refusal_active(_scope_reason):
+                    _override = (
+                        lexy_tailored_oos_refusal(_gate_clause)
+                        if (_is_ambiguous and _gate_clause)
+                        else None
+                    )
+                    return _refuse(_override)
+                _trace_note(f"topic_filter_suppressed: {_scope_reason.value}")
+            else:
+                _trace_note("topic_filter_suppressed: ambiguous_rescued_to_rag")
 
     # R51 — count prior user+assistant turns so the engine's complex-
     # question gate can fire on multi-turn finals (3+ turns + short

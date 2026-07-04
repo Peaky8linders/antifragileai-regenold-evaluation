@@ -215,6 +215,20 @@ REGENOLD_ROLE_DUTY_NOUN_SEED = "1"
 # with REGENOLD_AI_USECASE_RESCUE=0). OOS probe holds 21/21.
 REGENOLD_AI_USECASE_RESCUE = "1"
 
+# R271 — intent-detection safety gate. Lexy refuses to answer ONLY when the
+# prompt's intent is dangerous or adversarial (operator directive
+# 2026-07-04); every other off-topic reason is answered. classify_safety_
+# intent (Groq -> Gemini -> Mistral -> Claude Max wrapper) is the authority;
+# the deterministic PROMPT_INJECTION regex is the fast prior + fail-soft
+# fallback. It rescues the regex's false positives (a legit "how do bad
+# actors try to bypass Article 5?" compliance question) and catches
+# dangerous prompts (weapons / malware / hacking) the regex misses. Runs
+# only on the out-of-scope branch (in-scope competition path untouched).
+# Default ON; set REGENOLD_SAFETY_GATE=0 to revert to pure R267 regex
+# behaviour. Optional per-provider model overrides: REGENOLD_SAFETY_MODEL_
+# GROQ / _GEMINI / _MISTRAL.
+REGENOLD_SAFETY_GATE = "1"
+
 # R94 — complete-clause / no-run-on augmenter fix. The deterministic
 # per-ref description augmenter (`grounded_prose.augment_with_ref_
 # descriptions`) clipped a stub's first sentence at a 90-char word

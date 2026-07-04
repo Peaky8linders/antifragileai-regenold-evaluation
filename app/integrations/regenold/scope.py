@@ -3058,6 +3058,15 @@ LEXY_ADVERSARIAL = (
     "about AI Act compliance, I am glad to help."
 )
 
+#: R271 — refusal for a dangerous / harmful / illegal request (surfaced by the
+#: intent-detection safety gate, not the injection regex). Shares the "I am
+#: Lexy" opener so the existing OOS-probe refusal markers still recognise it.
+LEXY_DANGEROUS = (
+    "I am Lexy, a Compliance assistant for the EU AI Act (Regulation (EU) "
+    "2024/1689). I cannot help with requests that are unsafe, harmful, or "
+    "illegal. If you have a question about AI Act compliance, I am glad to help."
+)
+
 
 def lexy_tailored_oos_refusal(clause: str | None) -> str:
     """Build the tailored off-topic decline from an LLM-supplied clause.
