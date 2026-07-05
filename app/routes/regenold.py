@@ -3655,28 +3655,32 @@ def _general_assistant_answer(question: str) -> str | None:
         except Exception as exc:  # noqa: BLE001 — try the next provider in the chain
             logger.warning("general_assistant_exception model=%s: %s", model, exc)
             continue
-        if resp.error or not (resp.text or "").strip():
-            logger.warning(
-                "general_assistant_failed model=%s error=%s",
-                model,
-                (resp.error or "empty_text")[:150],
-            )
-            continue
-        # Strip any leaked <think> block, markdown emphasis, and dash
-        # separators for wire consistency with the AI Act answers.
-        text = validate_llm_output((resp.text or "").strip())
-        text = text.replace("**", "").replace("__", "")
         try:
-            from app.integrations.regenold.answer_normaliser import (  # noqa: PLC0415
-                strip_dash_separators,
-            )
+            if resp.error or not (resp.text or "").strip():
+                logger.warning(
+                    "general_assistant_failed model=%s error=%s",
+                    model,
+                    (resp.error or "empty_text")[:150],
+                )
+                continue
+            # Strip any leaked <think> block, markdown emphasis, and dash
+            # separators for wire consistency with the AI Act answers.
+            text = validate_llm_output((resp.text or "").strip())
+            text = text.replace("**", "").replace("__", "")
+            try:
+                from app.integrations.regenold.answer_normaliser import (  # noqa: PLC0415
+                    strip_dash_separators,
+                )
 
-            text = strip_dash_separators(text)
-        except Exception:  # noqa: BLE001 — tone polish is best-effort
-            pass
-        text = text.strip()
-        if text:
-            return text
+                text = strip_dash_separators(text)
+            except Exception:  # noqa: BLE001 — tone polish is best-effort
+                pass
+            text = text.strip()
+            if text:
+                return text
+        except Exception:  # noqa: BLE001 — post-completion must not crash the route
+            logger.warning("general_assistant_post_completion_error model=%s", model, exc_info=True)
+            continue
     return None
 
 

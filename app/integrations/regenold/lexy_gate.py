@@ -353,10 +353,14 @@ def classify_safety_intent(question: str) -> str:
         except Exception as exc:  # noqa: BLE001 — try the next provider
             logger.debug("safety_gate_exception", error=str(exc))
             continue
-        if resp.error or not (resp.text or "").strip():
+        try:
+            if resp.error or not (resp.text or "").strip():
+                continue
+            # Strip any leaked <think> block (Qwen on Groq) before parsing.
+            label = _parse_safety(validate_llm_output((resp.text or "").strip()))
+        except Exception:  # noqa: BLE001 — post-completion must not crash the gate
+            logger.debug("safety_gate_post_completion_error", exc_info=True)
             continue
-        # Strip any leaked <think> block (Qwen on Groq) before parsing.
-        label = _parse_safety(validate_llm_output((resp.text or "").strip()))
         if label:
             result = label
             break
