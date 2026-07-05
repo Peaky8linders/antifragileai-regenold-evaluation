@@ -135,3 +135,33 @@ class TestR274DavidathZeroFire:
         ]
         assert not qa_fire, [r.get("question", "")[:80] for r in qa_fire[:5]]
         assert not sc_fire, [scenario_to_question(r)[:80] for r in sc_fire[:5]]
+
+
+# ── q009 retention check ───────────────────────────────────────────────────
+class TestR274RetentionRefs:
+    def test_retention_refs_exact(self):
+        q = (
+            "What documentation does a provider of a high-risk AI system needs to "
+            "keep available for the national competent authorities, and for how "
+            "long?"
+        )
+        assert _is_curated_authoritative_intercept(q)
+        refs = _wire_refs(q)
+        expected = ["Article 18", "Article 11", "Article 17", "Article 47", "Article 19"]
+        assert refs == expected, refs
+
+
+# ── q022 risk-framework check ──────────────────────────────────────────────
+class TestR274RiskFrameworkRefs:
+    def test_risk_framework_refs_complete(self):
+        q = "What are all the risk categories in the EU AI Act?"
+        assert _is_curated_authoritative_intercept(q)
+        refs = _wire_refs(q)
+        expected_subset = {
+            "Article 5", "Article 6", "Article 50", "Article 51",
+            "Article 52", "Annex I", "Annex III", "Article 53",
+            "Article 54", "Article 55", "Article 56"
+        }
+        for item in expected_subset:
+            assert item in refs, f"{item} missing from {refs}"
+

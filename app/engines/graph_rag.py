@@ -4174,7 +4174,7 @@ def _deterministic_answer(question: str, context: GraphContext) -> str:
                 "51 to 56, with added obligations under Article 55 for models "
                 "classified as having systemic risk under Article 51."
             ),
-            "refs": ["Art. 5", "Art. 6", "Annex III", "Art. 50", "Art. 51", "Art. 55"],
+            "refs": ["Art. 5", "Art. 6", "Annex I", "Annex III", "Art. 50", "Art. 51", "Art. 52", "Art. 53", "Art. 54", "Art. 55", "Art. 56"],
         }
         _seed_classification_obligations(context, verdict, question)
         return verdict["answer"]

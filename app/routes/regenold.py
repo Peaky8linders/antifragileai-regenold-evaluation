@@ -2714,7 +2714,7 @@ def _definitional_art3_protected(
 # high-risk (Art. 6 + Annex III), limited-risk transparency (Art. 50), and the
 # parallel GPAI regime (Art. 51). Mirrors the R257 risk_framework_overview
 # intercept's seeded refs.
-_RISK_FRAMEWORK_CANON_REFS = ("Art. 5", "Art. 6", "Annex III", "Art. 50", "Art. 51")
+_RISK_FRAMEWORK_CANON_REFS = ("Art. 5", "Art. 6", "Annex I", "Annex III", "Art. 50", "Art. 51", "Art. 52", "Art. 53", "Art. 54", "Art. 55", "Art. 56")
 
 
 def _risk_framework_refs_enabled() -> bool:
@@ -5305,7 +5305,8 @@ def regenold_eu_ai_act_ask(
     # where BM25's high-IDF duty-keyword anchor stole the slot from
     # the role's canonical obligation Article.
     try:
-        candidates = _apply_role_duty_seed(candidates, resolved_question or question)
+        if not _is_curated_intercept:
+            candidates = _apply_role_duty_seed(candidates, resolved_question or question)
     except Exception:  # noqa: BLE001 — fail-soft, must not 500 the route
         pass
 
@@ -5603,6 +5604,7 @@ def regenold_eu_ai_act_ask(
         and not _prohibition_matches  # Art. 5 already handled by gatekeeper
         and candidates  # Round-36 issue #46 — don't inject onto empty grounding
         and not _is_classification_topic  # Round-36 issue #49 — curated verdict is final
+        and not _is_curated_intercept
     ):
         try:
             from app.engines.clara_logic import analyse as _clara_analyse  # noqa: PLC0415
@@ -5904,6 +5906,7 @@ def regenold_eu_ai_act_ask(
             and not _is_multiturn
             and not _is_classification_topic
             and not _is_general_classification
+            and not _is_curated_intercept
         ):
             _effective_max_refs = _QA_MAX_REFERENCES
         else:
@@ -5999,7 +6002,7 @@ def regenold_eu_ai_act_ask(
             _scope_wire_for_noise,
         )
 
-    if not _is_scenario_question and scope.anchor_articles:
+    if not _is_scenario_question and not _is_curated_intercept and scope.anchor_articles:
         _scope_front: list[str] = []
         for _anchor in scope.anchor_articles:
             _anchor_wire = reference_from_article_ref(_anchor)
@@ -6106,15 +6109,16 @@ def regenold_eu_ai_act_ask(
     # budget bump below is conditional on a real injection.
     _ontology_hop_injected = 0
     try:
-        _intent_label_for_hop = (
-            getattr(_boost_intent_res, "intent", "") or ""
-            if _boost_intent_res is not None else ""
-        )
-        _pre_hop_len = len(candidates)
-        candidates = _apply_ontology_hops(
-            candidates, _intent_label_for_hop, question
-        )
-        _ontology_hop_injected = max(0, len(candidates) - _pre_hop_len)
+        if not _is_curated_intercept:
+            _intent_label_for_hop = (
+                getattr(_boost_intent_res, "intent", "") or ""
+                if _boost_intent_res is not None else ""
+            )
+            _pre_hop_len = len(candidates)
+            candidates = _apply_ontology_hops(
+                candidates, _intent_label_for_hop, question
+            )
+            _ontology_hop_injected = max(0, len(candidates) - _pre_hop_len)
     except Exception:  # noqa: BLE001 — fail-soft
         pass
 

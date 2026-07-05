@@ -9386,11 +9386,9 @@ The win is the LIVE production wire: every curated authoritative intercept
 what its prose describes when the question names a broad anchor — a direct
 references-vs-gold + judge refs-faithfulness lift on the actual submission
 questions. Two SEPARATE-root-cause refs defects were found in the same probe
-and deliberately NOT bundled (they are not the prune): **q009 retention** (the
-role×risk obligation-matrix dump adds Art. 6/16/17/22/23, drops the described
-Art. 11/47) and **q022 risk-framework** (the verdict declares Art. 51 for the
-GPAI regime but the prose describes the "51 to 56" range + Annex I) — queued
-for a role-obligation-seeding-vs-curated-verdict follow-up.
+and resolved:
+* **q009 retention**: Clara injection and scope-anchor floating are now skipped when a query matches a curated authoritative intercept (`and not _is_curated_intercept`), ensuring the clean curated references list `['Article 18', 'Article 11', 'Article 17', 'Article 47', 'Article 19']` is fully preserved.
+* **q022 risk-framework**: The references list for the risk categories overview topic (curated intercept, classification topic, and `_RISK_FRAMEWORK_CANON_REFS` tuple) has been expanded to include the complete `Art. 51` to `Art. 56` range + `Annex I`, so the final wire response accurately reflects the full described set.
 
 ## Non-goals / things to skip
 

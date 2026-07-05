@@ -1186,7 +1186,7 @@ _CLASSIFICATION_TOPICS: list[dict] = [
             "models are governed separately under Articles 51 to 56, with stricter "
             "duties for models posing systemic risk."
         ),
-        "refs": ["Art. 5", "Art. 6", "Annex III", "Art. 50", "Art. 51"],
+        "refs": ["Art. 5", "Art. 6", "Annex I", "Annex III", "Art. 50", "Art. 51", "Art. 52", "Art. 53", "Art. 54", "Art. 55", "Art. 56"],
     },
     # ── Education grading / student assessment (Annex III.3) ──────────
     {
