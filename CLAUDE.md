@@ -9320,6 +9320,78 @@ a future round re-A/Bs at higher n or under a correctness-weighted rubric.
 +10 `tests/test_r270_opus_for_all.py` (default-OFF + toggle + cache-key). Fast
 mode itself remains a separately-measured wash (Opus-only, wrapper-floor bound).
 
+## Round 274 — curated-intercept reference protection: stop the anchor-prune dropping described core articles (2026-07-05)
+
+A deep-dive of the production tech-doc Q&A (*"Does the technical documentation
+of a high-risk AI system require to provide specifications regarding the
+required hardware?"* — the R273 q001 curated intercept, `stage2_skipped_
+curated_authoritative`) confirmed the answer + refs are correct (`['Annex IV',
+'Article 11', 'Annex IV.1.e', 'Annex IV.2.c']`). But probing the **related**
+shapes surfaced a genuine, general refs-faithfulness defect on the ACTUAL
+curated-intercept submission questions.
+
+### Root cause (systematic-debugging, traced with pipeline instrumentation)
+
+`app/routes/regenold.py::_prune_non_anchor_refs` (the R19/R20 explicit-anchor
+prune) drops any wire reference whose article/annex number is not explicitly
+named in the LIVE question. It was NOT exempted for curated authoritative
+intercepts — whose verdict declares a precise ref set that the deterministic
+prose is written to describe. So when a curated question happens to name a
+BROAD anchor that is not the answer's core, the prune deleted the DESCRIBED
+core articles:
+
+* **q032** (deviation-detection) — *"…in an **Annex III** area automatically
+  high-risk?"* → the answer is entirely about **Article 6(3)(c)**, but the
+  wire shipped only `['Annex III']` (Art. 6 / Art. 6.3 pruned as "not named").
+* **tech-doc variant** — *"Does **Annex IV** require a description of the
+  hardware…?"* → dropped **Article 11** (which the prose cites: "Under
+  Article 11…").
+
+The pipeline trace pinned it exactly: the engine returns all three curated
+refs `['Article 6.3','Article 6','Annex III']`; they survive `_surface_anchor_
+citations` + the first `_collapse_parent_refs`; then `_prune_non_anchor_refs`
+collapses them to `['Annex III']` (the only question-named anchor).
+
+### The fix — `_curated_ref_protect_enabled()` (default ON, env-reversible)
+
+`app/routes/regenold.py` skips `_prune_non_anchor_refs` when
+`_is_curated_authoritative_intercept` fired. Curated refs are precise +
+described by construction, so the prune can only mangle them. Env off-switch
+`REGENOLD_CURATED_REF_PROTECT=0` restores the prune. Records
+`curated_ref_protect: prune skipped` to the reasoning trace (glass-box).
+
+### Why davidath is byte-identical (proven two ways)
+
+* **Structural**: `_is_curated_authoritative_intercept` fires on **0/137 QA +
+  0/339 scenarios** (scanned directly) → the prune-skip literally cannot
+  execute on any davidath row.
+* **Empirical**: davidath QA bench byte-identical to the R263/R268 baseline —
+  Ans Strict **0.4037** / Ans Loose 0.1404 / Ref Loose **0.8394** / Ref
+  Strict **0.5543** / Ref Conciseness 0.4395 / Tone **1.0**.
+
+### Verification (worktree off main 2b8d2f5)
+
+| Gate | Result |
+| ---- | ------ |
+| curated-refs probe (8 R273 intercept questions) | q032 `['Annex III']` → **`['Article 6.3','Article 6','Annex III']`**; tech-doc Annex-IV variant regains **Article 11**; q001-main / q033 / q027 / q043 unchanged — **no intercept gained a spurious tangential ref** |
+| davidath QA bench | byte-identical (0-trigger + aggregate match) |
+| `evals.regenold.runner` (276) | **all categories 100%** (in_scope_multi_turn 102/102, risk_classification 17/17) |
+| `evals.regenold.runner_v2 --local --probe-oos` | **21/21, 0 leaks** |
+| `tests/test_r274_curated_ref_protect.py` (+13) + R273 (15) | 28 pass; touched-surface suites (integration / r265 / r264 / chain-collapse / r137 / subpoint / scope) **474 pass** |
+
+### Where the win lands + documented follow-ups
+
+The win is the LIVE production wire: every curated authoritative intercept
+(hardware-techdoc, deviation-detection, reclassification, SME, etc.) now cites
+what its prose describes when the question names a broad anchor — a direct
+references-vs-gold + judge refs-faithfulness lift on the actual submission
+questions. Two SEPARATE-root-cause refs defects were found in the same probe
+and deliberately NOT bundled (they are not the prune): **q009 retention** (the
+role×risk obligation-matrix dump adds Art. 6/16/17/22/23, drops the described
+Art. 11/47) and **q022 risk-framework** (the verdict declares Art. 51 for the
+GPAI regime but the prose describes the "51 to 56" range + Annex I) — queued
+for a role-obligation-seeding-vs-curated-verdict follow-up.
+
 ## Non-goals / things to skip
 
 - ~~Vector embeddings / dense retrieval~~ → **Round 31 added a

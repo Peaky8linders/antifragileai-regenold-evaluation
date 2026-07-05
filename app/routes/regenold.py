@@ -3489,6 +3489,26 @@ def _topic_filter_enabled() -> bool:
     )
 
 
+def _curated_ref_protect_enabled() -> bool:
+    """R274 — DEFAULT ON. Protect a curated authoritative intercept's declared
+    references from :func:`_prune_non_anchor_refs`.
+
+    Curated verdicts (``_is_curated_authoritative_intercept``) ship a
+    precise ref set that the deterministic prose is written to describe.
+    The explicit-anchor prune drops any ref not named in the live question,
+    which for these verdicts wrongly deletes the described core articles when
+    the question happens to name a broad anchor (q032 "…Annex III area…" → the
+    Article 6(3)(c) answer shipped only ``[Annex III]``, dropping Art. 6 /
+    Art. 6.3). Set ``REGENOLD_CURATED_REF_PROTECT=0`` to restore the prune.
+    """
+    return os.getenv("REGENOLD_CURATED_REF_PROTECT", "1").strip().lower() not in (
+        "0",
+        "false",
+        "no",
+        "off",
+    )
+
+
 def _scope_refusal_active(reason: ScopeReason) -> bool:
     """Whether an out-of-scope ``reason`` should still ship a branded reply.
 
@@ -5488,11 +5508,27 @@ def regenold_eu_ai_act_ask(
     # naturally safe because its trigger live question never carries an
     # explicit Article anchor; the protection is symmetric so it works
     # for both.
-    candidates = _prune_non_anchor_refs(
-        candidates,
-        live_user_message,
-        protected_seeds=tuple(_r88_protected_seeds),
-    )
+    #
+    # R274 — curated authoritative intercepts declare an authoritative ref
+    # set that the curated prose is written to describe (Art. 11 + Annex IV
+    # for the hardware-techdoc verdict, Art. 6(3)/Art. 6/Annex III for the
+    # deviation-detection verdict, etc.). The prune drops any ref not
+    # explicitly named in the live question, which for a curated verdict
+    # wrongly deletes the DESCRIBED core articles when the question happens
+    # to name a broad anchor — q032 "…in an Annex III area…" ships an answer
+    # entirely about Article 6(3)(c) but the wire dropped Art. 6 / Art. 6.3,
+    # keeping only Annex III; the "Does Annex IV require…" tech-doc variant
+    # dropped Article 11. Curated refs are precise + described by
+    # construction, so skip the prune for them. Fires on 0 davidath rows
+    # (curated intercepts are byte-identical-verified) → davidath-neutral.
+    if _curated_ref_protect_enabled() and _is_curated_intercept:
+        _trace_note("curated_ref_protect: prune skipped")
+    else:
+        candidates = _prune_non_anchor_refs(
+            candidates,
+            live_user_message,
+            protected_seeds=tuple(_r88_protected_seeds),
+        )
 
     # Round 31 (architecture-PDF re-audit) — TAI Scan Prohibited
     # Gatekeeper. Spec quote: "high-priority, strict sub-string and
