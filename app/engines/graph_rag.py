@@ -3766,6 +3766,86 @@ def _detect_deviation_detection_inquiry(question: str) -> bool:
     return bool(_DEVIATION_RE.search(raw_q) and _DEVIATION_CTX_RE.search(raw_q))
 
 
+# R275 (Antifragile Q10) — provider-vs-deployer role-DIFFERENCE intercept.
+# "What is the difference between the deployer and the provider?" carries BOTH
+# role nouns + a contrast marker but NO obligation noun, so the R137
+# ``_is_role_contrast_obligation`` gate (which REQUIRES an obligation noun)
+# does not fire and the question falls to generic retrieval -> a
+# provider-obligation dump that never contrasts the two roles and drops the
+# Article 25 deployer->provider transition the Antifragile expert flagged.
+# This intercept ships the curated role-definition contrast (Article 3(3)/(4)),
+# the operative obligation split (Articles 16/26), and the Article 25
+# transition. Distinct from R137 (obligation-CONTRAST, which keeps its
+# Art. 16/26 obligation handling). Scans the LIVE turn only. Fires on 0
+# davidath rows (none carry both role nouns + a contrast marker WITHOUT an
+# obligation noun) -> byte-identical.
+def _detect_role_difference_inquiry(question: str) -> bool:
+    """True when the question contrasts the provider and deployer ROLES at the
+    definition level, not their obligations."""
+    raw_q = question or ""
+    marker = "Latest question:\n"
+    idx = raw_q.rfind(marker)
+    if idx >= 0:
+        raw_q = raw_q[idx + len(marker):]
+    low = raw_q.lower()
+    if "provider" not in low or "deployer" not in low:
+        return False
+    if not _ROLE_CONTRAST_MARKER_RE.search(low):
+        return False
+    # Obligation-CONTRAST shapes stay on the R137 path (Art. 16/26 handling).
+    if _ROLE_CONTRAST_OBLIGATION_RE.search(low):
+        return False
+    return True
+
+
+# R275 (Antifragile Q8) — pure single-term Article 3 definitional question.
+# The deterministic definitional path already ships the FULL verbatim Article 3
+# definition (incl. the operative "infers, from the input it receives, how to
+# generate outputs" clause for an AI system); live Stage-2 (Opus) paraphrases
+# it and NON-DETERMINISTICALLY drops that operative clause (the expert failed
+# Q8 for exactly this variance). For a pure term definition the verbatim text
+# IS the answer, so Stage-2 can only degrade it AND adds an Opus round-trip.
+# Gated on the engine's OWN definitional machinery (``select_definition_sentence``
+# + a resolvable Article 3.N citation), so it fires only where the definition
+# is the whole answer (NOT "what are the risk categories" classification shapes,
+# which resolve no single Art. 3 term). Deliberately NOT wired into
+# ``_is_curated_authoritative_intercept`` (that gate is also read by the route's
+# extractive-override / anchor-prune / reconcile passes, and a definitional
+# detector firing on davidath definitional rows would perturb them); the skip
+# lives directly in ``_two_stage_generate``, inert on the cli bench ->
+# davidath byte-identical.
+def _detect_pure_definitional_inquiry(question: str) -> bool:
+    """True for a pure single-term Article 3 definitional question whose
+    verbatim definition is the complete answer."""
+    raw_q = question or ""
+    marker = "Latest question:\n"
+    idx = raw_q.rfind(marker)
+    if idx >= 0:
+        raw_q = raw_q[idx + len(marker):]
+    low = raw_q.lower()
+    # A two-role contrast is owned by ``_detect_role_difference_inquiry``.
+    if "provider" in low and "deployer" in low:
+        return False
+    try:
+        from app.data.definitions import definition_citation_for_question  # noqa: PLC0415
+        from app.engines.sentence_index import select_definition_sentence  # noqa: PLC0415
+        return (
+            select_definition_sentence(raw_q) is not None
+            and definition_citation_for_question(raw_q) is not None
+        )
+    except Exception:  # noqa: BLE001 — fail-soft
+        return False
+
+
+def _definitional_stage2_skip_enabled() -> bool:
+    """R275 — env gate (default ON) for the pure-definitional Stage-2 skip.
+    Set ``REGENOLD_DEFINITIONAL_STAGE2_SKIP=0`` to keep Stage-2 polishing pure
+    Article 3 definitional answers (the pre-R275 behaviour)."""
+    return os.getenv("REGENOLD_DEFINITIONAL_STAGE2_SKIP", "1").strip().lower() not in (
+        "0", "false", "no", "off",
+    )
+
+
 def _is_r265_reconcile_intercept(question: str) -> bool:
     """R265 — the four curated intercepts whose deterministic (Stage-2-skipped)
     answer should have its wire references reconciled against the curated prose.
@@ -3856,6 +3936,7 @@ def _is_curated_authoritative_intercept(question: str) -> bool:
         or _detect_tech_doc_certificate_inquiry(question)
         or _detect_hardware_techdoc_inquiry(question)
         or _detect_deviation_detection_inquiry(question)
+        or _detect_role_difference_inquiry(question)
     )
 
 
@@ -3967,6 +4048,33 @@ def _deterministic_answer(question: str, context: GraphContext) -> str:
                 "register it under Article 49(2)."
             ),
             "refs": ["Art. 6"],
+        }
+        _seed_classification_obligations(context, verdict, question)
+        return verdict["answer"]
+
+    # R275 (Antifragile Q10) — provider-vs-deployer role-difference verdict.
+    # The role-definition contrast + the Article 25 deployer->provider
+    # transition the expert flagged as missing. Every sentence carries an
+    # inline cite anchor so the soft-cap preserves it; verbatim-faithful to
+    # Article 3(3)/(4) + Article 25(1). Fires on 0 davidath rows.
+    if _detect_role_difference_inquiry(question):
+        verdict = {
+            "name": "role_difference",
+            "answer": (
+                "A provider (Article 3(3)) develops an AI system, or has one "
+                "developed, and places it on the market or puts it into service "
+                "under its own name or trademark. A deployer (Article 3(4)) uses "
+                "an AI system under its authority in the course of a professional "
+                "activity, so the provider bears the design and conformity duties "
+                "of Article 16 while the deployer bears the use-phase duties of "
+                "Article 26. Under Article 25 a deployer, distributor, importer, "
+                "or other third party becomes a provider, and assumes the "
+                "Article 16 provider obligations, where it puts its name or "
+                "trademark on a high-risk AI system already on the market, makes "
+                "a substantial modification to such a system, or modifies a "
+                "system's intended purpose so that it becomes high-risk."
+            ),
+            "refs": ["Art. 3", "Art. 25", "Art. 16", "Art. 26"],
         }
         _seed_classification_obligations(context, verdict, question)
         return verdict["answer"]
@@ -6354,6 +6462,25 @@ def _two_stage_generate(
                 record_note,
             )
             record_note("stage2_skipped_curated_authoritative")
+        except Exception:  # noqa: BLE001 — trace is best-effort
+            pass
+        return kg_answer, False
+
+    # R275 (Antifragile Q8) — pure single-term Article 3 definitional skip.
+    # The deterministic definitional path ships the FULL verbatim Article 3
+    # definition; live Stage-2 (Opus) paraphrases it and non-deterministically
+    # drops the operative clause (the expert failed Q8 for dropping the AI-system
+    # "infers ... how to generate outputs" clause). Ship the deterministic
+    # verbatim definition (complete, zero-variance, one fewer Opus round-trip).
+    # Env-reversible; deliberately NOT routed through
+    # ``_is_curated_authoritative_intercept`` (see the detector's docstring), so
+    # it is inert on the cli bench -> davidath byte-identical.
+    if _definitional_stage2_skip_enabled() and _detect_pure_definitional_inquiry(resolved_q):
+        try:
+            from app.integrations.regenold.reasoning_trace import (  # noqa: PLC0415
+                record_note,
+            )
+            record_note("stage2_skipped_pure_definitional")
         except Exception:  # noqa: BLE001 — trace is best-effort
             pass
         return kg_answer, False

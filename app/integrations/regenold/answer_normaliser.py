@@ -484,6 +484,13 @@ _META_COMMENTARY_MARKERS: tuple[str, ...] = (
     "flag a framing problem",
     "i note a framing problem",
     "based on the retrieval",
+    # R275 — internal reference-tag leaks observed live: Opus (Stage-2)
+    # occasionally echoes the engine's internal context format, e.g.
+    # "Wire references: [classification-annex_i_safety_component-Article 6]".
+    # These are internal-only and must never reach the wire. Deterministic
+    # answers never carry them, so this is davidath byte-identical.
+    "wire references:",
+    "[classification-",
 )
 
 _MIN_META_REMAINDER = 80

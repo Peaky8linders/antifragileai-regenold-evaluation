@@ -259,8 +259,17 @@ class TestClassificationTopicShape:
                 f"{MAX_ANSWER_SENTENCES}"
             )
 
+    # R274 (Q022) deliberately expanded the risk-categories OVERVIEW verdict to
+    # the full Art. 5 / 6 / 50 / 51-56 + Annex I/III statutory range so the
+    # 4-tier + GPAI taxonomy is complete; that closed-set overview legitimately
+    # exceeds the single-anchor QA ``MAX_REFERENCES`` budget (it is protected on
+    # the wire by the R274 curated-ref pass, not the generic 5-ref cap).
+    _OVERVIEW_REF_CAP_EXEMPT = frozenset({"risk_framework_overview"})
+
     def test_each_refs_within_max(self) -> None:
         for topic in _CLASSIFICATION_TOPICS:
+            if topic["name"] in self._OVERVIEW_REF_CAP_EXEMPT:
+                continue
             assert len(topic["refs"]) <= MAX_REFERENCES, (
                 f"Topic {topic['name']} has {len(topic['refs'])} refs, cap is "
                 f"{MAX_REFERENCES}"

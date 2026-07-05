@@ -9390,6 +9390,105 @@ and resolved:
 * **q009 retention**: Clara injection and scope-anchor floating are now skipped when a query matches a curated authoritative intercept (`and not _is_curated_intercept`), ensuring the clean curated references list `['Article 18', 'Article 11', 'Article 17', 'Article 47', 'Article 19']` is fully preserved.
 * **q022 risk-framework**: The references list for the risk categories overview topic (curated intercept, classification topic, and `_RISK_FRAMEWORK_CANON_REFS` tuple) has been expanded to include the complete `Art. 51` to `Art. 56` range + `Annex I`, so the final wire response accurately reflects the full described set.
 
+## Round 275 — Antifragile report fixes: definition Stage-2 skip + role-difference intercept + MDR class + Opus latency (2026-07-05)
+
+Driven by the Antifragile expert live review (`antifragile_test_report.md`,
+20 Q&A). A `systematic-debugging` deterministic-vs-live comparison isolated
+the root cause of each flagged defect (the deterministic path was already
+correct for all three; the failures were LIVE Stage-2 behaviours).
+
+### Q8 (FAIL) — definition truncation → pure-definitional Stage-2 skip
+"What is the definition of a 'system of artificial intelligence'?" — the
+DETERMINISTIC path already ships the FULL verbatim Article 3(1) definition
+INCLUDING the operative "infers, from the input it receives, how to generate
+outputs" clause; live Stage-2 (Opus) paraphrased it and **non-deterministically
+dropped the inference clause** (the expert failed the exact sample that
+dropped it). For a pure single-term Article 3 definition the verbatim text IS
+the answer, so [`graph_rag._detect_pure_definitional_inquiry`](app/engines/graph_rag.py)
++ a Stage-2 skip in `_two_stage_generate` (env `REGENOLD_DEFINITIONAL_STAGE2_SKIP`,
+default ON) ships the deterministic verbatim definition: robust, zero-variance,
+and **one fewer ~11.7k-token Opus round-trip** (a real Opus-latency win on this
+question class). Gated on the engine's OWN definitional machinery
+(`select_definition_sentence` + `definition_citation_for_question`), so it fires
+on pure Art-3 term definitions but NOT on "what are the risk categories"
+classification shapes. **Deliberately NOT wired into
+`_is_curated_authoritative_intercept`** — that gate is also read by the route's
+extractive-override / anchor-prune / reconcile passes (R111.1/R265/R274), and a
+definitional detector firing on davidath definitional rows would perturb them;
+the skip lives directly in `_two_stage_generate`, inert on the cli bench →
+davidath byte-identical. LIVE: Q8 now ships the complete def (`stage2=False`,
+"infers" present).
+
+### Q10 (FAIL) — missing Article 25 role transition → role-difference intercept
+"What is the difference between the deployer and the provider?" carries BOTH
+role nouns + a contrast marker but NO obligation noun, so the R137
+`_is_role_contrast_obligation` gate (which REQUIRES an obligation noun) did NOT
+fire → generic retrieval → a provider-obligation dump that never contrasts the
+roles and dropped the Article 25 transition. New
+[`_detect_role_difference_inquiry`](app/engines/graph_rag.py) + a curated verdict
+in `_deterministic_answer` (Article 3(3)/(4) role definitions + the Article
+16/26 obligation split + the Article 25 deployer→provider transition), refs
+`[Article 3, Article 25, Article 16, Article 26]`, every sentence cite-anchored,
+verbatim-faithful to Art 3(3)/(4)/25(1). Wired into
+`_is_curated_authoritative_intercept` (Stage-2 skip + R274 curated-ref-protect).
+Fires on **0/137 QA + 0/339 scenarios** (obligation-CONTRAST shapes stay on the
+R137 path) → byte-identical. LIVE: Q10 ships the complete role-difference verdict
+with the Art 25 transition (`stage2=False`).
+
+### Q14 (PARTIAL) — MDR risk-class nuance → Stage-2 FACTUAL GUARD
+The X-ray tumour-detection answer was correct on the operative routes (Art 6(1)
+/ Annex I / MDR / Art 43(3) / notified body / Annex VI exclusion / CE) but
+missed the MDR risk class. Extended the medical FACTUAL GUARD (1) + the
+conformity REFERENCE-SELECTION bullet in `ANSWER_GENERATE_SYSTEM` with the
+class dependency (Class I self-certifies; Class IIa/IIb/III require a notified
+body; diagnostic/decision software such as tumour detection is typically Class
+IIb or III under MDR Annex VIII). Prompt-only → davidath byte-identical.
+HONEST: like the R143 finding, a single prompt nudge for a specialist nuance
+surfaces on only a fraction of Opus samples (the operative answer is already
+complete); the class now sits in Opus's context whenever a regulated-device
+conformity question fires. Needs a live `ab_judge` pass to confirm the lift.
+
+### Meta-leak hardening (observed live)
+A Q14 Opus sample leaked the engine's internal reference-tag format onto the
+wire ("Wire references: [classification-annex_i_safety_component-Article 6]").
+Added `wire references:` + `[classification-` to the R264
+`answer_normaliser.strip_meta_commentary` markers (per-sentence drop,
+never-empty, fail-soft). Deterministic answers never carry these → davidath
+byte-identical.
+
+### Opus latency / token directive
+The genuine Opus-latency reduction is the **Stage-2 skips** (Q8 pure-definitional
++ Q10 role-difference now join the existing curated intercepts in skipping the
+entire ~11.7k-token Opus round-trip on their question classes). A speculative
+`ANSWER_GENERATE_SYSTEM` body trim was NOT shipped: latency is wrapper-floor
+bound (documented — a token trim doesn't cut wall-clock), each prompt line
+fixes a documented live failure, and a prompt/Stage-2 change is un-A/B-able
+under the current transient Anthropic rate-limiting (hard rule #6). The prompt
+also carries **17 pre-existing em-dashes** (R108's de-dash was incomplete); the
+wire is already protected by the `strip_dash_separators` output backstop, so
+they are left for a future ab_judge-gated pass rather than risk a blind
+17-substitution rewrite.
+
+### Gates (worktree off main b48afb6)
+* davidath QA bench — **byte-identical** to R263/R274 (Ans Strict 0.4037 / Ans
+  Loose 0.1404 / Ans Conc 0.196 / Ref Loose 0.8394 / Ref Strict 0.5543 / Ref
+  Conc 0.4395 / Tone 1.0). role_diff 0-trigger; pure_def + Q14 prompt inert on
+  cli.
+* `evals.regenold.runner` (276) — **255/255 (100%)**, RISK_F1 macro 1.00
+  (definitional 2/2, role_obligation 2/2 unaffected).
+* `evals.regenold.runner_v2 --local --probe-oos` — **21/21, 0 leaks**.
+* `tests/test_r275_antifragile.py` (+18) + 206 touched-surface deterministic
+  tests pass. Also fixed the **pre-existing** stale `test_classification_verdicts`
+  `test_each_refs_within_max` assertion (b48afb6/R274 deliberately expanded
+  `risk_framework_overview` to 11 refs; the ≤5 cap assertion was never updated
+  — confirmed failing on clean HEAD via git-stash A/B, now exempts the overview
+  topic). The 7 `test_two_stage_pipeline` `..._when_wrapper_enabled` failures are
+  the documented pre-existing `provider=cli` Stage-2 env artifact (identical set
+  on clean HEAD; none of their fixtures fire pure_def, so they pass under the
+  wrapper env unchanged).
+* LIVE (Claude Max Opus wrapper): Q8 complete def + Stage-2 skipped; Q10 role
+  verdict + Art 25 + Stage-2 skipped; Q14 correct operative routes.
+
 ## Non-goals / things to skip
 
 - ~~Vector embeddings / dense retrieval~~ → **Round 31 added a
