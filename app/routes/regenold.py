@@ -2617,7 +2617,8 @@ _CLOSED_SET_ENUMERATION_RE = re.compile(
     r"|what\s+is\s+banned"
     r"|what\s+is\s+(?:the\s+)?definition\s+of\s+high[-\s]risk"
     r"|\bor\s+high[-\s]risk\b"
-    r"|\bor\s+(?:is\s+it|are\s+they)\b",
+    r"|\bor\s+(?:is\s+it|are\s+they)\b"
+    r"|which\s+(?:sectors|applications)\s+are\s+(?:considered\s+|classified\s+as\s+)?high[- ]?risk",
     re.IGNORECASE,
 )
 

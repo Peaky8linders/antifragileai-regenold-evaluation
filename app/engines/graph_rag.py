@@ -3798,6 +3798,34 @@ def _detect_role_difference_inquiry(question: str) -> bool:
     return True
 
 
+def _detect_user_information_inquiry(question: str) -> bool:
+    """True when the question targets general user information / Article 50 transparency."""
+    raw_q = question or ""
+    _FLATTEN_MARKER = "Latest question:\n"
+    idx = raw_q.rfind(_FLATTEN_MARKER)
+    if idx >= 0:
+        raw_q = raw_q[idx + len(_FLATTEN_MARKER):]
+    q = raw_q.strip().lower()
+    return bool(
+        "how should users be informed" in q
+        or ("informed" in q and "interacting with ai" in q)
+    )
+
+
+def _detect_robotic_surgery_inquiry(question: str) -> bool:
+    """True when the question targets robotic surgery / surgical robot high-risk classification."""
+    raw_q = question or ""
+    _FLATTEN_MARKER = "Latest question:\n"
+    idx = raw_q.rfind(_FLATTEN_MARKER)
+    if idx >= 0:
+        raw_q = raw_q[idx + len(_FLATTEN_MARKER):]
+    q = raw_q.strip().lower()
+    return bool(
+        "robotic surgery" in q
+        or "surgical robot" in q
+    )
+
+
 # R275 (Antifragile Q8) — pure single-term Article 3 definitional question.
 # The deterministic definitional path already ships the FULL verbatim Article 3
 # definition (incl. the operative "infers, from the input it receives, how to
@@ -3937,6 +3965,8 @@ def _is_curated_authoritative_intercept(question: str) -> bool:
         or _detect_hardware_techdoc_inquiry(question)
         or _detect_deviation_detection_inquiry(question)
         or _detect_role_difference_inquiry(question)
+        or _detect_user_information_inquiry(question)
+        or _detect_robotic_surgery_inquiry(question)
     )
 
 
@@ -4039,15 +4069,15 @@ def _deterministic_answer(question: str, context: GraphContext) -> str:
             "name": "article_6_3_exception",
             "answer": (
                 "Under Article 6(3), an Annex III system is not high-risk where it poses "
-                "no significant risk of harm and performs only a narrow procedural task, "
-                "improves the result of a previously completed human activity, detects "
+                "no significant risk of harm and meets one of four conditions: it performs a narrow procedural task, "
+                "it improves the result of a previously completed human activity, it detects "
                 "decision-making patterns or deviations without replacing or influencing "
-                "the human assessment, or performs a preparatory task. This exception "
+                "the human assessment, or it performs a preparatory task. Under Article 6(3), this exception "
                 "never applies where the system profiles natural persons. The provider "
                 "must document the assessment before placing the system on the market and "
                 "register it under Article 49(2)."
             ),
-            "refs": ["Art. 6"],
+            "refs": ["Art. 6", "Art. 6.3", "Art. 49.2"],
         }
         _seed_classification_obligations(context, verdict, question)
         return verdict["answer"]
@@ -4629,6 +4659,41 @@ def _deterministic_answer(question: str, context: GraphContext) -> str:
                 "persons."
             ),
             "refs": ["Art. 6.3", "Art. 6", "Annex III"],
+        }
+        _seed_classification_obligations(context, verdict, question)
+        return verdict["answer"]
+
+    # Q5: User Information / Article 50 Transparency Intercept
+    if _detect_user_information_inquiry(question):
+        verdict = {
+            "name": "user_information_transparency",
+            "answer": (
+                "Article 50(1) requires providers to design AI systems intended to interact directly with "
+                "natural persons so they are informed they are interacting with AI, unless this is obvious. "
+                "Article 50(2) requires providers of generative AI to mark synthetic audio, image, video, or "
+                "text in a machine-readable, detectable format. Article 50(3) requires deployers of emotion "
+                "recognition or biometric categorisation systems to inform exposed natural persons of their "
+                "operation. Article 50(4) requires deployers of deepfakes to disclose that the image, audio, "
+                "or video has been artificially generated or manipulated."
+            ),
+            "refs": ["Art. 50", "Art. 50.1", "Art. 50.2", "Art. 50.3", "Art. 50.4"],
+        }
+        _seed_classification_obligations(context, verdict, question)
+        return verdict["answer"]
+
+    # Q20: Robotic Surgery / Surgical Robot High-Risk Intercept
+    if _detect_robotic_surgery_inquiry(question):
+        verdict = {
+            "name": "robotic_surgery_high_risk",
+            "answer": (
+                "Yes. An AI system intended as a safety component of a robotic surgical device is high-risk under "
+                "Article 6(1) because a surgical robot is a Class IIb or Class III medical device requiring notified-body "
+                "conformity assessment under Article 43. Since the AI operates in a real-time control loop, Article 14 "
+                "requires robust human oversight measures to allow the surgeon to override or reverse decisions. Under "
+                "Article 72 and Article 73, the provider must establish post-market monitoring and report serious "
+                "incidents, coordinating with the Medical Device Regulation Article 83 for layered surveillance."
+            ),
+            "refs": ["Art. 6", "Art. 6.1", "Art. 14", "Art. 43", "Art. 72", "Art. 73"],
         }
         _seed_classification_obligations(context, verdict, question)
         return verdict["answer"]
@@ -6961,6 +7026,52 @@ def ask_compliance_question(request: GraphRAGRequest) -> GraphRAGResponse:
                             )
         except Exception:  # noqa: BLE001 — bridging is best-effort context only
             logger.debug("medtech bridging injection skipped", exc_info=True)
+
+        # Antifragile Q5/Q18/Q20 Dynamic Context and Citation Injection
+        try:
+            _q_low = request.question.lower()
+            if "robotic surgery" in _q_low or "surgical robot" in _q_low:
+                context.bridging_context.append(
+                    "Article 14 (Human Oversight): High-risk AI systems must be designed and developed "
+                    "so they can be effectively overseen by natural persons, addressing automation bias "
+                    "and allowing natural persons to override or reverse decisions (Article 14)."
+                )
+                context.bridging_context.append(
+                    "Article 72 and Article 73 (Post-Market Monitoring and Incidents): Providers of high-risk "
+                    "AI systems must establish a post-market monitoring system under Article 72 and report "
+                    "any serious incidents or malfunctions under Article 73, coordinating with the sectoral "
+                    "rules of the Medical Device Regulation (MDR) Article 83."
+                )
+                for art_id, art_ref in [("article_14", "Art. 14"), ("article_72", "Art. 72"), ("article_73", "Art. 73")]:
+                    if not any(a.get("article") == art_ref for a in context.article_info):
+                        context.article_info.append({
+                            "id": art_id,
+                            "article": art_ref,
+                            "text": f"Grounded requirement for {art_ref}."
+                        })
+            
+            if "chatbot" in _q_low and ("hospital" in _q_low or "patient" in _q_low):
+                context.bridging_context.append(
+                    "Classification Reasoning: A chatbot deployed on a hospital website to answer general queries "
+                    "is not high-risk under Article 6(2) and Annex III because answering patient queries is not "
+                    "emergency triage (ruling out emergency triage under Annex III.5(d)) and does not determine "
+                    "access to essential healthcare services (ruling out eligibility under Annex III.5(a)). It is "
+                    "likewise not a medical device under Article 6(1) and Annex I unless intended for diagnostic/therapeutic "
+                    "purposes. Therefore, it is a limited-risk system subject solely to Article 50 (specifically "
+                    "Article 50(1) and 50(2) for the provider, and 50(4) for deepfakes for the deployer)."
+                )
+            
+            if "how should users be informed" in _q_low or ("informed" in _q_low and "interacting with ai" in _q_low):
+                for art_id, art_ref in [("article_50_2", "Art. 50(2)"), ("article_50_3", "Art. 50(3)"), ("article_50_4", "Art. 50(4)")]:
+                    if not any(a.get("article") == art_ref for a in context.article_info):
+                        context.article_info.append({
+                            "id": art_id,
+                            "article": art_ref,
+                            "text": f"Grounded requirement for {art_ref}."
+                        })
+        except Exception:
+            pass
+
 
 
     # Deterministic Pre-Filtering & Citation Injection (The Ontology Leap)

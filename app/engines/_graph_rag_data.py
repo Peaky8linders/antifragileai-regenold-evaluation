@@ -781,13 +781,10 @@ _CLASSIFICATION_TOPICS: list[dict] = [
             "Emotion recognition is not categorically prohibited under the AI Act; the "
             "prohibition in Article 5 only applies in workplaces and educational "
             "institutions, with a narrow medical/safety exception. Elsewhere the system "
-            "is high-risk under Annex III and triggers Article 50 transparency duties "
-            "toward exposed persons. Article 5(1)(h) separately prohibits a distinct "
-            "biometric practice, real-time remote biometric identification in publicly "
-            "accessible spaces for law enforcement, permitting it only under narrow, "
-            "exhaustively-listed exceptions subject to prior authorisation."
+            "is high-risk under Annex III.1(c) and triggers Article 50(3) transparency duties "
+            "toward exposed persons."
         ),
-        "refs": ["Art. 5", "Annex III", "Art. 50"],
+        "refs": ["Art. 5", "Annex III.1.c", "Art. 50.3"],
     },
     # ── Social scoring (Art. 5.1.c) ───────────────────────────────────
     {
