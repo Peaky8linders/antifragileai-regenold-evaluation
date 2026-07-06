@@ -1600,12 +1600,65 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         .mission-banner .mb-text { flex-grow: 1; min-width: 0; font-size: 12.5px; color: var(--text-secondary); }
         .mission-banner .mb-text b { color: var(--text-primary); font-weight: 600; }
 
+
+        /* Floating Lexy Widget */
+        #view-lexy {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            width: 400px;
+            height: 600px;
+            max-height: calc(100vh - 48px);
+            background: rgba(255, 255, 255, 0.95);
+            border: 1px solid var(--border-glass);
+            border-radius: 16px;
+            box-shadow: 0 12px 40px rgba(0,0,0,0.15);
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            transform: translateY(0);
+            transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s ease;
+            opacity: 1;
+        }
+
+        #view-lexy.hidden-popup {
+            transform: translateY(20px) scale(0.95);
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .lexy-fab {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            width: 60px;
+            height: 60px;
+            border-radius: 30px;
+            background: var(--bg-surface);
+            border: 2px solid var(--accent-cyan);
+            box-shadow: 0 4px 12px rgba(14, 165, 233, 0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            z-index: 999;
+            transition: transform 0.2s;
+        }
+        .lexy-fab:hover {
+            transform: scale(1.05);
+        }
+        .lexy-fab img {
+            width: 40px;
+            height: 40px;
+            border-radius: 20px;
+        }
+
         /* ── Responsive ─────────────────────────────────────────────── */
         @media (max-width: 1024px) {
-            :root { --drawer-width: 360px; }
-            .railnav { position: fixed; top: 0; bottom: 0; left: 0; }
-            .railnav:not(.collapsed):not(.hidden) { box-shadow: 24px 0 48px -24px rgba(15,23,42,0.2); }
-            .railnav.collapsed { width: 0; border-right: none; }
+            .rail { transform: translateX(-100%); }
+            .rail.pinned { transform: translateX(0); }
+            .detail-drawer { position: fixed; top: 0; right: 0; bottom: 0; }
+            #view-lexy { width: 100%; height: 100%; bottom: 0; right: 0; border-radius: 0; max-height: none; }
         }
         @media (max-width: 860px) {
             .detail-drawer { position: fixed; top: 0; right: 0; bottom: 0; }
@@ -1619,6 +1672,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     </div>
 
     <!-- Fixed side menu (nav rail) -->
+    <button class="lexy-fab" onclick="toggleLexy()"><img src="/lexy_avatar.png" alt="Chat"></button>
     <nav class="railnav" id="railnav">
         <div class="rail-head">
             <div class="rail-brand">
@@ -1636,11 +1690,11 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         <div class="rail-scroll">
             <div class="rail-group-label">Workspace</div>
             <div class="rail-nav">
-                <div class="nav-item active" data-view="lexy" data-tip="Lexy" onclick="switchView('lexy')">
+                <div class="nav-item" data-view="lexy" data-tip="Lexy" onclick="switchView('lexy')">
                     <span class="nav-ico"><i data-lucide="sparkles" style="width:19px;height:19px;"></i></span>
                     <span class="nav-label">Lexy</span>
                 </div>
-                <div class="nav-item" data-view="classify" data-tip="Classify &amp; Assess" onclick="switchView('classify')">
+                <div class="nav-item active" data-view="classify" data-tip="Classify &amp; Assess" onclick="switchView('classify')">
                     <span class="nav-ico"><i data-lucide="scan-search" style="width:19px;height:19px;"></i></span>
                     <span class="nav-label">Classify &amp; Assess</span>
                 </div>
@@ -1687,16 +1741,20 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     <div class="main-workspace">
 
         <!-- ═══════════════ Lexy view (chat) ═══════════════ -->
-        <div class="view active" id="view-lexy">
+        <div class="view hidden-popup" id="view-lexy">
         <div class="workspace-header">
             <div class="workspace-title-block">
                 <i data-lucide="sparkles" style="color: var(--accent-cyan); width: 20px; height: 20px;"></i>
                 <span class="workspace-title">Lexy</span>
-                <span style="font-size:12px;color:var(--text-muted);font-weight:500;">EU AI Act Compliance Assistant</span>
+                <span id="lexy-subtitle" style="font-size:12px;color:var(--text-muted);font-weight:500;">EU AI Act Compliance Assistant</span>
             </div>
             <div class="workspace-actions">
                 <button id="btn-clear" class="btn-action" title="New conversation">
                     <i data-lucide="plus" style="width: 18px; height: 18px;"></i>
+                </button>
+                
+                <button onclick="toggleLexy()" class="btn-action" title="Close Chat">
+                    <i data-lucide="x" style="width: 16px; height: 16px;"></i>
                 </button>
                 <button id="btn-toggle-drawer" class="btn-action active" title="Toggle Detail Panel">
                     <i data-lucide="panel-right-open" style="width: 16px; height: 16px;"></i>
@@ -1764,7 +1822,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         </div><!-- /view-lexy -->
 
         <!-- ═══════════════ Classify & Assess view ═══════════════ -->
-        <div class="view" id="view-classify">
+        <div class="view active" id="view-classify">
             <div class="view-head">
                 <div class="view-head-title">
                     <span class="view-head-ico"><i data-lucide="scan-search" style="width:20px;height:20px;"></i></span>
@@ -3013,7 +3071,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             if (!wf || !wf.steps[i]) { switchView('lexy'); return; }
             var s = wf.steps[i];
             if (s.action === 'classify') { switchView('classify'); return; }
-            switchView('lexy');
+            document.getElementById('view-lexy').classList.remove('hidden-popup');
             userInput.value = s.ask;
             btnSend.disabled = false;
             sendMessage();
@@ -3109,7 +3167,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         function clsAskLexy(tier) {
             var name = (document.getElementById('cls-name').value || '').trim();
             var subject = name ? ('"' + name + '"') : 'our AI system';
-            switchView('lexy');
+            document.getElementById('view-lexy').classList.remove('hidden-popup');
             userInput.value = 'What EU AI Act obligations apply to ' + subject + ' if it is classified as ' + tier + '?';
             btnSend.disabled = false;
             sendMessage();
@@ -3175,14 +3233,14 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         }
         function agentGraph(i) {
             var a = allAgents()[i]; if (!a) return;
-            switchView('lexy');
+            document.getElementById('view-lexy').classList.remove('hidden-popup');
             userInput.value = a.graphQuery;
             btnSend.disabled = false;
             sendMessage();
         }
         function agentAsk(i) {
             var a = allAgents()[i]; if (!a) return;
-            switchView('lexy');
+            document.getElementById('view-lexy').classList.remove('hidden-popup');
             userInput.value = 'What EU AI Act obligations apply to ' + a.name + ', a ' + a.riskTier + ' AI system?';
             btnSend.disabled = false;
             sendMessage();
@@ -3195,12 +3253,16 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             if (p) {
                 revealWorkflowNav();
                 showMissionBanner();
+
                 if (welcomeMessage) {
                     var d = welcomeMessage.querySelector('.welcome-desc');
                     if (d) d.innerHTML = 'Welcome back. Your workflow for a <b>' + escapeHtml(p.roleLabel) + '</b> is ready, or ask me anything about Regulation (EU) 2024/1689.';
                     var t = welcomeMessage.querySelector('.welcome-title');
                     if (t) t.textContent = 'Welcome back to your workspace';
                 }
+                var sub = document.getElementById('lexy-subtitle');
+                if (sub) sub.textContent = 'ASSISTING: ' + escapeHtml(p.roleLabel).toUpperCase();
+
             } else {
                 startOnboarding();
             }
