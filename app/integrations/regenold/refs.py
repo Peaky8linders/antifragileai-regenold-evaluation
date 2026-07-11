@@ -212,21 +212,7 @@ def _format_user_facing(spec: RefSpec) -> str:
         head = f"Annex {spec.annex_roman}"
     else:
         head = f"Article {spec.article_number}"
-    import os
-    max_depth = os.getenv("REGENOLD_MAX_CITATION_DEPTH")
-    strict = os.getenv("REGENOLD_STRICT_CONCISENESS", "0").strip().lower() in ("1", "true", "yes", "on")
-    
-    subpoints = spec.subpoints
-    if max_depth is not None:
-        try:
-            depth = int(max_depth.strip())
-            subpoints = spec.subpoints[:depth]
-        except ValueError:
-            pass
-    elif strict:
-        subpoints = spec.subpoints[:1]
-        
-    tail = "".join(f".{t}" for t in subpoints)
+    tail = "".join(f".{t}" for t in spec.subpoints)
     out = head + tail
     # Defence-in-depth: the strict wire regex MUST match. If it doesn't,
     # the spec carries a malformed token we can't safely ship.
