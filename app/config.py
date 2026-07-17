@@ -122,25 +122,37 @@ class GraphRAGSettings(BaseSettings):
     # operator directive, gated on a CLEAN live pairwise A/B
     # (ab-judge-r278-fable-complex-v2, n=32 complex/hard-mode rows,
     # position-swapped, Sonnet judge, healthy wrapper): conciseness
-    # fable WINS significantly 19-7 (p=0.029 — the axis where hard
-    # mode is weakest: official RefCon 72.1 / AnsCon 93.4);
-    # correctness leans fable 6-4 (ns); refs even 9-9; tone dead-even
-    # 8-9 (ns). External corroboration: Fable 5 tops LegalBench 88.6%
-    # (Vals.ai 2026-07-09). Same flat-rate Claude-Max cost; the model
-    # id ``claude-fable-5`` + extended-thinking header re-verified
-    # through the wrapper. (Fable 5 previously served this tier in
-    # R112-R115; the R116 removal was an operator directive, not a
-    # measured loss — now reversed by operator directive + this A/B.)
+    # fable WINS significantly 19-7 (p=0.029); correctness leans fable
+    # 6-4 (ns); refs even 9-9; tone dead-even 8-9 (ns).
+    #
+    # R280 (2026-07-17): **REVERTED to ``claude-opus-4-8``** per operator
+    # directive — "fable 5 is not worth the extra cost and latency".
+    # The R280 live measurement supports this:
+    #   * R279's ONLY significant win was CONCISENESS — and conciseness is
+    #     the one axis we already LEAD (official AnsCon 96.0 vs frontier
+    #     89.1). On a plain geometric mean an axis you lead has ZERO
+    #     headroom, so that win buys ~nothing.
+    #   * Correctness / refs / tone were all ns ⇒ nothing else was gained.
+    #   * Measured live: complex-tier rows (fable-5 + 4000 thinking) ran
+    #     18.7-51.1 s vs 12.8-17.7 s for the standard tier (opus-4-8, no
+    #     extended thinking). Speed IS a scored axis and is one of our
+    #     WEAKEST (official 75.1 easy / 61.7 hard) ⇒ R279 traded a weak
+    #     scored axis for a saturated one. Backwards on the GM.
+    #   * The full R280 easy/hard re-measure (132 live rows, 0 errors)
+    #     found Ref correctness UNCHANGED vs the official run (85.8/60.8
+    #     vs 85.2/58.8) ⇒ R279 did not move correctness at all.
+    # Evidence: `.planning/R280-CHECKPOINT.md`.
     #
     # Operator overrides (per-deploy): set
-    # ``P2P_GRAPH_RAG_COMPLEX_MODEL=claude-opus-4-8`` to restore the
-    # R103-R278 Opus tier, or ``=`` (empty) to disable the swap and
-    # keep every Stage-2 call on the standard tier.
-    complex_model: str = "claude-fable-5"
+    # ``P2P_GRAPH_RAG_COMPLEX_MODEL=claude-fable-5`` to restore the R279
+    # Fable tier, or ``=`` (empty) to disable the swap and keep every
+    # Stage-2 call on the standard tier.
+    complex_model: str = "claude-opus-4-8"
     """Model name for the complex-question path. Default:
-    ``claude-fable-5`` (R279). Set ``claude-opus-4-8`` to restore the
-    prior tier; set empty to disable the swap (every Stage-2 polish
-    call uses the base ``model``)."""
+    ``claude-opus-4-8`` (R280 revert of R279 — Fable 5's only win was on a
+    zero-headroom axis and it cost 20-30 s of latency on a scored weak
+    axis). Set ``claude-fable-5`` to restore R279; set empty to disable the
+    swap (every Stage-2 polish call uses the base ``model``)."""
 
     complex_thinking_tokens: int = 4000
     """``max_thinking_tokens`` — the **EXTENDED** thinking budget for the
