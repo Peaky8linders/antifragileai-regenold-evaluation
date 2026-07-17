@@ -1289,6 +1289,10 @@ def _engine_cache_key(
             # R30/R56/R79/R263.2 doctrine: must be in the cache key so the
             # in-process ab_judge two-arm A/B cannot cross-contaminate.
             "REGENOLD_MINIMAL_COMPOSER",
+            # R281 — the reference-minimality rule appends to the Stage-2
+            # system prompt ⇒ flips the polished answer AND its citations.
+            # Same doctrine as the line above.
+            "REGENOLD_REF_MINIMALITY",
             "REGENOLD_GRAPH_2HOP",
             "REGENOLD_GRAPH_AWARE",
             # R252 — KB-primary vs legacy Neo4j-primary retrieval flips the
@@ -3189,6 +3193,169 @@ def _add_prose_named_refs(
             return references
         return list(references) + additions
     except Exception:  # noqa: BLE001 — fail-soft; never break the route
+        return references
+
+
+# ── R281 — gold-protected adaptive reference clamp ───────────────────────
+#
+# THE DEFECT (measured on evals/bench/results/easyhard-r279-live.json, 132
+# live prod rows): we ship 2.24x (easy) / 2.67x (hard) more refs than gold at
+# 37.1% / 28.6% precision, and **97.2% of the excess is entirely NON-GOLD
+# DISTINCT ARTICLES** (only 2.8% is sub-point duplication, R276-D1's target).
+# The competition scores that twice, verbatim from the rules PDF:
+#     "references (list[str]): Should contain the minimal set of relevant
+#      references."
+#     "...the amount of proposed references is checked against ground-truth
+#      ones."
+# => Ref Correctness Strict (F1) + Ref Conciseness (count-ratio), a combined
+# +0.284pp of the geometric-mean Overall per pp — the largest lever on the board.
+#
+# THE MECHANISM (traced, deterministic vs live): the LAST budget cap is nested
+# inside the ``if _stage2_landed`` block. AFTER it, R138 ``_add_prose_named_refs``
+# (cap ``_CITE_CONSISTENCY_CAP`` = 8), R133 ``_surface_prose_subpoints`` (+3)
+# and R260 re-inflate the list UNCAPPED, and ``_final_ref_clamp`` — the only
+# pass that would re-cap — has been default OFF since R142.1. Smoking gun:
+# ``ma_07`` has budget 3, ships 3 refs deterministically, and 11 live = 3 + 8.
+# 26/95 easy rows ship MORE refs than their own budget.
+#
+# WHY NOT THE OBVIOUS ALTERNATIVES (all measured, all rejected):
+#   * Extending the R251 chain-collapse: F1 .512 -> .516 as-shipped / .536
+#     widened. Article identity does not discriminate — Article 5 is excess 9x
+#     but GOLD 28x; Article 6 excess 19 / gold 20. Near-worthless.
+#   * A hand-built question->article-family keyword map: F1 .584, BELOW naive
+#     k=3 (.640), and it dropped gold Art. 49/27/73/43 — the R125 "confidently
+#     wrong taxonomy" failure reproduced.
+#   * Re-enabling R142's ``_final_ref_clamp`` as-is: only .589 — its scenario
+#     exemption gates on ``_looks_like_scenario_shape`` (1 easy row) while the
+#     budget actually comes from ``classify_scenario_query`` (10 rows), so it
+#     misses 9 of the 10 rows it most needs to clamp.
+#
+# HOW THIS DIFFERS FROM R142.1 (which LOST a live pairwise 11-0, refs p=0.001,
+# by dropping GOLD) — three measured changes:
+#   * QUESTION-NAMED RESCUE: a head the LIVE question explicitly names
+#     ("...under Articles 9 and 10") is NEVER clamped away, even past budget.
+#     On the multi-article shape those heads ARE the gold.
+#   * SCENARIO BUDGET: R142 exempted scenario shapes outright; the 10-ref
+#     budget is calibrated for davidath's ~9.8-ref gold, not for a role
+#     question in scenario clothing (measured gold ~1.3 on these rows).
+#   * CURATED EXEMPTION: the R274 doctrine (hand-tuned ref sets, described by
+#     construction).
+# Net simulated on the live sidecar: easy F1 .512 -> .612 (+0.100) with recall
+# .827 -> .820 and ONE gold ref lost; hard .415 -> .434 with one lost. Naive
+# k=3 scores a higher F1 (.640) but costs 4 gold and -0.027 recall — rejected
+# because Ref Loose (recall) is a separately-scored axis we currently LEAD, and
+# no official formula is disclosed for any axis.
+_CLAMP_Q_ARTICLE_RE = re.compile(
+    r"\bArt(?:icles?|ikels?|ikeln|s)?\.?\s*"
+    r"(\d{1,3}(?:(?:\s*(?:,|&|/|\band\b|\bor\b)\s*)+\d{1,3}){0,8})",
+    re.IGNORECASE,
+)
+_CLAMP_Q_ANNEX_RE = re.compile(
+    r"\bAnnex(?:es)?\s+"
+    r"([IVXLC]+(?:(?:\s*(?:,|&|/|\band\b|\bor\b)\s*)+[IVXLC]+){0,8})",
+    re.IGNORECASE,
+)
+_CLAMP_FLOOR = 1
+_DEFAULT_SCENARIO_CLAMP = 5
+
+
+def _adaptive_clamp_enabled() -> bool:
+    """R281 — default OFF so prod + davidath stay byte-identical until the
+    gold-bearing A/B (``evals.harness.easyhard_ab``) decides it.
+
+    NOTE the instrument: ``ab_judge``'s refs axis grades faithfulness + gold
+    RECALL and has NO minimality term (the only "minimal" in
+    ``evals/harness/pairwise_prompts.py`` is about answer LENGTH), so it
+    prefers the superset by construction and cannot validate a precision fix.
+    Gate on Ref Strict (F1) + Ref Conciseness (count-ratio) with Ref Loose
+    (recall) as the R142.1 guard.
+    """
+    return os.getenv("REGENOLD_ADAPTIVE_REF_CLAMP", "0").strip().lower() in (
+        "1", "true", "yes", "on",
+    )
+
+
+def _scenario_clamp_budget() -> int:
+    try:
+        val = int(
+            os.getenv(
+                "REGENOLD_REF_CLAMP_SCENARIO_BUDGET", str(_DEFAULT_SCENARIO_CLAMP)
+            ).strip()
+        )
+    except ValueError:
+        return _DEFAULT_SCENARIO_CLAMP
+    return val if val >= 1 else _DEFAULT_SCENARIO_CLAMP
+
+
+def _clamp_ref_head(ref: str) -> str | None:
+    """``Article 50.1`` -> ``Article 50``; ``Annex IV.2.c`` -> ``Annex IV``."""
+    for prefix in ("Article ", "Annex "):
+        if ref.startswith(prefix):
+            return prefix + ref[len(prefix):].split(".")[0].strip()
+    return None
+
+
+def _question_named_heads(question: str) -> set[str]:
+    """Heads the LIVE question explicitly names (R268 multi-article-list aware).
+
+    Scans only the post-flatten live turn (the R60.1/R71 doctrine) so a PRIOR
+    turn's article cannot rescue a ref the current question never asked about.
+    """
+    out: set[str] = set()
+    if not question:
+        return out
+    live = question
+    marker = "Latest question:\n"
+    if marker in live:
+        live = live.split(marker, 1)[-1]
+    for m in _CLAMP_Q_ARTICLE_RE.finditer(live):
+        for num in re.findall(r"\d{1,3}", m.group(1)):
+            out.add(f"Article {int(num)}")
+    for m in _CLAMP_Q_ANNEX_RE.finditer(live):
+        for rn in re.findall(r"[IVXLC]+", m.group(1)):
+            out.add(f"Annex {rn.upper()}")
+    return out
+
+
+def adaptive_ref_clamp(
+    references: list[str],
+    *,
+    budget: int,
+    is_scenario_budget: bool,
+    live_question: str,
+    stage2_landed: bool,
+    curated_intercept: bool,
+    retrieval_path: str,
+) -> list[str]:
+    """R281 — re-apply the per-question ref budget as the LAST ref pass.
+
+    Pure / idempotent / fail-soft / never empties. Stage-2-gated, so davidath
+    (``provider=cli``, no wrapper) is byte-identical BY CONSTRUCTION. This is
+    route post-processing over the CACHED engine output and therefore is
+    deliberately NOT in ``_engine_cache_key`` (the R79 doctrine — the route
+    re-runs on every cache hit; cf. ``REGENOLD_QA_REF_BUDGET`` /
+    ``REGENOLD_REFS_RECONCILE``, which are also absent for the same reason).
+    """
+    try:
+        if not references or not _adaptive_clamp_enabled():
+            return references
+        if not stage2_landed or curated_intercept:
+            return references
+        if retrieval_path in ("no_match", "verbatim_exact_text"):
+            return references
+        effective = _scenario_clamp_budget() if is_scenario_budget else budget
+        if effective <= 0 or len(references) <= effective:
+            return references
+        named = _question_named_heads(live_question)
+        head = references[:effective]
+        rescued = [
+            r
+            for r in references[effective:]
+            if (_clamp_ref_head(r) or r) in named and r not in head
+        ]
+        out = head + rescued
+        return out if len(out) >= _CLAMP_FLOOR else references
+    except Exception:  # noqa: BLE001 — never break the route on a clamp
         return references
 
 
@@ -5865,6 +6032,12 @@ def regenold_eu_ai_act_ask(
     _has_compound_roles = False
     _compound_strength = ""
     _has_listing_intent = False
+    # R281 — True only when the 10/22-ref SCENARIO budget is the one in force
+    # (set at the `elif _is_scenario_question` branch below). See
+    # ``adaptive_ref_clamp``: R142's clamp keyed its scenario exemption off a
+    # DIFFERENT predicate than the one that sets the budget, and missed 9/10
+    # of the rows it targeted.
+    _scenario_budget_active = False
     _scenario_verdict_for_budget = None
     try:
         _scenario_verdict_for_budget = classify_scenario_query(resolved_question or question)
@@ -5938,6 +6111,14 @@ def regenold_eu_ai_act_ask(
         # 22 = the deduped HRAIS Section-2 + Section-3 chain length
         # (Arts. 9-22 + 26 + 43/47-49 + 71/72 + Annex III/IV typical
         # for provider-side HRAIS obligation lists).
+        #
+        # R281 — mark that the SCENARIO budget (not the QA/classification
+        # one) is in force. The R142 clamp gated its scenario exemption on
+        # ``_looks_like_scenario_shape`` (1 easy row) while the budget
+        # actually comes from ``classify_scenario_query`` (10 rows) — so it
+        # missed 9 of the 10 rows it most needed to clamp. This flag closes
+        # that gap for ``adaptive_ref_clamp``.
+        _scenario_budget_active = True
         _effective_max_refs = 10
         if (
             os.getenv("REGENOLD_HRAIS_LISTING_BUDGET", "1")
@@ -7437,6 +7618,35 @@ def regenold_eu_ai_act_ask(
                 record_note as _rn,
             )
             _rn(f"final_ref_clamp_to={_effective_max_refs}")
+        except Exception:  # noqa: BLE001 — fail-soft on trace
+            pass
+
+    # R281 — the gold-protected adaptive clamp. Runs AFTER the R142 clamp has
+    # fully applied (never between its computation and its apply-check, or the
+    # stale R142 result would silently overwrite this one). Supersedes R142 in
+    # practice — R142 stays default-OFF — by fixing its three measured defects:
+    # question-named heads are rescued past the budget, the SCENARIO budget is
+    # detected from the site that actually SETS it, and curated intercepts are
+    # exempt (R274). Default OFF (REGENOLD_ADAPTIVE_REF_CLAMP) so prod stays
+    # byte-identical until the gold-bearing A/B decides; stage2-gated so
+    # davidath is inert either way.
+    _adaptive_refs = adaptive_ref_clamp(
+        references,
+        budget=_effective_max_refs,
+        is_scenario_budget=_scenario_budget_active,
+        live_question=live_user_message or question,
+        stage2_landed=_stage2_landed,
+        curated_intercept=_is_curated_intercept,
+        retrieval_path=str(retrieval_path),
+    )
+    if len(_adaptive_refs) != len(references):
+        references = _adaptive_refs
+        try:
+            from app.integrations.regenold.reasoning_trace import (  # noqa: PLC0415
+                record_note as _rn,
+            )
+
+            _rn(f"adaptive_ref_clamp_to={len(references)}")
         except Exception:  # noqa: BLE001 — fail-soft on trace
             pass
 

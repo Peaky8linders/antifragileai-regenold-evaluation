@@ -341,13 +341,113 @@ high-risk.
 """
 
 
-def resolve_answer_system() -> str:
-    """R277 — return the Stage-2 answer-generation system prompt.
+# R281 — REFERENCE MINIMALITY. The converse of rule 10, and the fix for a
+# measured, load-bearing defect.
+#
+# THE MEASUREMENT (R281, recomputed from evals/bench/results/easyhard-r279-live
+# .json, 132 live prod rows). We ship 2.24x (easy) / 2.67x (hard) more refs
+# than gold, at 37.1% / 28.6% micro-precision. The apportionment is the
+# pivotal fact:
+#
+#     97.2% (easy) / 100% (hard) of our EXCESS refs are entirely NON-GOLD
+#     DISTINCT ARTICLES. Only 2.8% are extra sub-points of a gold head.
+#
+# So R276-D1 (REGENOLD_REF_GRANULARITY — sub-point dedup) addresses ~3% of the
+# defect; the real error is citing too many distinct provisions.
+#
+# WHY THE PROSE-DRIVEN PRUNERS CANNOT FIX IT. Measured on the same rows: the
+# answer prose DESCRIBES 95% of the non-gold refs, and on 91% of easy rows it
+# describes EVERY ref it cites. So R72's `_reconcile_references_to_prose`
+# (drop cited-but-undescribed refs) is a structural no-op — it fires on 5/95
+# easy rows. The refs are not the disease; they faithfully follow prose that is
+# SURVEYING the retrieved law instead of ANSWERING the question.
+#
+# THE CAUSE. Rule 10 ("Every Article or Annex you cite MUST be described ...
+# Unmentioned citations are severely penalized") was added in R69-D to win the
+# ab_judge refs-FAITHFULNESS axis — an internal LLM-judge axis, not a
+# competition axis. It constrains cite ⊆ described but never described ⊆
+# needed, so a ~10-article retrieval block becomes an agenda. We optimised an
+# internal judge axis into a competition regression.
+#
+# WHAT THE COMPETITION ACTUALLY ASKS (verbatim, docs/2026-eu-ai-act-competition
+# -rules_official.pdf):
+#     "references (list[str]): Should contain the minimal set of relevant
+#      references."
+#     "Is the answer sufficiently concise? ... Similarly, the amount of
+#      proposed references is checked against ground-truth ones."
+# Over-citation is therefore scored TWICE — Ref Correctness Strict (F1, so
+# precision counts) and Ref Conciseness (a count-ratio). Combined marginal
+# leverage on the geometric-mean Overall is +0.284pp per pp, the largest lever
+# on the board.
+#
+# WHY A PROMPT RULE AND NOT A REF-LIST PRUNER. R142.1: a positional
+# `_final_ref_clamp` LOST a live pairwise 11-0 (refs p=0.001) by dropping GOLD
+# refs — and R281's own truncate-to-k sweep reproduces that (k=2 drops 19 gold
+# refs on easy). Any pruner downstream of the prose is either a no-op (the refs
+# are described) or drops gold. The only place the ref count is decided is the
+# generator.
+_REF_MINIMALITY_RULE = """
 
-    Reads ``REGENOLD_MINIMAL_COMPOSER`` fresh on every call (default OFF →
-    the accreted :data:`ANSWER_GENERATE_SYSTEM`; ``=1`` → the minimal
-    composer arm). Fresh read keeps the in-process ab_judge two-arm A/B
-    valid; the flag is folded into the route's engine cache key.
+16. REFERENCE MINIMALITY (the converse of rule 10; read them together). The references array must contain the MINIMAL SET of provisions the question actually turns on: the provisions a lawyer would put in the citation line for THIS question, not a survey of the surrounding regime. The supplied EU AI ACT REFERENCES block is over-retrieved candidate context, NOT an agenda: it deliberately returns more than you need, and most of it is background you must NOT cite. Apply this test to every candidate: if removing that provision would not change the answer, do not cite it and do not describe it. In particular, do NOT cite the classification apparatus (Article 6, Annex I, Annex III) or the high-risk requirement chain (Articles 9 to 15) merely because the system in question happens to be high-risk; cite them only when the question is ABOUT classification, or about that specific requirement. Rule 10 says describe everything you cite; it is NOT a licence to cite or describe everything supplied. Where the question turns on one provision, cite that one provision.
+"""
+
+
+def ref_minimality_enabled() -> bool:
+    """R281 — is the reference-minimality rule active? (fresh env read).
+
+    ⚠ KNOWN INERT ON THE CLAUDE-MAX WRAPPER PATH — DO NOT SHIP ON THIS ALONE.
+    R281 measured that the wrapper NEVER DELIVERS the system message:
+    ``claude-code-openai-wrapper/src/claude_cli.py:152`` sets
+    ``options.system_prompt = {"type": "text", "text": ...}``, but the
+    installed ``claude_agent_sdk`` 0.2.82 accepts only
+    ``str | {"type":"preset",...} | {"type":"file",...}`` — there is no
+    ``"text"`` variant, and TypedDicts do not validate at runtime, so the
+    unrecognised dict is dropped SILENTLY. Controlled 3-trial test: the
+    instruction "answer every question with exactly one word: BANANA" is
+    obeyed 0/3 from the system channel and 3/3 from the user channel.
+
+    So ``ANSWER_GENERATE_SYSTEM`` (and therefore this appended rule) reaches
+    the model 0% of the time on the wrapper path, and the past live prompt
+    wins actually came from the engine's DUPLICATE copies of the load-bearing
+    rules in the USER message (``graph_rag.py`` ~6145-6190). It also explains
+    R277's "46/51 ties" minimal-composer wash: both arms sent a byte-identical
+    payload — that A/B tested nothing.
+
+    Consequences for this flag: it is a correct, tested no-op today. Before it
+    can earn a live win it needs EITHER the one-line wrapper fix at
+    claude_cli.py:152 (which would newly inject ~12.8K tokens of instruction
+    into every Stage-2 call ⇒ an answer-changing event needing its own
+    ab_judge gate, NOT a blind flip) OR the rule mirrored into the Stage-2
+    USER message. The R281 reference-precision win that DOES land today is
+    ``routes/regenold.py::adaptive_ref_clamp`` — a route-level pass, entirely
+    unaffected by this wrapper defect.
+
+    Default OFF so production + davidath stay byte-identical until the
+    gold-bearing A/B (``evals.harness.easyhard_ab``) decides it. NOTE the
+    instrument: ``ab_judge``'s refs axis asks for faithfulness + gold RECALL
+    with no minimality term (evals/harness/pairwise_prompts.py::render_refs),
+    so it CANNOT reward a precision fix — it is the wrong gate here. Use the
+    gold-bearing Ref Strict (F1) + Ref Conciseness (count-ratio) axes, with
+    Ref Loose (recall) as the R142.1 guard.
+    """
+    import os
+
+    return os.environ.get("REGENOLD_REF_MINIMALITY", "0").strip().lower() in {
+        "1", "true", "yes", "on",
+    }
+
+
+def resolve_answer_system() -> str:
+    """R277/R281 — return the Stage-2 answer-generation system prompt.
+
+    Reads ``REGENOLD_MINIMAL_COMPOSER`` + ``REGENOLD_REF_MINIMALITY`` fresh on
+    every call (both default OFF → the accreted :data:`ANSWER_GENERATE_SYSTEM`
+    verbatim). Fresh reads keep the in-process two-arm A/B valid; both flags
+    are folded into the route's engine cache key.
+
+    The R281 rule is APPENDED (not spliced) so it lands at the end of the
+    prompt, where recency attention is highest — the R277 research found the
+    cost of a long prompt is mid-prompt under-attention, not rule count.
     """
     import os
 
@@ -355,4 +455,6 @@ def resolve_answer_system() -> str:
         "1", "true", "yes", "on",
     }:
         return MINIMAL_COMPOSER_SYSTEM
+    if ref_minimality_enabled():
+        return ANSWER_GENERATE_SYSTEM + _REF_MINIMALITY_RULE
     return ANSWER_GENERATE_SYSTEM
