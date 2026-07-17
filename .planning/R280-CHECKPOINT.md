@@ -151,11 +151,43 @@ cuts, but the 90%-tie rate suggests the composer prompt is not the binding const
 "leans (ns)" verdict. Conciseness verdicts are especially high-variance (null arm: only 6/37 ties,
 wr 0.48) — a conciseness "win" near 0.56 is indistinguishable from chance.
 
+## 6b. SHIPPED — R280 revert: complex tier fable-5 → Opus 4.8 (`154f0be`, live)
+
+Operator directive: *"fable 5 is not worth the extra costs and latency"*. Verified live on the fresh
+deploy (`commit 154f0beaaa1d`): all 4 complex shapes → `stage2_model=claude-opus-4-8 complex=True`.
+Gates: davidath QA byte-identical; 276-runner 100%; OOS 21/21; 50 unit tests.
+Rollback: `P2P_GRAPH_RAG_COMPLEX_MODEL=claude-fable-5`.
+
+### ⚠ HONEST CORRECTION — the latency half of the rationale is FALSIFIED
+Post-revert probe, SAME 4 questions, SAME wrapper: **Opus 4.8 is 36% SLOWER than fable-5.**
+
+| probe | fable-5 | opus-4.8 | delta |
+|---|---|---|---|
+| conflict | 18.7s | 28.6s | +9.9 |
+| gpai | 28.9s | 43.3s | +14.4 |
+| role_ambiguity | 51.1s | 53.6s | +2.5 |
+| multi_turn | 33.8s | 54.4s | +20.6 |
+| **mean** | **33.1s** | **45.0s** | **+11.9 (+36%)** |
+
+4/4 consistent (n=1 each ⇒ noisy, but the direction is unambiguous). **My earlier "18.7-51.1s vs
+12.8-17.7s" figure compared the COMPLEX TIER (fable + 4000 extended thinking) against the STANDARD
+TIER (opus, NO thinking) — a TIER comparison misread as a model indictment.** The complex tier's
+latency is the **`complex_thinking_tokens=4000` budget**, which Opus pays too. Cost is also not a
+differentiator: both bill flat-rate through the Claude Max wrapper.
+
+⇒ **The revert stands on the HEADROOM argument + the operator directive, NOT on latency or cost.**
+⇒ **The real latency levers are `complex_thinking_tokens` and the complex gate itself** (which routes
+on SENTENCE COUNT, not difficulty). A stored memory claims thinking budget is a latency wash
+("~99% wrapper floor") — the measured floor is ~9s vs 38-45s rows (~24%), so **that memory is suspect
+at the current config and must be re-measured.** Script ready: `scratchpad/thinking_latency.py`.
+**Methodology lesson: hold everything else fixed — a config difference smuggled into a "model" A/B
+fabricates a conclusion.**
+
 ## 7. NEXT (ranked, evidence-backed)
 
-0. **Nothing ships from this round.** Arm C is noise (§6); R279 is already live; no other change
-   cleared a gate. Shipping anything else would violate CLAUDE.md hard rule #6. This is a
-   MEASUREMENT round, and the measurement says the two cheap levers are exhausted.
+0. **Only the operator-directed revert shipped.** Arm C is noise (§6); no other change cleared a
+   gate. Shipping anything else would violate CLAUDE.md hard rule #6. This is a MEASUREMENT round,
+   and the measurement says the two cheap levers are exhausted.
 1. **Ref precision is now the best-evidenced target** (2.23x/2.66x over-citation, precision 37%/29%,
    RefS has the highest GM leverage +0.163pp/pp). NOT a positional clamp (R142.1 lost 11-0,
    p=0.001). Must be prose-driven/structural and never drop a gold ref; gate on ab_judge **against

@@ -133,14 +133,27 @@ class GraphRAGSettings(BaseSettings):
     #     89.1). On a plain geometric mean an axis you lead has ZERO
     #     headroom, so that win buys ~nothing.
     #   * Correctness / refs / tone were all ns ⇒ nothing else was gained.
-    #   * Measured live: complex-tier rows (fable-5 + 4000 thinking) ran
-    #     18.7-51.1 s vs 12.8-17.7 s for the standard tier (opus-4-8, no
-    #     extended thinking). Speed IS a scored axis and is one of our
-    #     WEAKEST (official 75.1 easy / 61.7 hard) ⇒ R279 traded a weak
-    #     scored axis for a saturated one. Backwards on the GM.
     #   * The full R280 easy/hard re-measure (132 live rows, 0 errors)
     #     found Ref correctness UNCHANGED vs the official run (85.8/60.8
     #     vs 85.2/58.8) ⇒ R279 did not move correctness at all.
+    #
+    # ⚠ HONEST CORRECTION — the LATENCY half of the revert rationale is
+    # FALSIFIED; do not repeat it. Post-revert live probe, same 4 complex
+    # questions, same wrapper: Opus 4.8 is **36% SLOWER** than fable-5
+    # (mean 45.0 s vs 33.1 s; conflict 28.6 vs 18.7, gpai 43.3 vs 28.9,
+    # role_ambiguity 53.6 vs 51.1, multi_turn 54.4 vs 33.8 — 4/4 consistent,
+    # n=1 each so noisy but directionally clear). The earlier "18.7-51.1 s
+    # vs 12.8-17.7 s" figure compared the COMPLEX TIER (fable + 4000
+    # extended thinking) against the STANDARD TIER (opus, NO thinking) —
+    # a TIER comparison misread as a model indictment. **The complex tier's
+    # latency is the `complex_thinking_tokens=4000` budget, which Opus pays
+    # too.** Cost is also NOT a differentiator: both bill flat-rate through
+    # the Claude Max wrapper.
+    #
+    # So this revert stands on the HEADROOM argument + the operator
+    # directive, NOT on latency or cost. **The real latency lever is
+    # `complex_thinking_tokens` (or the complex gate itself, which routes on
+    # SENTENCE COUNT rather than difficulty) — measure that, not the model.**
     # Evidence: `.planning/R280-CHECKPOINT.md`.
     #
     # Operator overrides (per-deploy): set
