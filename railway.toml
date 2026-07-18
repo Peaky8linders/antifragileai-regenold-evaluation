@@ -371,6 +371,23 @@ REGENOLD_CHAIN_COLLAPSE = "1"
 # bench has no Neo4j → the gate branch is never reached locally); the win lands LIVE.
 REGENOLD_KB_PRIMARY_RETRIEVAL = "1"
 
+# R281: gold-protected adaptive reference clamp. Over-citation is the round's
+# biggest scored lever (live pred:gold 2.24x hard / 2.23x easy; precision ~29%/37%;
+# Ref Conciseness a weak axis at 28-44 vs official 79). Re-applies the per-question
+# ref budget as the LAST ref pass, but RESCUES question-named heads past the budget
+# and exempts curated intercepts / scenarios — the three fixes R142.1's positional
+# clamp lacked (it lost a pairwise 11-0 by dropping gold). Gate = the gold-bearing
+# evals.harness.easyhard_ab (ab_judge's refs axis has no minimality term, so it
+# CANNOT reward a precision fix). Live hard-split A/B (n=37, clamp OFF vs ON, shared
+# engine cache so the SAME Stage-2 answer feeds both arms): Ref Strict (F1) +0.032,
+# Ref Conciseness +0.067, Ref Loose (recall) -0.0135 (1/37 rows), est. Overall
+# +1.17pp; easy offline shipped-fn sim +1.9pp. Stage-2-gated -> davidath / 276 / OOS
+# byte-identical (provider=cli has no wrapper => stage2_landed False => inert).
+# Baked as a CODE default (app/config-adjacent gate _adaptive_clamp_enabled) per the
+# R80.2 lesson (dashboard vars override this block); pinned here for visibility.
+# Instant rollback: railway variables --set REGENOLD_ADAPTIVE_REF_CLAMP=0
+REGENOLD_ADAPTIVE_REF_CLAMP = "1"
+
 # 2026-07-04 operator directive — Opus 4.8 "fast mode" answers BOTH Stage-2
 # tiers, thinking-free on simple / with extended reasoning on complex.
 #

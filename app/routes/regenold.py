@@ -3260,17 +3260,38 @@ _DEFAULT_SCENARIO_CLAMP = 5
 
 
 def _adaptive_clamp_enabled() -> bool:
-    """R281 — default OFF so prod + davidath stay byte-identical until the
-    gold-bearing A/B (``evals.harness.easyhard_ab``) decides it.
+    """R281 — **default ON** (flipped from OFF once the gold-bearing A/B decided).
 
-    NOTE the instrument: ``ab_judge``'s refs axis grades faithfulness + gold
-    RECALL and has NO minimality term (the only "minimal" in
-    ``evals/harness/pairwise_prompts.py`` is about answer LENGTH), so it
-    prefers the superset by construction and cannot validate a precision fix.
-    Gate on Ref Strict (F1) + Ref Conciseness (count-ratio) with Ref Loose
+    The gate was the gold-bearing ``evals.harness.easyhard_ab`` (NOT ``ab_judge``,
+    whose refs axis grades faithfulness + gold RECALL with no minimality term — it
+    prefers the superset by construction and cannot validate a precision fix).
+    Gate axes: Ref Strict (F1) + Ref Conciseness (count-ratio), with Ref Loose
     (recall) as the R142.1 guard.
+
+    RESULT — live hard-split A/B (n=37, in-process ``--local`` + live Claude Max
+    wrapper, clamp OFF vs ON, shared engine cache so the SAME Stage-2 answer feeds
+    both arms → the clamp is the only variable; 0 contamination, answers
+    byte-identical across arms):
+        Ref Strict (F1)  0.5286 -> 0.5602  (+0.032)
+        Ref Conciseness  0.3914 -> 0.4583  (+0.067)
+        Ref Loose (rcl)  0.8063 -> 0.7928  (-0.0135)   <- 1/37 rows (mt_v4_005
+                                                           dropped gold Annex III
+                                                           while keeping gold Art 6;
+                                                           F1 rises even there)
+        est. Overall (leverage-weighted, recall loss priced in): **+1.17pp**
+    Easy split: R281 shipped-function offline sim = +1.9pp. This is the OPPOSITE of
+    R142.1's positional ``_final_ref_clamp`` (net-negative, F1 DOWN, lost a pairwise
+    11-0) — here F1 is UP and the recall trade is modest + F1-positive even on the
+    single gold-drop row.
+
+    Code default is the load-bearing switch (R80.2 — Railway dashboard vars override
+    ``railway.toml [deploy.envs]``, so bake the best config as a CODE default). Env
+    off-switch ``REGENOLD_ADAPTIVE_REF_CLAMP=0`` for instant rollback. davidath /
+    276 / OOS stay byte-identical BY CONSTRUCTION: the clamp is stage2-gated
+    (``if not stage2_landed: return references``) and the deterministic bench runs
+    ``provider=cli`` with no wrapper, so the clamp is inert there whatever the default.
     """
-    return os.getenv("REGENOLD_ADAPTIVE_REF_CLAMP", "0").strip().lower() in (
+    return os.getenv("REGENOLD_ADAPTIVE_REF_CLAMP", "1").strip().lower() in (
         "1", "true", "yes", "on",
     )
 
