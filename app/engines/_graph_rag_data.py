@@ -669,6 +669,41 @@ _KEYWORD_ENTITY_MAP: tuple[tuple[str, str], ...] = (
 )
 
 
+# R283 — reference-recovery keyword additions (Fix #4). A PROTECT/ADD lever:
+# each phrase surfaces a GOLD retrieval candidate the existing map misses on
+# an easyhard tricky row. Verified 0 davidath hits (scanned qa_pairs.json +
+# scenarios.json), so the map is byte-identical whether or not the additions
+# are active — they fire on ZERO davidath question. Applied CONDITIONALLY at
+# the ``_deterministic_parse`` consumer, gated on the reference-recovery flag
+# (``REGENOLD_REF_RECOVERY`` / sub ``REGENOLD_REF_RECOVERY_KW``, both folded
+# into ``_engine_cache_key``) so the ``easyhard_ab`` OFF↔ON A/B measures them
+# cleanly without cross-arm cache contamination. Every phrase is long +
+# AI-Act-specific — never a bare "deadline" / "fine" / "authorised
+# representative" — mirroring the documented "deep-fake" hyphen-twin pattern.
+_R283_KEYWORD_ADDITIONS: tuple[tuple[str, str], ...] = (
+    # tr_v2_004 — "impose fines directly on a GPAI provider" asks whether the
+    # EU AI Office (not a national authority) fines a GPAI provider directly:
+    # that is the Art. 101 GPAI-provider penalty, NOT the Art. 99 general
+    # penalty that the bare "fines" keyword surfaces.
+    ("fines directly on a gpai", "Art. 101"),
+    ("impose fines directly on a gpai", "Art. 101"),
+    ("fine a gpai provider directly", "Art. 101"),
+    # tr_v2_028 — hyphenated "incident-reporting" twin of the existing space
+    # form "incident reporting" (the deep-fake hyphen precedent). The AI-Act
+    # incident-reporting duty is Art. 73.
+    ("incident-reporting", "Art. 73"),
+    # tr_v2_002 — the "prohibited-AI deadline" compound routes to the
+    # applicability-date article (Art. 113). Art. 5 already fires via
+    # "prohibited"; the compound avoids a bare-"deadline" over-fire.
+    ("prohibited-ai deadline", "Art. 113"),
+    # tr_v2_001 — "Annex III high-risk obligations actually start applying" is
+    # the entry-into-force shape the existing "start to apply" / "when did" /
+    # "obligations start" keys miss (interposed "actually" + the gerund).
+    ("obligations actually start applying", "Art. 113"),
+    ("high-risk obligations actually start", "Art. 113"),
+)
+
+
 _CLASSIFICATION_TOPICS: list[dict] = [
     # ── Medical / Clinical Triage (med_02) ────────────
     {

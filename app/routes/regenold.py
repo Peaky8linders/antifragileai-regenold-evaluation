@@ -1306,6 +1306,17 @@ def _engine_cache_key(
             # engine's parsed entities → surfaced obligations → refs, so it
             # must be in the cache key (R30/R56/R79/R263.2 doctrine).
             "REGENOLD_MULTI_ARTICLE_ENTITIES",
+            # R283 — the reference-recovery keyword additions (Fix #4) extend
+            # the engine's ``_KEYWORD_ENTITY_MAP`` → parsed entities → surfaced
+            # obligations → refs, so the master + KW sub-flag must be in the
+            # cache key or an in-process easyhard_ab OFF↔ON A/B would serve the
+            # OFF arm's cached engine output to the ON arm (R263.2 doctrine).
+            # The route-level Fixes #1/#2/#3 re-run on every cache hit and so
+            # (like REGENOLD_REFS_RECONCILE / the R281 clamp) are NOT needed
+            # here; the master is included only because Fix #4's KW helper
+            # reads it as the sub-flag fallback.
+            "REGENOLD_REF_RECOVERY",
+            "REGENOLD_REF_RECOVERY_KW",
             "REGENOLD_SCORE_FUSION",
             "REGENOLD_SCORE_FUSION_ALPHA",
             "REGENOLD_TURBOQUANT_OUTLIER_CHANNELS",
@@ -2925,6 +2936,203 @@ def _enforce_risk_framework_refs(references: list[str], rag_res) -> list[str]:
                 out.append(wire)
         return out
     except Exception:  # noqa: BLE001 — fail-soft; never 500 the route
+        return references
+
+
+# ── R283 — reference-recovery bundle (PROTECT / ADD, never DROP) ──────────
+#
+# The R280/R282 loss analysis: over-citation is the biggest scored gap, but
+# the obvious fix (drop refs) is the R142.1 trap — a positional clamp lost a
+# live pairwise 11-0 (p=0.001) by dropping GOLD. On multi-turn / nuanced
+# answers the thorough prose DESCRIBES every over-cited article, so neither a
+# positional clamp nor the R72 "drop-undescribed" pass can separate gold from
+# non-gold without dropping gold. The safe, high-leverage direction is the
+# INVERSE: stop LOSING gold. Every lever here only PROTECTS a ref from a drop
+# or REORDERS toward the clamp head → recall can only rise (the R142.1 guard
+# is satisfied BY CONSTRUCTION), and F1 rises with it. All are gated on
+# ``stage2_landed`` so davidath (provider=cli, no wrapper) is byte-identical —
+# exactly the R281 clamp discipline. Master switch ``REGENOLD_REF_RECOVERY``
+# (default ON); per-fix sub-flags inherit it for follow-up isolation.
+def _ref_recovery_enabled() -> bool:
+    return os.getenv("REGENOLD_REF_RECOVERY", "1").strip().lower() in (
+        "1", "true", "yes", "on",
+    )
+
+
+def _ref_recovery_sub_enabled(var: str) -> bool:
+    """A per-fix sub-flag that INHERITS the master when unset/blank."""
+    raw = os.getenv(var)
+    if raw is None or raw.strip() == "":
+        return _ref_recovery_enabled()
+    return raw.strip().lower() in ("1", "true", "yes", "on")
+
+
+def _ref_recovery_named_enabled() -> bool:   # Fix #1
+    return _ref_recovery_sub_enabled("REGENOLD_REF_RECOVERY_NAMED")
+
+
+def _ref_recovery_tier_enabled() -> bool:    # Fix #2 — OPT-IN (default OFF)
+    # The r283-smoke found Fix #2 protects a NON-gold gateway on a
+    # prohibited-practice question (gold Art. 5): the answer's contrastive
+    # "…would otherwise be high-risk" positively asserts the high-risk tier,
+    # so the tier-gateway guard keeps Art. 6 though it is not gold → precision
+    # down, recall flat. Unlike the question-named (#1) / lead-named (#3) /
+    # keyword (#4) signals — which recover gold the answer / question /
+    # keyword EXPLICITLY identifies — the tier-language signal is
+    # low-precision. So Fix #2 ships OPT-IN (does NOT inherit the master),
+    # pending its own gold-bearing A/B and a "protect only the LEAD verdict's
+    # gateway" refinement. Enable with ``REGENOLD_REF_RECOVERY_TIER=1``.
+    raw = os.getenv("REGENOLD_REF_RECOVERY_TIER")
+    if raw is None or raw.strip() == "":
+        return False
+    return raw.strip().lower() in ("1", "true", "yes", "on")
+
+
+def _ref_recovery_lead_enabled() -> bool:    # Fix #3
+    return _ref_recovery_sub_enabled("REGENOLD_REF_RECOVERY_LEAD")
+
+
+def _question_named_head_refs(question: str, references: list[str]) -> set[str]:
+    """Fix #1 — refs whose HEAD the LIVE question explicitly names.
+
+    On a multi-article question ("What do Articles 16, 17 and 18 require…")
+    every named article IS gold; a truncated Stage-2 answer that describes
+    only the first would otherwise let the R72 reconcile drop the rest. Reuses
+    the R281 ``_question_named_heads`` (which already scans only the post-
+    flatten live turn), so a prior multi-turn turn's article can't rescue a
+    ref the current question never asked about.
+    """
+    try:
+        named = _question_named_heads(question)
+        if not named:
+            return set()
+        return {
+            r for r in references if (_clamp_ref_head(r) or r.strip()) in named
+        }
+    except Exception:  # noqa: BLE001 — fail-soft; never break the reconcile
+        return set()
+
+
+# Fix #2 — risk-tier gateway articles the classification VERDICT asserts by
+# TIER LANGUAGE ("is high-risk") rather than by article number, so the R72
+# reconcile drops them although they are the gold classification anchor. Only
+# a VERDICT-shaped assertion counts (``is/constitutes/classified as
+# high-risk``), never an incidental "high-risk AI systems must…" mention, and
+# a preceding negation ("not", "unlike", "rather than") vetoes it.
+_TIER_GATEWAY_SPECS: tuple[tuple[str, "re.Pattern[str]"], ...] = (
+    (
+        "Article 5",
+        re.compile(
+            r"\b(?:is|are|be|remains?|stays?|constitut\w+|deemed|considered|"
+            r"qualif\w+\s+as|amounts?\s+to)\s+(?:an?\s+)?prohibited"
+            r"|\bprohibited\s+under\s+(?:article|art\.?)\s*5\b"
+            r"|\bunacceptable[-\s]risk\b",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "Article 6",
+        re.compile(
+            r"\b(?:is|are|be|remains?|stays?|constitut\w+|deemed|considered|"
+            r"qualif\w+\s+as|classified\s+as|treated\s+as|amounts?\s+to)\s+"
+            r"(?:an?\s+)?high[-\s]risk",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "Article 50",
+        re.compile(
+            r"\b(?:is|are|be|remains?|stays?|constitut\w+|classified\s+as)\s+"
+            r"(?:an?\s+)?limited[-\s]risk"
+            r"|\blimited[-\s]risk\s+(?:system|ai|categor|tier)",
+            re.IGNORECASE,
+        ),
+    ),
+)
+_TIER_NEGATION_RE = re.compile(
+    r"(?:\bnot\b|n['’]t\b|\bneither\b|\bnor\b|\brather\s+than\b|"
+    r"\binstead\s+of\b|\bunlike\b|\bother\s+than\b|\bas\s+opposed\s+to\b|"
+    r"\bwould\s+not\b)\s*$",
+    re.IGNORECASE,
+)
+
+
+def _tier_asserted_gateway_refs(answer: str, references: list[str]) -> set[str]:
+    """Fix #2 — gateway refs whose risk tier the answer POSITIVELY asserts."""
+    if not answer:
+        return set()
+    try:
+        heads: dict[str, str] = {}
+        for r in references:
+            heads.setdefault(_clamp_ref_head(r) or r.strip(), r)
+        out: set[str] = set()
+        for gateway, pat in _TIER_GATEWAY_SPECS:
+            wire = heads.get(gateway)
+            if wire is None:
+                continue
+            for m in pat.finditer(answer):
+                before = answer[max(0, m.start() - 24): m.start()]
+                if _TIER_NEGATION_RE.search(before):
+                    continue  # negated verdict ("is NOT high-risk")
+                out.add(wire)
+                break
+        return out
+    except Exception:  # noqa: BLE001 — fail-soft; never break the reconcile
+        return set()
+
+
+def _reconcile_protected_set(
+    question: str,
+    answer: str,
+    references: list[str],
+    *,
+    stage2_landed: bool,
+) -> frozenset[str]:
+    """The R72 reconcile ``protected`` set: the R137 definitional Art. 3 base
+    plus the R283 reference-recovery additions (Fix #1 question-named heads +
+    Fix #2 tier-asserted gateways), gated on ``stage2_landed`` so the
+    deterministic davidath bench (no Stage-2) is byte-identical.
+    """
+    protected = _definitional_art3_protected(question, references)
+    if not stage2_landed:
+        return protected
+    extra: set[str] = set()
+    if _ref_recovery_named_enabled():
+        extra |= _question_named_head_refs(question, references)
+    if _ref_recovery_tier_enabled():
+        extra |= _tier_asserted_gateway_refs(answer, references)
+    return protected | frozenset(extra) if extra else protected
+
+
+def _promote_lead_ref(references: list[str], answer: str) -> list[str]:
+    """Fix #3 — float the ref the answer's LEAD sentence names to the head.
+
+    The operative gold a verdict leads with ("Article 73 requires you to
+    report the serious incident…") can be tail-clamped off by the R281
+    adaptive clamp's ``references[:budget]`` prefix when retrieval ranked a
+    prior-turn article (e.g. Art. 72) ahead of it. A pure, stable REORDER —
+    the ref SET is unchanged (recall/precision untouched until the clamp) but
+    the lead-gold now sits in the clamp's kept prefix. Never drops.
+    """
+    if not references or not answer:
+        return references
+    try:
+        lead = re.split(r"(?<=[.!?])\s", answer.strip(), maxsplit=1)[0]
+        named: set[str] = set()
+        for m in _LIVE_ARTICLE_RE.finditer(lead):
+            named.add(f"Article {int(m.group(1))}")
+        for m in _LIVE_ANNEX_RE.finditer(lead):
+            named.add(f"Annex {m.group(1).upper()}")
+        if not named:
+            return references
+        front = [
+            r for r in references if (_clamp_ref_head(r) or r.strip()) in named
+        ]
+        if not front:
+            return references
+        back = [r for r in references if r not in front]
+        return front + back
+    except Exception:  # noqa: BLE001 — fail-soft; never break the route
         return references
 
 
@@ -7304,8 +7512,11 @@ def regenold_eu_ai_act_ask(
             references,
             answer_text,
             floor=reconcile_floor,
-            protected=_definitional_art3_protected(
-                live_user_message or question, references
+            protected=_reconcile_protected_set(
+                live_user_message or question,
+                answer_text,
+                references,
+                stage2_landed=bool(graph_stats.get("stage2_landed")),
             ),
         )
 
@@ -7551,8 +7762,11 @@ def regenold_eu_ai_act_ask(
             references,
             answer_text,
             floor=reconcile_floor,
-            protected=_definitional_art3_protected(
-                live_user_message or question, references
+            protected=_reconcile_protected_set(
+                live_user_message or question,
+                answer_text,
+                references,
+                stage2_landed=_stage2_landed,
             ),
         )
 
@@ -7711,6 +7925,15 @@ def regenold_eu_ai_act_ask(
     # exempt (R274). Default OFF (REGENOLD_ADAPTIVE_REF_CLAMP) so prod stays
     # byte-identical until the gold-bearing A/B decides; stage2-gated so
     # davidath is inert either way.
+    #
+    # R283 (Fix #3) — float the answer's lead-named ref to the HEAD first, so
+    # the clamp's ``references[:budget]`` prefix keeps the operative gold the
+    # verdict leads with (mt_v4_009 leads "Article 73…" but retrieval ranked
+    # the prior-turn Art. 72 ahead of it, tail-clamping 73 off). Pure stable
+    # reorder — the ref SET is unchanged — and stage2-gated → davidath
+    # byte-identical.
+    if _ref_recovery_lead_enabled() and _stage2_landed and references:
+        references = _promote_lead_ref(references, answer_text or "")
     _adaptive_refs = adaptive_ref_clamp(
         references,
         budget=_effective_max_refs,

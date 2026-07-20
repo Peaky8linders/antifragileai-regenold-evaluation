@@ -1545,6 +1545,7 @@ _CROSS_TURN_RULES: tuple[tuple[str, str, str], ...] = (
 from app.engines._graph_rag_data import (  # R117 GR-01 — extracted pure data
     _CLASSIFICATION_TOPICS,
     _KEYWORD_ENTITY_MAP,
+    _R283_KEYWORD_ADDITIONS,
 )
 
 # R112 — word-boundary guard for the collision-prone keyword-map entries.
@@ -1879,7 +1880,20 @@ def _deterministic_parse(question: str) -> GraphQuery:
     # R112 — collision-prone entries (the "fines" → "defines" family) are
     # matched with word boundaries via _KEYWORD_ENTITY_BOUNDARY_RES; every
     # other entry keeps the substring test (plural/inflected recall).
-    for kw, art_ref in _KEYWORD_ENTITY_MAP:
+    #
+    # R283 (Fix #4) — conditionally extend the map with the reference-recovery
+    # keyword additions (verified 0 davidath hits → byte-identical either way).
+    # Fresh per-call env read so an in-process easyhard_ab OFF↔ON A/B toggles
+    # it at runtime; the flag is folded into ``_engine_cache_key`` (R263.2) so
+    # the two arms never share a cached engine response. Sub ``_KW`` inherits
+    # the master ``REGENOLD_REF_RECOVERY`` (default ON) when unset/blank.
+    _kw_map = _KEYWORD_ENTITY_MAP
+    if (
+        os.getenv("REGENOLD_REF_RECOVERY_KW")
+        or os.getenv("REGENOLD_REF_RECOVERY", "1")
+    ).strip().lower() in ("1", "true", "yes", "on"):
+        _kw_map = _KEYWORD_ENTITY_MAP + _R283_KEYWORD_ADDITIONS
+    for kw, art_ref in _kw_map:
         boundary_pat = _KEYWORD_ENTITY_BOUNDARY_RES.get(kw)
         if boundary_pat is not None:
             if not boundary_pat.search(q_lower):
