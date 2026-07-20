@@ -2288,6 +2288,62 @@ def _is_classification_question(question: str) -> bool:
 # ``emotion_recognition_general`` entry.
 
 
+def _answer_v2_enabled() -> bool:
+    """R284 — gate for the CLEAN answer-correctness fixes (H3 + H2).
+
+    OFF (the default) reproduces pre-R284 behaviour = the ab_judge / easyhard_ab
+    baseline arm. When ON it activates two REFERENCE-PRECISION-ALIGNED fixes:
+      * H3 — description-level classification patterns (``patterns_v2`` in
+        ``_CLASSIFICATION_TOPICS``) that rescue prohibited / high-risk verdicts
+        the literal patterns miss (predictive-policing-by-profiling ->
+        Art 5(1)(d); sensitive-attribute biometric inference -> Art 5(1)(g);
+        critical-infrastructure supply-sector safety components -> Annex III(2)).
+        H3 REDUCES refs on the wrong-verdict rows (tp_v4_003 5->2), so it aligns
+        with the R281 precision discipline.
+      * H2 — Stage-2 user-message TERMINOLOGY instruction (verbatim statutory
+        terms). Wording-only, so it never adds citations.
+    The H1 COMPLETENESS instruction is SEPARATE (``_answer_complete_enabled``,
+    default OFF): the full-bundle easyhard_ab A/B measured it DRIVING
+    over-citation (pred:gold 1.71->1.75, ref_conc -0.042), which re-inflates
+    references against R281. Under ``provider=cli`` (the davidath bench) only H3
+    fires — Stage-2 is skipped — so davidath measures it as the regression guard.
+
+    SHIPPED default ON (R284, R80.2 dashboard-override-proof doctrine): H3 is
+    davidath byte-identical (0/476) + live-verified wrong->right (tp_v4_003) and
+    the grounded Sonnet-5 judge validated the approach (+6.1pp answer / +5.3pp
+    citation vs the verbatim Act). Set ``REGENOLD_ANSWER_V2=0`` for instant rollback.
+    """
+    return _env_enabled("REGENOLD_ANSWER_V2", default="1")
+
+
+def _answer_complete_enabled() -> bool:
+    """R284 H1 — multi-part COMPLETENESS Stage-2 instruction, DEFAULT OFF.
+
+    Split out of ``REGENOLD_ANSWER_V2`` after the full-bundle A/B showed it
+    re-inflates references (over-citation) against the R281 precision discipline.
+    Kept env-gated for a future rework that adds completeness WITHOUT extra cites.
+    """
+    return _env_enabled("REGENOLD_ANSWER_COMPLETE", default="0")
+
+
+def _verify_verdict_enabled() -> bool:
+    """R284 — the 'verify-the-verdict' Stage-2 lever, DEFAULT OFF.
+
+    The st_v4_006 A/B finding: Opus Stage-2 self-corrects a wrong ROUTE in the
+    deterministic draft (Annex I -> Annex III) but FAITHFULLY POLISHES a
+    confident-wrong VERDICT ('not among the practices prohibited under Article 5'
+    -> a wrong 'not prohibited' answer). Where H3 fixes that draft deterministically
+    for three named patterns, this lever is the GENERAL safety net: it instructs
+    Opus to independently re-derive the verdict against the exhaustive Article 5
+    list and OVERRIDE a misclassifying draft — catching every described-not-named
+    prohibited practice, not only the patterned three. Balanced so it cannot
+    reclassify a legitimate high-risk (Annex III / Article 6) system as prohibited.
+    Stage-2-only -> davidath byte-identical. UNTESTED — needs a live ab_judge A/B
+    (it can also over-correct); ship default-ON only if the A/B holds.
+    """
+    return _env_enabled("REGENOLD_VERIFY_VERDICT", default="0")
+
+
 def _detect_classification_topic(question: str) -> dict | None:
     """Find the best-matching classification topic for ``question``.
 
@@ -2302,10 +2358,19 @@ def _detect_classification_topic(question: str) -> dict | None:
     live = question
     if "Latest question:" in live:
         live = live.split("Latest question:", 1)[-1]
+    v2 = _answer_v2_enabled()
     for topic in _CLASSIFICATION_TOPICS:
         for pat in topic["patterns"]:
             if pat.search(live):
                 return topic
+        # R284 — description-level patterns that rescue the wrong-verdict rows
+        # (env-gated so the ab_judge baseline arm reproduces main). Checked
+        # INSIDE the same topic, so the narrow->broad first-match order is
+        # preserved (e.g. predictive_policing still beats law_enforcement_use).
+        if v2:
+            for pat in topic.get("patterns_v2", ()):
+                if pat.search(live):
+                    return topic
     return None
 
 
@@ -6219,6 +6284,62 @@ def _claude_max_enhance_answer(
                 "tier, a carve-out, or a cross-reference) directly responsive to "
                 "the latest question, or when rule 12b closed-set completeness "
                 "requires naming every member of a set."
+            )
+        if _answer_v2_enabled():
+            # R284 H2 — canonical statutory TERMINOLOGY, in the LIVE Stage-2 USER
+            # message (the system prompt is inert on the wrapper path — R282).
+            # Wording-only: it never adds a citation, so it is clean on the
+            # reference axes and ships WITH the H3 classifier fix.
+            user_message += (
+                " TERMINOLOGY: use the EU AI Act's exact statutory terms verbatim "
+                "- 'emotion recognition', 'facial recognition', 'biometric "
+                "categorisation', 'social scoring', 'predictive policing', "
+                "'critical infrastructure', 'safety component', 'prohibited "
+                "practice' - never nominalise or hyphenate them into variants "
+                "such as 'emotion-inference' or 'facial-recognition'.\n"
+            )
+        if _answer_complete_enabled():
+            # R284 H1 — multi-part COMPLETENESS. DEFAULT OFF: the full-bundle A/B
+            # measured it driving over-citation (pred:gold 1.71->1.75, ref_conc
+            # -0.042) against R281. The "cite only the provisions each part turns
+            # on" clause is a first rework attempt; do NOT ship ON without an A/B
+            # showing the completeness win WITHOUT the ref re-inflation.
+            user_message += (
+                " COMPLETENESS: answer every distinct part the question actually "
+                "asks. When the question contrasts or asks about more than one "
+                "thing (for example the difference between two risk tiers, "
+                "'prohibited or high-risk?', or a practice's prohibited context "
+                "AND its treatment elsewhere), address EACH part explicitly "
+                "rather than only the first. Do this by packing the parts tightly "
+                "into the existing sentence budget, never by adding padding or "
+                "dropping a required part, and cite only the provisions each part "
+                "actually turns on.\n"
+            )
+        if is_general_classification and _verify_verdict_enabled():
+            # R284 verify-the-verdict lever (default OFF). Opus faithfully polishes
+            # a confident-wrong 'not prohibited' draft; this makes it independently
+            # re-derive the verdict against the exhaustive Article 5 list and
+            # override a misclassifying draft. Balanced against over-correction.
+            user_message += (
+                " VERDICT CHECK: the BACKGROUND RISK FRAMEWORK draft is a retrieved "
+                "heuristic that can MISCLASSIFY a practice that is DESCRIBED rather "
+                "than named. Before accepting its verdict, independently test the "
+                "described system against the exhaustive Article 5 prohibited "
+                "practices: predicting a person's risk of committing a crime based "
+                "solely on profiling or personality traits; inferring sensitive "
+                "attributes (race, political opinion, religion, trade-union "
+                "membership, sex life, sexual orientation) from biometric data; "
+                "untargeted scraping of facial images to build recognition "
+                "databases; social scoring across unrelated contexts; subliminal or "
+                "manipulative techniques causing significant harm; exploiting age or "
+                "disability vulnerabilities; real-time remote biometric "
+                "identification in publicly accessible spaces for law enforcement; "
+                "emotion recognition in workplaces or educational institutions. If "
+                "the described system CLEARLY matches one of these, state "
+                "'Prohibited' under Article 5 EVEN IF the draft says it is not "
+                "prohibited - do not defer to a draft that misclassifies. But do NOT "
+                "reclassify a legitimate high-risk (Annex III / Article 6) system as "
+                "prohibited; the Article 5 list is exhaustive.\n"
             )
         try:
             max_tokens = settings.graph_rag.max_tokens

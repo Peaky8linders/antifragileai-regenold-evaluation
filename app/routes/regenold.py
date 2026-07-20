@@ -1540,6 +1540,21 @@ def _engine_cache_key(
             # The deterministic davidath bench never fires Stage-2, so it is
             # byte-identical either way.
             "REGENOLD_OBLIGATION_ENUM_OPUS",
+            # R284 — the answer-correctness bundle. ON (1) activates the
+            # description-level classification patterns (patterns_v2) that flip
+            # the deterministic verdict + references AND (2) appends the H1/H2
+            # completeness + terminology instructions to the Stage-2 user message
+            # -> flips GraphRAGResponse.answer. Per the R149/R263 cross-arm
+            # cache-contamination lesson it MUST be in the cache identity so a
+            # same-process ab_judge / easyhard_ab A/B (env 0 vs 1) does not serve
+            # the baseline arm's cached response to the branch arm.
+            "REGENOLD_ANSWER_V2",
+            # R284 H1 — the (default-OFF) multi-part completeness Stage-2 clause;
+            # flips the polished answer, so same cache-identity doctrine.
+            "REGENOLD_ANSWER_COMPLETE",
+            # R284 — the (default-OFF) verify-the-verdict Stage-2 lever; flips the
+            # polished answer on classification questions, same cache doctrine.
+            "REGENOLD_VERIFY_VERDICT",
         )
     )
     import json
