@@ -62,6 +62,7 @@ def _reset_graph_aware_env(monkeypatch):
     happened to export.
     """
     monkeypatch.delenv("REGENOLD_GRAPH_AWARE", raising=False)
+    monkeypatch.setenv("REGENOLD_FALLBACK_WARNING", "0")
 
 
 def _post(question: str, c: TestClient) -> dict:

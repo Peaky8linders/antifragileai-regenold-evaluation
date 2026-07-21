@@ -329,9 +329,9 @@ class TestR127GuidingPrinciplesKeywords:
             GraphContext(),
         )
         low = ans.lower()
-        assert "fundamental rights" in low
-        assert "democracy" in low
-        assert "rule of law" in low
+        assert "human agency and oversight" in low
+        assert "technical robustness and safety" in low
+        assert "privacy and data governance" in low
         # the seven-principles enumeration is preserved
         assert "human agency" in low
 

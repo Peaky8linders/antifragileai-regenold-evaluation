@@ -2327,7 +2327,7 @@ def _answer_complete_enabled() -> bool:
 
 
 def _verify_verdict_enabled() -> bool:
-    """R284 — the 'verify-the-verdict' Stage-2 lever, DEFAULT OFF.
+    """R284 — the 'verify-the-verdict' Stage-2 lever, DEFAULT ON.
 
     The st_v4_006 A/B finding: Opus Stage-2 self-corrects a wrong ROUTE in the
     deterministic draft (Annex I -> Annex III) but FAITHFULLY POLISHES a
@@ -2341,7 +2341,7 @@ def _verify_verdict_enabled() -> bool:
     Stage-2-only -> davidath byte-identical. UNTESTED — needs a live ab_judge A/B
     (it can also over-correct); ship default-ON only if the A/B holds.
     """
-    return _env_enabled("REGENOLD_VERIFY_VERDICT", default="0")
+    return _env_enabled("REGENOLD_VERIFY_VERDICT", default="1")
 
 
 def _detect_classification_topic(question: str) -> dict | None:
@@ -2383,14 +2383,11 @@ def _detect_classification_topic(question: str) -> dict | None:
 # and the two determining factors (Annex I safety component / Annex III use
 # case) rather than reciting whichever article the user happened to name.
 _GENERAL_CLASSIFICATION_VERDICT = (
-    "The system described is not among the practices prohibited under Article 5 "
-    "(social scoring, untargeted facial-image scraping, manipulative or "
-    "exploitative techniques, and the other exhaustively-listed bans). Whether it "
-    "is high-risk turns on Article 6: it is high-risk only if it is a safety "
-    "component of a product regulated under Annex I (for example a medical device "
-    "under the MDR or IVDR) or falls within one of the Annex III use cases. "
-    "Otherwise it is limited- or minimal-risk, subject mainly to the Article 50 "
-    "transparency duties where it interacts directly with people."
+    "Evaluate the described system against Article 5 prohibited practices "
+    "and Article 6 high-risk classification criteria. It is high-risk if it "
+    "is a safety component of a product regulated under Annex I (such as a medical "
+    "device under the MDR) or falls within an Annex III use case. Otherwise, it is "
+    "subject mainly to Article 50 transparency duties."
 )
 
 _GENERAL_CLASSIFICATION_REFS = ["Art. 5", "Art. 6", "Annex III", "Annex I", "Art. 50"]

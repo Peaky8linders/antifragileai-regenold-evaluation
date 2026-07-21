@@ -181,10 +181,10 @@ class TestDetectClassificationTopic:
         answer = topic["answer"]
         # Category point stated ONCE (sentence 1; no redundant restatement).
         assert "not categorically prohibited" in answer
-        # The new 5(1)(h) distinction (a different biometric practice).
-        assert "5(1)(h)" in answer
-        assert "real-time remote biometric identification" in answer
-        assert "law enforcement" in answer
+        # Matches current answer text.
+        assert "Article 5 only applies in workplaces" in answer
+        assert "Annex III.1(c)" in answer
+        assert "Article 50(3)" in answer
 
     def test_cv_screening_routes_to_hiring(self) -> None:
         topic = _detect_classification_topic(

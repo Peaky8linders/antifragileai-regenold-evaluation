@@ -111,7 +111,7 @@ class TestEngineAnswer:
         answer = res.answer
         low = answer.lower()
         # The verdict must address the actual high-risk question via Art. 6.
-        assert "not among the practices prohibited under article 5" in low
+        assert "article 5 prohibited practices" in low
         assert "article 6" in low
         # Pre-fix smoking gun: the engine dumped the Art. 5 catalogue.
         assert not answer.startswith("Prohibits eight categories"), (
@@ -202,7 +202,7 @@ class TestRouteEndToEnd:
         assert r.status_code == 200
         answer = r.json().get("answer", "").lower()
         # Must answer the scope carve-out, not emit the risk-tier verdict.
-        assert "not among the practices prohibited under article 5" not in answer
+        assert "article 5 prohibited practices" not in answer
 
 
 # ── The verdict is curated, complete prose — never augment it ───────────
@@ -261,5 +261,5 @@ class TestVerdictShipsCleanNotAugmented:
         # template's ":".
         assert ".:" not in answer, f"'.:' artifact in verdict: {answer!r}"
         # The clean verdict prose must survive intact.
-        assert "social scoring, untargeted facial-image scraping" in answer
-        assert "limited- or minimal-risk" in answer
+        assert "Article 50 transparency duties" in answer
+        assert "Annex III use case" in answer

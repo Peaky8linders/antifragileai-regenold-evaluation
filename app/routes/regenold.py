@@ -3574,9 +3574,13 @@ def _scenario_clamp_budget() -> int:
 
 def _clamp_ref_head(ref: str) -> str | None:
     """``Article 50.1`` -> ``Article 50``; ``Annex IV.2.c`` -> ``Annex IV``."""
-    for prefix in ("Article ", "Annex "):
-        if ref.startswith(prefix):
-            return prefix + ref[len(prefix):].split(".")[0].strip()
+    # Robust anti-bias support for multiple reference types and prefixes (Article/Art/Annex/Ann/Recital/Rec)
+    ref_lower = ref.lower().strip()
+    for prefix in ("article ", "annex ", "recital ", "art. ", "art ", "ann. ", "ann ", "rec. ", "rec "):
+        if ref_lower.startswith(prefix):
+            val_part = ref[len(prefix):].split(".")[0].strip()
+            orig_prefix = ref[:len(prefix)]
+            return orig_prefix + val_part
     return None
 
 
@@ -3628,6 +3632,15 @@ def adaptive_ref_clamp(
             return references
         if retrieval_path in ("no_match", "verbatim_exact_text"):
             return references
+        if os.getenv("REGENOLD_ONE_PER_HEAD_CAP", "0").strip() == "1":
+            seen_heads = set()
+            capped = []
+            for r in references:
+                h = _clamp_ref_head(r) or r
+                if h not in seen_heads:
+                    seen_heads.add(h)
+                    capped.append(r)
+            references = capped
         effective = _scenario_clamp_budget() if is_scenario_budget else budget
         if effective <= 0 or len(references) <= effective:
             return references
