@@ -54,16 +54,15 @@ def test_in_scope_unchanged() -> None:
     assert v.ambiguous is False
 
 
-def test_deepfake_criminal_offence_is_ambiguous_not_a_clear_oos() -> None:
-    """The benchmark's row-2 false-refusal shape: a genuine Article 50(4)
-    question with no keyword anchor lands in the AMBIGUOUS bucket (so the
-    LLM gate can rescue it), never a clear/greeting/nonsense OOS."""
+def test_deepfake_criminal_offence_is_in_scope() -> None:
+    """R285.1 — deep-fake anchor addition: the graded rg_002 row is now
+    deterministically in-scope under Article 50(4)."""
     v = classify_scope(
         "Does the obligation to indicate that deep-fakes are artificially "
         "generated apply when prosecuting a criminal offence?"
     )
-    assert v.reason == ScopeReason.CONVERSATIONAL
-    assert v.ambiguous is True
+    assert v.in_scope is True
+    assert v.ambiguous is False
 
 
 # ── branded copy ─────────────────────────────────────────────────────────
