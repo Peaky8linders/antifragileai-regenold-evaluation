@@ -7992,6 +7992,30 @@ def regenold_eu_ai_act_ask(
 
     # R142 — final reference-budget clamp. The R138 cite-consistency + R133
     # prose-sub-point passes above re-add prose-named refs UNCAPPED, defeating
+    # R276-D1 — reference-granularity selection. Runs BEFORE the clamping
+    # passes (R142 / adaptive_ref_clamp) so parent+leaf duplicates are
+    # deduplicated prior to budgeting/clamping — preventing slot waste on refs
+    # that would otherwise be deleted moments later. Mode ``both`` is a
+    # byte-identical no-op; ``auto`` (default) / ``leaf`` / ``parent`` are the
+    # D1 ref-precision arms. CURATED authoritative intercepts are EXEMPT (the
+    # R274 doctrine).
+    if _ref_granularity_mode() != "both" and not _is_curated_intercept:
+        _gran_refs = _apply_ref_granularity(
+            references,
+            live_question=live_user_message or question,
+            answer_text=answer_text or "",
+        )
+        if _gran_refs != references:
+            references = _gran_refs
+            try:
+                from app.integrations.regenold.reasoning_trace import (  # noqa: PLC0415
+                    record_note as _rn,
+                )
+
+                _rn(f"ref_granularity_{_ref_granularity_mode()}")
+            except Exception:  # noqa: BLE001 — fail-soft on trace
+                pass
+
     # the per-question budget the Component-D block last enforced. Re-clamp to
     # ``_effective_max_refs`` so pure QA ships its tight 3-ref set (q10 was
     # shipping 10 vs gold ~2) while scenarios keep their 10/22-ref budget.
@@ -8079,35 +8103,6 @@ def regenold_eu_ai_act_ask(
                         pass
         except Exception:  # noqa: BLE001 — fail-soft; never 500 the route
             pass
-
-    # R276-D1 — reference-granularity selection. Runs LAST among the ref
-    # passes (after the R142 clamp + R260 canon enforcement, before the
-    # trace finalisation) so it sees the final parent+leaf clusters that
-    # ``_reemit_parents_for_subpoints`` (default ON) re-created. Mode
-    # ``both`` is a byte-identical no-op; ``auto`` (default) / ``leaf`` /
-    # ``parent`` are the D1 ref-precision arms (official-scorecard
-    # precision ~45%, pred/gold 1.90x). Never drops a distinct head →
-    # recall preserved. CURATED authoritative intercepts are EXEMPT (the
-    # R274 doctrine: their ref sets are hand-tuned per question and
-    # described by construction — e.g. the tech-doc hardware intercept's
-    # ``Annex IV.1.e`` matches the regenold rules' own sub-point-form
-    # example gold; a blanket collapse would second-guess them).
-    if _ref_granularity_mode() != "both" and not _is_curated_intercept:
-        _gran_refs = _apply_ref_granularity(
-            references,
-            live_question=live_user_message or question,
-            answer_text=answer_text or "",
-        )
-        if _gran_refs != references:
-            references = _gran_refs
-            try:
-                from app.integrations.regenold.reasoning_trace import (  # noqa: PLC0415
-                    record_note as _rn,
-                )
-
-                _rn(f"ref_granularity_{_ref_granularity_mode()}")
-            except Exception:  # noqa: BLE001 — fail-soft on trace
-                pass
 
     # R50 / R131 — finalise the reasoning trace AFTER every reference pass
     # so ``?include_reasoning=true`` surfaces the exact wire ``references``

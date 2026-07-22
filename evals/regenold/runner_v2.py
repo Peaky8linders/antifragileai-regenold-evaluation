@@ -177,6 +177,12 @@ def _post_local(
     from fastapi.testclient import TestClient
 
     from app.main import app as _app
+    from app.rate_limit import limiter as _limiter
+
+    try:
+        _limiter.reset()
+    except Exception:  # noqa: BLE001
+        pass
 
     empty: dict[str, Any] = {"answer": "", "references": [], "reasoning": None}
 
