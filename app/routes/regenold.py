@@ -2545,10 +2545,11 @@ def _ref_head_of(ref: str) -> str | None:
     """Top-level head of a formatted wire ref (``Article 50.1`` →
     ``Article 50``; ``Annex IV.2.c`` → ``Annex IV``). ``None`` for a
     non-Article/Annex string (defensive — such refs are left untouched)."""
-    for prefix in ("Article ", "Annex "):
+    for prefix in ("Article ", "Annex ", "Art. ", "Ann. "):
         if ref.startswith(prefix):
             body = ref[len(prefix):]
-            return prefix + body.split(".")[0]
+            base_head = "Article " if prefix.startswith("Art") else "Annex "
+            return base_head + body.split(".")[0]
     return None
 
 
@@ -2943,13 +2944,14 @@ def _enforce_risk_framework_refs(references: list[str], rag_res) -> list[str]:
     ``REGENOLD_RISK_FRAMEWORK_REFS``.
     """
     try:
-        surfaced = {
-            (c.article_ref or "").strip()
+        surfaced_heads = {
+            (_clamp_ref_head(c.article_ref or "") or (c.article_ref or "")).strip()
             for c in (getattr(rag_res, "citations", None) or [])
         }
         out = list(references)
         for ar in _RISK_FRAMEWORK_CANON_REFS:
-            if ar not in surfaced:
+            ar_head = (_clamp_ref_head(ar) or ar).strip()
+            if ar not in surfaced_heads and ar_head not in surfaced_heads:
                 continue  # never fabricate — only re-instate engine-surfaced refs
             wire = reference_from_article_ref(ar)
             if wire and wire not in out:
@@ -3137,7 +3139,13 @@ def _promote_lead_ref(references: list[str], answer: str) -> list[str]:
     if not references or not answer:
         return references
     try:
-        lead = re.split(r"(?<=[.!?])\s", answer.strip(), maxsplit=1)[0]
+        lead_text = answer.strip()[:350]
+        m_sent = re.search(
+            r"^.*?(?<!\bArt)(?<!\bpara)(?<!\bno)(?<!\be\.g)(?<!\bi\.e)[.!?](?=\s|$)",
+            lead_text,
+            re.DOTALL | re.IGNORECASE,
+        )
+        lead = m_sent.group(0) if m_sent else lead_text
         named: set[str] = set()
         for m in _LIVE_ARTICLE_RE.finditer(lead):
             named.add(f"Article {int(m.group(1))}")
@@ -5050,7 +5058,9 @@ def _rewrite_multiturn_query(
                 # Still negligible against the ~28 s multi-turn p50; the fast
                 # providers (Groq/Gemini/Mistral) succeed well before the slow
                 # ~10 s wrapper candidate is ever reached.
-                timeout_seconds=3.0,
+                timeout_seconds=float(
+                    os.getenv("REGENOLD_DENOISER_TIMEOUT", "1.0")
+                ),
             )
             resp = provider.complete(req)
             last_latency = (time.monotonic_ns() - start_ns) // 1_000_000

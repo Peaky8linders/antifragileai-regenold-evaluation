@@ -273,8 +273,11 @@ _KEYWORD_ENTITY_MAP: tuple[tuple[str, str], ...] = (
     ("health insurance", "Annex III"),
     ("emergency triage", "Annex III"),
     ("public healthcare", "Annex III"),
-    # GPAI classification + procedure (Arts. 51, 52, 54)
     ("10^25", "Art. 51"),
+    ("10²⁵", "Art. 51"),
+    ("10^25 flops", "Art. 51"),
+    ("10²⁵ flops", "Art. 51"),
+    ("systemic risk threshold", "Art. 51"),
     ("flops threshold", "Art. 51"),
     ("training compute", "Art. 51"),
     ("classification of gpai", "Art. 51"),

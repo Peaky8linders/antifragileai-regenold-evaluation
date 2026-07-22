@@ -1677,12 +1677,17 @@ KEYWORD_TO_ARTICLE: dict[str, str] = {
     "resume screening": "Annex III",
     "candidate screening": "Annex III",
     "hr screening": "Annex III",
+    "irregular migration": "Annex III",
+    "border control": "Annex III",
     # Predictive policing: Art. 5(1)(d) PROHIBITS profiling-based predictive
     # policing of natural persons; only place-based / non-profiling
     # predictive policing falls under Annex III(6)(d). Anchor on the
     # prohibition first — Annex III routing was misleading users into
     # thinking such systems were merely "high-risk" rather than banned.
     "predictive policing": "Art. 5",
+    "predictive policing personality": "Art. 5.1.d",
+    "predictive policing profiling": "Art. 5.1.d",
+    "criminality based on personality": "Art. 5.1.d",
     # GPAI numerical anchors
     "10 to the 25": "Art. 51",
     "1e25": "Art. 51",
