@@ -2664,8 +2664,26 @@ def _collapse_multi_leaf_clusters(refs: list[str]) -> list[str]:
             leaves.setdefault(h, []).append(r)
     drop: set[str] = set()
     for h, lv in leaves.items():
-        if h in present and len(lv) >= 2:
-            drop.update(lv)
+        if h not in present or len(lv) < 2:
+            continue
+        # Keep the DEEPEST present ancestor that dominates every other leaf in
+        # the cluster, not the top-level head. r287 measured why: rg_012 shipped
+        # ``Annex III`` + ``Annex III.8`` + ``Annex III.8.a`` + ``Annex III.8.b``;
+        # collapsing to the bare head lost the point-8 specificity and the
+        # grounded judge scored it "overbroad - cited entire Annex III instead of
+        # the specific point 8" (recall 1.0 -> 0.0). The gold for that row IS the
+        # sub-point, so head-level invariance is NOT enough — the judge scores at
+        # sub-point grain. Collapsing to ``Annex III.8`` keeps the specificity
+        # while still dropping the redundant siblings and the umbrella parent.
+        keeper = h
+        for cand in lv:
+            others = [x for x in lv if x != cand]
+            if others and all(o.startswith(cand + ".") for o in others):
+                keeper = cand
+                break
+        drop.update(x for x in lv if x != keeper)
+        if keeper != h:
+            drop.add(h)
     if not drop:
         return list(refs)
     out = [r for r in refs if r not in drop]

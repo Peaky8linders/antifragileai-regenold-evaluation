@@ -81,7 +81,37 @@ class TestCollapsesEnumerationDumps:
         out = _collapse_multi_leaf_clusters(
             ["Article 5", "Article 6", "Annex III.8.b", "Annex III.8", "Annex III"]
         )
-        assert out == ["Article 5", "Article 6", "Annex III"]
+        assert out == ["Article 5", "Article 6", "Annex III.8"]
+
+
+class TestKeepsDeepestDominatingAncestor:
+    """r287 measured regression: collapsing to the bare head loses sub-point grain.
+
+    rg_012 shipped Annex III + Annex III.8 + Annex III.8.a + Annex III.8.b.
+    Collapsing to ``Annex III`` scored recall 1.0 -> 0.0 ("overbroad - cited
+    entire Annex III instead of the specific point 8"). The gold IS the
+    sub-point, so head-level invariance is not sufficient.
+    """
+
+    def test_rg_012_keeps_point_8_not_bare_annex(self) -> None:
+        out = _collapse_multi_leaf_clusters(
+            ["Annex III.8.a", "Annex III.8.b", "Annex III.8", "Annex III"]
+        )
+        assert out == ["Annex III.8"]
+
+    def test_multi_branch_falls_back_to_head(self) -> None:
+        # IV.1.e and IV.2.c live on different branches, so no single leaf
+        # dominates -> the head is the only correct common ancestor.
+        out = _collapse_multi_leaf_clusters(
+            ["Article 11", "Annex IV.1.e", "Annex IV.2.c", "Annex IV", "Annex IV.2"]
+        )
+        assert out == ["Article 11", "Annex IV"]
+
+    def test_flat_sibling_leaves_keep_head(self) -> None:
+        out = _collapse_multi_leaf_clusters(
+            ["Article 65.3", "Article 65.4", "Article 65.5", "Article 65"]
+        )
+        assert out == ["Article 65"]
 
     def test_order_is_preserved(self) -> None:
         out = _collapse_multi_leaf_clusters(
