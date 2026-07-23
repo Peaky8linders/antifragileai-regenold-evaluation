@@ -2634,6 +2634,44 @@ def _apply_ref_granularity(
     return out if out else list(refs)
 
 
+def _collapse_multi_leaf_clusters(refs: list[str]) -> list[str]:
+    """R287 — drop the leaves of any head that carries 2+ leaves alongside it.
+
+    The narrow, recall-safe half of the R276-D1 granularity collapse, applied
+    to CURATED authoritative intercepts (which are exempt from the full pass
+    per the R274 doctrine).
+
+    Fires only on a head that is itself cited AND carries **two or more** of
+    its own sub-points — the enumeration-dump shape the r286 grounded judge
+    flagged hardest, e.g. ``Annex IV`` + ``Annex IV.2`` + ``Annex IV.1.e`` +
+    ``Annex IV.2.c`` (rg_001), or ``Article 65`` + 65.3/.4/.5/.7 (rg_033).
+    A deliberate 1-parent + 1-leaf pairing ("general rule + carve-out", e.g.
+    the R274 deviation intercept's ``Article 6`` + ``Article 6.3``) has only
+    ONE leaf and is therefore never touched.
+
+    Recall-safe by construction: only leaves are dropped, and only when their
+    own parent head is already present, so every head in the input survives.
+    Pure; preserves order; never empties.
+    """
+    if len(refs) < 3:
+        return list(refs)
+    heads = {r: _ref_head_of(r) for r in refs}
+    present = {r for r in refs if heads[r] == r}
+    leaves: dict[str, list[str]] = {}
+    for r in refs:
+        h = heads[r]
+        if h is not None and h != r:
+            leaves.setdefault(h, []).append(r)
+    drop: set[str] = set()
+    for h, lv in leaves.items():
+        if h in present and len(lv) >= 2:
+            drop.update(lv)
+    if not drop:
+        return list(refs)
+    out = [r for r in refs if r not in drop]
+    return out or list(refs)
+
+
 _REF_PARSE_RE = re.compile(r"^(Article|Annex)\s+([\dIVXLC]+)")
 
 
@@ -8019,8 +8057,9 @@ def regenold_eu_ai_act_ask(
     # deduplicated prior to budgeting/clamping — preventing slot waste on refs
     # that would otherwise be deleted moments later. Mode ``both`` is a
     # byte-identical no-op; ``auto`` (default) / ``leaf`` / ``parent`` are the
-    # D1 ref-precision arms. CURATED authoritative intercepts are EXEMPT (the
-    # R274 doctrine).
+    # D1 ref-precision arms. CURATED authoritative intercepts are EXEMPT from
+    # THIS pass (the R274 doctrine) — but see the R287 multi-leaf collapse
+    # immediately below, which gives them a narrower, recall-safe variant.
     if _ref_granularity_mode() != "both" and not _is_curated_intercept:
         _gran_refs = _apply_ref_granularity(
             references,
@@ -8035,6 +8074,41 @@ def regenold_eu_ai_act_ask(
                 )
 
                 _rn(f"ref_granularity_{_ref_granularity_mode()}")
+            except Exception:  # noqa: BLE001 — fail-soft on trace
+                pass
+
+    # R287 — narrow multi-leaf collapse for CURATED authoritative intercepts.
+    #
+    # Motivated by the r286 live easy batch (110 rows, production wire) graded
+    # by the grounded Sonnet-5 judge: reference precision 0.615 vs recall
+    # 0.913, i.e. we over-cite rather than under-retrieve. Pass rate fell off a
+    # cliff with ref count (1 ref: 12/14 pass; 3 refs: 5/38; 5 refs: 0/17), and
+    # the judge's most repeated failure_mode was redundant parents/leaves of one
+    # provision ("over-citation with redundant parent-annex", "over-cited
+    # redundant/non-governing provisions (65.4, whole Art. 65)"). Those rows
+    # were all curated intercepts, which the R274 doctrine exempts from the
+    # full granularity pass above.
+    #
+    # This applies only the enumeration-dump half of that collapse (a head with
+    # 2+ of its own leaves), which is recall-safe by construction and leaves
+    # deliberate 1-parent+1-leaf pairings intact — so R274's Article 6 +
+    # Article 6.3 general-rule-plus-carve-out survives. Real-data sim over all
+    # 110 rows: 12 redundant refs dropped across 4 rows, 0 rows losing a head.
+    # Env off-switch REGENOLD_INTERCEPT_LEAF_COLLAPSE=0.
+    if (
+        _is_curated_intercept
+        and os.getenv("REGENOLD_INTERCEPT_LEAF_COLLAPSE", "1").strip().lower()
+        in ("1", "true", "yes", "on")
+    ):
+        _leaf_refs = _collapse_multi_leaf_clusters(references)
+        if _leaf_refs != references:
+            references = _leaf_refs
+            try:
+                from app.integrations.regenold.reasoning_trace import (  # noqa: PLC0415
+                    record_note as _rn2,
+                )
+
+                _rn2("intercept_multi_leaf_collapse")
             except Exception:  # noqa: BLE001 — fail-soft on trace
                 pass
 
