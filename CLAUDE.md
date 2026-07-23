@@ -8399,6 +8399,136 @@ python -m evals.regenold.run_official_batch --label r285-easy --mode easy \
 then grade both arms with `evals.judge.grounded`. The flags ship ON only if
 that read holds. Rollback for anything in this round is a single env var.
 
+## Round 286 / 287 — Gemini GraphRAG+NLI ship: adversarially audited, repaired, gated; then judge-driven ref-precision fix (2026-07-23)
+
+Two Gemini-agent commits were already on `main` (so already live, Railway
+auto-deploys `main`): `3133219` (NLI DeBERTa citation verifier + a GraphRAG
+expansion port + the flattened upstream project under `euairagtest/`) and
+`4b1e87f` (pipeline / scope tweaks). A 7-lane adversarial audit workflow with
+independent skeptic verification found **three P0s**, all fixed in R286.
+
+### R286 — the three P0s
+
+1. **The NLI verifier was DEFAULT ON and rubric-negative on every request.**
+   Measured, not argued: davidath QA with `REGENOLD_NLI_VERIFY=1` scored **Ref
+   Loose 0.6058 vs the 0.8394 baseline**, Ref Conciseness pinned at exactly
+   **1.0** (= one ref per row, i.e. it was shredding the reference list), and
+   latency **p50 2821 ms vs 17.6 ms** (160x). Cause: `sentence_transformers` /
+   torch / transformers are absent (Railway is CPU-only; the deploy is
+   deliberately torch-free) so the in-process scorer returns `0.0` for every
+   premise, and before that fallback it probes 3 NLI base URLs x 2 payload
+   shapes at 2.5 s each. It also SHRINKS `references` — the R142.1 gold-drop
+   class. Flipped to **default OFF**; the code stays for a future A/B behind a
+   real reranker endpoint.
+2. **The GraphRAG expansion port was DEAD on every request** (R256
+   silently-inert class, swallowed by `try/except`): `app/graph/knowledge_graph.py`
+   imported `ACTOR_VOCAB` / `NodeType` / `EdgeType` / `Node` from the WRONG
+   `app.graph.schema` (that module is the Neo4j *label-constants* module for the
+   seeder) — ImportError — and the singleton called an unimported `build_graph`
+   — NameError. Ported the upstream provision-level schema to a SEPARATE
+   `app/graph/provision_schema.py` (merging would collide with the seeder) and
+   fixed both imports. Now import-clean and genuinely live, which is exactly why
+   it ships **gated OFF** behind `REGENOLD_GRAPH_EXPANSION`: it injects
+   provision text into the Stage-2 grounding context, so it moves answers and
+   citations. It also loads `euairagtest/provisions.json`, which the audit found
+   mints **fabricated sub-point IDs** on cross-reference fragments (`Art. 6(1)(a)`
+   is literally the word "and") and drops Annex X — a second reason to keep it off.
+3. **`pytest tests/` ABORTED at collection** (exit 2, **0 of 5106 tests ran**) —
+   the regression guard itself was down, because the two new Gemini test files
+   imported the same wrong schema. Fixed; the suite now collects **5112**.
+
+Also refreshed the **stale turboquant precomputed asset** (vocab 1924 -> 1933;
+the committed asset predated later KB edits). Rebuild is deterministic and
+davidath-neutral.
+
+**Coverage audit — everything else was already complete** (`action=none`):
+taxonomy / ontology / role-obligations / definitions / KB verified complete and
+legally correct; BM25 + embeddings + sentence indexes cover 113/113 articles +
+13/13 annexes and are NOT stale. The Neo4j graph **does** cover sub-points —
+`run_seed` calls `_ingest_legal_ast_hierarchy`, which emits 113 articles + 13
+annexes + **656 Paragraph + 459 Point** nodes. (An audit lane initially reported
+"0 Paragraph/Point" because `build_payload() --dry-run` doesn't include that
+separate `legal_ast` ingest path.)
+
+### Live re-measurement (110 easy + 110 hard, production wire, CF tunnel + Claude Max)
+
+| | easy (n=110) | hard (n=110) |
+| --- | --- | --- |
+| errors / refusals | 0 / 0 | 0 / 0 |
+| tone | 1.0000 | 1.0000 |
+| mean refs | 2.93 | 4.02 |
+| latency p50 | 23.8 s | 37.4 s |
+| **pushback_conceded_rate** | — | **0.0000** |
+
+Hard mode = the same question inside a rolling conversation plus an adversarial
+"I don't think this is correct, perhaps your answer contains hallucinations"
+pushback. **The system never conceded on any of the 110 rows.**
+
+### R287 — the judge said we over-cite, so cut redundancy (not recall)
+
+The easy batch was graded by the grounded Sonnet-5 judge (`evals/judge/grounded.py`,
+scores against verbatim Act text, no gold needed):
+
+```
+answer_correctness    0.500   (mean factual score 0.806)
+reference_correctness 0.318   precision 0.615 / recall 0.913
+citation_faithfulness 0.764
+```
+
+Reference correctness is the floor and the decomposition is unambiguous: with
+**recall 0.913 we are not under-retrieving, we are over-citing** (124 of 322
+predicted refs judged wrong). Pass rate collapses with ref count — **1 ref 12/14,
+2 refs 17/31, 3 refs 5/38, 4 refs 1/9, 5 refs 0/17**. The most repeated
+`failure_mode` was redundant parent/leaf citations of ONE provision, and every
+such row was a **curated authoritative intercept**, which the R274 doctrine
+exempts from the R276-D1 granularity pass — so they reach the wire uncollapsed
+(rg_001 shipped `Annex IV` + `Annex IV.2` + `Annex IV.1.e` + `Annex IV.2.c`;
+rg_033 shipped `Article 65` + 65.3/.4/.5/.7).
+
+`_collapse_multi_leaf_clusters` applies only the **enumeration-dump half** of the
+collapse to intercepts: a head carrying **2+** of its own leaves. A deliberate
+1-parent + 1-leaf pairing survives — the full collapse broke R274's `Article 6`
++ `Article 6.3` (general rule + carve-out, both load-bearing), caught by
+`test_article_6_and_6_3_cited`. R274's `_prune_non_anchor_refs` exemption is
+untouched (that pass can delete a whole ARTICLE; this one cannot).
+
+**R287.1 — and the judge caught the regression the first cut introduced.** The
+affected rows were re-run live and re-graded. Same-27-rows delta: pass **1 -> 4**,
+precision **0.540 -> 0.577**, but recall **0.959 -> 0.855**. Per row: rg_001
+prec 0.4->1.0 fail->PASS, rg_027 0.4->1.0 fail->PASS, rg_033 0.6->1.0
+fail->PASS — but **rg_012 recall 1.0 -> 0.0**, collapsed to bare `Annex III`
+and scored *"overbroad - cited entire Annex III instead of the specific point 8"*.
+
+The R287 safety argument ("head-level recall is invariant by construction") was
+TRUE BUT INSUFFICIENT: **the grounded judge — like the regenold gold — scores at
+SUB-POINT grain**, so dropping every leaf of a head can still destroy recall.
+This is the R142.1 lesson resurfacing one level down. Fix: keep the **deepest
+present ancestor that dominates the other leaves**, falling back to the head only
+when leaves span multiple branches. `rg_012 -> [Annex III.8]`, `rg_001 ->
+[Annex IV]` (two branches), `rg_033 -> [Article 65]` (flat siblings).
+
+Env off-switches: `REGENOLD_NLI_VERIFY`, `REGENOLD_GRAPH_EXPANSION`,
+`REGENOLD_INTERCEPT_LEAF_COLLAPSE`.
+
+Gates across R286/R287/R287.1: davidath QA **byte-identical** throughout (Ans
+Strict 0.4037 / Ref Loose 0.8394 / Ref Strict 0.5543 / Tone 1.0); 276-runner
+**255/255**, RISK_F1 macro 1.00; OOS probe **21/21, 0 leaks**; suite collects
+5112; +19 R287 tests.
+
+### Open follow-ups (measured, not yet fixed)
+
+* **rg_018** — "Can the Commission amend Annex III?" routes to the
+  general-classification fallback and answers the wrong question; **Article 7**
+  (the actual delegated-act power) is never surfaced despite an existing
+  `("amend annex iii", "Art. 7")` keyword. Needs its own curated intercept.
+* **rg_022** — the 11-ref `_RISK_FRAMEWORK_CANON_REFS` set; judge flagged the
+  GPAI procedural articles (52-56) as not defining risk categories.
+* **answer_correctness 0.50** — dominant mode is omitted enumerated conditions
+  ("omits the four Annex III(3) education categories", "omits 'prosecute' from
+  the criminal-offence carve-out"). A rule-12b completeness strengthening is
+  prompt-only but needs a live A/B.
+* The **hard**-batch grounded judge has not been run yet (easy only).
+
 ## Round 250 — Gemini multi-specialist findings triage: R72 reconcile restore + I1 dead-code fix + G3 live pairwise A/B (2026-06-24)
 
 A Gemini agent supplied 3 specialists' findings + proposed fixes (Antifragile /
