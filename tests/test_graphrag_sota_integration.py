@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 from app.data.ids import ProvisionId, ProvisionIdError
-from app.graph.schema import EdgeType, NodeType
+from app.graph.provision_schema import EdgeType, NodeType
 from app.graph.knowledge_graph import KnowledgeGraph, build_graph
 from app.graph.cypher_exporter import to_cypher
 from app.engines.retrieval_stack import TfidfRetriever, LsaRetriever

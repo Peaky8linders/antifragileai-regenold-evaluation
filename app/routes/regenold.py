@@ -8126,10 +8126,26 @@ def regenold_eu_ai_act_ask(
         except Exception:  # noqa: BLE001 — fail-soft; never 500 the route
             pass
 
-    # NLI DeBERTa Cross-Encoder Citation Verification & Grounding
-    # Enabled by default per user directive (REGENOLD_NLI_VERIFY=1).
+    # NLI DeBERTa Cross-Encoder Citation Verification & Grounding.
+    #
+    # DEFAULT OFF. It shipped default-ON with no A/B; three measured reasons
+    # it must not run by default on this deploy:
+    #   1. ``sentence_transformers`` / torch / transformers are NOT installed
+    #      and are NOT in requirements.txt (the deploy is deliberately
+    #      torch-free, Railway is CPU-only), so the in-process scorer path
+    #      returns ``[0.0] * n`` for every premise -- it grades nothing.
+    #   2. Before that fallback it probes up to 3 NLI service base URLs x 2
+    #      payload shapes with a 2.5 s timeout each -- up to ~15 s of added
+    #      wall-clock PER REQUEST when no NLI service is reachable (the
+    #      default on this deploy). Latency is a scored rubric axis.
+    #   3. It can SHRINK the wire ``references`` list. Dropping a gold ref is
+    #      the R142.1 failure mode that lost a live pairwise judge 11-0
+    #      (p=0.001); per CLAUDE.md hard rule #6 a reference-moving change
+    #      ships only behind an ``evals.harness.ab_judge`` win.
+    # Set ``REGENOLD_NLI_VERIFY=1`` (plus a reachable ``NLI_API_BASE`` /
+    # ``TEI_API_BASE`` reranker, or an installed cross-encoder) to A/B it.
     if (
-        os.getenv("REGENOLD_NLI_VERIFY", "1").strip().lower()
+        os.getenv("REGENOLD_NLI_VERIFY", "0").strip().lower()
         in ("1", "true", "yes", "on")
         and answer_text
         and references

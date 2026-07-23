@@ -11,7 +11,7 @@ from collections import Counter
 from typing import Any, Iterable
 
 from app.data.ids import ProvisionId, ProvisionIdError
-from app.graph.schema import (
+from app.graph.provision_schema import (
     ACTOR_VOCAB,
     RISK_CLASS_VOCAB,
     Edge,

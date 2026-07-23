@@ -10,8 +10,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.engines.retrieval_stack import Retriever, TfidfRetriever
-from app.graph.knowledge_graph import KnowledgeGraph
-from app.graph.schema import PROVISION_NODE_TYPES, EdgeType
+from app.graph.knowledge_graph import KnowledgeGraph, build_graph
+from app.graph.provision_schema import PROVISION_NODE_TYPES, EdgeType
 
 __all__ = ["ExpansionWeights", "GraphExpansionRetriever"]
 

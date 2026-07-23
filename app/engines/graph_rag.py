@@ -5251,10 +5251,32 @@ def _populate_semantic_statements(context: GraphContext, question: str) -> None:
                     f"[{h.article_ref}] {h.text}" for h in hits
                 ]
 
-        # SOTA GraphRAG Expansion integration
-        from app.engines.graph_expansion_engine import get_global_graph_expansion_retriever
-        from app.data.ids import ProvisionId
-        g_retriever = get_global_graph_expansion_retriever()
+        # GraphRAG (HippoRAG-2 style) expansion — env-gated, DEFAULT OFF.
+        #
+        # It shipped unconditional but was DEAD: ``knowledge_graph`` imported
+        # ``ACTOR_VOCAB`` from the wrong ``app.graph.schema`` (ImportError on
+        # every request, swallowed below) and the singleton called an
+        # unimported ``build_graph`` (NameError, also swallowed). Both are
+        # fixed now, so the path is live — which is exactly why it must be
+        # gated: it appends provision text into the Stage-2 grounding context,
+        # i.e. it can move the answer and the citations. Per CLAUDE.md hard
+        # rule #6 that ships only behind an ``evals.harness.ab_judge`` win.
+        # It also loads ``euairagtest/provisions.json`` (3.8 MB) and builds a
+        # TF-IDF index on first use (~0.5 s cold, cached in a module global).
+        if os.getenv("REGENOLD_GRAPH_EXPANSION", "0").strip().lower() in (
+            "1",
+            "true",
+            "yes",
+            "on",
+        ):
+            from app.engines.graph_expansion_engine import (
+                get_global_graph_expansion_retriever,
+            )
+            from app.data.ids import ProvisionId
+
+            g_retriever = get_global_graph_expansion_retriever()
+        else:
+            g_retriever = None
         if g_retriever is not None and question:
             expanded_results = g_retriever.search_scored(question, k=5)
             for eid, score in expanded_results:
