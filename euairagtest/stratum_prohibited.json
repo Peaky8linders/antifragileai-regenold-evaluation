@@ -1,0 +1,563 @@
+{
+  "stratum": "prohibited",
+  "items": [
+    {
+      "id": "easy_prohibited_001",
+      "difficulty": "easy",
+      "task_type": "risk_classification",
+      "stratum": "prohibited",
+      "question": "A municipal authority deploys an AI system that monitors all residents' social-media activity, purchasing behaviour, and movement patterns over time, then assigns each resident a composite 'civic reliability score' that determines eligibility for public housing and reduced-rate public transport. Is this system permitted under the EU AI Act?",
+      "scenario": {
+        "role": "deployer",
+        "system_type": "Social scoring system aggregating multi-context behavioural data into a civic reliability score",
+        "intended_use": "Determining eligibility for public housing and subsidised transport based on social score",
+        "input_data": "Social-media activity, purchasing behaviour, movement patterns",
+        "domain": "Public administration / social welfare"
+      },
+      "gold_answer": "No. This system is prohibited under Art. 5(1)(c) of the EU AI Act. It evaluates natural persons based on their social behaviour and inferred personal characteristics, and the detrimental treatment (denial of housing and transport access) is both unrelated to the original data-collection context and disproportionate to actual social behaviour. The prohibition applies to both public and private actors.",
+      "risk_level": "prohibited",
+      "gold_citations": [
+        {
+          "citation": "Art. 5(1)(c)",
+          "provision_id": "art_5__para_1__point_c",
+          "role": "primary"
+        },
+        {
+          "citation": "Recital (31)",
+          "provision_id": "recital_31",
+          "role": "interpretive"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Art. 5(1)(c) is the direct prohibition on social scoring. The system meets all three statutory indicia: (i) evaluation based on social behaviour or inferred personality characteristics; (ii) detrimental treatment (denial of benefits); (iii) treatment unrelated to original context or disproportionate to gravity. Recital (31) confirms the prohibition extends to both public and private actors and explains the discriminatory-outcome rationale."
+    },
+    {
+      "id": "easy_prohibited_002",
+      "difficulty": "easy",
+      "task_type": "risk_classification",
+      "stratum": "prohibited",
+      "question": "A tech company operates a commercial service that continuously crawls public CCTV feeds and social-media platforms to harvest facial images and add them to a proprietary facial-recognition database it licenses to retailers. Which provision of the EU AI Act prohibits this practice?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "Automated facial-image harvesting and database construction service",
+        "intended_use": "Building and licensing a commercial facial-recognition database",
+        "input_data": "Facial images scraped from internet sources and CCTV footage",
+        "domain": "Commercial technology / retail security"
+      },
+      "gold_answer": "Art. 5(1)(e) of the EU AI Act prohibits this practice. It bans the placing on the market, putting into service, or use of AI systems that create or expand facial-recognition databases through untargeted scraping of facial images from the internet or CCTV footage. The prohibition applies regardless of whether the system is used for commercial or law-enforcement purposes.",
+      "risk_level": "prohibited",
+      "gold_citations": [
+        {
+          "citation": "Art. 5(1)(e)",
+          "provision_id": "art_5__para_1__point_e",
+          "role": "primary"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Art. 5(1)(e) is the precise provision: untargeted scraping of facial images from internet or CCTV to create or expand databases. No definition from Art. 3 is required — the text is self-contained. No recital is needed for the easy item; the provision is unambiguous. The commercial nature of the service is irrelevant to the prohibition."
+    },
+    {
+      "id": "easy_prohibited_003",
+      "difficulty": "easy",
+      "task_type": "article_retrieval",
+      "stratum": "prohibited",
+      "question": "Which article and paragraph point of the EU AI Act prohibits AI systems that use biometric data to infer or deduce a person's religious beliefs, political opinions, or sexual orientation?",
+      "scenario": null,
+      "gold_answer": "Art. 5(1)(g) prohibits AI systems that categorise natural persons based on their biometric data to deduce or infer their race, political opinions, trade-union membership, religious or philosophical beliefs, sex life, or sexual orientation. An exception exists for the lawful labelling or filtering of biometric datasets acquired in line with Union or national law (e.g. sorting by hair colour) that does not involve inferring those sensitive attributes.",
+      "risk_level": "prohibited",
+      "gold_citations": [
+        {
+          "citation": "Art. 5(1)(g)",
+          "provision_id": "art_5__para_1__point_g",
+          "role": "primary"
+        },
+        {
+          "citation": "Recital (30)",
+          "provision_id": "recital_30",
+          "role": "interpretive"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Art. 5(1)(g) is the direct provision. Recital (30) confirms the prohibition and clarifies the lawful-labelling carve-out (sorting by observable features like hair/eye colour for law-enforcement datasets). Definition of 'biometric categorisation system' at Art. 3(40) provides background but is not required for the answer to be complete — the question is an article-retrieval item."
+    },
+    {
+      "id": "easy_prohibited_004",
+      "difficulty": "easy",
+      "task_type": "risk_classification",
+      "stratum": "prohibited",
+      "question": "An online gambling platform integrates an AI system that analyses micro-expressions and speech patterns to detect gamblers showing signs of emotional distress, then uses this real-time emotional profiling to present personalised high-stake game offers specifically when distress is detected, in order to prolong play sessions. Is this system prohibited under the EU AI Act, and if so, under which provision?",
+      "scenario": {
+        "role": "deployer",
+        "system_type": "Real-time emotion-detection and behavioural nudging system targeting distressed gamblers",
+        "intended_use": "Maximising gambling revenue by targeting emotionally vulnerable users with high-stake offers",
+        "input_data": "Micro-expressions, speech patterns (biometric behavioural data)",
+        "domain": "Online gambling"
+      },
+      "gold_answer": "Yes, this system is prohibited under Art. 5(1)(b). It exploits the specific vulnerability of persons in a precarious emotional and socio-economic situation to materially distort their behaviour — deliberately targeting users showing distress to induce further gambling causes significant financial and psychological harm. Recital (29) confirms that vulnerability exploitation need not require intent to harm; it is sufficient that significant harm is reasonably likely to result.",
+      "risk_level": "prohibited",
+      "gold_citations": [
+        {
+          "citation": "Art. 5(1)(b)",
+          "provision_id": "art_5__para_1__point_b",
+          "role": "primary"
+        },
+        {
+          "citation": "Recital (29)",
+          "provision_id": "recital_29",
+          "role": "interpretive"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Art. 5(1)(b) covers exploitation of vulnerabilities of specific groups/individuals based on socio-economic situation (problem gamblers in financial/psychological distress qualify) causing significant harm. Art. 5(1)(a) is a close second but (a) targets subliminal/unconscious manipulation, whereas (b) is the more precise fit when the harm vector is exploiting a known emotional/situational vulnerability to distort behaviour. Recital (29) makes explicit that 'persons living in extreme poverty, ethnic or religious minorities' are examples, and that socio-economic vulnerability includes financial stress — the gambling distress scenario falls squarely here."
+    },
+    {
+      "id": "easy_prohibited_005",
+      "difficulty": "easy",
+      "task_type": "risk_classification",
+      "stratum": "prohibited",
+      "question": "A national police force wants to deploy an AI system that, without any prior human suspicion or evidence of a specific crime, automatically profiles every individual entering a city by cross-referencing their social-media posts, historical spending data, and demographic features to assign a probability score indicating the likelihood that they will commit a violent offence in the next 30 days. Is this lawful under the EU AI Act?",
+      "scenario": {
+        "role": "deployer",
+        "system_type": "Mass predictive criminal-offending risk-scoring system",
+        "intended_use": "Pre-emptive identification of individuals likely to commit violent crimes",
+        "input_data": "Social-media posts, spending history, demographic data",
+        "domain": "Law enforcement"
+      },
+      "gold_answer": "No. Art. 5(1)(d) prohibits AI systems that make risk assessments of natural persons in order to predict the likelihood of their committing criminal offences, when those assessments are based solely on profiling or on their personality traits and characteristics rather than on objective, verifiable facts directly linked to criminal activity. This system operates without any factual basis specific to the individual and therefore falls squarely within the prohibition.",
+      "risk_level": "prohibited",
+      "gold_citations": [
+        {
+          "citation": "Art. 5(1)(d)",
+          "provision_id": "art_5__para_1__point_d",
+          "role": "primary"
+        },
+        {
+          "citation": "Recital (42)",
+          "provision_id": "recital_42",
+          "role": "interpretive"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Art. 5(1)(d) is the direct provision. The statutory test has two limbs: (i) risk assessment for criminal-offending prediction; (ii) based solely on profiling or personality/characteristic traits. Both limbs are met: no prior suspicion or verifiable individual facts are involved. Recital (42) expressly confirms this prohibition and clarifies that the carve-out for 'human assessment based on objective, verifiable facts' does not apply here because there is no prior human assessment and no specific facts directly linked to criminal activity."
+    },
+    {
+      "id": "easy_prohibited_006",
+      "difficulty": "easy",
+      "task_type": "risk_classification",
+      "stratum": "prohibited",
+      "question": "A logistics company rolls out an AI tool on its warehouse floor that continuously monitors workers' facial expressions and vocal tone via smart cameras and microphones to generate a real-time 'emotional state' score per employee, which line managers can view on a dashboard. The system is not used for medical or safety purposes. Is this practice prohibited under the EU AI Act?",
+      "scenario": {
+        "role": "deployer",
+        "system_type": "Real-time employee emotion-recognition monitoring system",
+        "intended_use": "Providing line managers with live emotional-state scores of warehouse workers",
+        "input_data": "Facial expressions, vocal tone (biometric data)",
+        "domain": "Workplace / logistics"
+      },
+      "gold_answer": "Yes. Art. 5(1)(f) prohibits the placing on the market, putting into service, or use of AI systems intended to infer the emotions of natural persons in the workplace, except when used for medical or safety reasons. This system infers workers' emotions in a workplace context for managerial oversight, which falls directly within the prohibition. The medical/safety carve-out does not apply.",
+      "risk_level": "prohibited",
+      "gold_citations": [
+        {
+          "citation": "Art. 5(1)(f)",
+          "provision_id": "art_5__para_1__point_f",
+          "role": "primary"
+        },
+        {
+          "citation": "Recital (44)",
+          "provision_id": "recital_44",
+          "role": "interpretive"
+        },
+        {
+          "citation": "Art. 3(39)",
+          "provision_id": "art_3__para_39",
+          "role": "definition"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Art. 5(1)(f) is the direct prohibition. Art. 3(39) defines 'emotion recognition system' as an AI system that identifies or infers emotions or intentions of natural persons on the basis of their biometric data — confirmed applicable. Recital (44) explains the power-imbalance rationale and confirms that only the medical/safety carve-out escapes the ban. The deployer-role actor is a private employer, which is explicitly within scope."
+    },
+    {
+      "id": "easy_prohibited_007",
+      "difficulty": "easy",
+      "task_type": "obligation_generation",
+      "stratum": "prohibited",
+      "question": "A provider is developing an AI system designed to subliminally influence voters during an election campaign by embedding imperceptible audio signals into political advertisements that induce anxiety and distrust towards opposing candidates without voters being consciously aware. What obligations or prohibitions apply under the EU AI Act?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "Subliminal audio-signal political manipulation system",
+        "intended_use": "Inducing unconscious emotional responses to influence voting behaviour",
+        "input_data": "Political advertisement audio streams delivered to voters",
+        "domain": "Political campaigning"
+      },
+      "gold_answer": "The system is absolutely prohibited under Art. 5(1)(a). Providers may not place on the market, put into service, or use AI systems that deploy subliminal techniques operating below the threshold of consciousness with the objective or effect of materially distorting a person's behaviour in a manner that causes or is likely to cause significant harm. The provider must not develop, market, or deploy this system. No derogation or authorisation mechanism exists for this prohibition.",
+      "risk_level": "prohibited",
+      "gold_citations": [
+        {
+          "citation": "Art. 5(1)(a)",
+          "provision_id": "art_5__para_1__point_a",
+          "role": "primary"
+        },
+        {
+          "citation": "Recital (29)",
+          "provision_id": "recital_29",
+          "role": "interpretive"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Art. 5(1)(a) covers AI systems that deploy 'subliminal techniques beyond the threshold of a person's consciousness' to materially distort behaviour causing significant harm. Subliminal audio signals in political ads are a textbook example. Recital (29) specifically mentions 'audio, image, video stimuli that persons cannot perceive' as covered by the prohibition. Significant harm (manipulation of electoral choice, psychological distress) is reasonably likely. No carve-out applies — the medical-treatment carve-out in Recital (29) is inapplicable here."
+    },
+    {
+      "id": "hard_prohibited_001",
+      "difficulty": "hard",
+      "task_type": "obligation_generation",
+      "stratum": "prohibited",
+      "question": "A Member State's counter-terrorism unit wishes to use a real-time remote biometric identification system in a busy train station to identify a known suspect of an imminent terrorist attack. There is no time to obtain prior judicial authorisation. What are the full legal conditions and procedural obligations that must be satisfied under the EU AI Act for this deployment to be lawful?",
+      "scenario": {
+        "role": "deployer",
+        "system_type": "Real-time remote biometric identification system in a publicly accessible space",
+        "intended_use": "Identifying a named terrorism suspect to prevent an imminent attack",
+        "input_data": "Live biometric data of persons in a train station",
+        "domain": "Law enforcement / counter-terrorism"
+      },
+      "gold_answer": "The deployment may be lawful under the Art. 5(1)(h)(ii) exception (preventing a specific, substantial, and imminent threat to life or physical safety or a genuine terrorist attack), subject to all of the following conditions under Art. 5(2)-(5): (1) The use must be strictly necessary and proportionate — limited in geographic scope, duration, and personal scope to the specific threat. (2) A fundamental rights impact assessment must have been completed and the system registered in the EU database (Art. 5(2)). (3) Because prior judicial or independent administrative authorisation (Art. 5(3)) could not be obtained due to urgency, the unit may begin use but must request authorisation at the latest within 24 hours; if authorisation is refused, use must cease immediately and all data discarded. (4) Each use must be notified to the relevant market surveillance authority and the national data protection authority (Art. 5(4)). (5) The Member State must have adopted national law authorising this use and notified the Commission (Art. 5(5)). No adverse legal decision may be based solely on the system's output.",
+      "risk_level": "prohibited",
+      "gold_citations": [
+        {
+          "citation": "Art. 5(1)(h)",
+          "provision_id": "art_5__para_1__point_h",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 5(1)(h)(ii)",
+          "provision_id": "art_5__para_1__point_h__sub_ii",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 5(2)",
+          "provision_id": "art_5__para_2",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 5(3)",
+          "provision_id": "art_5__para_3",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 5(4)",
+          "provision_id": "art_5__para_4",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 5(5)",
+          "provision_id": "art_5__para_5",
+          "role": "supporting"
+        },
+        {
+          "citation": "Recital (33)",
+          "provision_id": "recital_33",
+          "role": "interpretive"
+        },
+        {
+          "citation": "Recital (35)",
+          "provision_id": "recital_35",
+          "role": "interpretive"
+        },
+        {
+          "citation": "Art. 3(42)",
+          "provision_id": "art_3__para_42",
+          "role": "definition"
+        },
+        {
+          "citation": "Art. 3(44)",
+          "provision_id": "art_3__para_44",
+          "role": "definition"
+        }
+      ],
+      "reasoning_hops": 5,
+      "multi_hop": true,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "This is the canonical multi-hop RBI item: hop 1 = is the system in scope as an RBI system in a publicly accessible space (Art. 3(41)/(42) + Art. 3(44)); hop 2 = does 5(1)(h)(ii) cover imminent terrorist attacks (yes, explicitly); hop 3 = what is the urgency authorisation procedure under Art. 5(3) including the 24-hour rule and immediate-deletion obligation if refused; hop 4 = what are the parallel notification obligations under Art. 5(4); hop 5 = what is the Member State law prerequisite under Art. 5(5). Recital (33) confirms terrorist attacks fall under the second exception. Recital (35) supplies the prior-authorisation and urgency-exception detail. All cited provisions are real and verified."
+    },
+    {
+      "id": "hard_prohibited_002",
+      "difficulty": "hard",
+      "task_type": "risk_classification",
+      "stratum": "prohibited",
+      "question": "A law enforcement agency in a Member State is investigating a suspected kidnapping network. The agency wants to deploy a real-time remote biometric identification (RBI) system at multiple transport hubs to locate possible trafficking victims. The agency has obtained prior judicial authorisation for each deployment. The Member State has enacted the enabling national legislation required by the EU AI Act. Which sub-point of Art. 5(1)(h) provides the exception, what additional procedural requirements apply, and does the system also need to be registered before deployment?",
+      "scenario": {
+        "role": "deployer",
+        "system_type": "Real-time remote biometric identification system at transport hubs",
+        "intended_use": "Locating victims of human trafficking networks",
+        "input_data": "Live biometric data of persons at transport hubs",
+        "domain": "Law enforcement / anti-trafficking"
+      },
+      "gold_answer": "Art. 5(1)(h)(i) provides the applicable exception: locating specific victims of abduction, trafficking, or sexual exploitation, as well as missing persons. The deployment is conditionally lawful because: prior judicial authorisation has been obtained (Art. 5(3)); the Member State has enacted enabling legislation notified to the Commission (Art. 5(5)). Additional requirements that still apply: a fundamental rights impact assessment must have been completed and the system registered in the EU database before deployment (Art. 5(2)); each use must be notified to the market surveillance authority and national data protection authority (Art. 5(4)); use must be limited to the strictly necessary geographic scope, duration and personal scope; and no adverse legal decision may be based solely on system output (Art. 5(3)).",
+      "risk_level": "prohibited",
+      "gold_citations": [
+        {
+          "citation": "Art. 5(1)(h)(i)",
+          "provision_id": "art_5__para_1__point_h__sub_i",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 5(2)",
+          "provision_id": "art_5__para_2",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 5(3)",
+          "provision_id": "art_5__para_3",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 5(4)",
+          "provision_id": "art_5__para_4",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 5(5)",
+          "provision_id": "art_5__para_5",
+          "role": "supporting"
+        },
+        {
+          "citation": "Recital (33)",
+          "provision_id": "recital_33",
+          "role": "interpretive"
+        }
+      ],
+      "reasoning_hops": 4,
+      "multi_hop": true,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Requires correctly identifying sub-point (i) vs (ii) or (iii) — the distinguishing fact is that the operation targets victims of trafficking/abduction, not terrorism prevention or perpetrator identification. Then multi-hop across Art. 5(2) (FRIA + registration), Art. 5(3) (prior authorisation — already obtained here), Art. 5(4) (per-use notification), and Art. 5(5) (national law prerequisite). Recital (33) confirms trafficking victims fall under (i). The question also tests whether registration under Art. 5(2) is a prerequisite even when authorisation exists — it is."
+    },
+    {
+      "id": "hard_prohibited_003",
+      "difficulty": "hard",
+      "task_type": "qa",
+      "stratum": "prohibited",
+      "question": "Art. 5(1)(h)(iii) permits real-time RBI for localising or identifying suspects of certain criminal offences. What specific threshold determines which offences qualify, and where is the exhaustive list of qualifying offences set out in the EU AI Act?",
+      "scenario": null,
+      "gold_answer": "Under Art. 5(1)(h)(iii), the qualifying offences are those punishable by a custodial sentence or detention order with a maximum period of at least four years in the Member State concerned, AND the offence must appear in the exhaustive list set out in Annex II of the EU AI Act. Recital (33) explains that this list is based on the 32 criminal offences in Council Framework Decision 2002/584/JHA on the European Arrest Warrant, and that the four-year threshold ensures sufficient seriousness. Neither threshold alone is sufficient — both must be satisfied.",
+      "risk_level": "prohibited",
+      "gold_citations": [
+        {
+          "citation": "Art. 5(1)(h)(iii)",
+          "provision_id": "art_5__para_1__point_h__sub_iii",
+          "role": "primary"
+        },
+        {
+          "citation": "Annex II",
+          "provision_id": "annex_II",
+          "role": "supporting"
+        },
+        {
+          "citation": "Recital (33)",
+          "provision_id": "recital_33",
+          "role": "interpretive"
+        }
+      ],
+      "reasoning_hops": 2,
+      "multi_hop": true,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Hop 1: identify Art. 5(1)(h)(iii) and its dual threshold (4-year maximum + Annex II list). Hop 2: resolve the cross-reference to Annex II. Recital (33) interprets the rationale for the dual threshold and identifies the Framework Decision lineage. A common system error is to cite only the four-year threshold without Annex II, or to miss that both conditions must be jointly satisfied."
+    },
+    {
+      "id": "hard_prohibited_004",
+      "difficulty": "hard",
+      "task_type": "risk_classification",
+      "stratum": "prohibited",
+      "question": "A hospital deploys an AI system that analyses nurses' facial expressions and voice tone during patient interactions to detect signs of burnout, compassion fatigue, or emotional overload. When the system detects distress above a threshold it automatically flags the nurse to occupational health for a welfare check. The hospital's stated purpose is to prevent medical errors caused by staff fatigue and to protect patient safety. Is this system prohibited under Art. 5(1)(f) of the EU AI Act?",
+      "scenario": {
+        "role": "deployer",
+        "system_type": "Emotion-detection system monitoring clinical staff for burnout/fatigue indicators",
+        "intended_use": "Patient safety and staff welfare — automatic referral to occupational health when distress is detected",
+        "input_data": "Facial expressions, vocal tone of nurses during patient interactions",
+        "domain": "Healthcare"
+      },
+      "gold_answer": "No. This system falls within the explicit medical and safety carve-out in Art. 5(1)(f). The prohibition on workplace emotion recognition does not apply to AI systems placed on the market or put into service strictly for medical or safety reasons. The system's purpose is to prevent patient-safety incidents caused by clinical staff fatigue — a genuine safety application. Recital (44) confirms that 'systems intended for therapeutical use' and systems placed on the market 'strictly for medical or safety reasons' are exempt. A system aimed at preventing medical errors by monitoring staff wellbeing in a clinical environment satisfies this carve-out.",
+      "risk_level": "not_applicable",
+      "gold_citations": [
+        {
+          "citation": "Art. 5(1)(f)",
+          "provision_id": "art_5__para_1__point_f",
+          "role": "primary"
+        },
+        {
+          "citation": "Recital (44)",
+          "provision_id": "recital_44",
+          "role": "interpretive"
+        }
+      ],
+      "reasoning_hops": 2,
+      "multi_hop": true,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "BOUNDARY / EXCEPTION CASE (not a cite-nothing negative control: the exempting provision must still be cited). This is the canonical 5(1)(f) carve-out scenario. The system is deployed in a workplace (a hospital) and infers emotions — superficially it matches the prohibition. The resolution requires reading the exception text: 'except for AI systems placed on the market or put into service for medical or safety reasons'. Patient-safety-driven clinical staff monitoring for burnout qualifies. The system is not prohibited; it may however still face other regulatory requirements (e.g. GDPR, high-risk classification under Annex III if it affects employment decisions). This item requires multi-hop: (1) identify 5(1)(f) as the prima facie applicable provision; (2) identify the medical/safety exception and determine whether the scenario falls within it. Gold_citations are the two provisions needed to fully answer — not an empty set — because the correct answer is 'Art. 5(1)(f) applies but the carve-out exempts this system'."
+    },
+    {
+      "id": "hard_prohibited_005",
+      "difficulty": "hard",
+      "task_type": "risk_classification",
+      "stratum": "prohibited",
+      "question": "A social-media platform uses an AI system to analyse aggregated user engagement signals (watch time, share rates, click patterns) — with no biometric data — to infer population-level political sentiment trends and sell this data to political campaigns. A regulator argues this violates Art. 5(1)(g) because it indirectly deduces political opinions. Is the regulator correct?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "Aggregate engagement-signal political sentiment analysis system",
+        "intended_use": "Inferring population-level political sentiment from engagement metrics for sale to campaigns",
+        "input_data": "Aggregated watch time, share rates, click patterns — no biometric data",
+        "domain": "Social media / political advertising"
+      },
+      "gold_answer": "The regulator's argument is incorrect under Art. 5(1)(g). That provision prohibits biometric categorisation systems that use biometric data to deduce or infer protected attributes including political opinions. Art. 3(40) defines a biometric categorisation system as one that assigns individuals to categories using biometric data. This system does not process biometric data — it uses behavioural engagement signals. Art. 5(1)(g) is therefore not triggered. Other legal frameworks (GDPR, Digital Services Act, political advertising regulations) may apply, but the EU AI Act's Art. 5(1)(g) prohibition does not.",
+      "risk_level": "not_applicable",
+      "gold_citations": [
+        {
+          "citation": "Art. 5(1)(g)",
+          "provision_id": "art_5__para_1__point_g",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 3(40)",
+          "provision_id": "art_3__para_40",
+          "role": "definition"
+        }
+      ],
+      "reasoning_hops": 2,
+      "multi_hop": true,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "BOUNDARY / EXCEPTION CASE (not a cite-nothing negative control: the definitional gate must still be cited). The temptation is to say Art. 5(1)(g) applies because political opinions are among the listed sensitive attributes. The resolution requires checking Art. 3(40): a biometric categorisation system must use biometric data. Engagement signals (click patterns, watch time) are not biometric data within the meaning of Art. 3(40) — they are behavioural signals not derived from physical/physiological/behavioural characteristics used for identification/categorisation at individual biometric level. The gold_citations set is the necessary pair to correctly reason: the provision and its definitional gate. System is not prohibited under Art. 5 — negative control confirmed."
+    },
+    {
+      "id": "hard_prohibited_006",
+      "difficulty": "hard",
+      "task_type": "obligation_generation",
+      "stratum": "prohibited",
+      "question": "A system integrator claims that an AI tool they market to employers is not an 'emotion recognition system' prohibited under Art. 5(1)(f) because it infers 'cognitive load' and 'engagement level' rather than emotions, using eye-tracking and keyboard dynamics. Analyse whether this claim is valid under the EU AI Act's definition of emotion recognition, and identify the complete citation chain needed to resolve the question.",
+      "scenario": {
+        "role": "provider",
+        "system_type": "Workplace AI system inferring cognitive load and engagement using eye-tracking and keyboard dynamics",
+        "intended_use": "Employer workforce productivity monitoring",
+        "input_data": "Eye-tracking data, keyboard dynamics (biometric behavioural data)",
+        "domain": "Workplace technology"
+      },
+      "gold_answer": "The claim is likely invalid. Art. 3(39) defines an emotion recognition system as one that identifies or infers 'emotions or intentions' of natural persons on the basis of their biometric data. 'Cognitive load' and 'engagement level' fall within the concept of inferred 'intentions' or mental/psychological states, and eye-tracking and keyboard dynamics constitute biometric data (physiological/behavioural characteristics). The system therefore likely meets the Art. 3(39) definition. Art. 5(1)(f) then prohibits its use in the workplace unless deployed strictly for medical or safety reasons, which is not the case here. Relabelling inferred mental states as 'cognitive load' rather than 'emotions' does not remove the system from the prohibition's scope if the underlying inference concerns the mental/psychological state of workers via their biometric data.",
+      "risk_level": "prohibited",
+      "gold_citations": [
+        {
+          "citation": "Art. 5(1)(f)",
+          "provision_id": "art_5__para_1__point_f",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 3(39)",
+          "provision_id": "art_3__para_39",
+          "role": "definition"
+        },
+        {
+          "citation": "Recital (44)",
+          "provision_id": "recital_44",
+          "role": "interpretive"
+        }
+      ],
+      "reasoning_hops": 3,
+      "multi_hop": true,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "medium",
+      "annotator_notes": "Medium confidence on the definitional boundary: the Act's Art. 3(39) text says 'emotions or intentions' — whether 'intentions' covers 'cognitive load' as a mental state is a legal interpretation question the Act does not resolve with total clarity. The hop chain is: (1) check Art. 3(39) definition scope ('emotions or intentions', biometric data requirement); (2) determine whether eye-tracking/keyboard dynamics qualify as biometric data (behavioural biometric characteristics — likely yes under GDPR Art. 4(14) which is the standard reference, but the AI Act does not define biometric data separately so this is medium confidence); (3) apply Art. 5(1)(f) + check the medical/safety carve-out via Recital (44). The conclusion is 'likely prohibited' but the medium confidence flag reflects definitional ambiguity on 'intentions' vs 'cognitive load'."
+    },
+    {
+      "id": "hard_prohibited_007",
+      "difficulty": "hard",
+      "task_type": "article_retrieval",
+      "stratum": "prohibited",
+      "question": "A system provides automated analysis of arrest photos to predict an individual's likelihood of recidivism by correlating facial geometry with prior conviction records, claiming the output is not based 'solely on profiling' because it incorporates historical criminal records. Does Art. 5(1)(d) still apply? Also, does Art. 5(1)(g) independently apply, and is there a citation that is sometimes falsely attributed here — namely a non-existent 'Art. 5(1)(i)' — that a system should not produce?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "Facial-geometry and conviction-record recidivism prediction system",
+        "intended_use": "Predicting individual recidivism likelihood from arrest photos and prior convictions",
+        "input_data": "Facial geometry (biometric), prior conviction records",
+        "domain": "Criminal justice"
+      },
+      "gold_answer": "Art. 5(1)(d) applies: while the system claims it incorporates criminal records, it still uses facial geometry (a personality/physical characteristic) as a core input to predict future criminal behaviour — this is based on profiling within the meaning of Art. 5(1)(d). The statutory carve-out only exempts human assessment based on objective, verifiable facts 'directly linked to criminal activity'; using facial geometry as a predictive feature does not satisfy this standard. Art. 5(1)(g) also independently applies: the system uses biometric data (facial geometry) to infer or deduce attributes linked to criminal propensity, which in practice encodes protected characteristics such as race. There is no 'Art. 5(1)(i)' in the EU AI Act — Art. 5(1) ends at point (h). Citing 'Art. 5(1)(i)' is a hallucination.",
+      "risk_level": "prohibited",
+      "gold_citations": [
+        {
+          "citation": "Art. 5(1)(d)",
+          "provision_id": "art_5__para_1__point_d",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 5(1)(g)",
+          "provision_id": "art_5__para_1__point_g",
+          "role": "primary"
+        },
+        {
+          "citation": "Recital (42)",
+          "provision_id": "recital_42",
+          "role": "interpretive"
+        },
+        {
+          "citation": "Recital (30)",
+          "provision_id": "recital_30",
+          "role": "interpretive"
+        }
+      ],
+      "reasoning_hops": 3,
+      "multi_hop": true,
+      "negative_control": false,
+      "hallucination_trap": true,
+      "trap_note": "'Art. 5(1)(i)' does not exist. Art. 5(1) contains exactly eight points (a) through (h). A retrieval system that produces 'Art. 5(1)(i)' as a citation for a ninth prohibited practice has hallucinated. This is the canonical trap for this stratum. Additionally, citing only Art. 5(1)(g) while missing 5(1)(d) — or vice versa — is an incomplete citation error. Some systems also hallucinate 'Art. 5(2)(c)' as a direct prohibition subpoint rather than a safeguard paragraph — this is also wrong.",
+      "confidence": "high",
+      "annotator_notes": "HALLUCINATION TRAP. The item explicitly asks the system to identify a non-existent provision ('Art. 5(1)(i)') that is sometimes cited by AI systems that pattern-match 'there should be a ninth point'. Art. 5(1) ends at (h) — verified. The dual applicability of both (d) and (g) tests exhaustive citation. Recital (42) supports the 5(1)(d) analysis; Recital (30) supports the 5(1)(g) analysis. The 'not solely on profiling' defence raised in the scenario is addressed by the carve-out text in Art. 5(1)(d) itself, which requires facts 'directly linked to criminal activity' — facial geometry is not directly linked to any specific criminal act."
+    }
+  ]
+}

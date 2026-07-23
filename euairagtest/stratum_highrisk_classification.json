@@ -1,0 +1,392 @@
+{
+  "stratum": "high_risk_classification",
+  "items": [
+    {
+      "id": "easy_hrclass_001",
+      "difficulty": "easy",
+      "task_type": "risk_classification",
+      "stratum": "high_risk_classification",
+      "question": "A company provides an AI system that automatically screens and ranks job applicants' CVs for an employer's recruitment process. What is the risk level of this AI system under the EU AI Act?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "CV screening and candidate ranking tool",
+        "intended_use": "Automated filtering and ranking of job applications for recruitment",
+        "input_data": "CVs, application forms, candidate profiles",
+        "domain": "Employment / HR"
+      },
+      "gold_answer": "The system is high-risk. AI systems intended for recruitment and the filtering and evaluation of candidates fall within Annex III point 4(a), which covers employment, workers management and self-employment access. Art. 6(2) therefore classifies it as high-risk.",
+      "risk_level": "high",
+      "gold_citations": [
+        {"citation": "Art. 6(2)", "provision_id": "art_6__para_2", "role": "primary"},
+        {"citation": "Annex III point 4(a)", "provision_id": "annex_III__point_4__point_a", "role": "supporting"}
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Annex III point 4(a) expressly lists 'AI systems intended to be used for recruitment or selection of natural persons, notably for advertising vacancies, screening or filtering applications, evaluating candidates in the course of interviews or tests'. Art. 6(2) is the operative classification rule for Annex III systems. Single hop: question -> Art. 6(2) -> Annex III point 4(a)."
+    },
+    {
+      "id": "easy_hrclass_002",
+      "difficulty": "easy",
+      "task_type": "risk_classification",
+      "stratum": "high_risk_classification",
+      "question": "A fintech company deploys an AI model that calculates credit scores for individuals applying for personal loans. Is this system high-risk under the EU AI Act, and if so, under which provision?",
+      "scenario": {
+        "role": "deployer",
+        "system_type": "Credit scoring model",
+        "intended_use": "Evaluating creditworthiness and generating credit scores for loan applicants",
+        "input_data": "Financial history, income data, personal data of natural persons",
+        "domain": "Financial services"
+      },
+      "gold_answer": "Yes, this system is high-risk. AI systems used to evaluate the creditworthiness of natural persons or establish their credit score are explicitly listed in Annex III point 5(b), making them high-risk under Art. 6(2). The exception in point 5(b) for fraud-detection systems does not apply here.",
+      "risk_level": "high",
+      "gold_citations": [
+        {"citation": "Art. 6(2)", "provision_id": "art_6__para_2", "role": "primary"},
+        {"citation": "Annex III point 5(b)", "provision_id": "annex_III__point_5__point_b", "role": "supporting"}
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Annex III point 5(b) explicitly covers 'AI systems intended to be used to evaluate the creditworthiness of natural persons or establish their credit score, with the exception of AI systems used for the purpose of detecting financial fraud'. Art. 6(2) is the operative classification rule. The fraud-detection carve-out confirms the default classification, as this system is for creditworthiness, not fraud detection."
+    },
+    {
+      "id": "easy_hrclass_003",
+      "difficulty": "easy",
+      "task_type": "risk_classification",
+      "stratum": "high_risk_classification",
+      "question": "A border management authority uses an AI system to assess the security risk posed by individuals crossing an external border. What risk level does the EU AI Act assign to this system?",
+      "scenario": {
+        "role": "deployer",
+        "system_type": "Border security risk assessment tool",
+        "intended_use": "Assessing security, health, or irregular migration risk of persons at border crossings",
+        "input_data": "Traveller data, passport information, behavioural signals",
+        "domain": "Migration / Border control"
+      },
+      "gold_answer": "High-risk. AI systems intended to be used by competent authorities to assess a risk, including a security risk, posed by natural persons attempting to cross borders are listed in Annex III point 7(b). Art. 6(2) therefore classifies this system as high-risk.",
+      "risk_level": "high",
+      "gold_citations": [
+        {"citation": "Art. 6(2)", "provision_id": "art_6__para_2", "role": "primary"},
+        {"citation": "Annex III point 7(b)", "provision_id": "annex_III__point_7__point_b", "role": "supporting"}
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Annex III point 7(b) lists 'AI systems intended to be used by competent public authorities as polygraphs and similar tools or to detect the emotional state of a natural person; to assess a risk, including a security risk, posed by a natural person who intends to enter or has entered into the territory of a Member State'. This is a direct match. Art. 6(2) is the operative rule."
+    },
+    {
+      "id": "easy_hrclass_004",
+      "difficulty": "easy",
+      "task_type": "risk_classification",
+      "stratum": "high_risk_classification",
+      "question": "A public authority uses an AI system to determine whether individuals are eligible for social housing assistance. Under the EU AI Act, is this a high-risk AI system?",
+      "scenario": {
+        "role": "deployer",
+        "system_type": "Public benefit eligibility assessment tool",
+        "intended_use": "Evaluating individuals' eligibility for social housing public assistance",
+        "input_data": "Personal data, income records, household information",
+        "domain": "Public administration / Social services"
+      },
+      "gold_answer": "Yes, this is a high-risk AI system under Art. 6(2). Annex III point 5(a) covers AI systems used to evaluate eligibility for public assistance benefits and services, which explicitly includes social housing assistance.",
+      "risk_level": "high",
+      "gold_citations": [
+        {"citation": "Art. 6(2)", "provision_id": "art_6__para_2", "role": "primary"},
+        {"citation": "Annex III point 5(a)", "provision_id": "annex_III__point_5__point_a", "role": "supporting"}
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Annex III point 5(a) covers 'AI systems intended to be used by public authorities to evaluate the eligibility of natural persons for essential public assistance benefits and services, including healthcare services, housing, and educational and professional training'. Social housing is a prototypical example. Art. 6(2) is the operative rule."
+    },
+    {
+      "id": "easy_hrclass_005",
+      "difficulty": "easy",
+      "task_type": "risk_classification",
+      "stratum": "high_risk_classification",
+      "question": "A university deploys an AI system that decides which applicants are admitted to its undergraduate programmes. What is the risk classification of this AI system under the EU AI Act?",
+      "scenario": {
+        "role": "deployer",
+        "system_type": "University admissions decision tool",
+        "intended_use": "Automated determination of admission to higher education institutions",
+        "input_data": "Application forms, academic records, personal statements",
+        "domain": "Education"
+      },
+      "gold_answer": "High-risk. Annex III point 3(a) expressly lists AI systems intended to determine access or admission to educational and vocational training institutions. Art. 6(2) therefore classifies this system as high-risk.",
+      "risk_level": "high",
+      "gold_citations": [
+        {"citation": "Art. 6(2)", "provision_id": "art_6__para_2", "role": "primary"},
+        {"citation": "Annex III point 3(a)", "provision_id": "annex_III__point_3__point_a", "role": "supporting"}
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Annex III point 3(a) covers 'AI systems intended to be used to determine access or admission to or assignment of natural persons to educational and vocational training institutions at all levels'. Undergraduate admission decisions are a direct match."
+    },
+    {
+      "id": "easy_hrclass_006",
+      "difficulty": "easy",
+      "task_type": "article_retrieval",
+      "stratum": "high_risk_classification",
+      "question": "Which article and annex of the EU AI Act govern the high-risk classification of AI systems used for remote biometric identification in public spaces, and what is the precise Annex III reference?",
+      "scenario": {
+        "role": null,
+        "system_type": "Remote biometric identification system",
+        "intended_use": "Identifying natural persons at a distance without active involvement",
+        "input_data": "Biometric data, facial images, video footage",
+        "domain": "Law enforcement / Public security"
+      },
+      "gold_answer": "Art. 6(2) is the operative classification rule: AI systems listed in Annex III are high-risk. Annex III point 1(a) specifically lists remote biometric identification systems (excluding biometric verification). Art. 3(41) defines the remote biometric identification system (Art. 3(40) is the distinct 'biometric categorisation system'). Remote biometric identification systems for law-enforcement use are additionally subject to the prohibition conditions in Art. 5, but the classification as high-risk for non-prohibited uses derives from Art. 6(2) and Annex III point 1(a).",
+      "risk_level": "high",
+      "gold_citations": [
+        {"citation": "Art. 6(2)", "provision_id": "art_6__para_2", "role": "primary"},
+        {"citation": "Annex III point 1(a)", "provision_id": "annex_III__point_1__point_a", "role": "supporting"},
+        {"citation": "Art. 3(41)", "provision_id": "art_3__para_41", "role": "definition"}
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Annex III point 1(a) lists 'remote biometric identification systems, other than AI systems intended to be used for biometric verification whose sole purpose is to confirm that a specific natural person is who that person claims to be'. Art. 3(41) provides the definition of remote biometric identification system (definition 41 per the retrieved text, labelled there as (41)). Art. 6(2) is the operative classification rule for all Annex III systems."
+    },
+    {
+      "id": "easy_hrclass_007",
+      "difficulty": "easy",
+      "task_type": "risk_classification",
+      "stratum": "high_risk_classification",
+      "question": "An insurance company uses an AI system to assess health risks and calculate life insurance premiums for individual customers. Is this a high-risk AI system under the EU AI Act?",
+      "scenario": {
+        "role": "deployer",
+        "system_type": "Life and health insurance risk assessment and pricing tool",
+        "intended_use": "Assessing individual health risk and calculating life insurance premiums",
+        "input_data": "Medical history, health data, personal data of natural persons",
+        "domain": "Insurance"
+      },
+      "gold_answer": "Yes, this is a high-risk AI system. Annex III point 5(c) explicitly covers AI systems intended for risk assessment and pricing in relation to natural persons in the area of life and health insurance. Art. 6(2) therefore classifies it as high-risk.",
+      "risk_level": "high",
+      "gold_citations": [
+        {"citation": "Art. 6(2)", "provision_id": "art_6__para_2", "role": "primary"},
+        {"citation": "Annex III point 5(c)", "provision_id": "annex_III__point_5__point_c", "role": "supporting"}
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Annex III point 5(c) covers 'AI systems intended to be used to evaluate and classify risks in relation to natural persons for the purpose of health and life insurance, including underwriting and pricing'. The scenario maps exactly to this sub-point. Art. 6(2) is the operative rule."
+    },
+    {
+      "id": "hard_hrclass_001",
+      "difficulty": "hard",
+      "task_type": "risk_classification",
+      "stratum": "high_risk_classification",
+      "question": "A manufacturer integrates an AI module into a Class IIb implantable cardiac monitor (a medical device regulated under Regulation (EU) 2017/745). The AI module functions as the safety component that detects life-threatening arrhythmias and triggers automated alerts. The device requires third-party conformity assessment under MDR 2017/745. Is the AI module high-risk under the EU AI Act, and through which classification route?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "AI-powered arrhythmia detection module in an implantable cardiac monitor",
+        "intended_use": "Safety-critical detection of life-threatening cardiac events; triggers automated alerts",
+        "input_data": "Continuous cardiac electrical signals from implanted sensor",
+        "domain": "Healthcare / Medical devices"
+      },
+      "gold_answer": "The AI module is high-risk via the Art. 6(1) route, not Art. 6(2)/Annex III. It qualifies because: (1) the implantable cardiac monitor is a product covered by Regulation (EU) 2017/745 (medical devices), which is listed in Annex I Section A point 11; (2) the AI module is a safety component of that product; and (3) the product undergoes mandatory third-party conformity assessment under MDR. All three conditions of Art. 6(1) are met. Recital 51 clarifies that classification as high-risk under the AI Act does not affect the product's risk classification under MDR itself.",
+      "risk_level": "high",
+      "gold_citations": [
+        {"citation": "Art. 6(1)", "provision_id": "art_6__para_1", "role": "primary"},
+        {"citation": "Annex I", "provision_id": "annex_I", "role": "supporting"},
+        {"citation": "Art. 3(14)", "provision_id": "art_3__para_14", "role": "definition"},
+        {"citation": "Recital (47)", "provision_id": "recital_47", "role": "interpretive"},
+        {"citation": "Recital (51)", "provision_id": "recital_51", "role": "interpretive"}
+      ],
+      "reasoning_hops": 3,
+      "multi_hop": true,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Three-hop chain: (1) Art. 6(1) sets the safety-component / Annex I product / third-party conformity assessment test; (2) Annex I Section A point 11 lists Regulation (EU) 2017/745 (MDR), confirming the product is covered; (3) Art. 3(14) defines safety component. Recital 47 provides interpretive context for AI in safety-critical health applications. Recital 51 clarifies the interaction between AI Act high-risk classification and MDR risk class. Note: the AI Act's Annex III point area 5 covers access to health benefits, not diagnostic AI in medical devices — the correct route here is Art. 6(1), not Art. 6(2). A system evaluating this item must retrieve both Art. 6 paragraphs and correctly distinguish the routes."
+    },
+    {
+      "id": "hard_hrclass_002",
+      "difficulty": "hard",
+      "task_type": "risk_classification",
+      "stratum": "high_risk_classification",
+      "question": "A legal-tech startup builds an AI tool that ingests a judge's prior rulings, detects statistical patterns in the judge's sentencing behaviour, and flags potential anomalies for court administrators to investigate. The tool has no ability to modify, influence, or feed directly into any ongoing case proceedings. Is this system high-risk under the EU AI Act, and does the Art. 6(3) derogation apply?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "Judicial pattern anomaly detection tool",
+        "intended_use": "Detecting statistical anomalies in a judge's past sentencing patterns for administrative oversight; output goes to court administrators only",
+        "input_data": "Historical court judgments and sentencing records",
+        "domain": "Administration of justice"
+      },
+      "gold_answer": "The system falls within Annex III point 8(a) (AI systems assisting judicial authorities in researching and applying law to facts), so it is presumptively high-risk under Art. 6(2). However, the Art. 6(3)(c) derogation may apply: the system detects decision-making patterns or deviations without replacing or influencing human assessment — it only flags anomalies for human administrators. Critically, the derogation does not apply if the system involves profiling of natural persons (the profiling override in Art. 6(3) in fine). Analysing a judge's sentencing behaviour likely constitutes profiling under GDPR Art. 4(4) (automated processing to evaluate personal characteristics), triggering the profiling carve-out and removing the derogation. The system therefore remains high-risk despite Art. 6(3)(c) prima facie fitting.",
+      "risk_level": "high",
+      "gold_citations": [
+        {"citation": "Art. 6(2)", "provision_id": "art_6__para_2", "role": "primary"},
+        {"citation": "Annex III point 8(a)", "provision_id": "annex_III__point_8__point_a", "role": "supporting"},
+        {"citation": "Art. 6(3)", "provision_id": "art_6__para_3", "role": "primary"},
+        {"citation": "Art. 6(3)(c)", "provision_id": "art_6__para_3__point_c", "role": "supporting"},
+        {"citation": "Art. 3(52)", "provision_id": "art_3__para_52", "role": "definition"},
+        {"citation": "Recital (53)", "provision_id": "recital_53", "role": "interpretive"}
+      ],
+      "reasoning_hops": 4,
+      "multi_hop": true,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Four-hop chain: (1) Annex III point 8(a) triggers high-risk presumption via Art. 6(2); (2) Art. 6(3)(c) conditions appear met (pattern detection without influencing decisions); (3) profiling override in Art. 6(3) final sentence: if the system profiles natural persons, the derogation is categorically unavailable; (4) Art. 3(52) cross-references GDPR Art. 4(4) definition of profiling — evaluating a judge's behavioural patterns from their decisions is profiling. Recital 53 expressly describes this scenario (checking ex post whether a teacher deviated from a grading pattern) as an example of Art. 6(3)(c) — but also confirms the profiling override applies regardless. The interesting tension is that the recital's exact example (teacher grading) is factually identical to this scenario with a judge; the profiling analysis is the deciding factor."
+    },
+    {
+      "id": "hard_hrclass_003",
+      "difficulty": "hard",
+      "task_type": "risk_classification",
+      "stratum": "high_risk_classification",
+      "question": "An HR software vendor provides an AI system to large employers. The system ingests incoming job applications, extracts structured data from CVs (name, education, work history) into a standardised database format, and presents the structured records to human HR staff who then conduct all screening and evaluation manually. The vendor argues the system performs only a narrow preparatory/document-processing task and therefore is not high-risk under Art. 6(3). Is the vendor's position correct?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "CV data extraction and structuring tool",
+        "intended_use": "Converting unstructured CV documents into structured database records for human HR review; no scoring, ranking, or filtering of candidates",
+        "input_data": "CV documents (PDF/Word), application forms",
+        "domain": "Employment / HR"
+      },
+      "gold_answer": "The vendor's position is likely correct. The system falls within Annex III point 4(a) (recruitment) in scope, so Art. 6(2) creates a presumption of high-risk. However, Art. 6(3)(a) (narrow procedural task — transforming unstructured data into structured data) and Art. 6(3)(d) (preparatory task to an assessment) both plausibly apply, as the system does not score, rank, or filter candidates and all decision-making is reserved to humans. Provided the system does not perform profiling of natural persons, the Art. 6(3) derogation removes the high-risk classification. Recital 53 explicitly uses 'transforming unstructured data into structured data' as its paradigm example of Art. 6(3)(a). The provider must document this assessment before placing the system on the market.",
+      "risk_level": "limited",
+      "gold_citations": [
+        {"citation": "Art. 6(2)", "provision_id": "art_6__para_2", "role": "primary"},
+        {"citation": "Annex III point 4(a)", "provision_id": "annex_III__point_4__point_a", "role": "supporting"},
+        {"citation": "Art. 6(3)", "provision_id": "art_6__para_3", "role": "primary"},
+        {"citation": "Art. 6(3)(a)", "provision_id": "art_6__para_3__point_a", "role": "supporting"},
+        {"citation": "Art. 6(3)(d)", "provision_id": "art_6__para_3__point_d", "role": "supporting"},
+        {"citation": "Recital (53)", "provision_id": "recital_53", "role": "interpretive"}
+      ],
+      "reasoning_hops": 3,
+      "multi_hop": true,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Three-hop chain: (1) Annex III point 4(a) / Art. 6(2) creates the high-risk presumption; (2) Art. 6(3)(a) and (d) both provide candidate derogation grounds; (3) profiling override check — a pure data extraction system that does not score or categorise persons based on behavioural/personal characteristics is not profiling, so the override does not apply. Recital 53 explicitly enumerates 'AI system that transforms unstructured data into structured data' as the paradigm narrow-procedural-task case, conferring high confidence. The risk_level is set to 'limited' reflecting the outcome after derogation (system is presumptively high-risk under 6(2) but excluded by 6(3)). Evaluators should award full marks only if they correctly identify both the presumption and the derogation grounds."
+    },
+    {
+      "id": "hard_hrclass_004",
+      "difficulty": "hard",
+      "task_type": "risk_classification",
+      "stratum": "high_risk_classification",
+      "question": "A company deploys an AI-powered spam filter on its corporate email server. The system analyses incoming email metadata and content to classify messages as spam or legitimate and routes them accordingly. No human decisions about employees or external persons are influenced — the system only affects message routing. What is the risk level under the EU AI Act?",
+      "scenario": {
+        "role": "deployer",
+        "system_type": "Corporate email spam filter",
+        "intended_use": "Classifying and routing incoming email as spam or legitimate",
+        "input_data": "Email metadata, subject lines, message content, sender addresses",
+        "domain": "IT / Cybersecurity"
+      },
+      "gold_answer": "Minimal risk. A spam filter does not fall within any of the eight Annex III areas, and is not a safety component of a product covered by Annex I harmonisation legislation. Art. 6(1) and Art. 6(2) are therefore both inapplicable. The system is not prohibited under Art. 5. It is a minimal-risk AI system with no specific obligations under Title III.",
+      "risk_level": "minimal",
+      "gold_citations": [],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": true,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Negative control item. The system processes email content but does not evaluate, score, or make decisions about natural persons in any of the Annex III domains (biometrics, critical infrastructure, education, employment, essential services, law enforcement, migration, administration of justice). It is not a safety component of an Annex I product. No high-risk or prohibited route applies. The correct answer is empty gold_citations and minimal risk. A retrieval system that hallucinates an Annex III match (e.g. data processing / cybersecurity) should be penalised."
+    },
+    {
+      "id": "hard_hrclass_005",
+      "difficulty": "hard",
+      "task_type": "risk_classification",
+      "stratum": "high_risk_classification",
+      "question": "A company builds and markets an AI system designed to influence how voters choose candidates in national elections by generating personalised political messaging. What is the risk classification of this system, and which provisions apply?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "AI-powered personalised political campaign messaging tool",
+        "intended_use": "Generating targeted messages intended to influence voter behaviour in national elections",
+        "input_data": "Voter profile data, political preferences, demographic data",
+        "domain": "Democratic processes / Political campaigns"
+      },
+      "gold_answer": "High-risk. Annex III point 8(b) specifically lists AI systems intended to influence the outcome of an election or referendum or the voting behaviour of natural persons. Art. 6(2) therefore classifies this system as high-risk. The Annex III point 8(b) exclusion for back-office campaign logistics tools does not apply here because the system is directly exposed to natural persons (voters) and is intended to influence their voting behaviour.",
+      "risk_level": "high",
+      "gold_citations": [
+        {"citation": "Art. 6(2)", "provision_id": "art_6__para_2", "role": "primary"},
+        {"citation": "Annex III point 8(b)", "provision_id": "annex_III__point_8__point_b", "role": "supporting"}
+      ],
+      "reasoning_hops": 2,
+      "multi_hop": true,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Two-hop chain: (1) Art. 6(2) / Annex III point 8(b) identifies the high-risk classification; (2) the intra-point exclusion for tools not directly exposed to natural persons ('AI systems to the output of which natural persons are not directly exposed, such as tools used to organise, optimise or structure political campaigns from an administrative or logistical point of view') must be evaluated and found inapplicable — this system targets voters directly. The scenario also intentionally excludes the Art. 6(3) derogation because the system's output directly influences persons and materially affects decision-making. This item tests correct sub-point granularity and the ability to navigate an intra-point exclusion."
+    },
+    {
+      "id": "hard_hrclass_006",
+      "difficulty": "hard",
+      "task_type": "risk_classification",
+      "stratum": "high_risk_classification",
+      "question": "A company provides a video-game NPC (non-player character) AI system that adapts its dialogue and behaviour in response to player actions in a fantasy role-playing game. There is no real-world consequential decision-making, no biometric data processing, and no connection to any regulated domain. Is this AI system high-risk under the EU AI Act?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "Adaptive NPC AI for a fantasy role-playing video game",
+        "intended_use": "Dynamic in-game character dialogue and behaviour adaptation",
+        "input_data": "Player in-game actions and choices",
+        "domain": "Entertainment / Video games"
+      },
+      "gold_answer": "Not high-risk. The system is not listed in Annex III, does not fall within any of the eight high-risk use-case areas, and is not a safety component of a product subject to Annex I harmonisation legislation. It is a minimal-risk AI system. Neither Art. 6(1) nor Art. 6(2) applies.",
+      "risk_level": "minimal",
+      "gold_citations": [],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": true,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Second negative control. A game NPC has no nexus to any Annex III domain and is not a safety component of any Annex I product. The system operates entirely within a fictional entertainment context with no real-world consequential outputs. A retrieval system must return empty gold_citations and minimal risk. Items that assign any Annex III point (e.g. misidentifying in-game emotion recognition as Annex III point 1(c) emotion recognition) should receive no credit — Annex III point 1(c) requires use on natural persons for the purpose of identifying/inferring real emotions, not fictional game mechanics."
+    },
+    {
+      "id": "hard_hrclass_007",
+      "difficulty": "hard",
+      "task_type": "risk_classification",
+      "stratum": "high_risk_classification",
+      "question": "A healthcare technology vendor claims its AI system — which generates personalised treatment recommendations for oncology patients — is automatically high-risk under the EU AI Act simply because it operates in the healthcare domain. The vendor believes all AI used in healthcare is per se high-risk. Is this claim correct, and which provisions determine the actual classification?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "AI oncology treatment recommendation system",
+        "intended_use": "Generating personalised cancer treatment recommendations for clinician review",
+        "input_data": "Patient medical records, genomic data, clinical trial data",
+        "domain": "Healthcare / Oncology"
+      },
+      "gold_answer": "The vendor's blanket claim is incorrect — there is no provision making all healthcare AI automatically high-risk. The correct analysis requires applying Art. 6(1) or Art. 6(2). If the system is a safety component of a medical device under Regulation (EU) 2017/745 (Annex I point 11) requiring third-party conformity assessment, Art. 6(1) applies. If the system assists in determining access to healthcare benefits or services under Annex III point 5(a), Art. 6(2) applies. A standalone clinical decision-support tool that provides recommendations for clinician review (and is not itself a medical device or its safety component) does not automatically qualify as high-risk. The correct route depends on whether the system constitutes a medical device or safety component under MDR, not on the sector alone.",
+      "risk_level": "not_applicable",
+      "gold_citations": [
+        {"citation": "Art. 6(1)", "provision_id": "art_6__para_1", "role": "primary"},
+        {"citation": "Art. 6(2)", "provision_id": "art_6__para_2", "role": "primary"},
+        {"citation": "Annex I", "provision_id": "annex_I", "role": "supporting"},
+        {"citation": "Annex III point 5(a)", "provision_id": "annex_III__point_5__point_a", "role": "supporting"},
+        {"citation": "Recital (47)", "provision_id": "recital_47", "role": "interpretive"}
+      ],
+      "reasoning_hops": 3,
+      "multi_hop": true,
+      "negative_control": false,
+      "hallucination_trap": true,
+      "trap_note": "The hallucination trap is the tempting but false claim that 'all AI in healthcare is automatically high-risk' or that there exists an 'Annex III point 9 (healthcare)' or a blanket healthcare provision in the Act. No such provision exists. The Act has no sector-based automatic classification — classification always requires satisfying specific conditions in Art. 6(1) or matching a specific Annex III sub-point via Art. 6(2). Systems that cite a non-existent 'Annex III healthcare' entry or assert a sector-based rule without Art. 6 analysis should be flagged.",
+      "confidence": "high",
+      "annotator_notes": "This item explicitly tests the hallucination trap of a non-existent blanket healthcare classification. The risk_level is 'not_applicable' because the question asks about the vendor's claim (which is incorrect), not about a definitive classification of the system itself — the answer requires explaining the two possible routes (Art. 6(1) if MDR safety component, or Art. 6(2)/Annex III point 5(a) if healthcare benefit eligibility) without asserting a definitive classification for a scenario whose MDR status is deliberately left open. Evaluators must confirm: (1) no blanket healthcare provision exists; (2) Art. 6(1) route explained with Annex I reference; (3) Art. 6(2)/Annex III route explained with point 5(a) as the possible applicable sub-point; (4) no invented provisions cited."
+    }
+  ]
+}

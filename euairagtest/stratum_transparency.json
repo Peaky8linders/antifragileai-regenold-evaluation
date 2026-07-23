@@ -1,0 +1,484 @@
+{
+  "stratum": "transparency",
+  "items": [
+    {
+      "id": "easy_transp_001",
+      "difficulty": "easy",
+      "task_type": "obligation_generation",
+      "stratum": "transparency",
+      "question": "A company deploys an AI-powered customer-service chatbot on its website. The chatbot interacts in real time with members of the public. What transparency obligation applies, and who bears it?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "Conversational AI chatbot",
+        "intended_use": "Customer-service interactions with members of the public",
+        "input_data": "Free-text natural-language input from website visitors",
+        "domain": "Retail / e-commerce"
+      },
+      "gold_answer": "The provider must design the system so that natural persons are informed they are interacting with an AI system, unless this is obvious from the context (Art. 50(1)). The obligation falls on the provider at the design/development stage.",
+      "risk_level": "limited",
+      "gold_citations": [
+        {
+          "citation": "Art. 50(1)",
+          "provision_id": "art_50__para_1",
+          "role": "primary"
+        },
+        {
+          "citation": "Recital (132)",
+          "provision_id": "recital_132",
+          "role": "interpretive"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Direct single-hop lookup of the provider-side AI-interaction disclosure obligation. Art. 50(1) is the sole operative provision; Recital 132 provides the interpretive rationale about impersonation/deception risk. No high-risk classification; no conformity assessment required."
+    },
+    {
+      "id": "easy_transp_002",
+      "difficulty": "easy",
+      "task_type": "article_retrieval",
+      "stratum": "transparency",
+      "question": "Which provision of the EU AI Act requires deployers to disclose to audiences that a video has been artificially generated or manipulated and constitutes a deep fake?",
+      "scenario": {
+        "role": "deployer",
+        "system_type": "AI video-synthesis / deepfake generation system",
+        "intended_use": "Generating synthetic video content depicting real persons for online publication",
+        "input_data": "Images and video footage of real persons",
+        "domain": "Digital media / content creation"
+      },
+      "gold_answer": "Article 50(4), first sub-paragraph. Deployers of an AI system that generates or manipulates image, audio, or video content constituting a deep fake must disclose that the content has been artificially generated or manipulated.",
+      "risk_level": "limited",
+      "gold_citations": [
+        {
+          "citation": "Art. 50(4)",
+          "provision_id": "art_50__para_4",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 3(60)",
+          "provision_id": "art_3__para_60",
+          "role": "definition"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Canonical deepfake-disclosure lookup. Art. 3(60) provides the definition of 'deep fake' that triggers Art. 50(4). Both citations are necessary: 50(4) is the obligation; 3(60) establishes what qualifies as a deep fake. Obligation falls on the deployer, not the provider."
+    },
+    {
+      "id": "easy_transp_003",
+      "difficulty": "easy",
+      "task_type": "obligation_generation",
+      "stratum": "transparency",
+      "question": "A social media platform uses an AI system to categorise users by inferred emotional state during content moderation. What obligation applies to the platform as deployer, and under which provision?",
+      "scenario": {
+        "role": "deployer",
+        "system_type": "Emotion recognition system",
+        "intended_use": "Inferring emotional states of users for content moderation decisions",
+        "input_data": "User facial images and biometric signals",
+        "domain": "Social media / content moderation"
+      },
+      "gold_answer": "Under Art. 50(3), the deployer must inform the natural persons exposed to the emotion-recognition system of its operation, and must process personal data in accordance with applicable data-protection law (GDPR / LED / Regulation 2018/1725).",
+      "risk_level": "limited",
+      "gold_citations": [
+        {
+          "citation": "Art. 50(3)",
+          "provision_id": "art_50__para_3",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 3(39)",
+          "provision_id": "art_3__para_39",
+          "role": "definition"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Direct lookup of the deployer-side emotion-recognition disclosure obligation. Art. 3(39) defines 'emotion recognition system' and establishes that the system falls within Art. 50(3)'s scope. The obligation is on the deployer (the platform), not the provider."
+    },
+    {
+      "id": "easy_transp_004",
+      "difficulty": "easy",
+      "task_type": "obligation_generation",
+      "stratum": "transparency",
+      "question": "A provider builds a general-purpose AI model that can generate synthetic text, images, and audio on demand. What machine-readable marking obligation applies to the provider under the EU AI Act?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "General-purpose AI system generating synthetic audio, image, and text",
+        "intended_use": "Multi-modal content generation for downstream integrators",
+        "input_data": "Text prompts, reference images, audio samples",
+        "domain": "Foundation model / GPAI"
+      },
+      "gold_answer": "Under Art. 50(2), the provider must ensure that outputs of the AI system are marked in a machine-readable format and detectable as artificially generated or manipulated. Technical solutions must be effective, interoperable, robust, and reliable as far as technically feasible.",
+      "risk_level": "limited",
+      "gold_citations": [
+        {
+          "citation": "Art. 50(2)",
+          "provision_id": "art_50__para_2",
+          "role": "primary"
+        },
+        {
+          "citation": "Recital (133)",
+          "provision_id": "recital_133",
+          "role": "interpretive"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Art. 50(2) explicitly includes 'general-purpose AI systems'. Recital 133 explains the policy rationale (integrity of the information ecosystem) and confirms that marking can be implemented at the model level. The obligation sits entirely with the provider."
+    },
+    {
+      "id": "easy_transp_005",
+      "difficulty": "easy",
+      "task_type": "qa",
+      "stratum": "transparency",
+      "question": "What is the EU AI Act's definition of 'deep fake', and in which provision is it found?",
+      "scenario": {
+        "role": null,
+        "system_type": "N/A — definitional question",
+        "intended_use": "N/A",
+        "input_data": "N/A",
+        "domain": "Legal / definitional"
+      },
+      "gold_answer": "'Deep fake' means AI-generated or manipulated image, audio, or video content that resembles existing persons, objects, places, entities, or events and would falsely appear to a person to be authentic or truthful. The definition is in Art. 3(60).",
+      "risk_level": "not_applicable",
+      "gold_citations": [
+        {
+          "citation": "Art. 3(60)",
+          "provision_id": "art_3__para_60",
+          "role": "primary"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Definitional lookup with single citation. Art. 3(60) is the sole authoritative source. Tests whether the retrieval system can surface the correct definition paragraph rather than the disclosure obligation paragraph."
+    },
+    {
+      "id": "easy_transp_006",
+      "difficulty": "easy",
+      "task_type": "obligation_generation",
+      "stratum": "transparency",
+      "question": "A news agency deploys an AI system that drafts factual news articles intended for publication on its website, informing the public on matters of public interest. What transparency obligation applies to the deployer?",
+      "scenario": {
+        "role": "deployer",
+        "system_type": "AI text-generation system for news content",
+        "intended_use": "Generating factual news articles published to inform the public on matters of public interest",
+        "input_data": "Factual data feeds, press releases, event summaries",
+        "domain": "Journalism / news media"
+      },
+      "gold_answer": "Under Art. 50(4), second sub-paragraph, the deployer must disclose that the text has been artificially generated or manipulated. The obligation does not apply where the AI-generated content has undergone a process of human review or editorial control and a natural or legal person holds editorial responsibility for the publication.",
+      "risk_level": "limited",
+      "gold_citations": [
+        {
+          "citation": "Art. 50(4)",
+          "provision_id": "art_50__para_4",
+          "role": "primary"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Tests the second sub-paragraph of Art. 50(4) (AI-generated text for public-interest information), which is a distinct obligation from the deep-fake video provision in the first sub-paragraph. The editorial-control carve-out is part of the same paragraph and must be mentioned in the answer."
+    },
+    {
+      "id": "easy_transp_007",
+      "difficulty": "easy",
+      "task_type": "risk_classification",
+      "stratum": "transparency",
+      "question": "A company deploys a biometric-categorisation AI system that assigns customers to demographic segments (age group, inferred gender) based on facial images captured in its retail stores. What risk classification applies, and what transparency obligation does the deployer have?",
+      "scenario": {
+        "role": "deployer",
+        "system_type": "Biometric categorisation system",
+        "intended_use": "Assigning shoppers to demographic segments for in-store personalisation",
+        "input_data": "Facial images captured by in-store cameras",
+        "domain": "Retail / marketing"
+      },
+      "gold_answer": "The system is subject to Art. 50(3) transparency obligations (limited/transparency risk tier). The deployer must inform natural persons exposed to the biometric-categorisation system of its operation. The system may also qualify as high-risk under Annex III (biometrics), but Art. 50(3) applies regardless of high-risk status.",
+      "risk_level": "limited",
+      "gold_citations": [
+        {
+          "citation": "Art. 50(3)",
+          "provision_id": "art_50__para_3",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 3(40)",
+          "provision_id": "art_3__para_40",
+          "role": "definition"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Tests Art. 50(3) with biometric categorisation. Art. 3(40) defines 'biometric categorisation system'. The question also probes risk-level understanding: the system may simultaneously attract high-risk obligations, but the question asks what the deployer's transparency obligation is — Art. 50(3) is the direct answer."
+    },
+    {
+      "id": "hard_transp_001",
+      "difficulty": "hard",
+      "task_type": "risk_classification",
+      "stratum": "transparency",
+      "question": "A company markets a voice assistant that responds to questions in natural language. The system has no safety-critical function, is not used for biometric identification, does not generate deep fakes, and is deployed only in consumer smart-speaker devices. A compliance officer argues the system is 'high-risk' because it 'involves AI interacting with people'. Is this correct? What risk tier applies, and which provision governs?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "Consumer voice assistant / conversational AI",
+        "intended_use": "General question-answering and smart-home control via voice interaction",
+        "input_data": "Spoken natural-language commands",
+        "domain": "Consumer electronics"
+      },
+      "gold_answer": "The compliance officer is incorrect. A system subject only to Art. 50(1) transparency obligations (AI-interaction disclosure) is NOT thereby high-risk. The system falls in the limited/transparency-risk tier. High-risk classification requires listing in Annex III or being a safety component under Annex I (Art. 6). Art. 50(1) imposes a disclosure obligation on the provider but does not elevate the system to high-risk.",
+      "risk_level": "limited",
+      "gold_citations": [
+        {
+          "citation": "Art. 50(1)",
+          "provision_id": "art_50__para_1",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 50(6)",
+          "provision_id": "art_50__para_6",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 6",
+          "provision_id": "art_6",
+          "role": "supporting"
+        }
+      ],
+      "reasoning_hops": 2,
+      "multi_hop": true,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Encodes the canonical limited-vs-high-risk confusion. Art. 50(6) confirms that paragraphs 1-4 do not affect Chapter III (high-risk) requirements — the two regimes are independent. Art. 6 defines high-risk classification criteria. A retrieval system that misclassifies Art. 50 systems as high-risk will fail this item."
+    },
+    {
+      "id": "hard_transp_002",
+      "difficulty": "hard",
+      "task_type": "obligation_generation",
+      "stratum": "transparency",
+      "question": "A public broadcaster deploys an AI system to generate a satirical comedy sketch that uses synthesised video of a recognisable living politician. The video will be broadcast on primetime TV. What transparency obligations apply, and does the artistic-work carve-out eliminate them?",
+      "scenario": {
+        "role": "deployer",
+        "system_type": "AI video-synthesis system generating deepfake video of a real person",
+        "intended_use": "Production of satirical comedy content for primetime broadcast",
+        "input_data": "Video footage and images of a living politician",
+        "domain": "Broadcasting / entertainment"
+      },
+      "gold_answer": "Art. 50(4) applies: the content constitutes a deep fake (per Art. 3(60)) and the deployer must disclose its artificial origin. The artistic/satirical carve-out does NOT eliminate the obligation — it narrows it. Where content is part of an evidently artistic, creative, satirical, fictional or analogous work, the obligation is limited to disclosing the existence of such generated or manipulated content in an appropriate manner that does not hamper the display or enjoyment of the work. The deployer must therefore include an appropriate disclosure (e.g. a caption or end-credit notice) without disrupting the broadcast.",
+      "risk_level": "limited",
+      "gold_citations": [
+        {
+          "citation": "Art. 50(4)",
+          "provision_id": "art_50__para_4",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 3(60)",
+          "provision_id": "art_3__para_60",
+          "role": "definition"
+        },
+        {
+          "citation": "Recital (134)",
+          "provision_id": "recital_134",
+          "role": "interpretive"
+        }
+      ],
+      "reasoning_hops": 2,
+      "multi_hop": true,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Tests the artistic-work carve-out in Art. 50(4). The critical insight is that the carve-out narrows (does not eliminate) the disclosure duty. Recital 134 confirms this: disclosure is limited to 'an appropriate manner that does not hamper the display or enjoyment of the work'. Two hops: (1) Art. 3(60) to confirm deep-fake status; (2) Art. 50(4) carve-out clause."
+    },
+    {
+      "id": "hard_transp_003",
+      "difficulty": "hard",
+      "task_type": "obligation_generation",
+      "stratum": "transparency",
+      "question": "A national police force uses an AI system to generate synthetic audio that mimics a suspect's voice, used exclusively in an authorised covert investigation to detect and prevent serious organised crime. Is the Art. 50(4) deepfake disclosure obligation triggered? Must the police disclose the synthetic nature of the audio to subjects of the investigation?",
+      "scenario": {
+        "role": "deployer",
+        "system_type": "AI audio-synthesis system generating voice deep fake",
+        "intended_use": "Covert generation of synthetic voice audio in authorised law-enforcement investigation",
+        "input_data": "Voice samples of a suspect",
+        "domain": "Law enforcement / covert operations"
+      },
+      "gold_answer": "No. Art. 50(4) expressly exempts use that is authorised by law to detect, prevent, investigate or prosecute criminal offences. The law-enforcement carve-out fully suspends the deepfake disclosure obligation where the use is so authorised. The police are therefore not required to disclose the synthetic nature of the audio to the investigation subjects.",
+      "risk_level": "limited",
+      "gold_citations": [
+        {
+          "citation": "Art. 50(4)",
+          "provision_id": "art_50__para_4",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 3(60)",
+          "provision_id": "art_3__para_60",
+          "role": "definition"
+        }
+      ],
+      "reasoning_hops": 2,
+      "multi_hop": true,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Tests the law-enforcement carve-out in Art. 50(4), first sentence: 'This obligation shall not apply where the use is authorised by law to detect, prevent, investigate or prosecute criminal offences.' This is a full exemption (unlike the artistic-work carve-out, which merely narrows). Two hops: definition of deep fake + carve-out clause."
+    },
+    {
+      "id": "hard_transp_004",
+      "difficulty": "hard",
+      "task_type": "obligation_generation",
+      "stratum": "transparency",
+      "question": "An HR-tech provider builds an AI recruitment tool that ranks job applicants and infers their emotional suitability during video interviews. The deployer (a large employer) uses it across all hiring. Enumerate all transparency AND high-risk obligations that stack on both the provider and the deployer.",
+      "scenario": {
+        "role": "provider",
+        "system_type": "AI recruitment ranking + emotion-recognition system used in employment decisions",
+        "intended_use": "Automated applicant ranking and emotional-suitability inference during video job interviews",
+        "input_data": "Video recordings and biometric data of job applicants",
+        "domain": "Human resources / employment"
+      },
+      "gold_answer": "The system is BOTH high-risk (Annex III, category 4 — employment/worker management: recruitment and candidate evaluation) AND subject to Art. 50(3) transparency obligations (emotion recognition). Obligations stack: (1) Provider: high-risk obligations under Chapter III (conformity assessment, technical documentation, registration in EU database, etc.); (2) Deployer: Art. 50(3) — must inform exposed natural persons of the emotion-recognition operation; (3) Art. 50(6) confirms Art. 50 does not affect Chapter III requirements — both regimes apply independently.",
+      "risk_level": "high",
+      "gold_citations": [
+        {
+          "citation": "Art. 50(3)",
+          "provision_id": "art_50__para_3",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 50(6)",
+          "provision_id": "art_50__para_6",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 6",
+          "provision_id": "art_6",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 3(39)",
+          "provision_id": "art_3__para_39",
+          "role": "definition"
+        }
+      ],
+      "reasoning_hops": 3,
+      "multi_hop": true,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Multi-hop stacking item. Hop 1: Art. 3(39) identifies the system as an emotion-recognition system triggering Art. 50(3). Hop 2: Annex III category 4 + Art. 6(2) makes it high-risk. Hop 3: Art. 50(6) confirms the two regimes are additive, not alternative. Tests whether the retrieval system understands obligation stacking."
+    },
+    {
+      "id": "hard_transp_005",
+      "difficulty": "hard",
+      "task_type": "risk_classification",
+      "stratum": "transparency",
+      "question": "A company operates an internal AI tool used solely by its own employees to summarise internal meeting notes. The tool has no external-facing interface, does not interact with the public, generates no synthetic media for publication, and processes no biometric data. Does the EU AI Act's Art. 50 impose any transparency obligation on the company?",
+      "scenario": {
+        "role": "deployer",
+        "system_type": "Internal text-summarisation AI tool",
+        "intended_use": "Summarising internal meeting notes for employees",
+        "input_data": "Internal meeting transcripts",
+        "domain": "Enterprise productivity / internal operations"
+      },
+      "gold_answer": "No. Art. 50 imposes no transparency obligation in this scenario. Art. 50(1) requires disclosure when the system interacts directly with natural persons who need to know they are interacting with an AI — employees using an internal summarisation tool are aware of the tool's nature (obvious from context). Art. 50(2) does not apply because the summaries are not published to inform the public on matters of public interest. Art. 50(3) and (4) do not apply because the system performs neither emotion recognition/biometric categorisation nor deep-fake generation. Gold citations are empty because no Art. 50 obligation is triggered.",
+      "risk_level": "minimal",
+      "gold_citations": [],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": true,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Negative control: a genuinely out-of-scope scenario where no Art. 50 provision fires. A retrieval system with a strong prior toward transparency obligations may hallucinate a citation. The correct answer is no obligation — empty citation set. The 'obvious from context' exception in Art. 50(1) is the key analytical step for the interaction dimension."
+    },
+    {
+      "id": "hard_transp_006",
+      "difficulty": "hard",
+      "task_type": "article_retrieval",
+      "stratum": "transparency",
+      "question": "Does Art. 50 of the EU AI Act require providers or deployers of AI systems subject to transparency obligations to undergo a conformity assessment or to affix CE marking?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "AI system subject only to Art. 50 transparency obligations (limited-risk)",
+        "intended_use": "Understanding compliance pathway for a limited-risk AI system",
+        "input_data": "N/A",
+        "domain": "Regulatory compliance"
+      },
+      "gold_answer": "No. Article 50 imposes transparency and disclosure obligations only. It does not require a conformity assessment or CE marking. Those requirements apply to high-risk AI systems under Chapter III (Arts. 16-27, 43-49). Art. 50(6) expressly states that paragraphs 1-4 'shall not affect the requirements and obligations set out in Chapter III' — meaning Art. 50 is a separate, lighter regime. A system that only triggers Art. 50 is not required to carry a CE mark or conduct a formal conformity assessment.",
+      "risk_level": "limited",
+      "gold_citations": [
+        {
+          "citation": "Art. 50(6)",
+          "provision_id": "art_50__para_6",
+          "role": "primary"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": true,
+      "trap_note": "Tempting wrong citation: Art. 43 (conformity assessment for high-risk AI systems). A model that confuses limited-risk with high-risk will incorrectly cite Art. 43 as applicable. Art. 43 applies only to high-risk systems under Chapter III, not to systems subject only to Art. 50. Also tempting: inventing a non-existent 'Art. 50(5)' requiring registration — Art. 50(5) actually concerns timing of information delivery, not registration.",
+      "confidence": "high",
+      "annotator_notes": "Hallucination trap targeting the most common confusion: conflating Art. 50 transparency duties with the high-risk conformity-assessment regime. Art. 50(6) is the key provision that clarifies the two regimes are separate. Tests whether the retrieval system avoids hallucinating Art. 43 or fabricating an 'Art. 50(5) registration' obligation."
+    },
+    {
+      "id": "hard_transp_007",
+      "difficulty": "hard",
+      "task_type": "obligation_generation",
+      "stratum": "transparency",
+      "question": "A provider builds an AI image editor marketed to professional photographers. The tool performs standard retouching — adjusting brightness, removing blemishes, correcting colour — but does not generate new synthetic content or create deep fakes. Does Art. 50(2) machine-readable marking obligation apply to this provider?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "AI-assisted standard photo-editing tool",
+        "intended_use": "Standard image retouching and editing assistance for professional photographers",
+        "input_data": "Photographs submitted by professional photographers for retouching",
+        "domain": "Creative tools / photography"
+      },
+      "gold_answer": "No, or at most marginally. Art. 50(2) contains an explicit carve-out: the obligation 'shall not apply to the extent the AI systems perform an assistive function for standard editing or do not substantially alter the input data provided by the deployer or the semantics thereof.' A standard photo-retouching tool that adjusts brightness, removes blemishes, or corrects colour falls squarely within the 'assistive function for standard editing' exception and does not substantially alter the semantics of the image. The provider is therefore not required to apply machine-readable marking under Art. 50(2).",
+      "risk_level": "minimal",
+      "gold_citations": [
+        {
+          "citation": "Art. 50(2)",
+          "provision_id": "art_50__para_2",
+          "role": "primary"
+        }
+      ],
+      "reasoning_hops": 2,
+      "multi_hop": true,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Tests the standard-editing carve-out within Art. 50(2). Two hops: (1) identify that Art. 50(2) is the candidate provision; (2) apply the assistive/standard-editing exception to reach the correct negative conclusion. The provision itself is cited because it contains both the obligation and the carve-out — the answer hinges on which clause applies."
+    }
+  ]
+}

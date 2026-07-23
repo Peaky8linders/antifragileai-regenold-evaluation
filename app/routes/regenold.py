@@ -197,6 +197,18 @@ def _classify_intent_cached(question: str):
         cache[question] = classify_intent(question)
     return cache[question]
 
+
+_NLI_SCORER = None
+
+
+def _get_nli_scorer():
+    global _NLI_SCORER
+    if _NLI_SCORER is None:
+        from app.engines.crag_nli_verifier import NLIEntailmentScorer  # noqa: PLC0415
+        _NLI_SCORER = NLIEntailmentScorer()
+    return _NLI_SCORER
+
+
 logger = structlog.get_logger(__name__)
 
 regenold_router = APIRouter(tags=["regenold"])
@@ -8113,6 +8125,52 @@ def regenold_eu_ai_act_ask(
                         pass
         except Exception:  # noqa: BLE001 — fail-soft; never 500 the route
             pass
+
+    # NLI DeBERTa Cross-Encoder Citation Verification & Grounding
+    # Enabled by default per user directive (REGENOLD_NLI_VERIFY=1).
+    if (
+        os.getenv("REGENOLD_NLI_VERIFY", "1").strip().lower()
+        in ("1", "true", "yes", "on")
+        and answer_text
+        and references
+        and retrieval_path not in ("no_match", "verbatim_exact_text")
+    ):
+        try:
+            from app.data.provision_text import get_provision_text  # noqa: PLC0415
+
+            _scorer = _get_nli_scorer()
+            _premises = [get_provision_text(r) or "" for r in references]
+            if any(_premises):
+                _scores = _scorer.score_batch(answer_text, _premises)
+                try:
+                    _keep_thresh = float(
+                        os.getenv("REGENOLD_NLI_KEEP_THRESHOLD", "0.05")
+                    )
+                except ValueError:
+                    _keep_thresh = 0.05
+
+                _kept_refs = []
+                for _r, _s, _p in zip(references, _scores, _premises):
+                    if not _p or float(_s) >= _keep_thresh:
+                        _kept_refs.append(_r)
+
+                # Floor of 1 reference to prevent dropping down to 0 if all scores are low
+                if _kept_refs:
+                    references = _kept_refs
+
+                try:
+                    from app.integrations.regenold.reasoning_trace import (  # noqa: PLC0415
+                        record_note as _rn,
+                    )
+
+                    _rn(
+                        f"nli_verify_scored total={len(_premises)} kept={len(references)} "
+                        f"scores={[round(float(s), 3) for s in _scores]}"
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
+        except Exception as _nli_exc:  # noqa: BLE001 — fail-soft on NLI verify
+            logger.warning("nli_verify_failure: %s", _nli_exc, exc_info=True)
 
     # R50 / R131 — finalise the reasoning trace AFTER every reference pass
     # so ``?include_reasoning=true`` surfaces the exact wire ``references``

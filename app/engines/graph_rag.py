@@ -5231,7 +5231,7 @@ def _retrieve_from_graph(
 
 
 def _populate_semantic_statements(context: GraphContext, question: str) -> None:
-    """Populate semantically_relevant_statements in context from sentence embedding index."""
+    """Populate semantically_relevant_statements in context from sentence embedding index and Graph Expansion Engine."""
     try:
         from app.engines.embeddings_index import (
             is_available as _emb_available,
@@ -5250,6 +5250,24 @@ def _populate_semantic_statements(context: GraphContext, question: str) -> None:
                 context.semantically_relevant_statements = [
                     f"[{h.article_ref}] {h.text}" for h in hits
                 ]
+
+        # SOTA GraphRAG Expansion integration
+        from app.engines.graph_expansion_engine import get_global_graph_expansion_retriever
+        from app.data.ids import ProvisionId
+        g_retriever = get_global_graph_expansion_retriever()
+        if g_retriever is not None and question:
+            expanded_results = g_retriever.search_scored(question, k=5)
+            for eid, score in expanded_results:
+                try:
+                    pid = ProvisionId.from_eid(eid)
+                    node = g_retriever.graph.get_node(eid)
+                    node_text = node.props.get("text", "") if node else ""
+                    if node_text:
+                        statement = f"[{pid.citation}] {node_text}"
+                        if statement not in context.semantically_relevant_statements:
+                            context.semantically_relevant_statements.append(statement)
+                except Exception:
+                    pass
     except Exception as exc:
         logger.debug("Failed to populate semantically_relevant_statements: %s", exc)
 
