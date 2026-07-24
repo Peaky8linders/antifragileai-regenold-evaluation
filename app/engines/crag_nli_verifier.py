@@ -103,7 +103,11 @@ class NLIEntailmentScorer(EntailmentScorer):
         self._entail_index = (
             entail_index
             if entail_index is not None
-            else _DEFAULT_ENTAIL_INDEX
+            else (
+                self._resolve_entail_index(model, _DEFAULT_ENTAIL_INDEX)
+                if model is not None
+                else _DEFAULT_ENTAIL_INDEX
+            )
         )
         self.name = f"nli:{model_name}"
 
@@ -112,19 +116,30 @@ class NLIEntailmentScorer(EntailmentScorer):
         try:
             from sentence_transformers import CrossEncoder
             return CrossEncoder(model_name)
-        except Exception as e:
+        except Exception:
             return None
 
     @staticmethod
     def _resolve_entail_index(model, default: int) -> int:
         if model is None:
             return default
-        config = getattr(model, "config", None)
-        id2label = getattr(config, "id2label", None) if config else None
-        if isinstance(id2label, dict):
-            for idx, label in id2label.items():
-                if str(label).lower() in {"entailment", "entails"}:
-                    return int(idx)
+        cfg = getattr(model, "config", None)
+        label2id = getattr(cfg, "label2id", None)
+        id2label = getattr(cfg, "id2label", None)
+        mapping: dict[str, int] = {}
+        if isinstance(label2id, dict):
+            mapping = {str(lbl).lower(): int(i) for lbl, i in label2id.items()}
+        elif isinstance(id2label, dict):
+            mapping = {str(lbl).lower(): int(i) for i, lbl in id2label.items()}
+        if mapping:
+            if "entailment" in mapping:
+                return mapping["entailment"]
+            candidates = [
+                i for lbl, i in mapping.items()
+                if "entail" in lbl and "not" not in lbl and "non" not in lbl
+            ]
+            if len(candidates) == 1:
+                return candidates[0]
         return default
 
     def score(self, claim: str, premise: str) -> float:
@@ -135,6 +150,7 @@ class NLIEntailmentScorer(EntailmentScorer):
             return []
 
         # 1. Remote GPU / CPU Service Check (HuggingFace TEI / Railway endpoint)
+        # Note: Do NOT fall back to 127.0.0.1:8080 unless explicitly configured via env var.
         explicit_base = (
             os.getenv("NLI_API_BASE")
             or os.getenv("TEI_API_BASE")
@@ -143,7 +159,6 @@ class NLIEntailmentScorer(EntailmentScorer):
         api_bases = [explicit_base] if explicit_base else [
             "http://text-embeddings-inference.railway.internal:8080",
             "http://text-embeddings-inference.railway.internal",
-            "http://127.0.0.1:8080",
         ]
 
         import httpx
@@ -199,7 +214,10 @@ class NLIEntailmentScorer(EntailmentScorer):
 
 @dataclass(frozen=True)
 class CragThresholds:
-    """CRAG keep and abstain thresholds."""
+    """CRAG keep, abstain, and scale-free relative thresholds."""
 
     keep: float = 0.0
     abstain: float = 0.0
+    relative_cutoff: float = 0.0
+    floor: int = 1
+

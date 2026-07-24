@@ -253,17 +253,19 @@ class NLIEntailmentScorer(EntailmentScorer):
 
 @dataclass(frozen=True)
 class CragThresholds:
-    """The two CRAG thresholds, adapted to a closed authoritative corpus.
+    """The CRAG thresholds, adapted to a closed authoritative corpus.
 
     ``keep`` -- drop any individual citation whose support is below this (the
     per-citation ALCE precision filter). ``abstain`` -- if the *best* surviving
     citation's support is below this, the query is judged out-of-scope and the
-    whole prediction becomes ``[]`` (CRAG's "Incorrect" action, with abstention
-    replacing web-search fallback). Both default to 0 -> a pass-through that only
-    re-ranks nothing and never abstains, so the wrapper is a no-op until tuned."""
+    whole prediction becomes ``[]`` (CRAG's "Incorrect" action).
+    ``relative_cutoff`` -- scale-free relative threshold (e.g. 0.30 below max score).
+    ``floor`` -- minimum number of citations retained to guard recall."""
 
     keep: float = 0.0
     abstain: float = 0.0
+    relative_cutoff: float = 0.0
+    floor: int = 1
 
 
 class VerifiedBaseline(Baseline):
@@ -271,10 +273,10 @@ class VerifiedBaseline(Baseline):
 
     Runs the wrapped baseline, then for each emitted citation grades the
     (question, provision-text) support with an :class:`EntailmentScorer` and
-    applies the corrective action: keep citations at/above ``keep``, abstain
-    entirely (return ``[]``) if the best support is below ``abstain``. Emission
-    order from the base baseline is preserved (verification filters, it does not
-    re-rank); the surviving list is capped at ``k`` if given."""
+    applies the corrective action: keep citations at/above ``keep`` and relative
+    cutoff, abstain entirely (return ``[]``) if the best support is below ``abstain``.
+    Emission order from the base baseline is preserved; the surviving list is capped
+    at ``k`` if given."""
 
     def __init__(
         self,
@@ -285,6 +287,8 @@ class VerifiedBaseline(Baseline):
         thresholds: CragThresholds | None = None,
         keep: float | None = None,
         abstain: float | None = None,
+        relative_cutoff: float | None = None,
+        floor: int | None = None,
         k: int | None = None,
         drop_unresolvable: bool = False,
     ) -> None:
@@ -295,13 +299,16 @@ class VerifiedBaseline(Baseline):
             thresholds = CragThresholds(
                 keep=keep if keep is not None else 0.0,
                 abstain=abstain if abstain is not None else 0.0,
+                relative_cutoff=relative_cutoff if relative_cutoff is not None else 0.0,
+                floor=floor if floor is not None else 1,
             )
         self.thresholds = thresholds
         self.k = k
         self.drop_unresolvable = drop_unresolvable
         self.name = (
             f"{base.name}+verify({scorer.name},"
-            f"keep={thresholds.keep},abstain={thresholds.abstain})"
+            f"keep={thresholds.keep},abstain={thresholds.abstain},"
+            f"rel={thresholds.relative_cutoff},floor={thresholds.floor})"
         )
 
     def _resolve_text(self, citation: str) -> str | None:
@@ -338,13 +345,28 @@ class VerifiedBaseline(Baseline):
         if support_by_cite and max(support_by_cite.values()) < self.thresholds.abstain:
             return []
 
+        effective_keep = self.thresholds.keep
+        if support_by_cite and self.thresholds.relative_cutoff > 0.0:
+            max_supp = max(support_by_cite.values())
+            rel_thresh = max_supp - self.thresholds.relative_cutoff
+            effective_keep = max(effective_keep, rel_thresh)
+
         kept: list[str] = []
         for c, t in zip(cites, texts):
             if t is None:
                 if not self.drop_unresolvable:
                     kept.append(c)  # can't verify -> keep unless told to prune
                 continue
-            if support_by_cite[c] >= self.thresholds.keep:
+            if support_by_cite[c] >= effective_keep:
                 kept.append(c)
 
+        # Enforce floor safety to prevent recall collapse
+        if len(kept) < self.thresholds.floor and resolvable:
+            sorted_by_score = sorted(
+                resolvable, key=lambda pair: support_by_cite[pair[0]], reverse=True
+            )
+            top_floor_cites = {c for c, _ in sorted_by_score[: self.thresholds.floor]}
+            kept = [c for c in cites if c in top_floor_cites or (self._resolve_text(c) is None and not self.drop_unresolvable)]
+
         return kept[: self.k] if self.k is not None else kept
+
