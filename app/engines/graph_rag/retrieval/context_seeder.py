@@ -25,11 +25,15 @@ def enrich_context(query: GraphQuery, context: GraphContext, question: str) -> N
             for article, bridge_data in MEDTECH_STANDARD_MAP.items():
                 art_num = article.replace("Art. ", "").strip()
                 art_num_esc = re.escape(art_num)
-                match_pattern = rf"\b(?:article|art\.?)\s+{art_num_esc}\b"
+                match_pattern = rf"\b(?:article|art\.?)\s*{art_num_esc}\b"
                 
-                if re.search(match_pattern, q_low) or any(
-                    a.get("article", "") == article or a.get("article_ref", "") == article
-                    for a in _ctx_refs
+                if (
+                    article in (query.entities if query else [])
+                    or re.search(match_pattern, q_low)
+                    or any(
+                        a.get("article", "") == article or a.get("article_ref", "") == article
+                        for a in _ctx_refs
+                    )
                 ):
                     standard = bridge_data.get("standard", "")
                     name = bridge_data.get("name", "")
@@ -40,3 +44,4 @@ def enrich_context(query: GraphQuery, context: GraphContext, question: str) -> N
                             context.bridging_context.append(bridge_entry)
     except Exception as exc:
         logger.debug("medtech bridging injection skipped: %s", exc)
+

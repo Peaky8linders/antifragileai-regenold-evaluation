@@ -177,7 +177,10 @@ class TestR127SufficientContextGate:
 
 class TestR127ThinkingMessage:
     def test_old_misleading_string_removed_from_source(self):
-        gr = Path("app/engines/graph_rag.py").read_text(encoding="utf-8")
+        # R290 — the engine source moved to _graph_rag_impl.py when
+        # app/engines/graph_rag became a package; the old path is now a
+        # directory, so this guard raised FileNotFoundError.
+        gr = Path("app/engines/_graph_rag_impl.py").read_text(encoding="utf-8")
         assert "extended thinking is disabled by configuration" not in gr
         assert "Single-pass synthesis (no extended thinking on this call)." in gr
 

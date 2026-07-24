@@ -5,9 +5,9 @@ from __future__ import annotations
 import json
 import logging
 import re
-from typing import Any
 
 from app.engines.graph_rag.models import GraphQuery
+
 
 logger = logging.getLogger(__name__)
 

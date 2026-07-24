@@ -194,7 +194,9 @@ def test_engine_stage2_messages_carry_cohesion() -> None:
     """Both engine Stage-2 user-messages forbid the sectioned-memo structure."""
     import inspect
 
-    import app.engines.graph_rag as gr
+    # R290 — read the IMPLEMENTATION module (see test_r112_3 for the rationale):
+    # the ``graph_rag`` package facade is a proxy shim, not the engine source.
+    import app.engines._graph_rag_impl as gr
 
     src = inspect.getsource(gr)
     # the classification + refine branches both gained the cohesion instruction

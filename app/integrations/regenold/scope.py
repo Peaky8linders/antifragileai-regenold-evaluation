@@ -3150,7 +3150,24 @@ def classify_scope(question: str) -> ScopeVerdict:
             ),
         )
     standard = _AI_STANDARD_RE.search(text)
-    if standard:
+    # R290 — the standard refusal yields to an explicit, VALID EU AI Act
+    # provision reference, restoring the R49-B ordering doctrine ("detection
+    # runs after the known-Art-N reference check, so explicit AI Act anchors
+    # still win"). R289 fired this branch unconditionally, which false-refused
+    # the legitimate comparison shape "ISO 42001 certification fully overrides
+    # our Art. 17 QMS obligations" — an EU AI Act question that merely NAMES
+    # the standard. Naming a standard alongside a real Article is the
+    # overlap question a compliance officer actually asks; refusing it is
+    # strictly worse than answering it.
+    #
+    # This cannot re-open the R289 held-out leaks: all three ``standards``
+    # probes (ISO 42001 "Annex A controls", NIST AI RMF GOVERN, IEEE 7000)
+    # carry NO valid Act provision — ``known`` is empty for each, verified —
+    # so they still refuse here. Only a question citing a real Article/Annex
+    # passes, and ``extract_referenced_articles`` already strips references
+    # claimed by another instrument ("GDPR Article 17"), so a foreign law's
+    # own article numbering cannot satisfy this gate either.
+    if standard and not known:
         return ScopeVerdict(
             in_scope=False,
             reason=ScopeReason.NEAR_OOS,

@@ -397,7 +397,7 @@ def _get_groq_compressed_system_prompt() -> str:
         "Provide precise, authoritative legal analysis grounded in verified statutory provisions and live tools.\n\n"
         "RULES:\n"
         "1. Cite exact Akoma Ntoso subpoint provisions using standard formats: 'Article N' or 'Annex R', "
-        "with paragraph/point sub-points (e.g. 'Article 6(2)(a)', 'Annex III point 5(a)'). Do NOT cite bare top-level articles when specific subpoints apply.\n"
+        "with paragraph/point sub-points (e.g. 'Article 6(3)(a)', 'Annex III point 5(a)'). Do NOT cite bare top-level articles when specific subpoints apply.\n"
         "2. Deontic Structure: Address the 4 Deontic Elements where applicable: Scope/Applicability, Core Duty/Obligation, Exceptions/Conditions, and Enforcement/Sanctions.\n"
         "3. Write cohesive, authoritative legal analysis. Lead with the direct verdict (Bottom-Line Up Front - BLUF) in the first clause.\n"
         "4. Risk Tiers: State exact verbatim risk tiers ('prohibited', 'high-risk', 'limited risk', 'minimal risk', 'GPAI with systemic risk').\n"
@@ -1677,7 +1677,7 @@ def _deterministic_parse(question: str) -> GraphQuery:
         article_nums = [
             n
             for m in _MULTI_ARTICLE_MENTION_RE.finditer(question)
-            for n in re.findall(r"\d{1,3}", m.group(1))
+            for n in re.findall(r"\d{1,3}", re.sub(r"\(\d+\)", "", m.group(1)))
         ]
         annex_romans = [
             r

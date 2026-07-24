@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 import logging
 from app.engines.graph_rag.models import GraphContext, GraphQuery
 

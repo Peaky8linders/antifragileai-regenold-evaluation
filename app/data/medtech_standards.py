@@ -17,10 +17,20 @@ MEDTECH_STANDARD_MAP: dict[str, dict[str, str]] = {
         "name": "Quality management systems for medical devices",
         "bridge": "Article 10 data governance requirements complement ISO 13485 design control and traceability requirements.",
     },
+    "Art. 11": {
+        "standard": "MDR 2017/745 Annex II & III / ISO 13485:2016 §4.2.3",
+        "name": "Technical documentation / Medical device file",
+        "bridge": "Article 11 technical documentation requirements for high-risk AI systems map to MDR Annex II/III technical documentation structures and ISO 13485 clause 4.2.3 medical device file requirements.",
+    },
     "Art. 12": {
         "standard": "ISO 13485:2016 §4.2.5 / MDR 2017/745 Art. 10(8)",
         "name": "Control of records / technical documentation retention",
         "bridge": "Article 12 requires high-risk AI systems to technically allow automatic recording of events (logs) over their lifetime; ISO 13485 clause 4.2.5 record control and MDR Article 10(8) documentation retention supply the medical-device record regime those logs join. The retention periods differ and do not substitute for one another: Article 19(1) obliges the provider, and Article 26(6) the deployer, to keep the automatically generated logs for at least six months, while MDR Article 10(8) requires technical documentation to remain available to competent authorities for at least ten years after the last device is placed on the market (fifteen for implantables).",
+    },
+    "Art. 13": {
+        "standard": "ISO 20417:2021 / MDR 2017/745 Annex I Ch. III",
+        "name": "Information supplied by the manufacturer / Labelling & Instructions for use",
+        "bridge": "Article 13 transparency and provision of information to deployers aligns with ISO 20417 requirements for information supplied by the manufacturer and MDR Annex I Chapter III requirements for instructions for use and technical labelling.",
     },
     "Art. 14": {
         "standard": "IEC 62366-1:2015+A1:2020",
@@ -28,9 +38,14 @@ MEDTECH_STANDARD_MAP: dict[str, dict[str, str]] = {
         "bridge": "Article 14 human oversight is discharged through the same usability-engineering process IEC 62366-1 already requires: use-specification, identification of use-related hazards, and validation that the intended user can operate the device safely. Article 14(4)(b) awareness of automation bias maps to use-related risk analysis, and Article 14(4)(d)-(e) — the ability to disregard, override or reverse an output and to interrupt operation — are user-interface requirements that must appear in the usability engineering file. Use error identified under IEC 62366-1 feeds the ISO 14971 risk-management file, which is the same file Article 9(2)(c) updates.",
     },
     "Art. 15": {
-        "standard": "IEC 62304:2006+A1:2015",
-        "name": "Medical device software — Software life cycle processes",
-        "bridge": "Article 15 accuracy, robustness, and cybersecurity requirements map to IEC 62304 software safety classification (Class A/B/C) and verification/validation requirements.",
+        "standard": "IEC 62304:2006+A1:2015 / IEC 82304-1:2016 / ISO/IEC 81001-5-1:2021",
+        "name": "Medical device software life cycle, health software product safety, and cybersecurity",
+        "bridge": "Article 15 accuracy, robustness, and cybersecurity requirements map to IEC 62304 software safety classification (Class A/B/C), IEC 82304-1 health software system-level safety validation, and ISO/IEC 81001-5-1 health software cybersecurity lifecycle requirements.",
+    },
+    "Art. 17": {
+        "standard": "ISO 13485:2016",
+        "name": "Medical devices — Quality management systems — Requirements for regulatory purposes",
+        "bridge": "Article 17 quality management system requirements for high-risk AI providers align directly with ISO 13485 QMS processes, including design controls (§7.3), document management (§4.2), resource management (Clause 6), and post-market feedback loops (§8.2).",
     },
     "Art. 26": {
         "standard": "MDR 2017/745 Art. 87-88 (health-institution / user side)",

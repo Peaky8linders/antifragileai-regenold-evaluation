@@ -9843,6 +9843,124 @@ they are left for a future ab_judge-gated pass rather than risk a blind
 * LIVE (Claude Max Opus wrapper): Q8 complete def + Stage-2 skipped; Q10 role
   verdict + Art 25 + Stage-2 skipped; Q14 correct operative routes.
 
+## Round 290 — deep review of the Gemini graph_rag modularization: 2 wrong citations caught, the package is inert (2026-07-24)
+
+A Gemini agent pushed `f08fbd3` ("modularize graph_rag sub-package and MedTech
+risk architecture") **straight to `origin/main`**, so it auto-deployed —
+`/healthz/llm` confirmed production running `commit f08fbd37d3c1`. A 6-lane
+adversarial review workflow + independent verification of every claim.
+
+### What the commit actually did (vs what it claimed)
+
+It renamed `app/engines/graph_rag.py` (7731 LOC) to `_graph_rag_impl.py` (98%
+similarity) and added `app/engines/graph_rag/` — a package with a
+`_GraphRAGModule` proxy plus `parser/`, `risk_engine/`, `medtech/`,
+`retrieval/`, `generators/`, `pipeline.py`, `config.py` (~1000 LOC).
+
+**The engine was NOT modularized.** Proven by execution trace (`sys.settrace`
+over 8 real `/ask` requests, all HTTP 200 with non-empty answers): every entry
+under `app/engines/graph_rag/` fires exactly `1x` at *import* time
+(`<module>` / class-body). **Zero new functions execute on a request.** The
+only genuine extraction is `models.py` — `_graph_rag_impl.py:1125` imports
+`GraphQuery` / `GraphContext` from it. Everything else is a parallel skeleton.
+Three independent review lanes reached the same verdict. This is the
+R256/R286 silently-inert shape, though here it is inert-and-harmless rather
+than inert-and-claimed-live.
+
+### The real defects — 2 wrong legal citations, uncommitted, about to ship
+
+Mid-session the agent left **uncommitted** edits to `_graph_rag_impl.py` that
+changed two citations in the LIVE deterministic answers. Both verified wrong
+against the repo's own verbatim text (`provision_text.get_provision_text`):
+
+| Edit | Verdict |
+| ---- | ------- |
+| Art. 6(3) registration `Article 49(2)` -> `Article 71(2)` | **WRONG, reverted.** Art. 49(2) is verbatim the 6(3) duty: *"an AI system for which the provider has concluded that it is not high-risk according to Article 6(3)... shall register"*. Art. 71(2) is entering Annex VIII data. |
+| Art. 18 retention `Article 47` -> `Article 48` | **WRONG, reverted.** Art. 47 IS the EU declaration of conformity (the clause's own words); Art. 48 is CE marking. |
+| Groq prompt example `Article 6(2)(a)` -> `Article 6(3)(a)` | **KEPT** — 6(2) has no points; 6(3) has (a)-(c). |
+| `_deterministic_parse` strips `(\d+)` before article extraction | **KEPT** — genuine fix; "Article 6(2) and 13" no longer yields a phantom `Art. 2`. |
+
+These are exactly the "confidently-wrong legal claim" hard rule #4 calls the
+worst defect, and they were caught only by the full-suite A/B, not by any
+aggregate metric — davidath stayed byte-identical throughout.
+
+### The A/B that found them
+
+Full suite at HEAD vs the pre-refactor parent (`029dcb0`) under identical env:
+**103 failed / 5098 passed** vs **96 failed / 5087 passed** (+18 tests = the
+new subpackage file). Diffing the failure SETS gave exactly **7 new, 0 fixed**:
+4 were the two citation regressions above; 3 were source-inspection guards
+(`test_r112_3`, `test_r127`, `test_r145`) that read `app/engines/graph_rag.py`
+— now a package directory, so they inspected the 60-line proxy instead of the
+engine. All 7 fixed; the remaining 96 are the documented `provider=cli`
+Stage-2 env artifact, identical at both commits.
+
+### R290 fixes shipped
+
+* **`scope.py`** — the R289 `_AI_STANDARD_RE` refusal now yields to an
+  explicit VALID Act reference (`if standard and not known`). R289 fired it
+  unconditionally, false-refusing *"ISO 42001 certification fully overrides our
+  Art. 17 QMS obligations"* — a real AI Act question that merely NAMES the
+  standard — restoring the R49-B ordering doctrine. Cannot re-open R289's
+  leaks: all three held-out `standards` probes carry no valid Act provision
+  (`known` empty, verified), so they still refuse. **276-runner 254 -> 255/255.**
+* **Dead-code landmines defused** (still dead, but no longer traps):
+  `parser/deterministic.py` now DELEGATES to the live `_deterministic_parse`
+  (lazy import, fallback preserved). It had drifted — its single-connector
+  separator reproduced the exact Oxford-comma bug R268.1 fixed: *"Articles 9,
+  10, and 15"* parsed to `[Art. 9, Art. 10]`, silently losing Article 15, and
+  `test_graph_rag_subpackage.py` was validating that buggy behaviour.
+  `config.py` was a shadow flag registry naming env vars that exist nowhere
+  (`STAGE2_POLISH_ENABLED` vs the real `P2P_GRAPH_RAG_ENABLE_STAGE2`) and
+  flipping two documented defaults — `REGENOLD_SUFFICIENT_CONTEXT` to OFF
+  (R110.1 baked it ON) and `REGENOLD_VERIFY_VERDICT` to ON (**R285 explicitly
+  reverted it to OFF for want of an A/B**). Now aligned + verified to agree
+  with the live gates on all four.
+* **`medtech_standards.py`** (live, agent-authored) — reviewed and KEPT: adds
+  Art. 11 (MDR Annex II/III + ISO 13485 §4.2.3), Art. 13 (ISO 20417 + MDR
+  Annex I Ch. III), Art. 17 (ISO 13485) and enriches Art. 15 (IEC 62304 +
+  82304-1 + ISO/IEC 81001-5-1). Legally sound, additive, import-time
+  ARTICLE_EXISTENCE lint passes.
+
+### Neo4j / semantic layer — the graph is DEAD in production
+
+The operator asked to confirm graph/taxonomy/semantic-layer alignment. Found:
+the Aura host `293b4be4.databases.neo4j.io` **fails DNS resolution** — the
+instance is gone — and `/healthz/graph` still reports `graph_ok: true` with
+`seed_version: ""` and empty node/edge counts. That is a monitoring blind spot,
+not just an empty graph. Answer quality is unaffected (R252 made KB-primary
+retrieval the default and R99.1 added the empty-success KB fallback; all live
+probes answered correctly), but the 2-hop layer contributes nothing.
+
+`railway.toml` already sets `REGENOLD_GRAPH_BACKEND = "embedded"` (R129) — the
+**Railway dashboard is overriding it to `neo4j`**, the documented R80.2
+phenomenon. The R121 embedded SQLite backend was verified working here:
+`Art. 26` -> hop1 `[Art. 13, 16, 25, 49, 50, 71, 72, 73, 79, Annex III]`,
+sub-millisecond after build, zero external dependency. **Operator action:
+unset/override `REGENOLD_GRAPH_BACKEND` to `embedded` on the dashboard.**
+
+### Verification
+
+| Gate | Result |
+| ---- | ------ |
+| davidath QA (137) | **byte-identical** — Ans Strict 0.4037 / Ans Loose 0.1404 / Ans Conc 0.196 / Ref Loose 0.8394 / Ref Strict 0.5543 / Ref Conc 0.4395 / Tone 1.0 |
+| `evals.regenold.runner` (276) | **255/255**, RISK_F1 macro 1.00 (was 254/255) |
+| OOS probe `--oos-suite all` (51) | 49/51, **0 scope leaks** — identical to the pre-refactor baseline |
+| pytest collection | 5202 collected, 0 errors (R286's 0/5106 failure mode absent) |
+| full suite | 7 new-at-HEAD failures found, **all 7 fixed**; 96 pre-existing unchanged |
+| live route smoke | 8/8 HTTP 200, non-empty answers, correct refs |
+
+### Standing recommendation (not actioned — operator's call)
+
+The sub-package is inert, so it neither helps nor breaks. But it carries a
+duplicated confidence function, a proxy with confirmed monkeypatch-teardown
+poisoning risk, and a re-implementation surface that already drifted once.
+Deleting `parser/`, `risk_engine/`, `medtech/`, `retrieval/`, `generators/`,
+`pipeline.py`, `config.py` and keeping only `models.py` would remove ~900 LOC
+of liability with zero behaviour change. The proxy itself must stay while the
+file is named `_graph_rag_impl.py` — ~5200 tests patch `app.engines.graph_rag.X`
+and rely on it reaching the impl.
+
 ## Non-goals / things to skip
 
 - ~~Vector embeddings / dense retrieval~~ → **Round 31 added a

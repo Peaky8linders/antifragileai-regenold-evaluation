@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
-
-from app.models import CitationNode, GraphRAGRequest, GraphRAGResponse
+from app.models import CitationNode
 
 
 @dataclass

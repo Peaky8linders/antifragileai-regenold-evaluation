@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import re
-
 
 def is_harmonized_product_inquiry(question: str) -> bool:
     """Detect if a question relates to Art 6(1) / Annex I harmonized product safety rules."""
