@@ -32,20 +32,25 @@ class GraphRAGConfig:
 
     @property
     def stage2_provider_enabled(self) -> bool:
-        # R290 — delegate. The live gate is not a simple boolean env: it keys
-        # off P2P_GRAPH_RAG_PROVIDER plus whether a key/wrapper is wired.
-        # The invented name "STAGE2_PROVIDER_ENABLED" exists nowhere else in
-        # the codebase, so this property previously always returned its
-        # hardcoded default regardless of the real provider configuration.
+        # R290 — delegate to the LIVE multi-branch provider gate. This is NOT
+        # a simple boolean env: it keys off P2P_GRAPH_RAG_PROVIDER plus
+        # whether a key/wrapper is wired (cli->False, groq->groq_enabled,
+        # gemini->gemini_enabled, anthropic->api_key present, auto->wrapper).
         from app.engines._graph_rag_impl import _stage2_provider_enabled
-        return env_enabled("P2P_GRAPH_RAG_ENABLE_STAGE2", "1")
+
+        return _stage2_provider_enabled()
 
     @property
     def stage2_polish_enabled(self) -> bool:
+        # R290 — canonical env name is P2P_GRAPH_RAG_ENABLE_STAGE2.
+        # This is the master ON/OFF switch (distinct from stage2_provider_enabled
+        # which checks whether a provider is actually wired).
         return env_enabled("P2P_GRAPH_RAG_ENABLE_STAGE2", "1")
 
     @property
     def stage2_simple_skip_enabled(self) -> bool:
+        # R290 — canonical env name is REGENOLD_STAGE2_SIMPLE_SKIP. Must stay
+        # default OFF: R129 measured the simple-skip regressing refs 0.75 -> 0.47.
         return env_enabled("REGENOLD_STAGE2_SIMPLE_SKIP", "0")
 
     @property
@@ -54,6 +59,10 @@ class GraphRAGConfig:
 
     @property
     def verify_verdict_enabled(self) -> bool:
+        # R290 — default "0". R285 explicitly REVERTED this flag to 0: it was
+        # flipped on with no A/B, which its own docstring forbids. Leaving the
+        # default at "1" here would silently re-apply the exact change R285
+        # reverted the moment anything reads this config.
         return env_enabled("REGENOLD_VERIFY_VERDICT", "0")
 
     @property

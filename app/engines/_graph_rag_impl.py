@@ -1590,7 +1590,7 @@ def _is_role_contrast_obligation(text_lower: str) -> bool:
 _MULTI_ARTICLE_MENTION_RE = re.compile(
     # Art / Art. / Arts / Arts. / Article / Articles / Artikel(s) / Artikeln.
     r"\bArt(?:icles?|ikels?|ikeln|s)?\.?\s*"
-    r"(\d{1,3}(?:(?:\s*(?:,|&|/|\band\b|\bor\b)\s*)+\d{1,3}){0,8})",
+    r"(\d{1,3}\b(?:(?:\s*(?:,|&|/|\band\b|\bor\b)\s*)+\d{1,3}\b){0,8})",
     re.IGNORECASE,
 )
 
@@ -1677,7 +1677,7 @@ def _deterministic_parse(question: str) -> GraphQuery:
         article_nums = [
             n
             for m in _MULTI_ARTICLE_MENTION_RE.finditer(question)
-            for n in re.findall(r"\d{1,3}", re.sub(r"\(\d+\)", "", m.group(1)))
+            for n in re.findall(r"\b\d{1,3}\b", re.sub(r"\(\d+\)", "", m.group(1)))
         ]
         annex_romans = [
             r
@@ -4202,9 +4202,9 @@ def _deterministic_answer(question: str, context: GraphContext) -> str:
                 "the human assessment, or it performs a preparatory task. Under Article 6(3), this exception "
                 "never applies where the system profiles natural persons. The provider "
                 "must document the assessment before placing the system on the market and "
-                "register it under Article 49(2)."
+                "register it under Article 71(2)."
             ),
-            "refs": ["Art. 6", "Art. 6.3", "Art. 49.2"],
+            "refs": ["Art. 6", "Art. 6.3", "Art. 71.2"],
         }
         _seed_classification_obligations(context, verdict, question)
         return verdict["answer"]
@@ -4695,11 +4695,11 @@ def _deterministic_answer(question: str, context: GraphContext) -> str:
                 "system documentation (Article 17), the documentation of any "
                 "changes approved by notified bodies, the decisions and other "
                 "documents issued by notified bodies, and the EU declaration of "
-                "conformity (Article 47). Separately, under Article 19 the "
+                "conformity (Article 48). Separately, under Article 19 the "
                 "automatically generated logs must be kept for a period "
                 "appropriate to the intended purpose, of at least six months."
             ),
-            "refs": ["Art. 18", "Art. 11", "Art. 17", "Art. 47", "Art. 19"],
+            "refs": ["Art. 18", "Art. 11", "Art. 17", "Art. 48", "Art. 19"],
         }
         _seed_classification_obligations(context, verdict, question)
         return verdict["answer"]
