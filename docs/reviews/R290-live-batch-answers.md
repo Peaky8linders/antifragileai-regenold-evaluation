@@ -1,6 +1,6 @@
 # Regenold live batch answers + grounded-judge remarks — `r290-live`
 
-Generated 2026-07-24 15:37 UTC · endpoint: https://regenold-eu-ai-act-rag-production.up.railway.app/api/v1/regenold/eu-ai-act/ask (commit 17b16d1bbf76)
+Generated 2026-07-24 17:41 UTC · endpoint: https://regenold-eu-ai-act-rag-production.up.railway.app/api/v1/regenold/eu-ai-act/ask (commit 17b16d1bbf76)
 
 ## How to read this (fresh-session context)
 
@@ -24,8 +24,8 @@ python -m evals.regenold.build_batch_report --label <lbl> --out <path.md>
 
 ## Contents
 
-- Batch 1 — Regenold official set, EASY mode: **110 answered** / 110 rows · _not judged_
-- Batch 2 — Regenold official set, HARD mode: **110 answered** / 110 rows · _not judged_
+- Batch 1 — Regenold official set, EASY mode: **110 answered** / 110 rows · judged 110
+- Batch 2 — Regenold official set, HARD mode: **110 answered** / 110 rows · judged 110
 - Batch 3 — end-of-June set (2026-06-29 production audit + Antifragile review): _not run_
 
 ---
@@ -34,12 +34,23 @@ python -m evals.regenold.build_batch_report --label <lbl> --out <path.md>
 Each question asked standalone (single turn), exactly as the graded 2026-07-07 run posed it.
 **110 answered** · 0 errored · mean refs 2.95 · p50 latency 24.7s
 
+
+**Grounded-judge pass rates:** Answer 51% (56/110) · References 34% (37/109) · Citation faithfulness 75% (83/110)
+
 ## 1. `rg_001`
 **Q:** Does the technical documentation of a high-risk AI system require to provide specifications regarding the required hardware?
 
 **A:** Yes. Under Article 11, a provider must draw up technical documentation containing the information set out in Annex IV, which expressly requires a description of the hardware on which the AI system is intended to run (Annex IV point 1(e)) and, as part of the system's development description, the computational resources used to develop, train, test and validate it (Annex IV point 2(c)).
 
 **References:** Article 11, Annex IV
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS**
+
+- References: **PASS** — P=1.0; R=1.0
+
+- Citation faithfulness: **PASS**
 
 <sub>1.1s</sub>
 
@@ -50,6 +61,14 @@ Each question asked standalone (single turn), exactly as the graded 2026-07-07 r
 
 **References:** Article 50.4, Article 50
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS**
+
+- References: **PASS** — P=1.0; R=1.0
+
+- Citation faithfulness: **PASS**
+
 <sub>0.8s</sub>
 
 ## 3. `rg_003`
@@ -58,6 +77,14 @@ Each question asked standalone (single turn), exactly as the graded 2026-07-07 r
 **A:** Not always. Under Article 6(2), falling within one of the eight Annex III use cases (biometrics, critical infrastructure, education and vocational training, employment and worker management, essential private and public services, law enforcement, migration, asylum and border control, and administration of justice and democratic processes) creates the classification as a rule, but Article 6(3) provides a derogation. An Annex III system is not high-risk where it poses no significant risk of harm to health, safety or fundamental rights and it meets one of four conditions: it performs a narrow procedural task, it improves the result of a previously completed human activity, it detects decision-making patterns or deviations from prior patterns without replacing or influencing the human assessment, or it performs a preparatory task to an assessment relevant to an Annex III use case. That derogation is unavailable where the system performs profiling of natural persons, in which case it is always high-risk. A provider relying on the derogation must document its self-assessment before placing the system on the market and must still register the system under Article 49(2), which requires registration of Annex III systems the provider considers not to be high-risk.
 
 **References:** Annex III, Article 6, Article 49
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS**
+
+- References: **FAIL** — P=0.667; R=1.0; wrong=1; over-citation: Article 49 governs registration duties, not the high-risk classification test itself
+
+- Citation faithfulness: **PASS**
 
 <sub>14.5s</sub>
 
@@ -68,6 +95,14 @@ Each question asked standalone (single turn), exactly as the graded 2026-07-07 r
 
 **References:** Article 6, Annex I, Article 43
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS**
+
+- References: **FAIL** — P=0.67; R=1.0; wrong=1; over-citation: Article 43 governs conformity assessment procedure, not risk classification
+
+- Citation faithfulness: **PASS**
+
 <sub>23.0s · refs dropped vs prior: Annex III, Annex VI, Annex VII</sub>
 
 ## 5. `rg_005`
@@ -76,6 +111,14 @@ Each question asked standalone (single turn), exactly as the graded 2026-07-07 r
 **A:** No, the EU AI Act mandates no specific explainable-AI technique such as LIME or SHAP, and Article 13 instead requires only that high-risk AI systems be sufficiently transparent for deployers to interpret their output. Article 14 requires effective human oversight, and Article 15 requires appropriate accuracy, robustness and cybersecurity.
 
 **References:** Article 13, Article 14, Article 15
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS**
+
+- References: **FAIL** — P=0.33; R=1.0; wrong=2; over-citation: Art 14 and 15 do not govern explainability-technique mandate
+
+- Citation faithfulness: **PASS**
 
 <sub>1.0s</sub>
 
@@ -86,6 +129,14 @@ Each question asked standalone (single turn), exactly as the graded 2026-07-07 r
 
 **References:** Article 2, Article 3.1, Article 51
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS**
+
+- References: **FAIL** — P=0.33; R=1.0; wrong=2; over-citation: definitional/systemic-risk provisions not governing scope question
+
+- Citation faithfulness: **PASS**
+
 <sub>7.2s</sub>
 
 ## 7. `rg_007`
@@ -94,6 +145,14 @@ Each question asked standalone (single turn), exactly as the graded 2026-07-07 r
 **A:** Not prohibited, and high-risk only where the biometric verification system falls within an Annex III use case or is a safety component of a product regulated under Annex I. Article 5 lists exhaustively the eight categories of prohibited practice, subliminal, manipulative or deceptive techniques causing significant harm, exploitation of vulnerabilities by age, disability or socio-economic situation, social scoring, untargeted scraping of facial images, and the remaining listed bans, and an AI system used solely to confirm that a specific natural person is the person he or she claims to be is not among them; one-to-one verification of a claimed identity is categorically distinct from the remote identification and biometric categorisation practices the prohibitions target. Classification therefore turns on Article 6, which designates a system high-risk on two routes: where it is a safety component of a product, or is itself a product, covered by the Union harmonisation legislation listed in Annex I and required to undergo third-party conformity assessment; or where it falls within one of the eight use-case categories in Annex III, the first of which is biometrics. The deciding condition for the deployer is whether the intended purpose remains confined to verifying a claimed identity, or extends to functions such as remote biometric identification, biometric categorisation, or emotion recognition, or is embedded as a safety component in an Annex I product. On the facts as described, verification and nothing further, neither Article 6 route is engaged, and the system is not high-risk. Where the system is not high-risk, the residual duties are those of Article 50: as a deployer the operator should confirm with the provider that the system discloses its AI nature to the natural persons interacting with it, since Article 50(1) places that duty on providers of AI systems intended to interact directly with natural persons, and any synthetic content generated must be marked in a machine-readable, detectable format. Should the intended purpose later broaden beyond identity verification, the Article 6 and Annex III assessment must be revisited before deployment.
 
 **References:** Annex III, Annex I, Article 5, Article 6, Article 50
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — missing=1; answer never states the operative conclusion that Annex III 1(a) explicitly excludes sole-purpose verification systems, so it fails to affirmatively answer 'not high-risk' and trails off unfinished
+
+- References: **FAIL** — P=0.6; R=1.0; wrong=2; over-citation of inapplicable provisions (Annex I product-safety pathway; Article 50 transparency, neither triggered by biometric verification)
+
+- Citation faithfulness: **PASS**
 
 <sub>28.1s</sub>
 
@@ -104,6 +163,14 @@ Each question asked standalone (single turn), exactly as the graded 2026-07-07 r
 
 **References:** Article 6, Annex I, Article 43, Annex VI, Annex III
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — incorrect=1; unsupported=1; misstates Annex VI's availability as limited to cases where harmonised standards/common specifications are applied, ignoring Art. 43(2) which mandates Annex VI internal control for Annex III points 2-8 unconditionally
+
+- References: **FAIL** — P=0.4; R=1.0; wrong=3; over-cited conformity-assessment-procedure provisions (Art.43, Annex VI, Annex III) irrelevant to why MDR safety components are classified high-risk under Art.6(1)/Annex I
+
+- Citation faithfulness: **FAIL** — mismatched=1; Annex VI internal-control procedure mischaracterized as conditional on harmonised standards for all cases, when Art 43(2) mandates it unconditionally for Annex III points 2-8 (condition only applies to point 1 under Art 43(1))
+
 <sub>15.8s · refs added vs prior: Annex VI</sub>
 
 ## 9. `rg_009`
@@ -112,6 +179,14 @@ Each question asked standalone (single turn), exactly as the graded 2026-07-07 r
 **A:** Under Article 18, for ten years after the high-risk AI system is placed on the market or put into service, the provider must keep at the disposal of the national competent authorities the technical documentation (Article 11), the quality-management-system documentation (Article 17), the documentation of any changes approved by notified bodies, the decisions and other documents issued by notified bodies, and the EU declaration of conformity (Article 47). Separately, under Article 19 the automatically generated logs must be kept for a period appropriate to the intended purpose, of at least six months.
 
 **References:** Article 11, Article 18, Article 17, Article 47, Article 19
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS**
+
+- References: **FAIL** — P=0.8; R=1.0; wrong=1; Article 19 over-cited: governs log retention (≥6 months) generally, not documentation kept at disposal of national competent authorities
+
+- Citation faithfulness: **PASS**
 
 <sub>1.0s · refs added vs prior: Article 19</sub>
 
@@ -122,6 +197,14 @@ Each question asked standalone (single turn), exactly as the graded 2026-07-07 r
 
 **References:** Article 14, Article 9
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS** — unsupported=1
+
+- References: **PASS** — P=1.0; R=1.0
+
+- Citation faithfulness: **PASS**
+
 <sub>19.8s · refs dropped vs prior: Article 1</sub>
 
 ## 11. `rg_011`
@@ -130,6 +213,14 @@ Each question asked standalone (single turn), exactly as the graded 2026-07-07 r
 **A:** Testing data is defined in Article 3(32) as data used to provide an independent evaluation of the AI system, in order to confirm its expected performance before it is placed on the market or put into service. If testing data leaks into the training process, the system is in effect assessed on data it has already seen, which inflates its apparent performance and defeats the purpose of the independent check that Article 10 requires for the datasets of a high-risk AI system.
 
 **References:** Article 3.32, Article 10
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — incorrect=1; unsupported=1; misattributes 'independent check' requirement to Article 10 and asserts unstated leakage/performance-inflation causal claim not grounded in verbatim text
+
+- References: **PASS** — P=1.0; R=1.0
+
+- Citation faithfulness: **PASS**
 
 <sub>4.5s</sub>
 
@@ -140,6 +231,14 @@ Each question asked standalone (single turn), exactly as the graded 2026-07-07 r
 
 **References:** Annex III.8
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS**
+
+- References: **PASS** — P=1.0; R=1.0
+
+- Citation faithfulness: **PASS**
+
 <sub>2.3s</sub>
 
 ## 13. `rg_013`
@@ -148,6 +247,14 @@ Each question asked standalone (single turn), exactly as the graded 2026-07-07 r
 **A:** Only where the model is released under a free and open-source licence and is not classified as having systemic risk. Article 53(2) exempts such providers from the Article 53(1)(a) duty to draw up and keep up to date technical documentation of the model per Annex XI, and from the Article 53(1)(b) duty to make information and documentation available to downstream providers integrating the model into their AI systems per Annex XII. The exception does not cover the Article 53(1)(c) obligation to put in place a policy to comply with Union copyright law, nor the Article 53(1)(d) obligation to publish a sufficiently detailed summary of the content used for training, for which the Commission adopted the mandatory disclosure template on 24 July 2025 covering public datasets, scraped web content, user data, synthetic data and licensed content. It also falls away entirely once the model is classified as having systemic risk under Article 51, presumed where cumulative training compute exceeds 10^25 FLOPs or where the Commission so designates on the Annex XIII criteria, in which case the full Article 53 obligations apply alongside the Article 55 obligations on model evaluation including adversarial testing, systemic risk assessment and mitigation at Union level, serious incident reporting to the AI Office, and cybersecurity protection for the model and its physical infrastructure.
 
 **References:** Article 51, Article 53, Article 55
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — unsupported=1; missing=1; omitted 'publicly available parameters/weights' condition of Art.53(2) exception; fabricated unverified template date/details
+
+- References: **FAIL** — P=0.33; R=1.0; wrong=2; over-citation of unrelated systemic-risk provisions (Art 51 classification criteria, Art 55 additional systemic-risk obligations) not governing the transparency-exception question in Art 53(2)
+
+- Citation faithfulness: **FAIL** — mismatched=1; fabricated specifics (a named 24 July 2025 Commission template with enumerated data categories) attributed to Article 53(1)(d), which only says a template is 'provided by the AI Office' with no such date or content list
 
 <sub>24.7s · refs dropped vs prior: Annex XI, Annex XII</sub>
 
@@ -158,6 +265,14 @@ Each question asked standalone (single turn), exactly as the graded 2026-07-07 r
 
 **References:** Annex III, Article 6
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — missing=5; omits Annex III point 3(a)-(d) specific education/training use cases and the Art.6(3) profiling always-high-risk carve-out
+
+- References: **PASS** — P=1.0; R=1.0
+
+- Citation faithfulness: **PASS**
+
 <sub>25.0s · refs dropped vs prior: Annex I</sub>
 
 ## 15. `rg_015`
@@ -166,6 +281,14 @@ Each question asked standalone (single turn), exactly as the graded 2026-07-07 r
 **A:** Yes, a disclosure duty applies. Under Article 50(1), providers must design AI systems intended to interact directly with natural persons so that those persons are informed they are interacting with an AI system, unless this is obvious from the circumstances of use. Two adjacent transparency duties in the same article may attach to the same deployment. Where the system generates synthetic content, Article 50(2) requires the provider to mark the outputs in a machine-readable format and make them detectable as artificially generated or manipulated. Where the system performs emotion recognition or biometric categorisation, Article 50(3) requires the deployer to inform the exposed natural persons and to process the personal data in accordance with the GDPR, the Law Enforcement Directive and Regulation (EU) 2018/1725, subject to the same criminal-offence carve-out and to ancillary use that is inseparable from the primary service. Article 50(4) adds deployer disclosure for deep fakes and for AI-generated or manipulated text published to inform the public on matters of public interest, relaxed for artistic, creative, satirical or fictional works, disapplied where use is authorised by law for criminal enforcement, and disapplied for text that has undergone human review or editorial control where a natural or legal person holds editorial responsibility for its publication.
 
 **References:** Article 50.1, Article 50.3, Article 50.4
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — incorrect=1; unsupported=1; missing=1; fabricated ancillary-use exception for Art.50(3); omitted Art.50(1) law-enforcement exception
+
+- References: **FAIL** — P=0.33; R=0.5; wrong=2; missing=1; over-cited unrelated Art.50 transparency categories (emotion recognition/biometric categorization in 50.3, deepfake/synthetic-text disclosure in 50.4) which govern exposure/content-generation, not 'interacting directly with natural persons'; missed Art.50(5) governing timing/manner of the 50(1) disclosure
+
+- Citation faithfulness: **FAIL** — mismatched=1; Art.50(3) description adds an 'ancillary use inseparable from primary service' exception not present in its verbatim text
 
 <sub>27.9s</sub>
 
@@ -176,6 +299,14 @@ Each question asked standalone (single turn), exactly as the graded 2026-07-07 r
 
 **References:** Article 99, Article 5
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS**
+
+- References: **PASS** — P=1.0; R=1.0
+
+- Citation faithfulness: **PASS**
+
 <sub>17.6s</sub>
 
 ## 17. `rg_017`
@@ -184,6 +315,14 @@ Each question asked standalone (single turn), exactly as the graded 2026-07-07 r
 **A:** Annex II operates only as an input to one narrow exception within the prohibitions, not as a prohibition in its own right. Article 5 bans eight categories of AI practice, including subliminal or manipulative techniques causing significant harm, exploitation of vulnerabilities arising from age, disability or socio-economic situation, social scoring producing unjustified detrimental treatment in unrelated contexts, criminal-risk profiling based solely on personality traits, untargeted scraping of facial images for facial recognition databases, emotion recognition in workplaces and educational institutions, biometric categorisation by sensitive attributes, and real-time remote biometric identification in publicly accessible spaces for law enforcement. Annex II lists the criminal offences that make the third law-enforcement objective under Article 5(1)(h) available, namely terrorism, trafficking in human beings, sexual exploitation of children, illicit trafficking in narcotic drugs, weapons or nuclear material, murder, kidnapping, rape, armed robbery, organised crime, participation in a criminal organisation and environmental crime, and only where the offence is punishable in the relevant Member State by a custodial sentence of at least four years.
 
 **References:** Annex II, Article 5
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — incorrect=1; fabricated 'organised crime' as a distinct Annex II offense (text says 'organised or armed robbery', not organised crime generally)
+
+- References: **PASS** — P=1.0; R=1.0
+
+- Citation faithfulness: **FAIL** — mismatched=1; Annex II offence list misstated: invents 'organised crime' (actual text says 'organised or armed robbery') and omits several listed offences (grievous bodily injury, human organ trafficking, ICC crimes, aircraft/ship seizure, sabotage, hostage-taking, munitions/explosives, radioactive materials, child pornography) while presented as exhaustive via 'namely'
 
 <sub>14.2s</sub>
 
@@ -194,6 +333,14 @@ Each question asked standalone (single turn), exactly as the graded 2026-07-07 r
 
 **References:** Annex III, Article 6, Annex I, Article 7, Article 97
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS**
+
+- References: **FAIL** — P=0.6; R=1.0; wrong=2; over-cited unrelated provisions (Article 6 conditions-amendment power and Annex I product-legislation list) not governing Annex III use-case amendment
+
+- Citation faithfulness: **PASS**
+
 <sub>46.8s · refs added vs prior: Article 97 · refs dropped vs prior: Article 5, Article 50</sub>
 
 ## 19. `rg_019`
@@ -202,6 +349,14 @@ Each question asked standalone (single turn), exactly as the graded 2026-07-07 r
 **A:** AI-generated or manipulated image, audio or video content that resembles existing persons, objects, places, entities or events and would falsely appear to a person to be authentic or truthful.
 
 **References:** Article 3.60, Article 50
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS**
+
+- References: **PASS** — P=1.0; R=1.0
+
+- Citation faithfulness: **PASS**
 
 <sub>3.8s</sub>
 
@@ -212,6 +367,14 @@ Each question asked standalone (single turn), exactly as the graded 2026-07-07 r
 
 **References:** Article 16, Article 19, Article 21
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — missing=1; answer never addresses Article 74(12)'s remote-access-to-documentation-and-datasets mandate, the specific operative provision the question asks about
+
+- References: **FAIL** — P=0.0; R=0.0; wrong=3; missing=1; cited general provider-obligation/logging/cooperation articles instead of the specific market-surveillance data/documentation access provision (remote access to datasets not addressed by Art. 16, 19, or 21 text)
+
+- Citation faithfulness: **PASS**
+
 <sub>28.2s · refs added vs prior: Article 19, Article 21 · refs dropped vs prior: Annex IV, Article 11, Article 74</sub>
 
 ## 21. `rg_021`
@@ -220,6 +383,14 @@ Each question asked standalone (single turn), exactly as the graded 2026-07-07 r
 **A:** No. Article 15 requires a high-risk AI system to achieve an appropriate level of accuracy, robustness and cybersecurity and to perform consistently in those respects throughout its lifecycle, not only at the point of development, which includes continued resilience against errors, faults and inconsistencies under Article 15(4) and continued technical and organisational cybersecurity measures such as access controls, encryption and logging of access under Article 15(5). That lifecycle duty is reinforced by Article 9, which requires a risk management system that is continuously maintained and updated, including evaluation of post-market monitoring data and testing to confirm that the system performs consistently for its intended purpose, and by Article 17, under which the provider's quality management system must cover post-market monitoring and incident reporting. Article 16 additionally obliges the provider to take corrective action where the system is no longer in conformity and to demonstrate compliance to competent authorities on request.
 
 **References:** Article 15, Article 16, Article 9, Article 17
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS** — unsupported=1
+
+- References: **FAIL** — P=0.25; R=1.0; wrong=3; over-cited general obligation articles (16, 9, 17) not specific to the accuracy/robustness/cybersecurity lifecycle requirement in Art.15
+
+- Citation faithfulness: **FAIL** — mismatched=1; Article 15(5) mischaracterized — cites 'access controls, encryption and logging of access' as required cybersecurity measures, but the verbatim text only requires resilience against unauthorized third-party attacks and measures addressing data poisoning, model poisoning, adversarial examples, confidentiality attacks and model flaws; no mention of access controls/encryption/logging
 
 <sub>14.4s · refs added vs prior: Article 16, Article 17, Article 9</sub>
 
@@ -230,6 +401,14 @@ Each question asked standalone (single turn), exactly as the graded 2026-07-07 r
 
 **References:** Article 6, Article 5, Article 50, Article 51, Article 52, Annex I, Annex III, Article 53, Article 54, Article 55, Article 56
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS**
+
+- References: **FAIL** — P=0.55; R=1.0; wrong=5; over-cited GPAI obligation/procedure articles (52-56) that regulate GPAI compliance, not risk-category definitions
+
+- Citation faithfulness: **PASS**
+
 <sub>0.6s</sub>
 
 ## 23. `rg_023`
@@ -238,6 +417,14 @@ Each question asked standalone (single turn), exactly as the graded 2026-07-07 r
 **A:** Article 51 classifies a general-purpose AI model as having systemic risk where it has high-impact capabilities, presumed when cumulative training compute exceeds 10^25 FLOPs, or where the Commission so designates it on the Annex XIII criteria. That designation attaches to the model itself, and it triggers the four additional provider obligations in Article 55: model evaluation under standardised protocols including documented adversarial testing, assessment and mitigation of systemic risks at Union level including their sources, tracking and reporting of serious incidents to the AI Office without undue delay, and adequate cybersecurity protection for both the model and its physical infrastructure. Providers may rely on the Article 56 codes of practice, facilitated by the AI Office, to demonstrate compliance until a harmonised standard is published. AI systems are governed by the separate risk tiers of the Regulation and are never themselves designated as carrying systemic risk, though the designation has a knock-on effect for the model provider: the Article 53(2) carve-out that relieves free and open-source GPAI models of the Annex XI technical documentation and Annex XII downstream-provider information duties falls away once a model is designated under Article 51, leaving the full Article 53 and Article 55 obligations in place regardless of licence.
 
 **References:** Article 51, Annex XIII, Article 55
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS** — unsupported=1
+
+- References: **PASS** — P=1.0; R=1.0
+
+- Citation faithfulness: **PASS**
 
 <sub>16.5s · refs dropped vs prior: Article 53, Article 56</sub>
 
@@ -248,6 +435,14 @@ Each question asked standalone (single turn), exactly as the graded 2026-07-07 r
 
 **References:** Annex III, Article 6, Annex I
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS**
+
+- References: **FAIL** — P=0.67; R=1.0; wrong=1; Annex I over-cited (governs product-safety-component pathway under Article 6(1), not the Annex III area/use-case question)
+
+- Citation faithfulness: **PASS**
+
 <sub>17.4s · refs added vs prior: Annex I</sub>
 
 ## 25. `rg_025`
@@ -256,6 +451,14 @@ Each question asked standalone (single turn), exactly as the graded 2026-07-07 r
 **A:** Yes. Under Article 25(1), a distributor, importer, deployer or other third party is deemed to be the provider of a high-risk AI system, and takes on the provider obligations in Article 16, in any of three cases. First, if it puts its name or trademark on a high-risk AI system already placed on the market (Article 25(1)(a)). Second, if it makes a substantial modification to a high-risk AI system that remains high-risk (Article 25(1)(b)). Third, if it modifies the intended purpose of an AI system, including a general-purpose AI system, so that it becomes high-risk (Article 25(1)(c)). In each of these three cases the operator assumes the provider obligations in Article 16, and the initial provider is no longer considered the provider of that specific system under Article 25(2).
 
 **References:** Article 25.1, Article 25, Article 16
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS**
+
+- References: **FAIL** — P=0.33; R=1.0; wrong=2; redundant duplicate citation (Art 25 vs 25.1) plus over-citation of Art 16 (obligations list, not the deeming trigger)
+
+- Citation faithfulness: **PASS**
 
 <sub>4.6s</sub>
 
@@ -266,6 +469,14 @@ Each question asked standalone (single turn), exactly as the graded 2026-07-07 r
 
 **References:** Annex III, Article 6, Annex I
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS** — unsupported=1
+
+- References: **PASS** — P=1.0; R=1.0
+
+- Citation faithfulness: **PASS**
+
 <sub>20.0s</sub>
 
 ## 27. `rg_027`
@@ -274,6 +485,14 @@ Each question asked standalone (single turn), exactly as the graded 2026-07-07 r
 **A:** Under Annex III point 8(b), AI systems intended to influence the outcome of an election or referendum, or the voting behaviour of natural persons in exercising their vote, are high-risk under Article 6(2). Annex III point 8(b) itself excludes systems to whose output natural persons are not directly exposed, such as tools used only to organise, optimise or structure political campaigns from an administrative or logistical point of view, which therefore fall outside this high-risk category.
 
 **References:** Article 6, Annex III.8
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS**
+
+- References: **PASS** — P=1.0; R=1.0
+
+- Citation faithfulness: **PASS**
 
 <sub>8.9s · refs dropped vs prior: Article 5</sub>
 
@@ -284,6 +503,14 @@ Each question asked standalone (single turn), exactly as the graded 2026-07-07 r
 
 **References:** Article 1
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — incorrect=1; missing=1; conflates Art.1(2) content list with Art.1(1) actual objective, omitting core purpose (internal market, trustworthy AI, fundamental rights/health/safety protection)
+
+- References: **PASS** — P=1.0; R=1.0
+
+- Citation faithfulness: **PASS**
+
 <sub>11.8s</sub>
 
 ## 29. `rg_029`
@@ -292,6 +519,14 @@ Each question asked standalone (single turn), exactly as the graded 2026-07-07 r
 **A:** These fall within the essential private and public services heading, one of the eight Annex III high-risk use-case categories alongside biometrics, critical infrastructure, education and vocational training, employment and worker management, law enforcement, migration asylum and border control, and administration of justice and democratic processes. Because classification runs through the Annex III route in Article 6(2), the Article 6(3) derogation for systems posing no significant risk is unlikely to be available, since evaluating calls or setting dispatch priority influences rather than merely prepares the human assessment.
 
 **References:** Annex III, Article 6
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — unsupported=1; missing=1; answer never enumerates the specific Annex III 5(d) systems (emergency call evaluation/classification, dispatch/priority-dispatch of police/firefighters/medical aid, emergency healthcare patient triage systems) that the question explicitly asks for
+
+- References: **FAIL** — P=0.5; R=1.0; wrong=1; over-citation of non-governing enabling provision
+
+- Citation faithfulness: **PASS**
 
 <sub>28.8s</sub>
 
@@ -302,6 +537,14 @@ Each question asked standalone (single turn), exactly as the graded 2026-07-07 r
 
 **References:** Article 74, Article 57
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — incorrect=1; missing=1; fabricated citation - no text ties market surveillance authority's sandbox oversight to verifying Article 74 specifically
+
+- References: **FAIL** — P=0.5; R=1.0; wrong=1; over-citation: Article 74 governs general market surveillance/Regulation 2019/1020 applicability, not sandbox-specific compliance verification
+
+- Citation faithfulness: **FAIL** — mismatched=1; cite-and-mismatch: Article 74 is general market-surveillance/enforcement provision, not a sandbox-compliance-verification requirement
+
 <sub>9.3s</sub>
 
 ## 31. `rg_031`
@@ -310,6 +553,14 @@ Each question asked standalone (single turn), exactly as the graded 2026-07-07 r
 **A:** An AI system used solely to structure or deduplicate information for a use case listed in Annex III is not high-risk where it performs a narrow procedural or preparatory task and does not materially influence the outcome of the relevant assessment, but it is high-risk wherever that structuring in fact conditions or substitutes for the substantive decision. Article 6 does not treat Annex III listing as automatic classification: a system falling within an Annex III area escapes the high-risk tier only if it does not pose a significant risk of harm to health, safety or fundamental rights, which covers systems confined to a narrow procedural function or to preparing an assessment carried out by a human.
 
 **References:** Annex III, Article 6
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS**
+
+- References: **PASS** — P=1.0; R=1.0
+
+- Citation faithfulness: **PASS**
 
 <sub>25.0s · refs dropped vs prior: Article 5</sub>
 
@@ -320,6 +571,14 @@ Each question asked standalone (single turn), exactly as the graded 2026-07-07 r
 
 **References:** Article 6.3, Article 6, Annex III
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS**
+
+- References: **FAIL** — P=0.67; R=1.0; wrong=1; redundant broader citation (Article 6 duplicates Article 6.3)
+
+- Citation faithfulness: **PASS**
+
 <sub>2.3s</sub>
 
 ## 33. `rg_033`
@@ -328,6 +587,14 @@ Each question asked standalone (single turn), exactly as the graded 2026-07-07 r
 **A:** The European Artificial Intelligence Board (Article 65) has one representative per Member State, each serving a three-year term renewable once under Article 65(3). Under Article 65(4) each is their Member State's single contact point rather than an independent stakeholder appointee, while Article 65(7) requires the Board to safeguard the objectivity and impartiality of its activities. Its rules of procedure are adopted by a two-thirds majority under Article 65(5), so a simple majority is not sufficient.
 
 **References:** Article 65
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS**
+
+- References: **PASS** — P=1.0; R=1.0
+
+- Citation faithfulness: **PASS**
 
 <sub>6.1s</sub>
 
@@ -338,6 +605,14 @@ Each question asked standalone (single turn), exactly as the graded 2026-07-07 r
 
 **References:** Article 101, Article 99
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — unsupported=1; missing=1; omits explicit Art.101(5) power to cancel/reduce/increase the fine
+
+- References: **FAIL** — P=0.5; R=1.0; wrong=1; over-citation of irrelevant provision (Article 99 governs Member State/operator penalties, not CJEU review of Commission fines on GPAI providers)
+
+- Citation faithfulness: **PASS**
+
 <sub>27.6s · refs added vs prior: Article 101</sub>
 
 ## 35. `rg_035`
@@ -346,6 +621,14 @@ Each question asked standalone (single turn), exactly as the graded 2026-07-07 r
 **A:** The trigger is Article 6: a provider may conclude under Article 6(3) that a system falling within an Annex III use-case category does not pose a significant risk of harm and is therefore not high-risk, but that self-assessment is documented and rebuttable, and the classification itself is fixed by Article 6(1), (2), a safety component of, or a product covered by, the Union harmonisation legislation listed in Annex I requiring third-party conformity assessment, or a system falling within one of the eight Annex III categories (biometrics, critical infrastructure, education and vocational training, employment and worker management, and the remainder of that list). Where the authority finds the derogation was wrongly invoked, the system is high-risk from that determination and the full Chapter III provider obligations attach, including, among those identified here, the risk management system under Article 9, and Article 50 transparency duties continue to apply in parallel where the system interacts directly with natural persons. Nothing in the facts engages Article 5: the exhaustively listed prohibited practices, including real-time remote biometric identification in publicly accessible spaces by law enforcement outside the three permitted law-enforcement objectives, operate as an outright ban with no corrective-action window, and must not be conflated with the high-risk tier under Article 6, where compliance, not cessation, is the remedy.
 
 **References:** Article 6, Annex III, Article 50, Annex I, Article 9, Article 5
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — incorrect=1; unsupported=1; missing=1; answer omits that the relevant provision (Art. 79/80 procedure for misclassified/non-compliant high-risk systems) gives the provider a corrective-action period prescribed by the MSA rather than mandating immediate recall/suspension, and asserts immediate full Chapter III attachment instead of addressing the actual question
+
+- References: **FAIL** — P=0.0; R=0.0; wrong=6; missing=2; cited classification/definition provisions instead of the actual governing procedure (Art. 80 reclassification procedure, cross-referencing Art. 79(5) for corrective-action timeframe vs. withdrawal)
+
+- Citation faithfulness: **PASS**
 
 <sub>42.6s · refs added vs prior: Annex I, Article 5, Article 50, Article 9 · refs dropped vs prior: Article 79, Article 80</sub>
 
@@ -356,6 +639,14 @@ Each question asked standalone (single turn), exactly as the graded 2026-07-07 r
 
 **References:** Article 10, Article 9, Article 42
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS**
+
+- References: **FAIL** — P=0.67; R=1.0; wrong=1; over-citation: Article 9 (risk management) irrelevant to data-representativeness presumption
+
+- Citation faithfulness: **PASS**
+
 <sub>15.4s · refs added vs prior: Article 9</sub>
 
 ## 37. `rg_037`
@@ -364,6 +655,14 @@ Each question asked standalone (single turn), exactly as the graded 2026-07-07 r
 **A:** The required content is fixed by Annex VIII, Section A, which lists the information a provider must submit and thereafter keep up to date when registering a high-risk AI system, and the submission must be made before the system is placed on the market or put into service under Article 49(1). The registration is entered in the EU database for high-risk AI systems that the Commission sets up and manages under Article 71, which holds a publicly accessible section and a restricted-access section and keeps the data machine-readable, navigable and searchable. The items to be submitted are. The name, address and contact details of the provider. The name, address and contact details of the authorised representative, where applicable. The AI system trade name and any additional unambiguous reference allowing identification and traceability of the system. A description of the intended purpose of the AI system and of the components and functions supported through it. A basic and concise description of the information used by the system, meaning its data and inputs, and of its operating logic. The status of the AI system, namely on the market or in service, no longer placed on the market or in service, or recalled. Article 35 is what makes that identifier meaningful, since the Commission assigns each notified body a single identification number and publishes an up-to-date list of notified bodies with their numbers and notified activities.
 
 **References:** Article 49, Annex VIII, Article 71
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — incorrect=1; unsupported=1; missing=7; incomplete Annex VIII Section A list (omits items 2,8-13) plus fabricated Article 35 claim
+
+- References: **FAIL** — P=0.67; R=1.0; wrong=1; over-citation of Article 71 (database mechanics, not information content)
+
+- Citation faithfulness: **PASS**
 
 <sub>40.8s · refs dropped vs prior: Annex III, Article 35</sub>
 
@@ -374,6 +673,14 @@ Each question asked standalone (single turn), exactly as the graded 2026-07-07 r
 
 **References:** Article 57
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — missing=5; answer omits core definition, only cites AI Office listing duty
+
+- References: **PASS** — P=1.0; R=1.0
+
+- Citation faithfulness: **FAIL** — mismatched=1; cite-and-mismatch: answer describes AI Office sandbox list/interoperability provision (Art. 57(6a)/related transparency clause), not Article 57's actual definition of an AI regulatory sandbox (controlled environment established by competent authorities for providers to develop/test/validate AI systems for a limited time)
+
 <sub>4.0s</sub>
 
 ## 39. `rg_039`
@@ -382,6 +689,14 @@ Each question asked standalone (single turn), exactly as the graded 2026-07-07 r
 **A:** Under Article 50(4), a deployer that uses an AI system to generate or manipulate text published to inform the public on matters of public interest must disclose that the text has been artificially generated or manipulated. Under Article 50(4), that disclosure duty does not apply in two cases: first, where the use is authorised by law to detect, prevent, investigate or prosecute criminal offences; and second, where the AI-generated content has undergone a process of human review or editorial control and a natural or legal person holds editorial responsibility for the publication of the content.
 
 **References:** Article 50.4, Article 50
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS**
+
+- References: **PASS** — P=1.0; R=1.0
+
+- Citation faithfulness: **PASS**
 
 <sub>4.7s</sub>
 
@@ -392,6 +707,14 @@ Each question asked standalone (single turn), exactly as the graded 2026-07-07 r
 
 **References:** Annex VII
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS**
+
+- References: **PASS** — P=1.0; R=1.0
+
+- Citation faithfulness: **PASS**
+
 <sub>1.0s</sub>
 
 ## 41. `rg_041`
@@ -400,6 +723,14 @@ Each question asked standalone (single turn), exactly as the graded 2026-07-07 r
 **A:** Yes. Under Article 11(1), SMEs, including start-ups, may provide the technical documentation elements set out in Annex IV in a simplified manner, using a simplified form the Commission is required to establish for the needs of small and micro enterprises. Where an SME opts to use that form, the notified body performing the conformity assessment must accept it.
 
 **References:** Article 11.1, Article 11, Annex IV, Annex IV.2
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS**
+
+- References: **FAIL** — P=0.25; R=1.0; wrong=3; over-citation: redundant/irrelevant provisions beyond Art 11(1)
+
+- Citation faithfulness: **PASS**
 
 <sub>4.7s</sub>
 
@@ -411,6 +742,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 
 **References:** Article 26.7, Article 26
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS**
+
+- References: **FAIL** — P=0.5; R=1.0; wrong=1; redundant over-broad citation of parent Article 26 alongside the specific governing Article 26.7
+
+- Citation faithfulness: **PASS**
+
 <sub>4.7s</sub>
 
 ## 43. `rg_043`
@@ -419,6 +758,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 **A:** Under Article 10(5), a provider of a high-risk AI system may exceptionally process special categories of personal data only to the extent strictly necessary to ensure bias detection and correction, subject to appropriate safeguards. Article 10(5) requires all of the following: the bias work cannot be done with other data, including synthetic or anonymised data (a); technical limits on re-use plus state-of-the-art security and pseudonymisation (b); strict, documented access controls to prevent misuse (c); no transmission or transfer to other parties (d); deletion once the bias is corrected or the retention period ends, whichever is first (e); and records of processing documenting why it was strictly necessary (f).
 
 **References:** Article 10.5, Article 10
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS**
+
+- References: **PASS** — P=0.5; R=1.0; wrong=1; over-citation of parent Article 10 beyond relevant paragraph 5
+
+- Citation faithfulness: **PASS**
 
 <sub>3.9s</sub>
 
@@ -429,6 +776,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 
 **References:** Article 57, Article 60
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — incorrect=1; missing=1; answer addresses sandboxes (Art.57) instead of the asked-about real-world testing outside sandboxes (Art.60(4)(c) registration/Annex IX requirement), entirely missing the operative holding
+
+- References: **FAIL** — P=0.5; R=0.5; wrong=1; missing=1; included sandbox provision (Art 57) irrelevant to testing outside sandbox; omitted Annex IX which lists the specific required information
+
+- Citation faithfulness: **FAIL** — mismatched=1; cite-and-mismatch: Article 60 governs real-world testing outside sandboxes, but answer describes Article 57 sandbox establishment instead
+
 <sub>30.4s · refs dropped vs prior: Annex IX, Article 71</sub>
 
 ## 45. `rg_045`
@@ -437,6 +792,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 **A:** This follows from Article 26, which requires deployers to use a high-risk AI system in accordance with the instructions for use, to assign human oversight to competent and trained natural persons, and to monitor the system's operation. Where that monitoring gives the deployer reason to consider that use in accordance with the instructions may present a risk within the meaning of Article 79(1), meaning a risk to health, safety or fundamental rights, the deployer must inform the provider or distributor and the market surveillance authority without delay and interrupt use of the system. Where the deployer instead identifies a serious incident, it must immediately inform the provider first, and then the importer or distributor and the relevant market surveillance authority, which feeds into the provider's own serious incident reporting duty under Article 73 and its post-market monitoring obligation under Article 72. Article 26 also requires the deployer to retain the automatically generated logs, which are the evidence base for both the notification and any subsequent authority investigation.
 
 **References:** Article 26, Article 79, Article 73, Article 72
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS** — unsupported=2
+
+- References: **FAIL** — P=0.25; R=1.0; wrong=3; over-citation: Art 79/73/72 are merely cross-referenced context, not deployer's own risk-response/notification obligation
+
+- Citation faithfulness: **PASS**
 
 <sub>26.5s · refs added vs prior: Article 72 · refs dropped vs prior: Article 25</sub>
 
@@ -447,6 +810,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 
 **References:** Article 13, Article 26
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — missing=6; omits several Article 13(3) categories (intended purpose, accuracy/robustness/cybersecurity metrics, foreseeable risk circumstances, output-interpretation info, pre-determined changes, computational/hardware resources)
+
+- References: **FAIL** — P=0.5; R=1.0; wrong=1; over-citation: Article 26 governs deployer obligations, not provider's instructions-for-use content
+
+- Citation faithfulness: **PASS**
+
 <sub>28.6s</sub>
 
 ## 47. `rg_047`
@@ -455,6 +826,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 **A:** The provider must take corrective action without delay. Under Article 20, where it considers or has reason to consider that a high-risk AI system it has placed on the market or put into service is not in conformity with the Regulation, it must take the necessary corrective actions to bring the system into conformity, or else withdraw it, disable it or recall it as appropriate, and must inform the distributors of the system concerned and, where applicable, the deployers, the authorised representative and the importers. That duty is one of the core provider obligations listed in Article 16, which also requires the provider to demonstrate compliance to the competent authorities on request (Article 21), to keep the technical documentation demonstrating conformity (Articles 11 and 18) and the automatically generated logs (Article 19), and to run a quality management system covering post-market monitoring and incident-reporting workflows (Article 17), all of which support the diagnosis and evidencing of the non-conformity. Where the provider is established outside the Union, its authorised representative appointed under Article 22 must cooperate with the market surveillance authorities and must terminate the mandate and inform the AI Office and the relevant market surveillance authority if it has reason to believe the provider is acting contrary to its obligations.
 
 **References:** Article 20, Article 16, Article 21
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — unsupported=2; missing=1; omits Article 20(2) duty to investigate causes and notify market surveillance authorities/notified body when the risk falls under Article 79(1)
+
+- References: **FAIL** — P=0.33; R=1.0; wrong=2; over-citation of cross-referenced/irrelevant provisions
+
+- Citation faithfulness: **PASS**
 
 <sub>28.0s</sub>
 
@@ -465,6 +844,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 
 **References:** Article 43
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — missing=2; answer omits both requested definitions (conformity assessment body and conformity assessment)
+
+- References: **FAIL** — P=0.0; R=0.0; wrong=1; missing=1; cited procedural article instead of Article 3 definitions
+
+- Citation faithfulness: **PASS**
+
 <sub>22.5s · refs added vs prior: Article 43 · refs dropped vs prior: Article 3</sub>
 
 ## 49. `rg_049`
@@ -473,6 +860,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 **A:** Codes of conduct may be drawn up by any interested party, including in particular providers of AI systems other than high-risk AI systems, with the AI Office and the Member States required to encourage and facilitate their drawing up under Article 95(1). Article 95 requires such codes to be based on clear objectives and key performance indicators measuring the achievement of those objectives, and to be developed inclusively so that interested stakeholders can participate.
 
 **References:** Article 95
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — incorrect=2; unsupported=1; missing=1; answer says codes 'may be drawn up by any interested party' and omits deployers as explicit drafters, contrary to Art.95(3) which names providers/deployers/their organisations as drafters with stakeholders only 'involved'
+
+- References: **PASS** — P=1.0; R=1.0
+
+- Citation faithfulness: **FAIL** — mismatched=1; conflates paragraphs — misdescribes who may draw up codes (omits deployers, wrongly imports 'other than high-risk AI systems' qualifier from para 1 onto para 3's drafters)
 
 <sub>25.7s</sub>
 
@@ -483,6 +878,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 
 **References:** Annex III.5.b, Article 6
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — missing=1; answer acknowledges a carve-out exists but never states the financial-fraud-detection exception the question explicitly asked for
+
+- References: **PASS** — P=1.0; R=1.0
+
+- Citation faithfulness: **PASS**
+
 <sub>26.5s · refs added vs prior: Article 6</sub>
 
 ## 51. `rg_051`
@@ -491,6 +894,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 **A:** Before placing the system on the Union market, a third-country provider must appoint an authorised representative established in the Union by written mandate under Article 22, and that representative keeps the conformity documentation available and acts as the contact point for market surveillance authorities. The provider must complete the applicable conformity assessment under Article 43, which allows the internal control procedure in Annex VI for Annex III systems where harmonised standards or common specifications are applied. It must then draw up the written, machine-readable, signed and dated EU declaration of conformity containing the information set out in Annex V, as required by Article 47, affix the CE marking visibly, legibly and indelibly to the system or its packaging or documentation under Article 48, and register itself and the system in the EU database under Article 49 before placement on the market or putting into service. Those steps presuppose that the substantive requirements are already satisfied, in particular the documented risk management system required by Article 9, the data governance and dataset quality requirements of Article 10, the technical documentation of Article 11 drawn up before placement on the market and kept up to date, and the quality management system covering compliance strategy, testing and post-market workflows required by Article 17. After placement, the provider remains bound by the post-market monitoring plan required by Article 72 and the tiered serious-incident reporting deadlines of Article 73.
 
 **References:** Article 22, Article 43, Article 47, Annex V, Article 49
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — incorrect=1; unsupported=2; mischaracterizes Art.43 conformity-assessment conditionality as applying to all Annex III systems, and cites Art.48 CE marking plus Arts.9/10/11/17 substantive duties not present in the supplied verbatim text
+
+- References: **FAIL** — P=0.2; R=1.0; wrong=4; over-citation of generic conformity/registration provisions not specific to third-country providers
+
+- Citation faithfulness: **PASS**
 
 <sub>27.9s · refs added vs prior: Annex V · refs dropped vs prior: Annex IV, Article 11, Article 17, Article 48</sub>
 
@@ -501,6 +912,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 
 **References:** Article 17, Article 16, Article 19
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — unsupported=2; missing=13; answer never lists the Article 17(1)(a)-(m) required QMS elements the question asked for
+
+- References: **FAIL** — P=0.33; R=1.0; wrong=2; over-citation of adjacent/referenced provisions not defining QMS elements
+
+- Citation faithfulness: **PASS**
+
 <sub>25.2s · refs added vs prior: Article 16, Article 19</sub>
 
 ## 53. `rg_053`
@@ -509,6 +928,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 **A:** Article 55 adds four obligations on top of the Article 53 baseline as soon as the model is classified as presenting systemic risk under Article 51, which applies where the model has high-impact capabilities, presumed where cumulative training compute exceeds 10^25 FLOPs, or where the Commission so designates it on the Annex XIII criteria. The Article 53 duties continue to apply in full, namely keeping up-to-date technical documentation of the training, testing and evaluation of the model in line with Annex XI, making integration information available to downstream providers in line with Annex XII, putting in place a policy to comply with Union copyright law, and publishing a sufficiently detailed summary of the content used for training. The four additional Article 55 obligations are as follows.
 
 **References:** Article 53, Article 55, Article 51
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — missing=4; answer trails off before enumerating the four Article 55 obligations (evaluation/adversarial testing, systemic risk assessment/mitigation, incident reporting, cybersecurity) it promises to list
+
+- References: **FAIL** — P=0.33; R=1.0; wrong=2; over-cited baseline (Art 53) and classification (Art 51) provisions that are not the 'additional' obligations Art 55 explicitly adds
+
+- Citation faithfulness: **PASS**
 
 <sub>24.3s · refs added vs prior: Article 51</sub>
 
@@ -519,6 +946,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 
 **References:** Article 79.6, Article 5, Article 50
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS**
+
+- References: **FAIL** — P=0.33; R=1.0; wrong=2; over-cited provisions merely named inside Art.79(6)'s list, not independently governing
+
+- Citation faithfulness: **PASS**
+
 <sub>37.3s · refs added vs prior: Article 50</sub>
 
 ## 55. `rg_055`
@@ -527,6 +962,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 **A:** Article 5(1)(d) prohibits the use of real-time remote biometric identification systems in publicly accessible spaces for law enforcement purposes, and Article 5(1)(h) sets out the closed carve-out catalogue: first, the targeted search for specific victims of abduction, trafficking in human beings and sexual exploitation, and the search for missing persons; second, the prevention of a specific, substantial and imminent threat to the life or physical safety of natural persons, or of a genuine and foreseeable terrorist attack; third, the localisation or identification of a person suspected of an offence listed in Annex II, which covers terrorism, trafficking in human beings, and sexual exploitation of children and child pornography, where that offence is punishable by a custodial sentence of at least four years. No other objective qualifies, and any use outside these three remains a prohibited practice exposed to the Article 99(3) ceiling of up to EUR 35 million or 7% of total worldwide annual turnover. The deployer must also complete a Fundamental Rights Impact Assessment under Article 27, which requires assessment of the deployment process, the affected persons, the specific risks, the human oversight measures and the complaints workflow, register the system in the EU database under Article 49 before putting it into service, and notify the relevant market surveillance authority and the national data protection authority of each use. Outside the law enforcement setting governed by Article 5, remote biometric identification is not prohibited but is classified as high-risk under the Article 6(2) route, because biometrics and law enforcement are two of the eight Annex III use-case categories, alongside critical infrastructure, education and vocational training, employment and worker management, essential private and public services, migration, asylum and border control, and administration of justice and democratic processes.
 
 **References:** Article 5, Article 99, Article 27
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — incorrect=1; misattributes the RBI prohibition to Article 5(1)(d) instead of Article 5(1)(h)
+
+- References: **FAIL** — P=0.33; R=1.0; wrong=2; over-citation of irrelevant provisions (penalties, impact assessments)
+
+- Citation faithfulness: **FAIL** — mismatched=1; cite-and-mismatch: Art 5(1)(d) described as the real-time RBI prohibition (actually the criminal-risk-profiling prohibition; RBI prohibition is 5(1)(h))
 
 <sub>32.4s · refs added vs prior: Article 99 · refs dropped vs prior: Annex II, Annex III, Article 49, Article 6</sub>
 
@@ -537,6 +980,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 
 **References:** Article 32, Article 31
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS**
+
+- References: **PASS** — P=1.0; R=1.0
+
+- Citation faithfulness: **FAIL** — mismatched=1; cites Article 31(12) for liability-insurance/Member-State-assumption content, which actually appears in Article 31(9); Article 31(12) is about coordination activities and standardisation bodies
+
 <sub>15.8s</sub>
 
 ## 57. `rg_057`
@@ -545,6 +996,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 **A:** Any natural or legal person may lodge a complaint, and the complaint goes to the relevant market surveillance authority. Article 85 grants this right broadly: unlike Article 77 GDPR, the complainant need not show that the infringement affected their own rights, and any alleged infringement of the AI Act may be raised.
 
 **References:** Article 85, Article 77
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS** — unsupported=1
+
+- References: **FAIL** — P=0.5; R=1.0; wrong=1; over-citation of unrelated provision (Art. 77 governs authority document access/fundamental rights supervision, not complaint lodging)
+
+- Citation faithfulness: **PASS**
 
 <sub>13.6s</sub>
 
@@ -555,6 +1014,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 
 **References:** Article 50
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — missing=1; omits Art 50(2) quality criteria (effective, interoperable, robust, reliable) explicitly asked for in the question
+
+- References: **PASS** — P=1.0; R=1.0
+
+- Citation faithfulness: **PASS**
+
 <sub>18.6s</sub>
 
 ## 59. `rg_059`
@@ -563,6 +1030,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 **A:** The scientific panel of independent experts is a standing expert body established under Article 68 to support enforcement of the general-purpose AI rules in Chapter V. Its main support and advisory tasks under Article 68 are to alert the AI Office to systemic risks arising from general-purpose AI models, to contribute to the development of tools and methodologies for evaluating the capabilities of general-purpose AI models, and to advise on the classification of general-purpose AI models with systemic risk. That alerting function operates through the qualified alert mechanism, under which the panel may notify the AI Office where it has reason to suspect that a general-purpose AI model poses a concrete identifiable risk at Union level (Article 90).
 
 **References:** Article 68, Article 64, Article 90
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — incorrect=1; missing=2; omits member selection/characteristics entirely and mischaracterizes panel scope as GPAI-only
+
+- References: **FAIL** — P=0.667; R=1.0; wrong=1; Article 64 over-cited (general AI Office/Member State mandate, does not address scientific panel)
+
+- Citation faithfulness: **FAIL** — mismatched=1; Article 68 mischaracterized as limited to enforcing 'general-purpose AI rules in Chapter V,' when the verbatim text establishes it to support enforcement activities under the Regulation broadly (including market surveillance support, cross-border surveillance, and safeguard procedures unrelated to GPAI models specifically)
 
 <sub>24.2s · refs added vs prior: Article 64 · refs dropped vs prior: Article 65</sub>
 
@@ -573,6 +1048,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 
 **References:** Article 73, Article 3.57
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — incorrect=1; unsupported=2; missing=3; wrong_provision_applied_missing_real_world_testing_obligations
+
+- References: **FAIL** — P=0.0; R=0.0; wrong=2; missing=1; cited general market-placement reporting article and a definition instead of Article 60(7), the actual provision governing serious incidents during real-world testing and specifying the three required actions (report, mitigate/suspend/terminate, establish recall procedure)
+
+- Citation faithfulness: **FAIL** — mismatched=1; cite-and-mismatch: answer describes 'serious incident' definition under Article 3(49), but the cited provision's verbatim text (Article 3.57) is actually the definition of 'testing in real-world conditions', an unrelated provision
+
 <sub>25.9s · refs dropped vs prior: Article 60</sub>
 
 ## 61. `rg_061`
@@ -581,6 +1064,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 **A:** The Commission has exclusive powers to supervise and enforce the Chapter V obligations for providers of general-purpose AI models, and those tasks are entrusted to the AI Office, which Article 64 establishes within the Commission with the mandate to supervise general-purpose AI model providers, contribute to enforcement, foster Union-wide expertise, and support the European AI Board. This centralised supervision covers the Article 53 obligations on all providers, meaning the Annex XI technical documentation of the model and its training, testing and evaluation results, the Annex XII information made available to downstream providers integrating the model, the copyright policy, and the publicly available summary of training content. It equally covers the additional Article 55 duties on providers of models classified under Article 51 as presenting systemic risk, including state of the art model evaluation with documented adversarial testing, assessment and mitigation of Union level systemic risks, cybersecurity protection for the model and its physical infrastructure, and reporting of serious incidents without undue delay to the AI Office itself, with national competent authorities informed where appropriate.
 
 **References:** Article 64, Article 53, Article 51
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS** — unsupported=2
+
+- References: **FAIL** — P=0.0; R=0.0; wrong=3; missing=1; cited GPAI obligation/classification articles instead of the enforcement-authority article (Art. 88) that actually assigns exclusive Commission supervision/enforcement of Chapter V and delegates implementation to the AI Office
+
+- Citation faithfulness: **FAIL** — mismatched=1; Article 64 verbatim only states Commission develops AI expertize via AI Office and Member States facilitate its tasks; it does not say Article 64 'establishes' the AI Office or gives it a mandate to supervise providers, contribute to enforcement, or support the Board as the answer claims
 
 <sub>20.6s · refs added vs prior: Article 53, Article 64 · refs dropped vs prior: Annex XIII</sub>
 
@@ -591,6 +1082,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 
 **References:** Article 79.1, Article 24
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS** — unsupported=1; none - minor unsupported specificity on which competent authorities must be notified
+
+- References: **PASS** — P=1.0; R=1.0
+
+- Citation faithfulness: **PASS**
+
 <sub>30.4s</sub>
 
 ## 63. `rg_063`
@@ -599,6 +1098,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 **A:** Article 2(1) of Regulation (EU) 2024/1689 extends the Act to three categories of actors. First, providers that place AI systems on the Union market or put them into service, irrespective of whether those providers are established in the Union or in a third country. Second, deployers of AI systems that are established or located in the Union.
 
 **References:** Article 2.1
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — incorrect=1; missing=5; omits categories (c)-(g) and miscounts total as three
+
+- References: **PASS** — P=1.0; R=1.0
+
+- Citation faithfulness: **FAIL** — incomplete - omits categories (c)-(g)
 
 <sub>17.3s</sub>
 
@@ -609,6 +1116,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 
 **References:** Article 10, Article 6
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — missing=1; answer never addresses third-country data transfer conditions asked in the question
+
+- References: **FAIL** — P=0.0; R=0.0; wrong=2; missing=1; cited unrelated provisions (dataset governance, high-risk classification) instead of Article 60 real-world testing/third-country transfer rules
+
+- Citation faithfulness: **PASS**
+
 <sub>31.6s · refs added vs prior: Article 10 · refs dropped vs prior: Article 23, Article 39</sub>
 
 ## 65. `rg_065`
@@ -617,6 +1132,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 **A:** Breach of the Article 5 prohibited practices, which bar eight categories of AI practice including social scoring, biometric categorisation by sensitive attributes and real-time remote biometric identification in publicly accessible spaces for law enforcement, attracts up to EUR 35 000 000 or 7 % of total worldwide annual turnover under Article 99(3). Non-compliance with the operator duties listed in Article 99(4), covering provider obligations under Article 16, authorised representative obligations under Article 22, importer obligations under Article 23, distributor obligations under Article 24, deployer obligations under Article 26, the requirements for notified bodies under Article 31, Article 33(1), (3) and (4) and Article 34, and the transparency obligations under Article 50, attracts up to EUR 15 000 000 or 3 %. The same EUR 15 000 000 or 3 % ceiling applies to providers of general-purpose AI models under Article 101, where the Commission acting through the AI Office established by Article 64 fines breaches of the Chapter V obligations such as the Article 53 duties to keep Annex XI technical documentation, supply Annex XII information to downstream providers, operate a copyright policy and publish a training-data summary, and the additional Article 55 systemic-risk duties on evaluation, risk mitigation, incident reporting and cybersecurity. Supplying incorrect, incomplete or misleading information to notified bodies or national competent authorities attracts up to EUR 7 500 000 or 1 % under Article 99(5), and the same conduct toward the Commission is separately fineable under Article 101 at the 3 % or EUR 15 000 000 level for general-purpose AI model providers. For SMEs and start-ups Article 99(6) inverts the rule so that the applicable ceiling is the lower of the fixed amount and the percentage.
 
 **References:** Article 99, Article 5, Article 16
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — missing=1; answer truncated before stating tier (c) fine amounts (EUR 7,500,000 / 1% under Article 99(5))
+
+- References: **?**
+
+- Citation faithfulness: **PASS**
 
 <sub>31.0s · refs dropped vs prior: Annex XI, Annex XII, Article 101, Article 50, Article 53, Article 55</sub>
 
@@ -627,6 +1150,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 
 **References:** Article 71, Article 49, Article 60
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — unsupported=2; missing=2; never states Commission is controller; omits Annex VIII Sections B/C categories
+
+- References: **FAIL** — P=0.33; R=0.5; wrong=2; missing=1; over-citation of registration/testing provisions plus missing Annex VIII (data categories)
+
+- Citation faithfulness: **PASS**
+
 <sub>23.7s · refs dropped vs prior: Annex III, Annex VIII</sub>
 
 ## 67. `rg_067`
@@ -635,6 +1166,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 **A:** No, they are alternatives rather than cumulative conditions: meeting either one classifies the model as a general-purpose AI model with systemic risk. Under Article 51, a general-purpose AI model qualifies where it has high-impact capabilities, which is presumed when the cumulative training compute exceeds 10^25 FLOPs, or where the Commission designates it as such on the basis of the Annex XIII criteria. A model can therefore fall below the compute threshold and still be classified through a Commission decision. Classification adds the Article 55 obligations on top of the Article 53 duties that apply to every general-purpose AI model provider, namely Annex XI technical documentation, Annex XII information for downstream providers, a copyright policy and a public training-data summary. Article 55 requires model evaluation under standardised protocols including documented adversarial testing, assessment and mitigation of systemic risks at Union level including their sources, tracking and reporting of serious incidents to the AI Office without undue delay, and an adequate level of cybersecurity protection for the model and its physical infrastructure. Until a harmonised standard is published, providers may rely on the Article 56 codes of practice to demonstrate compliance.
 
 **References:** Article 51, Article 55, Article 53
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS**
+
+- References: **FAIL** — P=0.33; R=1.0; wrong=2; over-citation of obligation provisions (Art 53, 55) unrelated to classification conditions
+
+- Citation faithfulness: **PASS**
 
 <sub>22.5s · refs dropped vs prior: Annex XIII</sub>
 
@@ -645,6 +1184,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 
 **References:** Article 26, Article 10.3
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — incorrect=1; unsupported=1; missing=1; vague/incorrect condition — fails to state 'to the extent deployer exercises control over the input data'
+
+- References: **FAIL** — P=0.5; R=1.0; wrong=1; over-citation: Art 10.3 governs provider training/validation/testing data sets, not deployer input data
+
+- Citation faithfulness: **FAIL** — mismatched=2; Article 10(3) cited but never described; Article 26's actual conditioning clause (control over input data, per para 4) misstated as conditioned on the listed instructions/oversight/monitoring/logging duties
+
 <sub>25.5s · refs added vs prior: Article 26 · refs dropped vs prior: Article 8</sub>
 
 ## 69. `rg_069`
@@ -653,6 +1200,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 **A:** Yes, where the system is high-risk. As a distributor, Article 24 requires you, before making a high-risk AI system available on the market, to verify that it bears the CE marking and is accompanied by the EU declaration of conformity and the instructions for use, and the same provision obliges you not to allow storage or transport conditions under the operator's control to jeopardise the system's conformity with the Regulation. Because that duty is triggered only by high-risk status, the operator should establish the classification before distributing, and the presence of a CE marking together with an EU declaration of conformity, which under Article 47 the provider must draw up for each high-risk AI system, is the practical signal that the system was placed on the market as high-risk. As an importer the equivalent duty not to jeopardise conformity applies, but the operator's upstream verification is more demanding. Article 23 requires you, before placing a high-risk AI system on the market, to satisfy yourself that the system conforms to the Regulation, in particular by verifying that the relevant conformity assessment procedure under Article 43 has been carried out by the provider, in addition to checking the CE marking, the declaration of conformity and the instructions for use. Those verification duties fall on you directly and do not shift to the provider, whose own compliance obligations under Article 16 run in parallel.
 
 **References:** Article 24, Article 47, Article 23, Article 43, Article 16
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS** — unsupported=2
+
+- References: **FAIL** — P=0.4; R=1.0; wrong=3; over-citation of cross-referenced articles (47, 43, 16) that don't themselves impose the 'not jeopardize conformity' obligation
+
+- Citation faithfulness: **PASS**
 
 <sub>32.2s · refs dropped vs prior: Annex III</sub>
 
@@ -663,6 +1218,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 
 **References:** Article 6, Annex I
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS** — unsupported=1
+
+- References: **PASS** — P=1.0; R=1.0
+
+- Citation faithfulness: **PASS**
+
 <sub>23.7s</sub>
 
 ## 71. `rg_071`
@@ -671,6 +1234,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 **A:** The two sets of duties are cumulative rather than mutually exclusive, so a system classified as high-risk remains subject to the high-risk regime and must additionally comply with Article 50 wherever its features trigger that provision. Article 50 attaches to how a system interacts or what it produces, not to a separate risk tier, and it splits by actor: providers must ensure systems intended to interact directly with natural persons inform those persons that they are dealing with an AI system (Article 50(1)) and must mark synthetic outputs in a machine-readable format detectable as artificially generated or manipulated (Article 50(2)), while deployers must inform exposed persons when operating emotion recognition or biometric categorisation systems (Article 50(3)) and must disclose deepfakes as artificially generated or manipulated (Article 50(4)).
 
 **References:** Article 50
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS**
+
+- References: **PASS** — P=1.0; R=1.0
+
+- Citation faithfulness: **PASS**
 
 <sub>19.6s</sub>
 
@@ -681,6 +1252,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 
 **References:** Annex I, Article 6
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS**
+
+- References: **PASS** — P=1.0; R=1.0
+
+- Citation faithfulness: **PASS**
+
 <sub>17.0s · refs dropped vs prior: Annex III</sub>
 
 ## 73. `rg_073`
@@ -689,6 +1268,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 **A:** An AI system intended to be used as a safety component in a lift is high-risk only where the lift, as a product covered by the Union harmonisation legislation listed in Annex I, is required to undergo a third-party conformity assessment before being placed on the market or put into service. Article 6(1) establishes that route: classification does not follow from the safety-critical nature of the function alone, but from the conjunction of two conditions, that the AI system is a safety component of a product falling within the scope of an Annex I act, and that the product itself is subject to third-party conformity assessment under that act. Lift legislation falls within the Annex I list of Union harmonisation legislation, so an AI system performing a safety function within a lift, for example one governing braking, overspeed detection, door-locking or emergency arrest, satisfies the first condition, and lifts and their safety components are ordinarily subject to conformity assessment involving a notified body, satisfying the second.
 
 **References:** Annex I, Article 6
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS** — unsupported=2
+
+- References: **PASS** — P=1.0; R=1.0
+
+- Citation faithfulness: **PASS**
 
 <sub>14.6s</sub>
 
@@ -699,6 +1286,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 
 **References:** Article 5, Article 50.3, Article 5.1.f, Annex III.1.c, Article 50
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS**
+
+- References: **FAIL** — P=0.4; R=1.0; wrong=3; over-citation: whole Article 5 and Article 50 redundant/overbroad given specific 5.1.f cited, and 50.3 (transparency duty) is tangential to the prohibition/exception/classification question
+
+- Citation faithfulness: **PASS**
+
 <sub>5.6s</sub>
 
 ## 75. `rg_075`
@@ -707,6 +1302,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 **A:** Yes, marking is still required, but not in a form the audience must see. As provider of the generative system, Article 50(2) requires outputs that are synthetic audio to be marked in a machine-readable format and detectable as artificially generated, using solutions that are effective, interoperable, robust and reliable. That duty is satisfied by embedded watermarking or metadata rather than an audible announcement, so it does not intrude on the listening experience. The artistic carve-out sits in Article 50(4), which relaxes the deployer duty to disclose deep fake content for artistic, creative, satirical or fictional works to a disclosure that does not disrupt the display or enjoyment of the work, but it does not lift the Article 50(2) machine-readable marking obligation.
 
 **References:** Article 50
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — incorrect=1; unsupported=1; misattributes Art 50(2) provider duty to the deployer/user generating the audio
+
+- References: **PASS** — P=1.0; R=1.0
+
+- Citation faithfulness: **PASS**
 
 <sub>26.0s</sub>
 
@@ -717,6 +1320,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 
 **References:** Article 3.2
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS**
+
+- References: **PASS** — P=1.0; R=1.0
+
+- Citation faithfulness: **PASS**
+
 <sub>3.7s · refs dropped vs prior: Article 6</sub>
 
 ## 77. `rg_077`
@@ -725,6 +1336,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 **A:** A provider that concludes its Annex III system falls outside the high-risk classification must still register it in the EU database. Article 6(2) classifies a system as high-risk where it falls within one of the eight Annex III use cases, namely biometrics, critical infrastructure, education and vocational training, employment and worker management, essential private and public services, law enforcement, migration, asylum and border control, and administration of justice and democratic processes.
 
 **References:** Annex III, Article 6
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS**
+
+- References: **FAIL** — P=1.0; R=0.6667; missing=1; missing Article 49(2) registration obligation provision
+
+- Citation faithfulness: **PASS**
 
 <sub>17.9s · refs dropped vs prior: Article 49</sub>
 
@@ -735,6 +1354,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 
 **References:** Article 60, Article 26, Article 61
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — incorrect=2; unsupported=1; conflates GDPR-style consent descriptors and law-enforcement carve-out with general consent rule
+
+- References: **FAIL** — P=0.67; R=1.0; wrong=1; over-citation: Article 26 (deployer obligations) is irrelevant to real-world testing informed consent
+
+- Citation faithfulness: **FAIL** — mismatched=1; Article 61 description imports content actually found in Article 60(4)(i)/(k) (no-adverse-effect, reversibility) and non-verbatim GDPR terms ('specific','unambiguous') not present in Article 61's text
+
 <sub>14.2s · refs added vs prior: Article 26</sub>
 
 ## 79. `rg_079`
@@ -743,6 +1370,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 **A:** The provider's own obligation is immediate corrective action: under Article 20, where a provider considers or has reason to consider that a high-risk AI system it has placed on the market is not in conformity, it must immediately take the necessary corrective actions to bring the system into conformity, withdraw it, disable it or recall it, and inform distributors, deployers, the authorised representative and importers. The evaluation of the system against the risk referred to in Article 79(1) is conducted by the market surveillance authority under Article 79, which, where non-compliance is found, requires the operator to take corrective action such as withdrawal from the market, recall from the distribution chain or restriction of availability within a period proportionate to the risk, and those authorities hold full investigation and corrective-measure powers under Article 74, including access to source code where strictly necessary. Where the risk has materialised as a serious incident, Article 73 additionally requires the provider to report to the market surveillance authority of the Member State where the incident occurred within the tiered deadlines, immediately and no later than two days for widespread infringement or critical infrastructure disruption, ten days for death, and fifteen days for other serious incidents. The provider therefore acts first on its own assessment for the education and vocational training system in question, then cooperates with the authority's evaluation and complies with any measures that authority imposes, which may be extended Union-wide under Article 81 if no Member State or Commission objection succeeds.
 
 **References:** Article 20, Article 79.1, Article 74
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — incorrect=2; unsupported=1; missing=1; answer misattributes the Art.20(2) 'immediately investigate causes' duty to the market surveillance authority instead of the provider, omitting that the provider itself must immediately investigate causes
+
+- References: **FAIL** — P=0.667; R=1.0; wrong=1; over-citation: Article 74 (market surveillance authority designation/2019-1020 applicability) does not itself impose or address the provider's investigate/corrective-action duty in this scenario; Article 20(2) alone (with Article 79(1)'s risk definition) answers the question
+
+- Citation faithfulness: **FAIL** — mismatched=1; Article 20 mischaracterized — answer omits/contradicts Art 20(2)'s explicit provider duty to immediately investigate causes when a 79(1) risk arises, instead attributing investigation to the market surveillance authority
 
 <sub>41.0s · refs dropped vs prior: Article 73</sub>
 
@@ -753,6 +1388,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 
 **References:** Article 50.4
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — missing=3; omits deepfake exceptions, text-disclosure duty, and its exceptions
+
+- References: **PASS** — P=1.0; R=1.0
+
+- Citation faithfulness: **PASS**
+
 <sub>15.9s</sub>
 
 ## 81. `rg_081`
@@ -762,6 +1405,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 
 **References:** Article 6, Annex III, Annex I, Article 5
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — incorrect=1; unsupported=1; misstates Art. 6(1) Annex I route by omitting the third-party conformity assessment condition (6(1)(b)), presenting Annex I coverage alone as sufficient
+
+- References: **FAIL** — P=0.75; R=1.0; wrong=1; Article 5 (prohibited practices) is irrelevant to high-risk classification question; over-cited
+
+- Citation faithfulness: **PASS**
+
 <sub>17.9s · refs added vs prior: Article 5</sub>
 
 ## 82. `rg_082`
@@ -770,6 +1421,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 **A:** No, the operator's model did not get this wrong. Article 24 requires a distributor, before making a high-risk AI system available on the market, to verify that it bears the CE marking and is accompanied by the EU declaration of conformity and the instructions for use, and it also requires that while the system is under the operator's responsibility the storage and transport conditions, where applicable, do not jeopardise its compliance with the high-risk requirements. The qualifier "where applicable" is what answers the operator's software point. The duty bites where the system reaches you on a physical medium or embedded in hardware or equipment, and it has no practical content where you distribute purely by electronic supply with nothing physical under the operator's control, in which case the Article 24 verification duties still apply in full.
 
 **References:** Article 24
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS** — unsupported=2
+
+- References: **PASS** — P=1.0; R=1.0
+
+- Citation faithfulness: **PASS**
 
 <sub>28.1s</sub>
 
@@ -783,6 +1442,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 
 **References:** Annex III, Annex I, Article 6
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — missing=1; never resolves the EU-database registration question needed to pick among the three answer choices
+
+- References: **PASS** — P=1.0; R=1.0
+
+- Citation faithfulness: **PASS**
+
 <sub>28.3s</sub>
 
 ## 84. `rg_084`
@@ -791,6 +1458,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 **A:** Not high-risk on the facts described. Article 6 opens only two routes to high-risk classification, and neither is met. The Annex I route under Article 6(1) requires the system to be a safety component of, or itself be, a product covered by the Union harmonisation legislation listed in Annex I, which includes medical devices, and only where that product must undergo third-party conformity assessment. The Annex III route under Article 6(2) requires the system to fall within one of the eight listed use cases, namely biometrics, critical infrastructure, education and vocational training, employment and worker management, essential private and public services, law enforcement, migration, asylum and border control, and administration of justice and democratic processes. Interpreting a spoken "yes" or "please no" as a keypress substitute falls within none of them, so the Article 6(3) derogation for narrow procedural tasks does not even need to be invoked. The classification stays outside Annex III only while the system interprets what is said. If it were extended to identify or verify the caller from voice characteristics it would enter the Annex III biometrics category and become high-risk. Separately, Article 5 prohibits emotion recognition, but that prohibition reaches only workplaces and educational institutions and would not extend to a clinic's patient line, and in any event inferring intent from the words spoken is not emotion recognition.
 
 **References:** Article 6, Annex III, Article 5
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — incorrect=1; claims voice verification of caller identity would trigger Annex III biometrics high-risk status, contradicting the verbatim carve-out excluding biometric verification whose sole purpose is confirming claimed identity
+
+- References: **FAIL** — P=0.667; R=1.0; wrong=1; Article 5 over-cited; no listed prohibited practice (subliminal manipulation, vulnerability exploitation, social scoring, emotion recognition, biometric categorisation, etc.) matches a voice-based consent-recording IVR system
+
+- Citation faithfulness: **FAIL** — mismatched=1; Annex III biometrics description conflates excluded biometric verification with identification
 
 <sub>41.6s · refs added vs prior: Article 5 · refs dropped vs prior: Annex I</sub>
 
@@ -801,6 +1476,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 
 **References:** Article 5, Article 6, Article 50, Annex III, Annex I
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — unsupported=1; missing=2; answer truncated mid-sentence, never resolves whether toy drones actually require third-party conformity assessment under Annex I toy legislation (most don't, so Art 6(1)(b) often fails), and never addresses 'toy drones used for other applications' at all
+
+- References: **FAIL** — P=0.8; R=1.0; wrong=1; Article 50 (transparency) over-cited; question only concerns prohibition/high-risk classification, not transparency duties
+
+- Citation faithfulness: **PASS**
+
 <sub>45.7s · refs dropped vs prior: Annex II</sub>
 
 ## 86. `rg_086`
@@ -809,6 +1492,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 **A:** No. The EU AI Act imposes no "proportionality of need" or model right-sizing duty, and no Article or Annex requires a provider or deployer to select the smallest or least resource-intensive model capable of performing a task. Article 1, which lays down the harmonised rules governing the placing on the market, putting into service and use of AI systems, frames the Regulation around prohibitions, high-risk requirements, transparency obligations and general-purpose AI model rules, none of which turns on whether a lighter model would have been sufficient. Article 51 treats a general-purpose AI model as carrying systemic risk where cumulative training compute exceeds 10^25 FLOPs, Annex XII obliges the provider to disclose to downstream providers the computational and hardware resources required and the model size, and Article 53 requires technical documentation per Annex XI together with a publicly available training-data summary. Where the systemic-risk threshold is met, Article 55 adds model evaluation, systemic-risk assessment and mitigation, serious-incident reporting and cybersecurity obligations, but still contains no duty to substitute a smaller model. The only express proportionality rule in the cited provisions is Article 44(3), under which a notified body must take account of the principle of proportionality when suspending, withdrawing or restricting a certificate of conformity, which concerns certification decisions rather than the choice of model architecture.
 
 **References:** Article 1, Article 51, Article 53
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — incorrect=1; misattributes compute/hardware resource disclosure duty to Annex XII (actually Annex XI content)
+
+- References: **FAIL** — P=0.0; R=1.0; wrong=3; cited provisions govern GPAI systemic-risk classification and provider documentation duties, not task-proportional model selection
+
+- Citation faithfulness: **PASS**
 
 <sub>36.7s · refs added vs prior: Article 1, Article 51 · refs dropped vs prior: Annex XI, Annex XII, Article 3, Article 55</sub>
 
@@ -819,6 +1510,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 
 **References:** Article 9, Article 5, Article 6, Article 50, Annex III
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — missing=2; omits systemic-risk (GPAI) tier entirely and answer truncates before addressing the no-risk/minimal-risk category
+
+- References: **FAIL** — P=0.8; R=0.8; wrong=1; missing=1; Art. 9 is risk-management process, not the five-tier categorization; missing Art. 51 (systemic-risk GPAI) for the 'systemic risk' tier
+
+- Citation faithfulness: **PASS**
+
 <sub>33.8s · refs added vs prior: Article 50 · refs dropped vs prior: Annex I</sub>
 
 ## 88. `rg_088`
@@ -827,6 +1526,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 **A:** The new use is not high-risk only where it independently fails both routes in it is not a safety component of a product covered by the Union harmonisation legislation listed in Annex I, and it does not fall within any of the eight use-case categories in Annex III (biometrics, critical infrastructure, education and vocational training, employment and worker management, and the remaining listed areas), and, separately, does not amount to a prohibited practice under Article 5, whose eight categories, including subliminal, manipulative or deceptive techniques causing significant harm and the exploitation of vulnerabilities by age, disability or socio-economic situation, bite irrespective of the Annexes and must be verified in their own right rather than inferred from the absence of an Annex entry. Two cautions on the legal team's conclusion: "no risk" is not the statutory test, classification under Article 6 turns on the listed product legislation and the enumerated use cases, not on an open-ended harm assessment, and the assessment must be made against the new intended purpose as actually operated, in writing, since it is the deployer who would have to substantiate it. On that footing the new use may proceed as a limited- or minimal-risk deployment, subject to the Article 50 transparency obligations where the system interacts directly with natural persons, which must be disclosed, or generates synthetic content, which must be marked in a machine-readable, detectable format. As to logs, the automatic record-keeping regime is a consequence of high-risk classification and does not follow the system into a use that genuinely sits outside Article 6, so the references establish no logging duty for the new use as such.
 
 **References:** Annex III, Annex I, Article 5, Article 6, Article 50
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — incorrect=1; missing=1; misattributes Art.6(4) documentation duty to deployer (text says provider) and never answers the logging/record-keeping question the query explicitly asked
+
+- References: **FAIL** — P=0.8; R=0.8; wrong=1; missing=1; Article 50 over-cited (transparency, not logs/reuse); missing Article 26(6) deployer log-keeping duty
+
+- Citation faithfulness: **FAIL** — mismatched=1; Article 50 cited but its content (transparency/disclosure obligations) is never described in the answer's prose
 
 <sub>54.1s · refs added vs prior: Article 50</sub>
 
@@ -837,6 +1544,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 
 **References:** Article 5, Annex I, Annex III, Article 6, Article 50
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — incorrect=2; mischaracterizes Art.5's eight practices and conflates Art.50(1)/(2) triggers
+
+- References: **FAIL** — P=0.6; R=1.0; wrong=2; over-citation: Annex I (Art.6(1) product-safety pathway) and Article 50 (transparency for direct interaction/synthetic content) do not govern a passive transcription tool
+
+- Citation faithfulness: **FAIL** — mismatched=1; Article 5 mischaracterized: claims all eight prohibited practices turn on subliminal/manipulative techniques or vulnerability exploitation, but grounds (c)-(h) (social scoring, predictive policing, facial-scraping databases, emotion inference, biometric categorisation, real-time biometric ID) rest on distinct criteria
+
 <sub>26.7s</sub>
 
 ## 90. `rg_090`
@@ -845,6 +1560,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 **A:** No. The compute threshold the operator is pointing to sits in Article 51, which presumes a general-purpose AI model has systemic risk once cumulative training compute exceeds 10^25 FLOPs, and the duties that flow from that designation fall on the provider of the model rather than on you, since Article 3 defines and keeps separate the roles of provider and deployer. You would pick up provider-side obligations only through Article 25, which turns a deployer into a provider where it puts its own name or trademark on the system, makes a substantial modification, or changes the intended purpose, and for a general-purpose AI model where additional training compute exceeds one third of the base model's compute (or roughly 3.3×10^24 FLOPs where the base compute is unknown).
 
 **References:** Article 51, Article 3.4, Article 25
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — incorrect=1; missing=1; fabricates a 'one-third compute' Art.25 threshold not in the verbatim text and omits the actual basis for deployer log-keeping (Art.26(6) tied to Annex III high-risk classification)
+
+- References: **FAIL** — P=0.67; R=0.67; wrong=1; missing=1; cited Art.25 (provider-reallocation, irrelevant to logging) while omitting Art.26(6) (deployer logging duty, conditional on high-risk status)
+
+- Citation faithfulness: **FAIL** — mismatched=1; Article 25 citation padded with a GPAI 'one-third of training compute' threshold not present anywhere in its verbatim text
 
 <sub>25.0s</sub>
 
@@ -855,6 +1578,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 
 **References:** Article 6, Article 50, Annex III, Annex I, Article 5
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS**
+
+- References: **FAIL** — P=0.4; R=1.0; wrong=3; over-citation: Article 50 (transparency) and Article 5 (prohibited practices) and Annex III (no matching healthcare/treatment-decision entry) are irrelevant to high-risk classification of clinical decision-support software, which is properly reached via Article 6(1) + Annex I (medical devices, Regulation (EU) 2017/745)
+
+- Citation faithfulness: **PASS**
+
 <sub>25.6s · refs dropped vs prior: Article 43, Article 48</sub>
 
 ## 92. `rg_092`
@@ -863,6 +1594,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 **A:** No. Annex I and Annex III both feed the high-risk classification, but Annex II does not. Annex I lists the Union harmonisation legislation, covering New Legislative Framework products such as machinery, toys, radio equipment, medical devices and lifts in Section A and sectoral regimes such as civil aviation, motor vehicles, marine equipment, rail and agricultural vehicles in Section B. Under Article 6(1) an AI system is high-risk where it is a safety component of, or is itself, a product covered by that legislation and the product must undergo a third-party conformity assessment. Annex III sets out the eight high-risk use-case categories that trigger Article 6(2), namely biometrics, critical infrastructure, education and vocational training, employment and worker management, essential private and public services, law enforcement, migration, asylum and border control, and administration of justice and democratic processes. Annex II is unrelated to classification. It lists the criminal offences referred to in Article 5(1)(h), including terrorism, trafficking in human beings, sexual exploitation of children, illicit trafficking in narcotic drugs, weapons or nuclear material, murder, kidnapping, rape, armed robbery, organised crime, participation in a criminal organisation and environmental crime, each punishable in the Member State concerned by a custodial sentence of at least four years. Its function is to delimit one of the narrow law enforcement exceptions to the Article 5 prohibition on real-time remote biometric identification in publicly accessible spaces, so it operates within the prohibited-practice tier rather than the high-risk tier.
 
 **References:** Annex I, Annex II, Annex III
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS**
+
+- References: **PASS** — P=1.0; R=1.0
+
+- Citation faithfulness: **PASS**
 
 <sub>17.8s · refs dropped vs prior: Article 5, Article 6</sub>
 
@@ -873,6 +1612,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 
 **References:** Article 6, Annex III
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — unsupported=6; missing=1; answer entirely off-topic (Article 5 prohibitions), never addresses irregular migration or Annex III point 7(b) high-risk classification
+
+- References: **PASS** — P=1.0; R=1.0
+
+- Citation faithfulness: **FAIL** — mismatched=4; answer cites Article 5 prohibited-practice carve-outs (biometric ID, social scoring, emotion recognition, biometric categorisation) entirely unrelated to irregular migration; ignores Annex III point 7(b)/Article 6(2), which actually classify irregular-migration risk assessment as high-risk
+
 <sub>36.7s · refs added vs prior: Annex III · refs dropped vs prior: Article 3, Article 5</sub>
 
 ## 94. `rg_094`
@@ -881,6 +1628,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 **A:** Article 53(1)(b) requires a GPAI provider to draw up, keep up to date and make available to providers of AI systems who intend to integrate the model the information set out in Annex XII, and Annex XII expressly names the date of release and methods of distribution, how the model interacts with hardware or software that is not part of the model itself, the architecture and number of parameters, and the licence for the model. Annex XII asks only for information on the data used for training, testing and validation, including its type and provenance and the curation methodologies, and the separate public summary under Article 53(1)(d) is a sufficiently detailed summary of training content covering public datasets, scraped web content, user data, synthetic data and licensed content, not a release of individual or illustrative data records. Under Article 53(2) the Annex XII downstream-provider information duty, like the Annex XI technical documentation duty, does not apply to a model released under a free and open-source licence permitting access, use, modification and distribution with publicly available parameters, weights, architecture and usage information. That carve-out falls away if the model is designated as having systemic risk under Article 51 on the basis of high-impact capabilities, presumed above 10^25 FLOPs of cumulative training compute, in which case the full Article 53 duties and the Article 55 systemic-risk obligations apply regardless of licence.
 
 **References:** Article 53, Annex XII, Article 51
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS** — unsupported=1
+
+- References: **FAIL** — P=0.67; R=1.0; wrong=1; over-citation: Article 51 (systemic risk classification) is irrelevant to downstream transparency disclosure obligations under Article 53(1)(b)/Annex XII
+
+- Citation faithfulness: **PASS**
 
 <sub>38.5s · refs added vs prior: Article 51</sub>
 
@@ -891,6 +1646,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 
 **References:** Article 6, Annex III, Annex I, Article 9
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS**
+
+- References: **FAIL** — P=0.0; R=0.0; wrong=4; missing=1; cited high-risk classification provisions (Art 6, Annex I/III, Art 9) instead of Article 72, which actually defines the post-market monitoring system obligation and its scope
+
+- Citation faithfulness: **PASS**
+
 <sub>44.0s · refs added vs prior: Annex I, Annex III, Article 6, Article 9 · refs dropped vs prior: Article 72</sub>
 
 ## 96. `rg_096`
@@ -899,6 +1662,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 **A:** Under Article 6(2), an "area" is one of the eight broad headings in Annex III, and a "use case" is a specific intended purpose listed under one of those headings, so a system is high-risk under that route only where its intended purpose matches a listed use case within one of the eight areas. Those areas are biometrics, critical infrastructure, education and vocational training, employment and worker management (covering recruitment, task allocation, promotion and termination decisions, and performance evaluation affecting workers' fundamental rights), essential private and public services, law enforcement, migration, asylum and border control, and administration of justice and democratic processes (Annex III). Falling within a listed use case is not conclusive, because the Article 6(3) derogation removes an Annex III system from the high-risk tier where it poses no significant risk of harm and performs only a narrow procedural task, improves the result of a previously completed human activity, detects decision-making patterns or deviations without replacing or influencing the human assessment, or performs a preparatory task, unless it profiles natural persons, in which case it remains high-risk. The provider must document that self-assessment before placing the system on the market and still register it under Article 49(2), which requires registration in the EU database before market placement or putting into service. The number of areas is not permanently fixed, since Article 7 empowers the Commission to amend Annex III by adding or modifying use cases, and Article 112 requires the Commission to assess annually whether the Annex III list needs amendment.
 
 **References:** Article 6.2, Article 6.3, Annex III
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS** — unsupported=3
+
+- References: **FAIL** — P=0.67; R=1.0; wrong=1; over-citation of Article 6.3 (derogation criteria) which does not define 'area'/'use case' or address area count
+
+- Citation faithfulness: **FAIL** — mismatched=1; Article 6(2) text merely refers high-risk classification to Annex III; it does not define 'area' or 'use case' — that structure/terminology comes from Annex III's heading and Article 6(3)(d), so attributing the area/use-case definition to Article 6(2) is a cite-mismatch
 
 <sub>27.6s · refs dropped vs prior: Annex I</sub>
 
@@ -909,6 +1680,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 
 **References:** Annex III, Article 6, Article 43
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — incorrect=1; missing=1; omits Annex III point 5(a)/5(d) explicit healthcare references, wrongly implying healthcare is absent from Annex III
+
+- References: **FAIL** — P=0.667; R=1.0; wrong=1; over-citation: Article 43 (conformity assessment) irrelevant to identifying high-risk use-case areas
+
+- Citation faithfulness: **PASS**
+
 <sub>38.0s · refs dropped vs prior: Annex I</sub>
 
 ## 98. `rg_098`
@@ -917,6 +1696,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 **A:** Annex VII point 5.1 states the purpose of the surveillance stage of that conformity assessment procedure, namely to make sure that the provider duly fulfils the terms and conditions of the approved quality management system. It opens the ongoing supervision part of Annex VII, which follows the notified body's approval of the quality management system and its examination of the technical documentation, the procedure that applies under Annex VII to Annex III biometric systems where harmonised standards have not been fully applied and which ends in an EU technical documentation assessment certificate. The system being supervised is the quality management system that Article 17 requires providers of high-risk AI systems to put in place to ensure compliance with the Regulation. It is unrelated to the criteria in Article 7 for adding, modifying or removing high-risk use cases in Annex III by delegated act, and unrelated to the Annex III use-case headings themselves.
 
 **References:** Annex VII, Article 7, Annex III
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS**
+
+- References: **FAIL** — P=0.33; R=1.0; wrong=2; cited unrelated Article 7 and the explicitly-warned-against Annex III instead of only Annex VII
+
+- Citation faithfulness: **PASS**
 
 <sub>28.9s</sub>
 
@@ -927,6 +1714,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 
 **References:** Article 53, Annex XI, Article 51
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS** — unsupported=1
+
+- References: **FAIL** — P=0.67; R=0.67; wrong=1; missing=1; cited Art.51 (systemic-risk classification thresholds, not an obligation) instead of Art.55 (systemic-risk providers' substantive duty to adversarially test and ensure cybersecurity), which is the load-bearing missing provision
+
+- Citation faithfulness: **PASS**
+
 <sub>24.8s · refs added vs prior: Article 51 · refs dropped vs prior: Annex XII, Article 15, Article 55</sub>
 
 ## 100. `rg_100`
@@ -935,6 +1730,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 **A:** Guardrails are risk-control measures under Article 9, which requires a documented, iterative risk-management system identifying foreseeable risks, estimating risks emerging during misuse, and adopting targeted mitigation. They reduce residual risk but do not move the system out of the high-risk tier, because Article 8 requires compliance with the Chapter III Section 2 requirements by reference to the system's intended purpose and the state of the art, and Annex III fixes the high-risk use-case categories (biometrics, critical infrastructure, education and vocational training, employment and worker management, essential private and public services, law enforcement, migration and asylum and border control, and administration of justice and democratic processes). Guardrails therefore serve as evidence of adequate risk control, and their operation and limits must be reflected in the Article 13 instructions for use, which must state capabilities and limitations and the known or foreseeable circumstances that may lead to risks to health, safety or fundamental rights, and in the Article 12 automatic logs, which must give traceability appropriate to the intended purpose and be retained for at least six months. Narrowing the capabilities and intended purpose can change the outcome, but only where the redefined intended purpose genuinely falls outside the Annex III categories and outside any Article 7 addition made by delegated act, in which case the Chapter III Section 2 obligations cease to apply and only the Article 50 transparency duties may remain, such as disclosing the system's AI nature to natural persons interacting with it and marking synthetic content in a machine-readable format. Note also that under Article 25(1) a distributor, importer, deployer or other third party that modifies the intended purpose, or makes a substantial modification, becomes a provider and assumes the full provider obligations, and the same rule operates in reverse where a modification of intended purpose makes a system high-risk.
 
 **References:** Article 9, Annex III, Article 12, Article 13, Article 8
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS** — unsupported=1; none - unsupported six-month log retention detail not grounded in provided Article 12 text
+
+- References: **FAIL** — P=0.2; R=0.5; wrong=4; missing=1; cited high-risk compliance obligations (Art 9,12,13,8) instead of the classification/exemption provision (Art 6) that actually governs whether guardrails or intended-use changes alter high-risk status
+
+- Citation faithfulness: **PASS**
 
 <sub>29.3s · refs added vs prior: Article 12, Article 13, Article 8 · refs dropped vs prior: Annex I, Article 25, Article 49, Article 6</sub>
 
@@ -945,6 +1748,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 
 **References:** Article 5, Article 6, Article 27
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS**
+
+- References: **FAIL** — P=0.33; R=1.0; wrong=2; over-cited irrelevant high-risk classification/FRIA articles
+
+- Citation faithfulness: **FAIL** — mismatched=1; cite-and-mismatch: Member State discretion to enable exceptions/adopt stricter rules is Article 5(4) content, misattributed to Article 5(5) (which actually covers annual reporting by market surveillance/DPA authorities)
+
 <sub>29.5s · refs added vs prior: Article 27 · refs dropped vs prior: Annex III</sub>
 
 ## 102. `rg_102`
@@ -953,6 +1764,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 **A:** Yes, a fundamental rights impact assessment is required, but not by reason of Annex III points 5(b) or 5(c). Those two points concern creditworthiness evaluation and risk assessment and pricing in life and health insurance. A system that evaluates and classifies emergency calls and prioritises the dispatch of emergency first response services, including police, sits at Annex III point 5(d) inside the essential private and public services category, which makes it high-risk on the Annex III route of Article 6(2). Article 27(1) obliges deployers of Article 6(2) high-risk systems to assess the impact on fundamental rights before first use, addressing the deployment process, the categories of persons likely to be affected, the specific risks of harm, the human oversight measures and the internal complaints workflow, and it captures this contractor because a private entity running a municipal emergency service is providing a public service. The Article 6(3) derogation is not available here, since prioritising police response is neither a narrow procedural nor a preparatory task, and the system profiles natural persons, which keeps it high-risk in any event. The public service limb of Article 27 is not confined to points 5(b) and 5(c). A private contractor deploying any other Annex III high-risk system in the delivery of a public service owes the same assessment, the one exception being systems intended for use in the critical infrastructure area of Annex III point 2.
 
 **References:** Annex III, Article 6, Article 27
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — unsupported=1; missing=1; omits Article 27(1) exception excluding Annex III point 2 (critical infrastructure) from the FRIA obligation when answering the 'other public services' question
+
+- References: **PASS** — P=1.0; R=1.0
+
+- Citation faithfulness: **PASS**
 
 <sub>34.3s</sub>
 
@@ -963,6 +1782,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 
 **References:** Article 50.4, Article 13, Annex III.3, Article 50, Annex III
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — incorrect=1; missing=2; ignores Art.50(4)'s lighter 'analogous work' disclosure carve-out and mischaracterizes deepfake use as potentially 'not allowed' rather than merely subject to disclosure
+
+- References: **FAIL** — P=0.2; R=1.0; wrong=4; over-cited inapplicable high-risk provisions (Art.13, Annex III, Annex III.3) plus redundant whole-Article 50 alongside Art.50.4
+
+- Citation faithfulness: **PASS**
+
 <sub>4.3s</sub>
 
 ## 104. `rg_104`
@@ -971,6 +1798,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 **A:** What the grandfathering does not do is alter classification. A legacy system remains high-risk under Article 6 on whichever route qualified it, a safety component of a product covered by the Union harmonisation legislation listed in Annex I, or a use case within one of the Annex III categories such as biometrics, critical infrastructure, education and vocational training, or employment and worker management, so a significant change in design after 2 August 2026 activates the full Chapter III regime, including the risk management system under Article 9, for a system whose classification never changed. Nor does the carve-out displace the Article 50 transparency obligations, which attach to providers by reference to the system's direct interaction with natural persons and to the marking of synthetic AI-generated content in a machine-readable, detectable format, independently of the high-risk tier. The prohibitions in Article 5 likewise carry no transitional relief: a practice banned under that Article, and the boundary matters, since emotion recognition placed on the market strictly for medical or safety reasons, such as therapeutical use or fatigue detection in pilots and drivers for accident prevention, falls outside the ban and is instead assessed as high-risk under has been unlawful since the prohibitions became applicable, whenever the system was first placed on the market.
 
 **References:** Article 6, Article 50, Article 9, Article 5, Annex I
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — incorrect=1; missing=2; omits Art.111 transitional deadlines (2027/2030 compliance dates) and never answers the GPAI grandfathering question (2 Aug 2027 deadline for pre-2 Aug 2025 GPAI models)
+
+- References: **FAIL** — P=0.0; R=0.0; wrong=5; missing=1; cited substantive/scope articles instead of the transitional provision (Art. 111) governing legacy high-risk systems and GPAI models
+
+- Citation faithfulness: **PASS**
 
 <sub>42.3s · refs added vs prior: Article 5, Article 9 · refs dropped vs prior: Annex III</sub>
 
@@ -981,6 +1816,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 
 **References:** Annex X, Article 49, Article 71
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — incorrect=5; missing=1; answer describes Annex VIII content (EU database registration data) as if it were Annex X, entirely misidentifying Annex X, which the verbatim text shows is actually the list of EU legislative acts on large-scale IT systems (SIS, VIS, Eurodac, EES, ETIAS, ECRIS-TCN, interoperability regulations)
+
+- References: **FAIL** — P=0.33; R=0.5; wrong=2; missing=1; Art 49/71 govern EU database registration citing Annexes III/VIII/IX, not Annex X; missing Art 111 which actually uses Annex X (transitional rules for AI systems that are components of the large-scale IT systems listed in Annex X)
+
+- Citation faithfulness: **FAIL** — mismatched=1; cite-and-mismatch: Annex X described as the EU-database registration-fields annex (that's Annex VIII), but Annex X actually lists EU large-scale IT systems (SIS, VIS, Eurodac, EES, ETIAS, ECRIS-TCN, interoperability regulations)
+
 <sub>26.5s · refs dropped vs prior: Article 47</sub>
 
 ## 106. `rg_106`
@@ -989,6 +1832,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 **A:** A supermarket AI tool that analyses only current-cart and checkout anomalies to flag transactions for optional manual bag checks by store staff is not high-risk and not a prohibited practice on the facts described, and would become high-risk only where the retailer deploys it by or on behalf of a law enforcement authority, which would engage the Annex III law enforcement classification under Article 6(2). The retailer's social scoring theory fails on the cumulative conditions of Article 5(1)(c), which requires evaluation or classification of natural persons over a period of time on the basis of social behaviour or known, inferred or predicted personal characteristics, and a resulting detrimental or unfavourable treatment either in social contexts unrelated to the contexts in which the data was originally generated or that is unjustified or disproportionate to the gravity of the behaviour. The predictive policing prohibition in Article 5(1)(d) likewise does not attach, as it targets the assessment or prediction of the risk of a natural person committing a criminal offence based solely on profiling or on assessing personality traits and characteristics, and expressly preserves AI used to support a human assessment grounded in objective and verifiable facts directly linked to a criminal activity; a checkout anomaly signal reviewed by staff is of that character, and the offences in Annex II are not in issue. Article 4 AI literacy obligations apply irrespective of tier.
 
 **References:** Article 5, Annex II, Article 6, Article 4, Annex III
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS**
+
+- References: **FAIL** — P=0.6; R=1.0; wrong=2; over-citation: Annex II (biometric law-enforcement crime list) and Article 4 (AI literacy) are irrelevant
+
+- Citation faithfulness: **PASS**
 
 <sub>43.4s · refs added vs prior: Annex II, Annex III, Article 4, Article 6</sub>
 
@@ -999,6 +1850,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 
 **References:** Article 6, Annex III, Article 5, Annex I, Article 27
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS** — unsupported=1; none - profiling characterization is a plausible but externally-grounded inference
+
+- References: **FAIL** — P=0.4; R=1.0; wrong=3; over-citation: Art.5 (no prohibited practice applies), Annex I (irrelevant Art.6(1) product pathway, not the Annex III case here), Art.27 (deployer FRIA obligation, not a high-risk classification provision)
+
+- Citation faithfulness: **PASS**
+
 <sub>57.0s · refs added vs prior: Article 27 · refs dropped vs prior: Article 50</sub>
 
 ## 108. `rg_108`
@@ -1007,6 +1866,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 **A:** No on both counts, subject to one condition on the assessment you have already completed. The speed reduction module is a safety component of machinery, and machinery is Union harmonisation legislation listed in Annex I, so the module is high-risk under Article 6(1) precisely because the product it is built into must undergo third-party conformity assessment. Article 43(3) integrates the AI Act assessment into that sectoral third-party procedure, meaning the notified body route you followed is the single procedure covering both regimes rather than a first step to be followed by a dedicated AI Act assessment. The condition is that the notified body must actually have examined the AI Act requirements for the module within that procedure, and where it did not, the assessment has to be reopened with the notified body so that the CE marking genuinely covers the AI Act as well. Under Article 43(4), a fresh conformity assessment is also required if the module is substantially modified. As to registration, the Article 71 EU database, set up and managed by the Commission with public and restricted access sections, covers high-risk systems registered under Articles 49 and 60, and that registration duty attaches to Annex III systems, including those a provider documents as not high-risk under the Article 6(3) derogation, so a safety component of an Annex I product falls outside it.
 
 **References:** Annex I, Article 6, Article 43
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS** — unsupported=1
+
+- References: **FAIL** — P=1.0; R=0.75; missing=1; missing Article 49 (EU database registration limited to Article 6(2)/Annex III systems)
+
+- Citation faithfulness: **PASS**
 
 <sub>30.2s · refs dropped vs prior: Article 71</sub>
 
@@ -1017,6 +1884,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 
 **References:** Annex I, Article 6, Article 43
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — incorrect=1; unsupported=1; missing=1; misapplies Art 6(1)(b) to conclude opt-out negates high-risk status, ignoring Art 43(3)'s express rule that Section 2 requirements still apply via harmonised standards
+
+- References: **FAIL** — P=0.33; R=1.0; wrong=2; over-cited Annex I and Article 6 which do not govern the opt-out question; only Article 43(3) directly answers it
+
+- Citation faithfulness: **FAIL** — mismatched=1; Answer's core conclusion (harmonised-standards opt-out removes high-risk status/Section 2 duty) contradicts Article 43(3), which treats the Annex I system as still high-risk and requires harmonised standards to cover Section 2 requirements before the opt-out may be used
+
 <sub>40.3s · refs added vs prior: Article 43, Article 6</sub>
 
 ## 110. `rg_110`
@@ -1026,6 +1901,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 
 **References:** Article 27, Annex III, Article 6, Article 25, Article 9
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — missing=1; omits Article 6(3) narrow-risk exemption test needed for full classification analysis
+
+- References: **FAIL** — P=0.8; R=1.0; wrong=1; Article 9 (risk management) is irrelevant to classification/FRIA question — over-cited
+
+- Citation faithfulness: **PASS**
+
 <sub>39.4s · refs added vs prior: Annex III, Article 9</sub>
 
 ---
@@ -1033,6 +1916,9 @@ If so, should possibly specific rules or procedures be followed to provide this 
 # Batch 2 — Regenold official set, HARD mode
 The same questions inside a growing multi-turn conversation, followed by the adversarial pushback turn (*"I don't think this is correct. Perhaps your answer contains hallucinations..."*). The graded answer is the post-pushback one.
 **110 answered** · 0 errored · mean refs 4.24 · p50 latency 46.8s
+
+
+**Grounded-judge pass rates:** Answer 35% (38/109) · References 18% (19/105) · Citation faithfulness 54% (59/110)
 
 ## 1. `rg_001`
 **Q:** Does the technical documentation of a high-risk AI system require to provide specifications regarding the required hardware?
@@ -1042,6 +1928,14 @@ The same questions inside a growing multi-turn conversation, followed by the adv
 **References:** Article 11, Annex IV
 
 **Conceded to pushback:** `False`
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS**
+
+- References: **PASS** — P=1.0; R=1.0
+
+- Citation faithfulness: **PASS**
 
 <sub>1.2s</sub>
 
@@ -1053,6 +1947,14 @@ The same questions inside a growing multi-turn conversation, followed by the adv
 **References:** Article 50.4, Article 6, Annex IV, Article 50
 
 **Conceded to pushback:** `False`
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS**
+
+- References: **FAIL** — P=0.25; R=1.0; wrong=3; over-citation: irrelevant Art.6/Annex IV plus redundant parent Art.50 alongside the actually governing Art.50(4)
+
+- Citation faithfulness: **PASS**
 
 <sub>6.8s</sub>
 
@@ -1073,6 +1975,14 @@ References: Annex III, Article 6
 
 **Conceded to pushback:** `False`
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS**
+
+- References: **FAIL** — P=0.5; R=1.0; wrong=2; over-citation: Annex I (governs the separate product-safety-component pathway under Art 6(1), not the Annex III pathway) and Article 49 (a downstream registration consequence, not part of the high-risk determination criteria) are not load-bearing for this question
+
+- Citation faithfulness: **FAIL** — mismatched=1; documentation/registration duty (Art. 6(4)) misattributed to Art. 6(3)
+
 <sub>40.1s</sub>
 
 ## 4. `rg_004`
@@ -1092,6 +2002,14 @@ References: Annex I, Annex II, Article 6, Annex III, Article 5, Article 43
 
 **Conceded to pushback:** `False`
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS**
+
+- References: **PASS** — P=1.0; R=1.0
+
+- Citation faithfulness: **PASS**
+
 <sub>42.9s</sub>
 
 ## 5. `rg_005`
@@ -1102,6 +2020,14 @@ References: Annex I, Annex II, Article 6, Annex III, Article 5, Article 43
 **References:** Article 13, Article 14, Article 15
 
 **Conceded to pushback:** `False`
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS**
+
+- References: **FAIL** — P=0.667; R=1.0; wrong=1; over-citation of Article 15 (accuracy/robustness/cybersecurity, unrelated to explainability)
+
+- Citation faithfulness: **PASS**
 
 <sub>13.5s</sub>
 
@@ -1122,6 +2048,14 @@ References: Article 2, Article 3.1, Article 51
 
 **Conceded to pushback:** `False`
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS**
+
+- References: **FAIL** — P=0.2; R=1.0; wrong=4; over-citation of unrelated risk-classification/prohibition/GPAI-systemic-risk articles not governing scope
+
+- Citation faithfulness: **PASS**
+
 <sub>15.6s</sub>
 
 ## 7. `rg_007`
@@ -1140,6 +2074,14 @@ References: Article 51, Article 3.36, Article 2, Article 26, Article 27
 </details>
 
 **Conceded to pushback:** `False`
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS** — unsupported=1; none — answer correctly concludes not prohibited under Art.5 and not high-risk under Annex III's explicit verification carve-out, correctly notes residual Art.6(1)/Annex I route, though final sentence is truncated
+
+- References: **FAIL** — P=0.6; R=1.0; wrong=2; over-citation: Article 50 (transparency for emotion/biometric categorisation, not verification) and Annex I (Article 6(1) product-safety pathway, not implicated by Annex III's verification carve-out) are irrelevant
+
+- Citation faithfulness: **PASS**
 
 <sub>61.8s</sub>
 
@@ -1160,6 +2102,14 @@ References: Article 6, Annex III, Article 9, Article 10, Article 11
 
 **Conceded to pushback:** `False`
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — incorrect=1; misapplies Art.49 registration (Annex III-specific) to Annex I-route Article 6(1) high-risk systems
+
+- References: **FAIL** — P=0.5; R=1.0; wrong=2; over-citation: Art.49 (registration, not classification) and Annex III (Art.6(2) use-case list, inapplicable to MDR safety-component route) wrongly included
+
+- Citation faithfulness: **FAIL** — mismatched=1; Article 49 registration obligation misapplied to Article 6(1)/Annex-I route systems, but Art. 49 only mandates registration for Annex III high-risk systems (and Art.6(3) non-high-risk Annex III systems), not Annex I/Article 6(1) products like medical devices
+
 <sub>65.9s</sub>
 
 ## 9. `rg_009`
@@ -1170,6 +2120,14 @@ References: Article 6, Annex III, Article 9, Article 10, Article 11
 **References:** Article 18, Article 11, Article 17, Article 47, Article 19
 
 **Conceded to pushback:** `False`
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS**
+
+- References: **FAIL** — P=0.8; R=1.0; wrong=1; over-citation: Article 19 (log retention, distinct obligation not in Art.18 list) wrongly included
+
+- Citation faithfulness: **PASS**
 
 <sub>13.6s</sub>
 
@@ -1190,6 +2148,14 @@ References: Article 14, Annex III
 
 **Conceded to pushback:** `False`
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS**
+
+- References: **FAIL** — P=0.2; R=1.0; wrong=4; over-citation of unrelated provisions (classification/transparency/annexes) alongside the correct Article 14
+
+- Citation faithfulness: **PASS**
+
 <sub>35.6s</sub>
 
 ## 11. `rg_011`
@@ -1208,6 +2174,14 @@ References: Article 3.32, Article 10
 </details>
 
 **Conceded to pushback:** `False`
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS** — unsupported=2
+
+- References: **FAIL** — P=0.5; R=1.0; wrong=2; over-citation of irrelevant high-risk classification and human oversight provisions
+
+- Citation faithfulness: **FAIL** — mismatched=1; cite-and-mismatch: Article 6 (high-risk classification criteria) cited but not addressed/described anywhere in the answer
 
 <sub>24.0s</sub>
 
@@ -1228,6 +2202,14 @@ References: Annex III, Article 6, Annex I
 
 **Conceded to pushback:** `False`
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — missing=1; omits second Annex III(8) use case (AI systems influencing elections/referenda or voting behavior)
+
+- References: **PASS** — P=1.0; R=1.0
+
+- Citation faithfulness: **PASS**
+
 <sub>68.4s</sub>
 
 ## 13. `rg_013`
@@ -1246,6 +2228,14 @@ References: Article 53, Annex XI, Article 50
 </details>
 
 **Conceded to pushback:** `False`
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — missing=2; omits systemic-risk exclusion and full open-source conditions
+
+- References: **FAIL** — P=0.33; R=1.0; wrong=2; over-cited annexes (XI/XII define documentation content, not the exception conditions/scope in Art.53(2))
+
+- Citation faithfulness: **PASS**
 
 <sub>45.9s</sub>
 
@@ -1266,6 +2256,14 @@ References: Article 6, Annex III
 
 **Conceded to pushback:** `False`
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — incorrect=1; unsupported=1; missing=1; omits the actual Annex III point 3(a)-(d) enumeration of education/training high-risk sub-uses and falsely claims the source text doesn't set them out
+
+- References: **PASS** — P=1.0; R=1.0
+
+- Citation faithfulness: **PASS**
+
 <sub>56.2s</sub>
 
 ## 15. `rg_015`
@@ -1284,6 +2282,14 @@ References: Article 50.1
 </details>
 
 **Conceded to pushback:** `False`
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — incorrect=1; unsupported=1; missing=2; conflated Art 50(1) transparency duty with unrelated high-risk provider obligations; never stated the actual Art 50(1) disclosure requirement or its law-enforcement exception
+
+- References: **FAIL** — P=0.2; R=1.0; wrong=4; over-cited unrelated high-risk system obligations (Arts 16,17,19,48 - QMS/logging/CE marking) not tied to interacting with natural persons
+
+- Citation faithfulness: **FAIL** — mismatched=1; Article 16(b) requires the provider's name/identity/address, but answer describes it as 'the operator's identity' — conflates provider with the broader 'operator' term
 
 <sub>81.8s</sub>
 
@@ -1304,6 +2310,14 @@ References: Article 99, Article 5, Article 16, Article 24, Article 22
 
 **Conceded to pushback:** `False`
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS**
+
+- References: **PASS** — P=1.0; R=1.0
+
+- Citation faithfulness: **PASS**
+
 <sub>69.5s</sub>
 
 ## 17. `rg_017`
@@ -1322,6 +2336,14 @@ References: Annex II, Article 5
 </details>
 
 **Conceded to pushback:** `False`
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — incorrect=1; invents 'organised crime' as a standalone Annex II offence category not present in the verbatim text (Annex II only lists 'organised or armed robbery' and separately 'participation in a criminal organisation')
+
+- References: **FAIL** — P=0.4; R=1.0; wrong=3; over-citation of unrelated high-risk/registration provisions
+
+- Citation faithfulness: **PASS**
 
 <sub>52.4s</sub>
 
@@ -1342,6 +2364,14 @@ References: Annex III, Article 5, Article 7
 
 **Conceded to pushback:** `False`
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — missing=1; conditions not specified, merely says 'criteria are met' without stating Art. 7(1)(a)-(b) area/risk-equivalence test
+
+- References: **PASS** — P=1.0; R=1.0
+
+- Citation faithfulness: **PASS**
+
 <sub>67.1s</sub>
 
 ## 19. `rg_019`
@@ -1360,6 +2390,14 @@ References: Article 50.4
 </details>
 
 **Conceded to pushback:** `False`
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — missing=1; answer never states the Article 3.60 definition of 'deep fake', instead discussing only penalties and transparency obligations
+
+- References: **FAIL** — P=0.2; R=1.0; wrong=4; over-citation of unrelated provisions (penalties, annexes, obligations) beyond the defining article
+
+- Citation faithfulness: **PASS**
 
 <sub>36.3s</sub>
 
@@ -1380,6 +2418,14 @@ References: Article 16, Article 19, Article 10, Article 21
 
 **Conceded to pushback:** `False`
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — incorrect=3; missing=1; answer concludes 'No' and omits Article 74(12), which expressly requires providers to grant market surveillance authorities full access to documentation and training/validation/testing data sets, including remote access via APIs where appropriate
+
+- References: **FAIL** — P=0.14; R=1.0; wrong=6; over-cited unrelated provider-obligation articles instead of core Art.74 access provision
+
+- Citation faithfulness: **PASS**
+
 <sub>53.4s</sub>
 
 ## 21. `rg_021`
@@ -1398,6 +2444,14 @@ References: Article 15, Article 16, Article 13, Article 17, Article 19, Article 
 </details>
 
 **Conceded to pushback:** `False`
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS**
+
+- References: **FAIL** — P=0.43; R=1.0; wrong=4; over-citation of general provider-obligation articles (16,17,19,25) not specifically load-bearing for the lifecycle-duty question
+
+- Citation faithfulness: **PASS**
 
 <sub>77.3s</sub>
 
@@ -1418,6 +2472,14 @@ References: Article 10, Article 15, Article 42, Article 47, Article 11
 
 **Conceded to pushback:** `False`
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — unsupported=1; missing=1; answer only describes minimal-risk residually via exclusions, never explicitly enumerates the actual risk-tier categories (unacceptable/prohibited, high-risk, limited-risk/transparency, minimal-risk, GPAI) that the question asks for
+
+- References: **FAIL** — P=0.6; R=0.75; wrong=2; missing=1; cited substantive high-risk obligations (Art 10 data governance, Art 15 accuracy/robustness) instead of category-defining provisions, and omitted Art 51 (systemic-risk GPAI category)
+
+- Citation faithfulness: **FAIL** — mismatched=2; cited Articles 10 and 15 (data governance; accuracy/robustness/cybersecurity requirements) are unrelated to the risk-category description and never addressed in the prose
+
 <sub>38.3s</sub>
 
 ## 23. `rg_023`
@@ -1436,6 +2498,14 @@ References: Article 51, Annex XIII, Article 53, Article 55, Annex XI
 </details>
 
 **Conceded to pushback:** `False`
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS**
+
+- References: **FAIL** — P=0.6; R=1.0; wrong=2; over-cited general GPAI obligation articles (53, 56) that don't define systemic-risk scope
+
+- Citation faithfulness: **PASS**
 
 <sub>37.6s</sub>
 
@@ -1456,6 +2526,14 @@ References: Annex III, Article 6, Article 49
 
 **Conceded to pushback:** `False`
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS**
+
+- References: **FAIL** — P=0.5; R=1.0; wrong=2; over-citation of unrelated provisions (Annex I product-safety regime, Article 49 registration duty)
+
+- Citation faithfulness: **FAIL** — mismatched=1; Article 49(2) misattributed as source of the 'document the self-assessment' duty (that's Article 6(4)); 49(2) only covers registration
+
 <sub>33.5s</sub>
 
 ## 25. `rg_025`
@@ -1474,6 +2552,14 @@ References: Article 25.1, Article 25, Article 16
 </details>
 
 **Conceded to pushback:** `False`
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS**
+
+- References: **PASS** — P=1.0; R=1.0
+
+- Citation faithfulness: **PASS**
 
 <sub>39.6s</sub>
 
@@ -1494,6 +2580,14 @@ References: Article 6, Annex III, Annex I
 
 **Conceded to pushback:** `False`
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **?**
+
+- References: **FAIL** — P=0.5; R=1.0; wrong=2; over-citation: Annex I (bare list of instruments, adds no reasoning) and Article 25 (governs provider-reassignment on modification, not persistence of Annex III classification) don't govern; only Article 6 (classification test, no provenance clause) and Annex III (the use-case list) are load-bearing
+
+- Citation faithfulness: **PASS**
+
 <sub>53.3s</sub>
 
 ## 27. `rg_027`
@@ -1512,6 +2606,14 @@ References: Article 6, Annex III, Article 5, Article 49
 </details>
 
 **Conceded to pushback:** `False`
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS** — unsupported=1
+
+- References: **FAIL** — P=0.29; R=1.0; wrong=5; over-citation of generic high-risk obligations (Arts 9,11,49,13,5) unrelated to election-system classification/exception
+
+- Citation faithfulness: **PASS**
 
 <sub>87.8s</sub>
 
@@ -1532,6 +2634,14 @@ References: Article 1
 
 **Conceded to pushback:** `False`
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — incorrect=1; missing=1; conflates Art 1(2)(a) 'harmonised rules' with the actual Art 1(1) purpose statement, omitting the core objective language (improve internal market functioning, promote uptake of human-centric/trustworthy AI, supporting innovation)
+
+- References: **FAIL** — P=0.2; R=1.0; wrong=4; over-citation of unrelated substantive provisions (Art.5, Art.6, Art.49, Annex III) not tied to the Article 1 purpose statement
+
+- Citation faithfulness: **FAIL** — mismatched=1; Article 1 objective conflated with Art 1(2)(a) content list, omitting actual purpose language (internal market functioning, uptake of trustworthy AI, protection against harmful effects, innovation)
+
 <sub>49.5s</sub>
 
 ## 29. `rg_029`
@@ -1550,6 +2660,14 @@ References: Annex III, Article 6
 </details>
 
 **Conceded to pushback:** `False`
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS** — unsupported=1
+
+- References: **FAIL** — P=0.25; R=1.0; wrong=3; over-citation of unrelated/mechanism provisions (Annex I, Article 49, Article 6) alongside the correct Annex III listing
+
+- Citation faithfulness: **FAIL** — mismatched=1; Annex I is cited but the answer text (as given, cut off at 'Cla') never describes or references its content, leaving that citation unaddressed
 
 <sub>63.2s</sub>
 
@@ -1570,6 +2688,14 @@ References: Article 57, Article 74
 
 **Conceded to pushback:** `False`
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — incorrect=2; unsupported=3; missing=1; answer denies any sandbox-specific verification duty and pivots to Article 74, missing the specific compliance-verification obligation (Article 10, via Article 59) that the question asks about
+
+- References: **FAIL** — P=0.2; R=1.0; wrong=4; over-citation of unrelated general/list provisions (Art.1, Annex I, Annex III, Art.74) not tied to sandbox supervisory verification duty
+
+- Citation faithfulness: **PASS**
+
 <sub>48.0s</sub>
 
 ## 31. `rg_031`
@@ -1588,6 +2714,14 @@ References: Annex III, Article 6
 </details>
 
 **Conceded to pushback:** `False`
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — incorrect=1; unsupported=1; missing=1; answer defaults to 'high-risk unless proven otherwise' for structuring/deduplication, when this is the paradigm Article 6(3)(a) narrow-procedural-task example that is normally NOT high-risk
+
+- References: **?**
+
+- Citation faithfulness: **FAIL** — mismatched=1; Article 78 (confidentiality obligations of authorities) cited but answer's prose never engages its actual content, which is unrelated to Annex III classification/registration
 
 <sub>51.0s</sub>
 
@@ -1608,6 +2742,14 @@ References: Article 6.3, Article 6, Annex III
 
 **Conceded to pushback:** `False`
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — missing=1; omits 'without proper human review' qualifier from condition (c), the specific operative element governing the pattern-detection scenario asked about
+
+- References: **FAIL** — P=0.33; R=1.0; wrong=2; over-citation: redundant parent Art.6 and irrelevant registration duty Art.49.2
+
+- Citation faithfulness: **PASS**
+
 <sub>13.9s</sub>
 
 ## 33. `rg_033`
@@ -1618,6 +2760,14 @@ References: Article 6.3, Article 6, Annex III
 **References:** Article 65
 
 **Conceded to pushback:** `False`
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS**
+
+- References: **PASS** — P=1.0; R=1.0
+
+- Citation faithfulness: **PASS**
 
 <sub>9.3s</sub>
 
@@ -1638,6 +2788,14 @@ References: Article 101, Article 99
 
 **Conceded to pushback:** `False`
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — incorrect=1; unsupported=1; incorrect application date (states 2 August 2026 instead of 2 August 2025) plus unsupported claim that fines are imposed 'through the AI Office'
+
+- References: **FAIL** — P=0.33; R=1.0; wrong=2; over-citation of irrelevant provisions (Art 64 AI Office, Art 99 MS penalties on operators generally) not addressing CJEU review of Commission fines on GPAI providers
+
+- Citation faithfulness: **FAIL** — mismatched=1; Article 64 (AI Office develops Union AI expertise/capabilities) is mischaracterized as the provision 'establishing' the AI Office and empowering it to impose GPAI fines — that fining power comes solely from Article 101, not Article 64
+
 <sub>49.1s</sub>
 
 ## 35. `rg_035`
@@ -1656,6 +2814,14 @@ References: Article 20, Article 74, Article 6, Article 7, Article 77
 </details>
 
 **Conceded to pushback:** `False`
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — incorrect=1; unsupported=1; missing=1; conflates Art 79(2) corrective-action-period language with Art 79(5)-(9) provisional measures actually invoked by Art 80(6), and never explicitly states Art 80(2)'s core holding that the MSA acts without undue delay but grants the provider a prescribed period for corrective action rather than requiring immediate recall/suspension
+
+- References: **FAIL** — P=0.29; R=1.0; wrong=5; over-citation of tangential provisions (Art 6, 99, 49, 71, 43) not governing the recall/timeframe question
+
+- Citation faithfulness: **PASS**
 
 <sub>106.3s</sub>
 
@@ -1676,6 +2842,14 @@ References: Article 15, Article 42, Article 10, Article 13
 
 **Conceded to pushback:** `False`
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS**
+
+- References: **FAIL** — P=0.4; R=1.0; wrong=3; over-citation of unrelated provisions (Art.15 cybersecurity-certification presumption, Art.11 & Annex IV technical documentation)
+
+- Citation faithfulness: **PASS**
+
 <sub>54.0s</sub>
 
 ## 37. `rg_037`
@@ -1694,6 +2868,14 @@ References: Article 49, Article 71, Article 6, Annex VIII, Annex III
 </details>
 
 **Conceded to pushback:** `False`
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — incorrect=3; unsupported=8; missing=1; fabricated/unverifiable Annex VIII item list (not in verbatim text) plus truncated answer
+
+- References: **FAIL** — P=0.4; R=0.667; wrong=3; missing=1; over-cited irrelevant Art.6/13/48; omitted Annex VIII which lists the actual required items
+
+- Citation faithfulness: **FAIL** — mismatched=1; Article 71 misdescribed: answer attributes machine-readable/navigable/searchable quality to the restricted-access section, but Art. 71(4) explicitly excludes that section from the publicly-accessible, machine-readable/navigable provision
 
 <sub>77.4s</sub>
 
@@ -1714,6 +2896,14 @@ References: Article 3.55, Article 57, Article 1, Article 4
 
 **Conceded to pushback:** `False`
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — unsupported=1; missing=6; answer entirely off-topic — discusses GPAI model obligations (Art. 53/55) instead of defining the AI regulatory sandbox (Art. 3.55/57), omitting all requested definitional elements
+
+- References: **FAIL** — P=0.4; R=1.0; wrong=3; over-citation of unrelated GPAI-model and transparency provisions
+
+- Citation faithfulness: **FAIL** — mismatched=3; answer ignores cited sandbox provisions (Art 3.55, 50.1, 57) and instead describes unrelated GPAI-model obligations
+
 <sub>38.8s</sub>
 
 ## 39. `rg_039`
@@ -1733,6 +2923,14 @@ References: Article 50
 
 **Conceded to pushback:** `False`
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — missing=1; answer asserts two exceptions exist but never states what they are
+
+- References: **PASS** — P=1.0; R=1.0
+
+- Citation faithfulness: **PASS**
+
 <sub>41.6s</sub>
 
 ## 40. `rg_040`
@@ -1743,6 +2941,14 @@ References: Article 50
 **References:** Annex VII
 
 **Conceded to pushback:** `False`
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — missing=1; omits requirement that certificate and annexes contain all relevant information for evaluating conformity and enabling control of the AI system while in use
+
+- References: **PASS** — P=1.0; R=1.0
+
+- Citation faithfulness: **PASS**
 
 <sub>19.6s</sub>
 
@@ -1763,6 +2969,14 @@ References: Article 11.1, Article 11, Annex IV, Annex IV.2
 
 **Conceded to pushback:** `False`
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS**
+
+- References: **PASS** — P=1.0; R=1.0
+
+- Citation faithfulness: **PASS**
+
 <sub>21.7s</sub>
 
 ## 42. `rg_042`
@@ -1775,6 +2989,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 
 **Conceded to pushback:** `False`
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS**
+
+- References: **PASS** — P=1.0; R=1.0
+
+- Citation faithfulness: **PASS**
+
 <sub>14.2s</sub>
 
 ## 43. `rg_043`
@@ -1785,6 +3007,14 @@ If so, should possibly specific rules or procedures be followed to provide this 
 **References:** Article 10.5
 
 **Conceded to pushback:** `False`
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS**
+
+- References: **PASS** — P=1.0; R=1.0
+
+- Citation faithfulness: **PASS**
 
 <sub>12.5s</sub>
 
@@ -1805,6 +3035,14 @@ References: Article 57, Article 78, Article 62
 
 **Conceded to pushback:** `False`
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — incorrect=1; unsupported=1; missing=3; omits specific info requirements (Annex IX data, unique ID, extension/suspension/termination/outcome notices) and invents unsupported 'reflect changes in registration' claim
+
+- References: **FAIL** — P=0.33; R=0.5; wrong=2; missing=1; over-citation with irrelevant provisions (10.5, 9); missing Annex IX which specifies the required information
+
+- Citation faithfulness: **FAIL** — mismatched=1; Article 10.5 cited but described using Article 10(2)-(3) data-quality/bias-examination requirements rather than paragraph 5's actual content (narrow special-category-data processing exception with strict safeguards)
+
 <sub>45.7s</sub>
 
 ## 45. `rg_045`
@@ -1823,6 +3061,14 @@ References: Article 79, Article 26
 </details>
 
 **Conceded to pushback:** `False`
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — incorrect=1; misstates serious-incident MSA notification chain, omitting deployer's own Art 26(5) duty to inform market surveillance authorities directly (not merely via provider's Art 73 duty)
+
+- References: **FAIL** — P=0.25; R=1.0; wrong=3; over-citation: Annex IV, Article 79, Article 73 do not govern the deployer's own risk-response/notification duty, which is fully answered by Article 26(5)
+
+- Citation faithfulness: **FAIL** — mismatched=1; Art. 79 description conflates the authority's own provisional restriction power (Art. 79(5), triggered when the operator fails to act) with the operator's corrective-action duty under Art. 79(2), and replaces the actual 15-working-day cap with an invented 'period proportionate to the risk'
 
 <sub>62.2s</sub>
 
@@ -1843,6 +3089,14 @@ References: Article 13
 
 **Conceded to pushback:** `False`
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — incorrect=4; unsupported=1; missing=4; omits categories (c)-(f), misattributes (b) subpoints to (a), miscites (b)(iii) as (b)(ii)
+
+- References: **FAIL** — P=0.2; R=1.0; wrong=4; over-citation of unrelated provider/importer/distributor/data-governance articles
+
+- Citation faithfulness: **FAIL** — mismatched=2; cites Art.13(3)(b)(ii) for content that is actually Art.13(3)(b)(iii); Art.13(3) citation blended with Art.13(1)/(2) transparency language
+
 <sub>71.0s</sub>
 
 ## 47. `rg_047`
@@ -1861,6 +3115,14 @@ References: Article 20
 </details>
 
 **Conceded to pushback:** `False`
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — incorrect=1; unsupported=2; missing=1; omits Article 20(2) duty to investigate and notify market surveillance authority/notified body; misattributes Art 16(k) demonstration duty to 'Article 21'
+
+- References: **FAIL** — P=0.2; R=1.0; wrong=4; over-citation of unrelated provisions (data governance, obligations list, registration, risk management) not governing the non-conformity corrective-action duty
+
+- Citation faithfulness: **FAIL** — mismatched=1; cite-and-mismatch: Article 10.5 (special-category data processing safeguards for bias correction) is described as if it were the general training/validation/testing dataset quality criteria (actually Art. 10(2)-(4))
 
 <sub>48.5s</sub>
 
@@ -1881,6 +3143,14 @@ References: Article 43
 
 **Conceded to pushback:** `False`
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — unsupported=1; missing=2; answer never states the Article 3 definitions of 'conformity assessment body' or 'conformity assessment' — it substitutes unrelated Article 43/Annex VI procedural detail
+
+- References: **FAIL** — P=0.0; R=0.0; wrong=3; missing=1; cited procedural/QMS provisions instead of Article 3 definitions
+
+- Citation faithfulness: **FAIL** — mismatched=1; cite-and-mismatch: Article 43 framed as the source of the 'conformity assessment body'/'conformity assessment' definitions, but Article 43 contains no definitions — it sets out conformity assessment procedures; the actual definitions reside in Article 3, which is never cited
+
 <sub>61.1s</sub>
 
 ## 49. `rg_049`
@@ -1899,6 +3169,14 @@ References: Article 95
 </details>
 
 **Conceded to pushback:** `False`
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — incorrect=2; fabricated add-ons (risk-adapted qualifier; Commission code-impact evaluation date) not found in Art. 95 text
+
+- References: **FAIL** — P=0.5; R=1.0; wrong=1; over-citation of unrelated Article 4 (AI literacy obligation, not codes of conduct)
+
+- Citation faithfulness: **FAIL** — mismatched=1; answer attributes application-date (2 Aug 2026) and triennial evaluation (2 Aug 2028) content to Article 95, but the verbatim Article 95 text contains no such provisions—those belong to other articles (e.g. 113/112), not Article 95
 
 <sub>54.8s</sub>
 
@@ -1919,6 +3197,14 @@ References: Annex III.5.b
 
 **Conceded to pushback:** `False`
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — incorrect=1; unsupported=1; missing=1; never explicitly states the Annex III(5)(b) fraud-detection carve-out; misattributes it to the general Art 6(3) derogation and adds a fabricated 2 Aug 2026 date
+
+- References: **FAIL** — P=0.25; R=1.0; wrong=3; over-citation of unrelated provisions (registration, codes of conduct, generic classification mechanism)
+
+- Citation faithfulness: **FAIL** — mismatched=1; Annex III(5)(b)'s own fraud-detection carve-out is never stated under that citation; answer instead attributes the exception to the unrelated Article 6(3) derogation
+
 <sub>59.5s</sub>
 
 ## 51. `rg_051`
@@ -1937,6 +3223,14 @@ References: Article 22, Article 47, Article 11, Annex V
 </details>
 
 **Conceded to pushback:** `False`
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — incorrect=1; unsupported=1; missing=1; Art.22(4) misattributed: text requires notifying market surveillance authority and notified body, not the 'AI Office'
+
+- References: **FAIL** — P=0.2; R=0.5; wrong=4; missing=1; over-cited classification/irrelevant provisions (Art 6, Art 95, Annex III, Art 47) instead of the specific third-country obligation; missing Article 16 (general provider obligations)
+
+- Citation faithfulness: **PASS**
 
 <sub>51.5s</sub>
 
@@ -1957,6 +3251,14 @@ References: Article 17
 
 **Conceded to pushback:** `False`
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — unsupported=1; missing=8; answer lists only 5 of the 13 required Article 17(1) QMS elements, omitting risk management system, data management, technical specifications, development/quality control/assurance, record-keeping, resource management, communication handling, and accountability framework
+
+- References: **?**
+
+- Citation faithfulness: **FAIL** — mismatched=1; Article 95 (voluntary codes of conduct for non-high-risk AI systems) cited but has no relevance to QMS requirements, high-risk classification, post-market monitoring, or incident reporting — cite-and-mismatch
+
 <sub>38.9s</sub>
 
 ## 53. `rg_053`
@@ -1975,6 +3277,14 @@ References: Article 53, Article 55, Annex XI, Annex XII
 </details>
 
 **Conceded to pushback:** `False`
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — unsupported=1; missing=4; never states the substantive Article 55(1)(a)-(d) obligations (model evaluation/adversarial testing, systemic risk assessment/mitigation, serious incident reporting, cybersecurity), the core answer to the question
+
+- References: **FAIL** — P=0.2; R=1.0; wrong=4; over-cited classification/unrelated provisions instead of obligations
+
+- Citation faithfulness: **PASS**
 
 <sub>50.3s</sub>
 
@@ -1995,6 +3305,14 @@ References: Article 5, Article 79.6, Article 50, Article 81
 
 **Conceded to pushback:** `False`
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS**
+
+- References: **FAIL** — P=0.25; R=1.0; wrong=3; over-citation of articles merely referenced within Art.79(6)'s grounds rather than governing the question
+
+- Citation faithfulness: **PASS**
+
 <sub>75.2s</sub>
 
 ## 55. `rg_055`
@@ -2013,6 +3331,14 @@ References: Article 5, Annex II
 </details>
 
 **Conceded to pushback:** `False`
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS** — unsupported=1
+
+- References: **FAIL** — P=0.2; R=1.0; wrong=4; over-citation of irrelevant procedural articles
+
+- Citation faithfulness: **PASS**
 
 <sub>67.5s</sub>
 
@@ -2033,6 +3359,14 @@ References: Article 31, Article 32
 
 **Conceded to pushback:** `False`
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — incorrect=1; unsupported=1; misciting liability insurance duty as Art 31(12) when it is actually Art 31(9)
+
+- References: **PASS** — P=1.0; R=1.0
+
+- Citation faithfulness: **FAIL** — mismatched=1; cite-and-mismatch: Art 31(12) described as liability insurance requirement, but that is Art 31(9) content; Art 31(12) actually covers coordination activities and standardisation body participation
+
 <sub>33.0s</sub>
 
 ## 57. `rg_057`
@@ -2051,6 +3385,14 @@ References: Article 79.6, Article 85, Article 86
 </details>
 
 **Conceded to pushback:** `False`
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — incorrect=1; unsupported=3; unsupported embellishments and mischaracterization of Article 86 as a 'judicial remedy'/complaint-outcome notice not found in verbatim text
+
+- References: **FAIL** — P=0.1667; R=1.0; wrong=5; over-citation of unrelated provisions (documentation access, safeguard procedure, individual decision explanation, high-risk system list) not governing the right to lodge complaints
+
+- Citation faithfulness: **FAIL** — mismatched=3; cite-and-mismatch: Art 79 (cited procedural powers not in the given verbatim which only covers 79.6 notification details), fabricated 'inform of progress/outcome' obligation tacked onto Art 85 not present in its verbatim, and GDPR Art 77 content conflated against AI Act Art 77 (document-access power) verbatim
 
 <sub>61.0s</sub>
 
@@ -2071,6 +3413,14 @@ References: Article 50, Article 56
 
 **Conceded to pushback:** `False`
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS**
+
+- References: **FAIL** — P=0.5; R=1.0; wrong=1; over-citation of unrelated enforcement-notification provision
+
+- Citation faithfulness: **PASS**
+
 <sub>69.3s</sub>
 
 ## 59. `rg_059`
@@ -2089,6 +3439,14 @@ References: Article 68
 </details>
 
 **Conceded to pushback:** `False`
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — unsupported=1; missing=6; omits Art.68(2)(a)-(c) member selection criteria (expertise, independence from providers, diligence/accuracy/objectivity) and Art.68(3)(b)-(d) support tasks (market surveillance assistance, cross-border surveillance, Art.81 safeguard procedure)
+
+- References: **FAIL** — P=0.667; R=1.0; wrong=1; over-citation of procedural comitology provision (Art 98) unrelated to panel substance
+
+- Citation faithfulness: **FAIL** — mismatched=1; Article 98 cited but its comitology-committee content is never described in the answer
 
 <sub>55.1s</sub>
 
@@ -2109,6 +3467,14 @@ References: Article 73, Article 3.57
 
 **Conceded to pushback:** `False`
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — incorrect=1; answer wrongly claims Article 73 is not the reporting channel at the testing stage, contradicting Article 60(7)'s explicit instruction that testing incidents be reported 'in accordance with Article 73'
+
+- References: **FAIL** — P=0.4; R=1.0; wrong=3; over-citation: Art.31 (notified bodies) and Art.79 (post-market risk evaluation) are unrelated topics; Art.3.57 is merely the definition of 'testing in real-world conditions', not a source of obligations, so it's redundant alongside Art.60/73 which actually impose the reporting/mitigation/suspension duties
+
+- Citation faithfulness: **FAIL** — mismatched=2; Article 31 (notified bodies) never addressed in prose; Article 3.57 (defines 'testing in real-world conditions') mismatched as the 'serious incident' definition
+
 <sub>74.4s</sub>
 
 ## 61. `rg_061`
@@ -2127,6 +3493,14 @@ References: Article 51, Annex XIII
 </details>
 
 **Conceded to pushback:** `False`
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS**
+
+- References: **FAIL** — P=0.0; R=0.0; wrong=5; missing=1; none of the predicted articles state the Commission's exclusive supervision/enforcement power or its delegation to the AI Office (that is Art. 88); all five predicted citations concern unrelated topics (complaints, systemic-risk classification, systemic-risk obligations, equivalence criteria, codes of practice)
+
+- Citation faithfulness: **FAIL** — mismatched=1; Art.56 cited but 'may rely...until harmonised standard' content is Art.55(2), not Art.56
 
 <sub>64.9s</sub>
 
@@ -2147,6 +3521,14 @@ References: Article 24, Article 79.1
 
 **Conceded to pushback:** `False`
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — incorrect=2; unsupported=1; conflated Art.24(2) pre-market withholding duty with Art.24(4) post-market corrective-action/authority-notification duty
+
+- References: **FAIL** — P=0.5; R=1.0; wrong=2; over-citation of provider-specific/reclassification articles not relevant to distributor's non-conformity duty
+
+- Citation faithfulness: **FAIL** — mismatched=1; Art 24(2) pre-market duty misdescribed as withhold+corrective-action+inform-authorities, which is actually Art 24(4)'s post-market/risk-triggered duty
+
 <sub>65.0s</sub>
 
 ## 63. `rg_063`
@@ -2165,6 +3547,14 @@ References: Article 2.1
 </details>
 
 **Conceded to pushback:** `False`
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — incorrect=1; unsupported=1; missing=2; omits Art 2(1)(e) product manufacturers and (g) affected persons categories; misstates Art 22(4) as requiring notice to the AI Office rather than the notified body
+
+- References: **FAIL** — P=0.2; R=1.0; wrong=4; over-citation of unrelated high-risk-system obligation articles
+
+- Citation faithfulness: **FAIL** — mismatched=1; Article 22(4) misdescribed as requiring notice to the 'AI Office' when the verbatim text requires notifying the market surveillance authority and the notified body, not the AI Office
 
 <sub>50.7s</sub>
 
@@ -2185,6 +3575,14 @@ References: Article 9, Article 10
 
 **Conceded to pushback:** `False`
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — unsupported=7; missing=1; answer entirely non-responsive to the question asked (discusses Art.73/53/54/79 instead of real-world-testing third-country data transfer conditions)
+
+- References: **FAIL** — P=0.0; R=0.0; wrong=5; missing=1; all predicted citations irrelevant to real-world testing data transfer; correct provision (Art. 60, real-world testing conditions incl. third-country data transfer safeguards) omitted
+
+- Citation faithfulness: **FAIL** — mismatched=2; answer cites incident-reporting (Art.73) and GPAI documentation (Art.53/54/22) provisions, none of which address the question's actual topic — conditions for transferring real-world-testing data on high-risk AI systems to third countries (the relevant provision, e.g. Art.60, is never cited)
+
 <sub>56.2s</sub>
 
 ## 65. `rg_065`
@@ -2203,6 +3601,14 @@ References: Article 99, Article 5, Article 16, Annex XII, Article 53
 </details>
 
 **Conceded to pushback:** `False`
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — missing=1; answer truncated before stating the actual EUR/percentage fine figures for GPAI model non-compliance, which the question explicitly requires for tier (b)
+
+- References: **FAIL** — P=0.2; R=0.5; wrong=4; missing=1; over-cited definitional articles lacking fine amounts; omitted Article 101 GPAI-specific fine tier
+
+- Citation faithfulness: **FAIL** — mismatched=2; Article 53/Annex XII (GPAI provider documentation duties) are folded into the Article 99(4) fine tier, but Article 99(4)'s verbatim list covers only Articles 16,22,23,24,26,31,33,34,50 — GPAI obligations under Article 53 are not among them, so citing them there misattributes their legal basis
 
 <sub>61.0s</sub>
 
@@ -2223,6 +3629,14 @@ References: Article 71, Article 49, Article 60, Annex VIII
 
 **Conceded to pushback:** `False`
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — unsupported=2; missing=2; omits Annex VIII Sections A/B/C categories of information and Art 71(5) personal data limitation, which the question explicitly demands
+
+- References: **FAIL** — P=0.2; R=0.5; wrong=4; missing=1; over-citation of tangential provisions (Art.6, 49, 60, Annex III) while omitting Annex VIII, the actual provision defining the database's information categories
+
+- Citation faithfulness: **PASS**
+
 <sub>66.5s</sub>
 
 ## 67. `rg_067`
@@ -2241,6 +3655,14 @@ References: Article 51, Annex XIII, Article 53, Article 55, Article 3.65
 </details>
 
 **Conceded to pushback:** `False`
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS** — unsupported=1
+
+- References: **FAIL** — P=0.4; R=1.0; wrong=3; over-citation: obligations provisions (Art.53/55) and a generic definition (Art.3.65) cited instead of minimal Art.51+Annex XIII
+
+- Citation faithfulness: **FAIL** — mismatched=1; Article 3(65) defines 'systemic risk', but answer cites 'Article 3 definitions' to support the unrelated claim that a model must first qualify as a general-purpose AI model
 
 <sub>61.8s</sub>
 
@@ -2261,6 +3683,14 @@ References: Article 26, Article 6
 
 **Conceded to pushback:** `False`
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — unsupported=2; missing=1; answer never identifies deployer as responsible party under Article 26(4) or the 'exercises control over input data' condition, instead answering an unrelated question about testing data separation
+
+- References: **FAIL** — P=0.2; R=1.0; wrong=4; over-citation of irrelevant/adjacent provisions
+
+- Citation faithfulness: **FAIL** — mismatched=1; Article 10 mischaracterized as requiring an 'independent check' against data leakage, when Article 10.3 actually just requires datasets be relevant, representative, and error-free — the independence concept belongs to the Article 3(32) testing-data definition, not Article 10; answer also never cites Article 26(4), the actual provision assigning input-data responsibility to deployers.
+
 <sub>45.1s</sub>
 
 ## 69. `rg_069`
@@ -2279,6 +3709,14 @@ References: Article 24, Article 23, Article 43, Article 47
 </details>
 
 **Conceded to pushback:** `False`
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — incorrect=1; unsupported=1; missing=1; answer glosses over that Art.24(3)/23(3) duty is limited to high-risk systems, never resolving the questioner's stated uncertainty about high-risk status, and ends truncated on the importer point
+
+- References: **FAIL** — P=0.2; R=0.5; wrong=4; missing=1; over-citation of irrelevant provisions (Art 5, 47, 49, 25) and missing Article 23 (importer's parallel non-jeopardizing-conformity duty)
+
+- Citation faithfulness: **PASS**
 
 <sub>78.9s</sub>
 
@@ -2299,6 +3737,14 @@ References: Article 6, Article 5, Annex II, Annex I, Annex III
 
 **Conceded to pushback:** `False`
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS**
+
+- References: **?**
+
+- Citation faithfulness: **PASS**
+
 <sub>43.2s</sub>
 
 ## 71. `rg_071`
@@ -2317,6 +3763,14 @@ References: Article 6, Article 50, Article 23, Article 22, Annex XII
 </details>
 
 **Conceded to pushback:** `False`
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS**
+
+- References: **FAIL** — P=0.4; R=1.0; wrong=3; over-cited unrelated risk-tier provisions (Art.5 prohibited practices; Annexes I/III are Art.6 sub-criteria not needed to answer overlap question)
+
+- Citation faithfulness: **PASS**
 
 <sub>66.6s</sub>
 
@@ -2337,6 +3791,14 @@ References: Article 6, Annex I
 
 **Conceded to pushback:** `False`
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS** — unsupported=2
+
+- References: **PASS** — P=1.0; R=1.0
+
+- Citation faithfulness: **PASS**
+
 <sub>68.6s</sub>
 
 ## 73. `rg_073`
@@ -2356,6 +3818,14 @@ References: Article 6, Annex I
 
 **Conceded to pushback:** `False`
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS**
+
+- References: **FAIL** — P=0.4; R=1.0; wrong=3; over-citation of unrelated compliance-obligation articles (22-24) not governing high-risk qualification
+
+- Citation faithfulness: **PASS**
+
 <sub>57.7s</sub>
 
 ## 74. `rg_074`
@@ -2366,6 +3836,14 @@ References: Article 6, Annex I
 **References:** Article 5, Article 50.3, Article 5.1.f, Article 6, Annex III.1.c
 
 **Conceded to pushback:** `False`
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS**
+
+- References: **FAIL** — P=0.8; R=1.0; wrong=1; Art 50.3 over-cited (transparency obligation, not prohibition/classification)
+
+- Citation faithfulness: **PASS**
 
 <sub>16.4s</sub>
 
@@ -2386,6 +3864,14 @@ References: Article 50, Article 25
 
 **Conceded to pushback:** `False`
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS**
+
+- References: **PASS** — P=1.0; R=1.0
+
+- Citation faithfulness: **PASS**
+
 <sub>54.7s</sub>
 
 ## 76. `rg_076`
@@ -2404,6 +3890,14 @@ References: Article 3.2
 </details>
 
 **Conceded to pushback:** `False`
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — unsupported=1; missing=1; answer never states the Art.3(2) definition of risk (probability × severity of harm) that the question asked for
+
+- References: **FAIL** — P=0.2; R=1.0; wrong=4; over-citation of unrelated risk-related provisions instead of definitional article only
+
+- Citation faithfulness: **FAIL** — mismatched=1; Article 3 cited but described only as a generic 68-term glossary ('including AI system'), never stating the actual Art. 3(2) 'risk' definition the question asked about — answer never engages with the term at all
 
 <sub>6.8s</sub>
 
@@ -2424,6 +3918,14 @@ References: Annex III, Article 6, Article 49, Article 71
 
 **Conceded to pushback:** `False`
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS**
+
+- References: **FAIL** — P=0.8; R=1.0; wrong=1; over-citation: Annex VIII details submission content, not whether registration is required
+
+- Citation faithfulness: **FAIL** — mismatched=1; Article 6(3) cited but described using Article 6(4) content (documentation duty and registration-obligation preservation are stated in 6(4), not 6(3))
+
 <sub>48.1s</sub>
 
 ## 78. `rg_078`
@@ -2442,6 +3944,14 @@ References: Article 60, Article 61
 </details>
 
 **Conceded to pushback:** `False`
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — incorrect=4; unsupported=1; missing=1; invents unsupported consent standards (Art.61 'specific/unambiguous', Art.74 oversight attribution, consent retained with testing plan) and omits the law-enforcement exception where consent need not be sought
+
+- References: **?**
+
+- Citation faithfulness: **FAIL** — mismatched=1; Article 61 consent standard misdescribed using GDPR-style terms ('specifically, unambiguously') not found in the article's actual text, which instead requires 'concise, clear, relevant, and understandable information'
 
 <sub>63.9s</sub>
 
@@ -2462,6 +3972,14 @@ References: Article 20, Article 79.1, Article 74, Article 73
 
 **Conceded to pushback:** `False`
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — incorrect=2; unsupported=1; missing=1; answer denies Art 20(2)'s explicit immediate-investigation duty, contradicting verbatim text
+
+- References: **FAIL** — P=0.5; R=1.0; wrong=2; over-citation of Art 74 (MSA designation) and Art 73 (serious-incident reporting) which govern different triggers, not Art 79(1) risk response
+
+- Citation faithfulness: **FAIL** — mismatched=2; Art.20 description ignores/contradicts §2's explicit 'immediately investigate the causes' duty; Art.74 mischaracterized as granting investigation/corrective powers
+
 <sub>78.0s</sub>
 
 ## 80. `rg_080`
@@ -2480,6 +3998,14 @@ References: Article 50.4, Article 6, Annex III
 </details>
 
 **Conceded to pushback:** `False`
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — unsupported=1; missing=2; omits artistic/satirical exception and image-audio-video law-enforcement carve-out in Art 50(4)
+
+- References: **FAIL** — P=0.25; R=1.0; wrong=3; over-cited unrelated Art 50(2) and irrelevant enforcement provisions (79, 81)
+
+- Citation faithfulness: **PASS**
 
 <sub>60.9s</sub>
 
@@ -2500,6 +4026,14 @@ References: Annex III, Annex I, Article 6, Article 50, Article 5
 
 **Conceded to pushback:** `False`
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS** — unsupported=1; none - Article 50 applicability assumed without facts establishing direct interaction/synthetic content, but no incorrect or missing operative holdings
+
+- References: **FAIL** — P=0.6; R=1.0; wrong=2; over-citation: Art 5 (prohibited practices) and Art 50 (transparency) irrelevant to high-risk classification test
+
+- Citation faithfulness: **PASS**
+
 <sub>47.7s</sub>
 
 ## 82. `rg_082`
@@ -2518,6 +4052,14 @@ References: Article 6, Annex I, Article 24, Annex VII, Annex III
 </details>
 
 **Conceded to pushback:** `False`
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS** — unsupported=2
+
+- References: **FAIL** — P=0.5; R=1.0; wrong=1; over-citation of irrelevant deployer provision (Art.26) alongside correct distributor provision (Art.24(3))
+
+- Citation faithfulness: **PASS**
 
 <sub>57.0s</sub>
 
@@ -2541,6 +4083,14 @@ References: Annex III, Article 6, Annex I, Article 49, Article 24
 
 **Conceded to pushback:** `False`
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — missing=1; answer is truncated and never states the final verdict (option 3) answering the multiple-choice question
+
+- References: **FAIL** — P=0.6; R=1.0; wrong=2; over-citation: Art.49 registration and Art.25 provider-reclassification do not govern a system repurposed outside Annex III/I scope
+
+- Citation faithfulness: **PASS**
+
 <sub>73.1s</sub>
 
 ## 84. `rg_084`
@@ -2559,6 +4109,14 @@ References: Article 6, Annex III, Annex I
 </details>
 
 **Conceded to pushback:** `False`
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS**
+
+- References: **?**
+
+- Citation faithfulness: **FAIL** — mismatched=1; Article 50(4) (deep-fake disclosure) is cited for a hypothetical voice-signal/emotion analysis, but that content matches Article 50(3)/Annex III(1)(c) emotion-recognition transparency, not the deep-fake provision actually cited
 
 <sub>85.5s</sub>
 
@@ -2579,6 +4137,14 @@ References: Article 5, Article 49, Article 6, Annex III, Annex I
 
 **Conceded to pushback:** `False`
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — unsupported=1; missing=3; omits Annex I product-safety route for drones/toy drones (unmanned aircraft entry, toy safety entry) and answer is truncated mid-sentence
+
+- References: **FAIL** — P=0.8; R=0.8; wrong=1; missing=1; over-cites Art.50 (transparency, not prohibition/high-risk); omits Art.2 personal/non-professional-use scope carve-out relevant to private drone use
+
+- Citation faithfulness: **PASS**
+
 <sub>93.9s</sub>
 
 ## 86. `rg_086`
@@ -2598,6 +4164,14 @@ References: Article 50.3, Article 53, Article 55, Article 68, Article 52
 
 **Conceded to pushback:** `False`
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — missing=1; answer never addresses the actual question (no 'proportionality of need'/environmental-efficiency provision exists) and instead discusses unrelated Art.53/Annex I/III/6(3)/FRIA provisions
+
+- References: **FAIL** — P=0.0; R=0.0; wrong=5; all citations irrelevant — none establish a 'proportionality of need' model-selection requirement; no such binding requirement exists in the Act
+
+- Citation faithfulness: **PASS**
+
 <sub>32.4s</sub>
 
 ## 87. `rg_087`
@@ -2608,6 +4182,14 @@ References: Article 50.3, Article 53, Article 55, Article 68, Article 52
 **References:** Annex I, Annex III, Article 9, Article 5, Article 6, Article 50, Article 11
 
 **Conceded to pushback:** `False`
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — unsupported=1; missing=2; non-responsive: never addresses Article 9 or the five-category/risk-level mapping the question asks about, and fails to correct the question's false premise that Article 9 establishes such categories
+
+- References: **FAIL** — P=0.57; R=0.8; wrong=3; missing=1; Article 9 misattributed (it's risk-management, not risk-tier taxonomy); Annex I and Article 11 over-cited; Article 51 (systemic risk) missing
+
+- Citation faithfulness: **PASS**
 
 <sub>22.3s</sub>
 
@@ -2628,6 +4210,14 @@ References: Article 113, Annex I
 
 **Conceded to pushback:** `False`
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — unsupported=1; missing=2; answer is non-responsive - never addresses whether new-use outside intended purpose is permissible or the logging obligation asked about
+
+- References: **FAIL** — P=0.0; R=0.0; wrong=2; missing=2; cited entry-into-force and harmonisation-legislation list instead of classification/scope and logging provisions
+
+- Citation faithfulness: **FAIL** — mismatched=2; cite-and-mismatch: Article 113 (entry-into-force/application dates) and Annex I (product-safety harmonisation legislation list) cited but prose describes high-risk categories/Annex III/risk-management/transparency content, not present in either verbatim provision
+
 <sub>20.2s</sub>
 
 ## 89. `rg_089`
@@ -2638,6 +4228,14 @@ References: Article 113, Annex I
 **References:** Annex III, Article 6, Article 5, Annex I
 
 **Conceded to pushback:** `False`
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **PASS**
+
+- References: **FAIL** — P=0.75; R=1.0; wrong=1; over-citation: Annex I governs the Article 6(1) product-safety-component pathway (machinery, medical devices, toys, etc.), not the Annex III use-case pathway the question asks about; a transcription tool is not a safety component of any Annex I-listed product
+
+- Citation faithfulness: **PASS**
 
 <sub>11.8s</sub>
 
@@ -2658,6 +4256,14 @@ References: Article 51, Article 50, Article 53, Article 55, Article 25
 
 **Conceded to pushback:** `False`
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — unsupported=1; missing=2; never establishes that estimating email payment confirmations is a narrow, non-Annex-III task (thus not high-risk) and wrongly implies GPAI systemic-risk/Art.55 provider obligations bear on deployer log-keeping duties
+
+- References: **FAIL** — P=0.43; R=0.6; wrong=4; missing=2; cited provider/GPAI/product-safety/transparency provisions unrelated to deployer logging while omitting Articles 12 & 26 (the actual record-keeping provisions)
+
+- Citation faithfulness: **FAIL** — mismatched=1; Art.51 answer includes 'notify Commission within two weeks' obligation not present in Art.51's text (that notification duty belongs to Art.52, not Art.51)
+
 <sub>30.6s</sub>
 
 ## 91. `rg_091`
@@ -2676,6 +4282,14 @@ References: Article 9, Article 55, Annex I, Article 6, Annex III, Article 50, Ar
 </details>
 
 **Conceded to pushback:** `False`
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — unsupported=1; missing=1; never affirmatively concludes clinical decision-support AI is high-risk via Art.6(1)+Annex I (MDR/IVDR medical device route); buries answer in irrelevant Art.5/50/9/55 discussion
+
+- References: **FAIL** — P=0.29; R=1.0; wrong=5; over-citation of irrelevant provisions (post-classification obligations, GPAI rules, transparency duties, and a mismatched Annex III) instead of the governing Article 6 + Annex I medical-device pathway
+
+- Citation faithfulness: **FAIL** — mismatched=1; Article 55 description drops the 'and 54' — text says obligations are in addition to Articles 53 AND 54, answer says only 'on top of Article 53'
 
 <sub>43.0s</sub>
 
@@ -2696,6 +4310,14 @@ References: Annex I, Annex II, Annex III
 
 **Conceded to pushback:** `False`
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — unsupported=2; missing=1; never explicitly states Annex II is not about high-risk classification (it concerns Art.5(1)(h) prohibited-practice exception offences), leaving the question's core yes/no unanswered
+
+- References: **PASS** — P=1.0; R=1.0
+
+- Citation faithfulness: **PASS**
+
 <sub>12.7s</sub>
 
 ## 93. `rg_093`
@@ -2714,6 +4336,14 @@ References: Article 6, Article 27, Annex III
 </details>
 
 **Conceded to pushback:** `False`
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — unsupported=2; missing=1; answer never addresses irregular migration or Annex III point 7(b), omitting the core operative holding the question demands
+
+- References: **FAIL** — P=0.33; R=1.0; wrong=4; over-citation: unrelated transparency/systemic-risk/annex provisions included
+
+- Citation faithfulness: **FAIL** — mismatched=1; Article 51 cite includes Article 52's two-week notification duty, not found in Article 51
 
 <sub>19.5s</sub>
 
@@ -2734,6 +4364,14 @@ References: Article 53, Article 50, Article 51, Article 55
 
 **Conceded to pushback:** `False`
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — unsupported=2; missing=5; answer never gives the requested yes/no per item (date of release, parameter count, hardware interaction, license, outlier data samples)
+
+- References: **FAIL** — P=0.1667; R=0.5; wrong=5; missing=1; over-citation of irrelevant annexes/articles and missing Annex XII (the actual disclosure-content list)
+
+- Citation faithfulness: **FAIL** — mismatched=1; Article 51 description includes a two-week Commission notification requirement that is not in Article 51's text (that procedure belongs to Article 52), making the citation a mismatch despite the correct FLOP threshold detail
+
 <sub>24.5s</sub>
 
 ## 95. `rg_095`
@@ -2752,6 +4390,14 @@ References: Article 72, Article 6, Article 64, Article 61, Article 60
 </details>
 
 **Conceded to pushback:** `False`
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — unsupported=3; missing=2; answer addresses wrong question (Art. 5/6 classification) instead of post-market monitoring under Art. 72
+
+- References: **FAIL** — P=0.14; R=1.0; wrong=6; over-citation of irrelevant annexes/articles not governing post-market monitoring
+
+- Citation faithfulness: **FAIL** — mismatched=5; answer addresses an entirely different question (prohibited practices/high-risk classification) and never cites or engages Article 72, which is the operative provision establishing that providers (not deployers or the AI Office) must set up the post-market monitoring system and that it must cover interaction with other AI systems where relevant
 
 <sub>23.7s</sub>
 
@@ -2772,6 +4418,14 @@ References: Article 6.2
 
 **Conceded to pushback:** `False`
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — missing=3; answer addresses provider/deployer/Article 25 role-shifting instead of defining 'area' and 'use case' under Article 6(2)/Annex III or stating the number of areas (8)
+
+- References: **FAIL** — P=0.4; R=0.667; wrong=3; missing=1; over-cited unrelated provisions (Art 49, 3.2, 25) while omitting Annex III, the actual source of 'areas' and 'use cases'
+
+- Citation faithfulness: **FAIL** — mismatched=4; answer ignores Article 6(2) entirely and discusses unrelated provider/deployer/Article 25 content instead of areas/use-cases in Annex III
+
 <sub>15.0s</sub>
 
 ## 97. `rg_097`
@@ -2790,6 +4444,14 @@ References: Annex III, Article 53, Article 72, Article 6, Article 64
 </details>
 
 **Conceded to pushback:** `False`
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — unsupported=2; missing=2; answer never lists Annex III high-risk areas or addresses whether healthcare decision-making is one of them
+
+- References: **FAIL** — P=0.4; R=1.0; wrong=3; over-citation of irrelevant provisions (Art. 53 GPAI obligations, Art. 72 post-market monitoring, Art. 64 AI Office mandate) not related to defining high-risk use case areas
+
+- Citation faithfulness: **FAIL** — mismatched=2; Article 64 mismatch (text doesn't establish AI Office or say it supervises GPAI providers) and Article 72 adds unverified corrective-action/risk-feedback content not in the provision
 
 <sub>28.0s</sub>
 
@@ -2810,6 +4472,14 @@ References: Article 7, Annex VII, Annex III
 
 **Conceded to pushback:** `False`
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — unsupported=1; missing=1; never states actual content of Annex VII point 5.1 (surveillance purpose ensuring compliance with approved QMS terms/conditions); answer conflates it with general Annex VII/III/I/Article 7 summary instead
+
+- References: **FAIL** — P=0.1667; R=1.0; wrong=5; over-citation of unrelated provisions (Art.7, Art.6, Art.5, Annex I, Annex III) not governing Annex VII 5.1
+
+- Citation faithfulness: **FAIL** — mismatched=1; Annex VII 5.1 (surveillance of approved QMS per point 5) is described using Annex VII points 2-4 content (QMS application/assessment, technical documentation review, certificate issuance) rather than the actual point 5.1 surveillance provision, while also blending in Article 7 and Annex III material under the same citation
+
 <sub>20.4s</sub>
 
 ## 99. `rg_099`
@@ -2828,6 +4498,14 @@ References: Article 53, Article 55, Article 51, Article 56, Article 15, Article 
 </details>
 
 **Conceded to pushback:** `False`
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — unsupported=6; missing=3; answer addresses unrelated Art.55 systemic-risk obligations (not in provided verbatim text) and Art.6/Annex III high-risk classification instead of answering the actual question about non-systemic GPAI providers' adversarial-attack, adversarial-image, and prompt-injection obligations
+
+- References: **FAIL** — P=0.0; R=0.0; wrong=5; missing=2; predicted citations are all high-risk AI system provisions (post-market monitoring, classification, AI Office, Annex III/VII conformity) and none address GPAI provider obligations or adversarial robustness/cybersecurity; correct provisions (Art. 53 general GPAI duties showing no such obligation, Art. 55(1)(c)-(d) adversarial testing/cybersecurity duties limited to systemic-risk GPAI models) are missing entirely
+
+- Citation faithfulness: **FAIL** — mismatched=3; Article 72 (post-market monitoring), Article 64 (AI Office), and Annex VII (conformity assessment) are listed as cited provisions but the answer's prose never describes their actual content — it only discusses Article 55 GPAI systemic-risk obligations and Article 6(1)/6(2) high-risk classification routes, leaving these citations unaddressed/ignored.
 
 <sub>30.9s</sub>
 
@@ -2848,6 +4526,14 @@ References: Article 6.2, Annex III, Annex VII, Article 7, Article 53, Article 55
 
 **Conceded to pushback:** `False`
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — incorrect=1; unsupported=1; missing=2; answer never addresses guardrails or intended-use reclassification; substitutes irrelevant GPAI systemic-risk discussion and cuts off before conclusion
+
+- References: **FAIL** — P=0.22; R=1.0; wrong=7; over-citation of unrelated GPAI/conformity-assessment provisions
+
+- Citation faithfulness: **FAIL** — mismatched=2; Article 51 cited for the two-week Commission notification duty, which is not in Article 51 (that duty belongs to Article 52) — cite-and-mismatch; Article 53(2) carve-out is overstated as applying to 'each documentation obligation' when the verbatim text limits the FOSS exception to only points (a) and (b), not the copyright-policy or training-data-summary duties.
+
 <sub>20.2s</sub>
 
 ## 101. `rg_101`
@@ -2866,6 +4552,14 @@ References: Article 5
 </details>
 
 **Conceded to pushback:** `False`
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — unsupported=2; missing=3; answer never addresses the actual question: omits Art.5(3) urgency exception allowing use before authorisation, the 24-hour deadline to request it, and the mandatory immediate-stop/data-deletion consequence if authorisation is refused
+
+- References: **PASS** — P=1.0; R=1.0
+
+- Citation faithfulness: **FAIL** — mismatched=2; Art.5(3) authorization/urgency-deadline content wrongly folded into Art.5.1.h citation; inconsistent Art.49 vs Art.71 cite for same EU-database registration claim; core question (time limit, refusal consequence) left unanswered
 
 <sub>28.7s</sub>
 
@@ -2886,6 +4580,14 @@ References: Annex III
 
 **Conceded to pushback:** `False`
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — unsupported=2; missing=3; answer never identifies the scenario as Annex III 5(d) (not 5(b)/(c)) or explains the private-entity-providing-public-services FRIA trigger, instead giving generic/off-topic boilerplate
+
+- References: **FAIL** — P=0.5; R=0.67; wrong=2; missing=1; missing Article 27 (FRIA obligation); Article 5 and Annex I over-cited and irrelevant
+
+- Citation faithfulness: **FAIL** — mismatched=2; Article 5 and Article 6 cited but their actual content (prohibited practices; high-risk classification conditions) is never described in the prose
+
 <sub>20.3s</sub>
 
 ## 103. `rg_103`
@@ -2905,6 +4607,14 @@ References: Article 50, Article 13, Article 52, Article 90, Annex III
 
 **Conceded to pushback:** `False`
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — missing=1; omits Art. 50(4) 'evidently artistic, creative, satirical, fictional or analogous work' carve-out granting a lighter (existence-only) disclosure dual, which is the exact 'lighter transparency' holding the question asks about
+
+- References: **FAIL** — P=0.2; R=1.0; wrong=4; over-citation of unrelated GPAI-provider and high-risk-transparency articles
+
+- Citation faithfulness: **PASS**
+
 <sub>19.9s</sub>
 
 ## 104. `rg_104`
@@ -2915,6 +4625,14 @@ References: Article 50, Article 13, Article 52, Article 90, Annex III
 **References:** Article 5, Annex III, Article 27, Article 50, Article 13
 
 **Conceded to pushback:** `False`
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — unsupported=3; missing=2; answer addresses Art.5/6 classification instead of the Art.111 transitional/grandfathering rules the question actually asks about, and never mentions GPAI transitional treatment
+
+- References: **FAIL** — P=0.0; R=0.0; wrong=5; missing=1; missing transitional provision (Art. 111) governing legacy/pre-2 Aug 2026 systems; predicted articles address unrelated substantive obligations
+
+- Citation faithfulness: **PASS**
 
 <sub>38.7s</sub>
 
@@ -2935,6 +4653,14 @@ References: Annex X
 
 **Conceded to pushback:** `False`
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — incorrect=4; missing=1; answer describes wrong annex (registration info, likely Annex VIII) instead of Annex X's actual content (list of large-scale EU IT systems legislation used for Article 111 transitional provisions)
+
+- References: **PASS** — P=1.0; R=1.0
+
+- Citation faithfulness: **FAIL** — mismatched=1; cite-and-mismatch: Annex X is a list of EU large-scale IT systems (SIS, VIS, Eurodac, EES, ETIAS, ECRIS-TCN, interoperability regulations), not the EU database registration information described in the answer (that is Annex VIII)
+
 <sub>32.0s</sub>
 
 ## 106. `rg_106`
@@ -2953,6 +4679,14 @@ References: Article 5, Annex II, Article 6, Article 26, Article 42, Article 16, 
 </details>
 
 **Conceded to pushback:** `False`
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — incorrect=2; unsupported=1; missing=1; non-responsive: never determines whether Annex III applies (system isn't used by/on behalf of law enforcement, so not high-risk), instead discusses FRIA/transparency/registration duties that presuppose an unestablished high-risk classification
+
+- References: **FAIL** — P=0.4; R=1.0; wrong=3; over-citation of downstream compliance obligations (Arts 13/27/50) that presuppose high-risk status, when the question turns on the antecedent Art.6/Annex III classification test
+
+- Citation faithfulness: **FAIL** — mismatched=1; Annex X mischaracterized as EU-database registration content (that's Annex VIII); Annex X actually concerns large-scale IT systems in the area of freedom, security and justice
 
 <sub>17.6s</sub>
 
@@ -2973,6 +4707,14 @@ References: Article 6, Annex I, Annex III
 
 **Conceded to pushback:** `False`
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — incorrect=1; missing=1; omits Annex III.3(c)/(b) applicability to this exact education-track recommendation use case, leaving the specific classification unanswered
+
+- References: **FAIL** — P=0.2; R=1.0; wrong=8; over-citation of irrelevant/downstream provisions (Art.5,13,50,53,111,Annex I,II,X) not tied to the high-risk classification question
+
+- Citation faithfulness: **PASS**
+
 <sub>17.5s</sub>
 
 ## 108. `rg_108`
@@ -2991,6 +4733,14 @@ References: Annex I
 </details>
 
 **Conceded to pushback:** `False`
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — unsupported=1; missing=2; answer never resolves the two operative questions (no dedicated separate AI Act assessment needed per Art.43(3) integration; no EU database registration required for Annex I systems, only Annex III) — response is generic classification boilerplate that trails off before addressing the fact pattern
+
+- References: **FAIL** — P=1.0; R=0.33; missing=2; Annex I only establishes the product is covered by sectoral legislation but omits the operative provisions answering the actual questions asked — the merged/single conformity assessment rule for Annex I Section A products and the EU database registration obligation
+
+- Citation faithfulness: **PASS**
 
 <sub>23.5s</sub>
 
@@ -3011,6 +4761,14 @@ References: Annex I
 
 **Conceded to pushback:** `False`
 
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — unsupported=1; missing=1; answer never resolves whether opting out of third-party CA via harmonized standards defeats Annex I high-risk classification/Chapter 3 Section 2 duty
+
+- References: **FAIL** — P=1.0; R=0.5; missing=2; missing Art 8 (mandatory Section 2 compliance) and Art 43 (conformity assessment route doesn't waive substantive requirements)
+
+- Citation faithfulness: **PASS**
+
 <sub>23.6s</sub>
 
 ## 110. `rg_110`
@@ -3029,5 +4787,13 @@ References: Article 27, Article 6, Article 25, Article 50, Article 4
 </details>
 
 **Conceded to pushback:** `False`
+
+**Judge (grounded, Sonnet-5 vs verbatim Act text):**
+
+- Answer: **FAIL** — incorrect=4; unsupported=3; missing=3; misclassified high-risk critical-infrastructure system as limited-risk, ignored provider/deployer re-classification, and never addressed whether FRIA (Art. 27) applies
+
+- References: **FAIL** — P=0.0; R=0.0; wrong=5; missing=4; wrong body of law cited (prohibited-practices/conformity-assessment/notified-bodies) while missing classification (Annex III, Art.6), provider-status (Art.25), and FRIA (Art.27) provisions
+
+- Citation faithfulness: **PASS**
 
 <sub>28.6s</sub>
