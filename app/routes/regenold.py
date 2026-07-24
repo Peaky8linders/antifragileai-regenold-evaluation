@@ -4439,7 +4439,7 @@ def _general_llm_candidates() -> list[tuple[object, str]]:
     out: list[tuple[object, str]] = []
     for enabled_fn, getter, env_key, default_model in (
         (is_groq_provider_enabled, get_groq_provider,
-         "REGENOLD_GENERAL_MODEL_GROQ", "groq/compound"),
+         "REGENOLD_GENERAL_MODEL_GROQ", "openai/gpt-oss-120b"),
         (is_gemini_provider_enabled, get_gemini_provider,
          "REGENOLD_GENERAL_MODEL_GEMINI", "gemini-2.5-flash"),
         (is_mistral_provider_enabled, get_mistral_provider,
@@ -5052,12 +5052,10 @@ def _rewrite_multiturn_query(
             any_configured = True
             candidates.append((
                 get_groq_intent_provider(),
-                # groq/compound is the Stage-0 model for multi-turn
-                # query rewriting. Compound system handles rewriting
-                # natively without reasoning_effort tuning. Override
-                # via REGENOLD_DENOISER_MODEL_GROQ.
+                # openai/gpt-oss-120b is the Stage-0 model for multi-turn
+                # query rewriting. Override via REGENOLD_DENOISER_MODEL_GROQ.
                 os.environ.get(
-                    "REGENOLD_DENOISER_MODEL_GROQ", "groq/compound"
+                    "REGENOLD_DENOISER_MODEL_GROQ", "openai/gpt-oss-120b"
                 ),
                 "groq",
             ))

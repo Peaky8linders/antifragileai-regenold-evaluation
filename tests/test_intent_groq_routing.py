@@ -198,7 +198,7 @@ def test_classify_routes_through_groq_when_enabled(monkeypatch) -> None:
 
     assert result is not None
     assert result.intent == "penalty_inquiry"
-    assert captured_models == ["qwen/qwen3.6-27b"]  # R264 default
+    assert captured_models == ["openai/gpt-oss-120b"]
 
 
 def test_classify_does_not_call_wrapper_when_groq_active(monkeypatch) -> None:

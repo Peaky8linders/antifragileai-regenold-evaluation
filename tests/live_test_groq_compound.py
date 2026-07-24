@@ -52,7 +52,7 @@ def test_groq_compound_direct_with_retry():
             OpenAIWrapperRequest(
                 system="You are a concise EU AI Act expert. Answer in 2 sentences.",
                 user="What is Article 5 of the EU AI Act about?",
-                model="groq/compound",
+                model="openai/gpt-oss-120b",
                 max_tokens=256,
                 temperature=0.0,
             )
@@ -113,7 +113,7 @@ def test_groq_compound_synthesis():
             OpenAIWrapperRequest(
                 system=system,
                 user=user_msg,
-                model="groq/compound",
+                model="openai/gpt-oss-120b",
                 max_tokens=1024,
                 temperature=0.0,
             )
@@ -169,7 +169,7 @@ def test_reasoning_effort_guard():
             OpenAIWrapperRequest(
                 system="Answer in one sentence.",
                 user="What is Article 6 of the EU AI Act?",
-                model="groq/compound",
+                model="openai/gpt-oss-120b",
                 max_tokens=200,
                 temperature=0.0,
                 reasoning_effort="none",  # MUST be stripped by the guard
@@ -195,7 +195,7 @@ def test_reasoning_effort_guard():
             )
 
         if not resp.error:
-            print("  PASSED -- reasoning_effort='none' correctly stripped for groq/compound")
+            print("  PASSED -- reasoning_effort call succeeded for openai/gpt-oss-120b")
             return
 
         raise AssertionError(f"Unexpected error: {resp.error}")

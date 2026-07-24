@@ -742,7 +742,7 @@ def healthz() -> dict[str, object]:
                 OpenAIWrapperRequest(
                     system="You are a regulation expert. Answer concisely.",
                     user="What is a general purpose AI model under the AI Act?",
-                    model="groq/compound",
+                    model="openai/gpt-oss-120b",
                     max_tokens=1024,
                     temperature=0.0,
                 )

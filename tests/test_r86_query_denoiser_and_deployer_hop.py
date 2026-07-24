@@ -212,7 +212,7 @@ def test_denoiser_returns_rewritten_text_on_happy_path(monkeypatch) -> None:
 
 
 def test_denoiser_uses_three_second_timeout(monkeypatch) -> None:
-    """Timeout MUST be 3.0s — groq/compound needs headroom for compound system overhead."""
+    """Timeout MUST be 3.0s — openai/gpt-oss-120b needs headroom for system overhead."""
     monkeypatch.setenv("REGENOLD_QUERY_DENOISER", "1")
     monkeypatch.setenv("OPENAI_API_BASE", "http://127.0.0.1:8000/v1")
     monkeypatch.setenv("OPENAI_API_KEY", "dummy")
@@ -235,7 +235,7 @@ def test_denoiser_uses_three_second_timeout(monkeypatch) -> None:
     # The request object passed to provider.complete carries timeout_seconds
     sent_req = fake_provider.complete.call_args.args[0]
     assert sent_req.timeout_seconds == 3.0, (
-        "Denoiser timeout must be 3.0s — groq/compound compound system "
+        "Denoiser timeout must be 3.0s — Groq model system "
         "overhead routinely exceeds 1.0s; 3.0s gives headroom while still "
         "being negligible against the ~28s multi-turn p50."
     )

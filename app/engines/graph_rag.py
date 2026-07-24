@@ -391,7 +391,7 @@ def _stage2_answer_headroom() -> int:
 
 
 def _get_groq_compressed_system_prompt() -> str:
-    """Return a compressed version of the Stage-2 system prompt for Groq Compound synthesis."""
+    """Return a compressed version of the Stage-2 system prompt for Groq GPT-OSS 120B synthesis."""
     return (
         "You are the Lead EU AI Act Regulatory Counsel (Regulation (EU) 2024/1689).\n"
         "Provide precise, authoritative legal analysis grounded in verified statutory provisions and live tools.\n\n"
@@ -621,10 +621,10 @@ def _openai_wrapper_complete_for_graph_rag(
                 "graph_rag.openai_wrapper_call_failed: %s",
                 response.error[:200],
             )
-        # ── Groq Compound automatic fallback ─────────────────────────────
+        # ── Groq GPT-OSS 120B automatic fallback ─────────────────────────────
         # When the Claude Max wrapper fails for ANY reason (rate limit,
         # quota exhaustion, 500/401/403 outage, network error, CLI error),
-        # attempt a fallback to Groq Compound before raising RuntimeError
+        # attempt a fallback to Groq GPT-OSS 120B before raising RuntimeError
         # and falling back to deterministic. This keeps Stage-1/2
         # LLM-powered answers alive even when the Claude Max subscription
         # is maxxed out or the tunnel is down.
@@ -633,11 +633,11 @@ def _openai_wrapper_complete_for_graph_rag(
             if is_groq_provider_enabled():
                 logger.warning(
                     "graph_rag.groq_auto_fallback — Claude Max wrapper failed (%s). "
-                    "Attempting Groq Compound synthesis.",
+                    "Attempting Groq GPT-OSS 120B synthesis.",
                     response.error[:80],
                 )
                 from app.llm.openai_wrapper_provider import get_groq_provider, OpenAIWrapperRequest
-                # groq/compound supports larger context than Qwen 3.6;
+                # openai/gpt-oss-120b supports larger context than Qwen 3.6;
                 # cap completion tokens to a reasonable ceiling.
                 groq_max_tokens = min(safe_max_tokens, 4096)
                 groq_user = user
@@ -655,7 +655,7 @@ def _openai_wrapper_complete_for_graph_rag(
                     OpenAIWrapperRequest(
                         system=groq_system,
                         user=groq_user,
-                        model=os.environ.get("REGENOLD_SYNTHESIS_MODEL_GROQ", "groq/compound"),
+                        model=os.environ.get("REGENOLD_SYNTHESIS_MODEL_GROQ", "openai/gpt-oss-120b"),
                         max_tokens=groq_max_tokens,
                         temperature=temperature,
                     )
@@ -1235,7 +1235,7 @@ def _llm_parse_query(question: str) -> GraphQuery:
                 OpenAIWrapperRequest(
                     system=system_prompt,
                     user=sanitized_question,
-                    model=os.getenv("REGENOLD_STAGE1_MODEL_GROQ", "groq/compound"),
+                    model=os.getenv("REGENOLD_STAGE1_MODEL_GROQ", "openai/gpt-oss-120b"),
                     max_tokens=2048,
                     temperature=0.0,
                 )
@@ -1443,7 +1443,7 @@ def _llm_generate_answer(
                 OpenAIWrapperRequest(
                     system=groq_system,
                     user=user_message,
-                    model=os.getenv("REGENOLD_STAGE2_MODEL_GROQ", "groq/compound"),
+                    model=os.getenv("REGENOLD_STAGE2_MODEL_GROQ", "openai/gpt-oss-120b"),
                     max_tokens=settings.graph_rag.max_tokens,
                     temperature=settings.graph_rag.temperature,
                 )

@@ -342,12 +342,10 @@ class IntentResult:
 # ── Module-level config + state ──────────────────────────────────────────────
 
 _DEFAULT_MODEL = os.getenv("REGENOLD_INTENT_MODEL", "claude-haiku-4-5-20251001")
-# Round 52+: Groq Stage-0 model. Migrated from qwen/qwen3.6-27b to
-# groq/compound (Groq Compound AI System) for native multi-step
-# reasoning and server-side tool orchestration. Override
+# Round 52+: Groq Stage-0 model. Migrated to openai/gpt-oss-120b. Override
 # via REGENOLD_INTENT_MODEL_GROQ.
 _DEFAULT_GROQ_MODEL = os.getenv(
-    "REGENOLD_INTENT_MODEL_GROQ", "groq/compound"
+    "REGENOLD_INTENT_MODEL_GROQ", "openai/gpt-oss-120b"
 )
 _TIMEOUT_SECONDS = float(os.getenv("REGENOLD_INTENT_TIMEOUT", "3.5"))
 _CACHE_MAX = int(os.getenv("REGENOLD_INTENT_CACHE_MAX", "2048"))

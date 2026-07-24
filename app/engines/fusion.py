@@ -111,7 +111,7 @@ logger = logging.getLogger(__name__)
 _PANEL_REGISTRY: dict[str, tuple[str, str]] = {
     "sonnet": ("claude-opus-4-8", "wrapper"),
     "opus": ("claude-opus-4-8", "wrapper"),
-    "groq": (os.getenv("REGENOLD_FUSION_MODEL_GROQ", "groq/compound"), "groq"),
+    "groq": (os.getenv("REGENOLD_FUSION_MODEL_GROQ", "openai/gpt-oss-120b"), "groq"),
     "mistral": ("mistral-large-latest", "mistral"),
     "gemini": ("gemini-2.5-flash", "gemini"),
 }

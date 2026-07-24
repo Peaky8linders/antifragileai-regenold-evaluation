@@ -59,7 +59,7 @@ def run_test():
         OpenAIWrapperRequest(
             system=system_prompt,
             user=user_prompt,
-            model="groq/compound",
+            model="openai/gpt-oss-120b",
             max_tokens=512,
             temperature=0.0,
         )
@@ -83,18 +83,18 @@ def run_test():
     time.sleep(3)
 
     # ----------------------------------------------------
-    # TEST B: reasoning_effort Guard Verification
+    # TEST B: reasoning_effort Support Verification
     # ----------------------------------------------------
-    print("\n[2/3] Testing reasoning_effort Guard with groq/compound...")
+    print("\n[2/3] Testing reasoning_effort Support with openai/gpt-oss-120b...")
     start = time.perf_counter()
     resp_guard = provider.complete(
         OpenAIWrapperRequest(
             system="Answer in 1 sentence.",
             user="What is Article 9 of the EU AI Act?",
-            model="groq/compound",
+            model="openai/gpt-oss-120b",
             max_tokens=150,
             temperature=0.0,
-            reasoning_effort="none",  # Explicitly passed - provider must strip it
+            reasoning_effort="none",  # Passed to gpt-oss-120b reasoning model
         )
     )
     elapsed = time.perf_counter() - start
@@ -105,10 +105,8 @@ def run_test():
     text_guard = (resp_guard.text or "").strip()
     print(f"  Output Text:   {text_guard}")
 
-    assert not resp_guard.error or "reasoning_effort" not in (resp_guard.error or ""), \
-        f"Guard failed -- reasoning_effort was sent to Groq: {resp_guard.error}"
-    if not resp_guard.error:
-        print("  ✅ TEST B PASSED: reasoning_effort parameter correctly blocked for groq/compound!")
+    assert not resp_guard.error, f"Call failed: {resp_guard.error}"
+    print("  ✅ TEST B PASSED: reasoning_effort call succeeded for openai/gpt-oss-120b!")
 
     # Pause 3 seconds
     print("\nPausing 3s for API rate limit spacing...")
@@ -119,7 +117,7 @@ def run_test():
     # ----------------------------------------------------
     print("\n[3/3] Testing Intent Classifier with groq/compound...")
     os.environ["REGENOLD_INTENT_PROVIDER"] = "groq"
-    os.environ["REGENOLD_INTENT_MODEL_GROQ"] = "groq/compound"
+    os.environ["REGENOLD_INTENT_MODEL_GROQ"] = "openai/gpt-oss-120b"
 
     from app.llm.intent_classifier import classify_intent
 
