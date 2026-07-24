@@ -643,10 +643,10 @@ def _openai_wrapper_complete_for_graph_rag(
                 groq_max_tokens = min(safe_max_tokens, 4096)
                 groq_user = user
                 if len(system) + len(user) > 11000:
-                    # Preserve start (system description, references) and end (draft answer + instructions)
-                    prefix_len = 8000
-                    suffix_len = len(user) - prefix_len if len(user) < 10000 else 2000
-                    groq_user = user[:prefix_len] + "\n\n... [TRUNCATED FOR GROQ CONTEXT LIMIT] ...\n\n" + user[-suffix_len:]
+                    if len(user) > 10000:
+                        groq_user = user[:8000] + "\n\n... [TRUNCATED FOR GROQ CONTEXT LIMIT] ...\n\n" + user[-2000:]
+                    elif len(user) > 8000:
+                        groq_user = user[:6000] + "\n\n... [TRUNCATED FOR GROQ CONTEXT LIMIT] ...\n\n" + user[-1500:]
                 
                 groq_system = system
                 if len(system) > 10000:
@@ -1122,67 +1122,7 @@ def _stage2_simple_skip_enabled() -> bool:
 
 # ─── Internal data structures ────────────────────────────────────────────────
 
-@dataclass
-class GraphQuery:
-    """Structured query extracted from a natural language question."""
-    intent: str = "general_compliance"
-    entities: list[str] = field(default_factory=list)
-    risk_context: str | None = None
-    dimension_hint: str | None = None
-    keywords: list[str] = field(default_factory=list)
-    raw_question: str = ""
-
-
-@dataclass
-class GraphContext:
-    """Structured context retrieved from the compliance graph."""
-    obligations: list[dict] = field(default_factory=list)
-    gaps: list[dict] = field(default_factory=list)
-    bridging_context: list[str] = field(default_factory=list)
-    satisfied: list[dict] = field(default_factory=list)
-    dimension_info: list[dict] = field(default_factory=list)
-    cross_framework: dict = field(default_factory=dict)
-    article_info: list[dict] = field(default_factory=list)
-    transitive_deps: list[dict] = field(default_factory=list)
-    nodes_traversed: int = 0
-    edges_followed: int = 0
-    # Stage-2 telemetry — populated by :func:`_two_stage_generate`.
-    # ``stage2_call_failed`` is True ONLY when the wrapper call was
-    # attempted AND the underlying HTTP/transport call returned an error
-    # (vs. Stage-2 being skipped because it wasn't needed, or returning
-    # a drifted result). The route checks this to avoid caching a
-    # deterministic fallback that masks a transient wrapper outage.
-    stage2_call_failed: bool = False
-    # Issue #55 — graph retrieval degraded signal. ``degraded=True``
-    # means the Neo4j-backed retrieval path raised, the KB fallback ran
-    # in its place, and downstream consumers should treat this context
-    # as lower-confidence. ``_compute_confidence`` caps the confidence
-    # score, and the route's closed-world refusal logic can use this
-    # to surface a "graph backend unavailable, partial data only"
-    # disclaimer if it wants. Distinct from "no results found" (which
-    # is a healthy zero-hit response).
-    degraded: bool = False
-    xrefs: list[str] = field(default_factory=list)
-    semantically_relevant_statements: list[str] = field(default_factory=list)
-    referenced_annexes_and_recitals: list[dict] = field(default_factory=list)
-    # R288 — the raw user question, carried on the context purely so
-    # :func:`_build_context_references_block` can select QUESTION-RELEVANT
-    # verbatim paragraphs identically at BOTH of its call sites (the Stage-2
-    # user message and the R113 grounding-set miner). Threading it as a
-    # parameter instead would let those two diverge, which is exactly the
-    # guard/prompt parity bug R113 fixed. Empty string is a safe default:
-    # ``select_relevant_paragraphs`` falls back to the leading paragraph.
-    question: str = ""
-    web_search_results: list[str] = field(default_factory=list)
-    retrieval_path: str = "neo4j"
-    # R117-review — LogicRAG's synthesised multi-hop rolling memory. Set only
-    # by ``logic_rag.execute_logic_rag`` (default "" everywhere else, so the
-    # Stage-2 context block render below is a no-op for non-LogicRAG paths).
-    # Rendered as a clearly-labelled NON-citation section — replaces the old
-    # fake "LogicRAG Synthesis" article_info entry that leaked a non-resolvable
-    # "(Article: LogicRAG Synthesis)" line into the Stage-2 prompt.
-    synthesis_memory: str = ""
-    ast_evaluations: list[str] = field(default_factory=list)
+from app.engines.graph_rag.models import GraphQuery, GraphContext
 
 
 # ─── LLM Integration ────────────────────────────────────────────────────────
