@@ -742,10 +742,9 @@ def healthz() -> dict[str, object]:
                 OpenAIWrapperRequest(
                     system="You are a regulation expert. Answer concisely.",
                     user="What is a general purpose AI model under the AI Act?",
-                    model="qwen/qwen3.6-27b",
+                    model="groq/compound",
                     max_tokens=1024,
                     temperature=0.0,
-                    reasoning_effort="default",
                 )
             )
             fallback_model = resp.model
@@ -881,7 +880,7 @@ def healthz_llm() -> dict[str, object]:
         probe_model = (
             os.getenv("REGENOLD_HEALTHZ_PROBE_MODEL", "").strip()
             or settings.graph_rag.model
-            or "claude-sonnet-4-6"
+            or "claude-opus-4-8"
         )
         # Probe timeout. The warm wrapper round-trip is ~4 s, but a
         # cold Railway container's first call after a deploy stacks cold

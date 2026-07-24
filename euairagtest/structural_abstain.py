@@ -36,12 +36,20 @@ __all__ = [
 
 from dataclasses import dataclass, field
 
-from ..baselines.base import Baseline, question_text
-from ..baselines.retrieval import Retriever, TfidfRetriever
-from ..graph.model import KnowledgeGraph
-from ..graph.schema import EdgeType
-from ..ids import ProvisionId, ProvisionIdError
-from ..models import Provision
+try:
+    from .base import Baseline, question_text
+    from .graph.model import KnowledgeGraph
+    from .graph.schema import EdgeType
+    from .ids import ProvisionId, ProvisionIdError
+    from .models import Provision
+    from .retrieval import Retriever, TfidfRetriever
+except (ImportError, ValueError):
+    from ..baselines.base import Baseline, question_text
+    from ..baselines.retrieval import Retriever, TfidfRetriever
+    from ..graph.model import KnowledgeGraph
+    from ..graph.schema import EdgeType
+    from ..ids import ProvisionId, ProvisionIdError
+    from ..models import Provision
 
 
 # ---------------------------------------------------------------------------

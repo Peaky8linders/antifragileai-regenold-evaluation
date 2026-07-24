@@ -50,8 +50,12 @@ from abc import ABC, abstractmethod
 from collections import Counter
 from dataclasses import dataclass
 
-from ..ids import ProvisionId
-from ..models import Provision
+try:
+    from .ids import ProvisionId
+    from .models import Provision
+except (ImportError, ValueError):
+    from ..ids import ProvisionId
+    from ..models import Provision
 from .base import Baseline, question_text
 from .retrieval import tokenize
 

@@ -17,8 +17,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date
 
-from ..ids import CELEX
-from ..models import Provision
+try:
+    from .ids import CELEX
+    from .models import Provision
+except (ImportError, ValueError):
+    from ..ids import CELEX
+    from ..models import Provision
 from .points import split_annex_item, split_definitions, split_paragraph
 
 __all__ = [

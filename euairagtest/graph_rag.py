@@ -32,9 +32,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ..graph.model import KnowledgeGraph
-from ..graph.schema import EdgeType, PROVISION_NODE_TYPES
-from ..models import Provision
+try:
+    from .graph.model import KnowledgeGraph
+    from .graph.schema import EdgeType, PROVISION_NODE_TYPES
+    from .models import Provision
+except (ImportError, ValueError):
+    from ..graph.model import KnowledgeGraph
+    from ..graph.schema import EdgeType, PROVISION_NODE_TYPES
+    from ..models import Provision
 from .base import Baseline, question_text
 from .retrieval import Retriever, TfidfRetriever
 

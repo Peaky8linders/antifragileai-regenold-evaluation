@@ -24,7 +24,10 @@ from __future__ import annotations
 
 import re
 
-from ..ids import ProvisionId, ProvisionIdError
+try:
+    from .ids import ProvisionId, ProvisionIdError
+except (ImportError, ValueError):
+    from ..ids import ProvisionId, ProvisionIdError
 
 __all__ = ["extract_citations", "EXTERNAL_QUALIFIER_RE"]
 

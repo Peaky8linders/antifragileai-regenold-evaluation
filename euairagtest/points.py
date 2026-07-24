@@ -21,7 +21,10 @@ from __future__ import annotations
 
 import re
 
-from ..models import Provision
+try:
+    from .models import Provision
+except (ImportError, ValueError):
+    from ..models import Provision
 
 __all__ = [
     "split_paragraph",

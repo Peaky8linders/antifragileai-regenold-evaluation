@@ -18,7 +18,10 @@ import re
 from abc import ABC, abstractmethod
 from collections import Counter
 
-from ..models import Provision
+try:
+    from .models import Provision
+except (ImportError, ValueError):
+    from ..models import Provision
 
 __all__ = ["Retriever", "TfidfRetriever", "tokenize"]
 

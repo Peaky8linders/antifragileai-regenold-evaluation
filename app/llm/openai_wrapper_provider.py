@@ -54,7 +54,7 @@ _WRAPPER_CLI_ERROR_SENTINELS: tuple[str, ...] = (
 class OpenAIWrapperRequest(BaseModel):
     system: str = ""
     user: str = Field(min_length=1)
-    model: str = "claude-sonnet-4-6"
+    model: str = "claude-opus-4-8"
     max_tokens: int = 1024
     temperature: float = 0.0
     timeout_seconds: float | None = None
@@ -403,7 +403,7 @@ class _OpenAIWrapperProvider:
                     effort = "none"
                 elif "gpt-oss" in _model_lc:
                     effort = "low"
-            if effort:
+            if effort and "compound" not in _model_lc:
                 body["reasoning_effort"] = effort
 
         # Per-request timeout override — the intent classifier wants a

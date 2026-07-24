@@ -9,7 +9,10 @@ the same way once an LLM client is available -- see ``llm.py``.
 
 from __future__ import annotations
 
-from ..models import Provision
+try:
+    from .models import Provision
+except (ImportError, ValueError):
+    from ..models import Provision
 from .base import Baseline, question_text
 from .retrieval import Retriever, TfidfRetriever
 

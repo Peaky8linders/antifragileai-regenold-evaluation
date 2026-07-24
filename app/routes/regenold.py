@@ -4439,7 +4439,7 @@ def _general_llm_candidates() -> list[tuple[object, str]]:
     out: list[tuple[object, str]] = []
     for enabled_fn, getter, env_key, default_model in (
         (is_groq_provider_enabled, get_groq_provider,
-         "REGENOLD_GENERAL_MODEL_GROQ", "qwen/qwen3.6-27b"),
+         "REGENOLD_GENERAL_MODEL_GROQ", "groq/compound"),
         (is_gemini_provider_enabled, get_gemini_provider,
          "REGENOLD_GENERAL_MODEL_GEMINI", "gemini-2.5-flash"),
         (is_mistral_provider_enabled, get_mistral_provider,
@@ -5052,14 +5052,12 @@ def _rewrite_multiturn_query(
             any_configured = True
             candidates.append((
                 get_groq_intent_provider(),
-                # Groq's qwen/qwen3.6-27b is the same Stage-0 model R264
-                # swapped the intent classifier to (Llama 3.3 70B was
-                # deprecated 2026-06-30). ``reasoning_effort=none`` is
-                # auto-injected by the provider so Qwen emits the short
-                # rewrite directly without a hidden reasoning trace eating
-                # the tight budget (live: 34 tokens, 489 ms at max_tokens=100).
+                # groq/compound is the Stage-0 model for multi-turn
+                # query rewriting. Compound system handles rewriting
+                # natively without reasoning_effort tuning. Override
+                # via REGENOLD_DENOISER_MODEL_GROQ.
                 os.environ.get(
-                    "REGENOLD_DENOISER_MODEL_GROQ", "qwen/qwen3.6-27b"
+                    "REGENOLD_DENOISER_MODEL_GROQ", "groq/compound"
                 ),
                 "groq",
             ))
@@ -5148,7 +5146,7 @@ def _rewrite_multiturn_query(
                 # providers (Groq/Gemini/Mistral) succeed well before the slow
                 # ~10 s wrapper candidate is ever reached.
                 timeout_seconds=float(
-                    os.getenv("REGENOLD_DENOISER_TIMEOUT", "1.0")
+                    os.getenv("REGENOLD_DENOISER_TIMEOUT", "3.0")
                 ),
             )
             resp = provider.complete(req)

@@ -20,10 +20,16 @@ import os
 from collections import defaultdict
 from typing import Any
 
-from ..graph.model import KnowledgeGraph
-from ..graph.schema import EdgeType
-from ..ids import ProvisionId, ProvisionIdError
-from ..models import Provision
+try:
+    from .graph.model import KnowledgeGraph
+    from .graph.schema import EdgeType
+    from .ids import ProvisionId, ProvisionIdError
+    from .models import Provision
+except (ImportError, ValueError):
+    from ..graph.model import KnowledgeGraph
+    from ..graph.schema import EdgeType
+    from ..ids import ProvisionId, ProvisionIdError
+    from ..models import Provision
 from .base import Baseline, question_text
 from .retrieval import Retriever
 
@@ -309,16 +315,20 @@ class CitedGenerationBaseline(Baseline):
         only from them.  The JSON output constraint makes parsing exact.
         """
         lines: list[str] = [
-            "Answer the following question using ONLY the provisions listed below.",
+            "Answer the following regulatory question using ONLY the provisions listed below.",
             "Return a JSON object with keys 'answer' (string) and 'citations' "
-            "(list of eid strings from the candidates).  Do not cite anything "
+            "(list of eid strings from the candidates). Do not cite anything "
             "not in this list.",
+            "",
+            "Formatting & Completeness Guidelines for 'answer':",
+            "- Address the 4 Deontic Legal Elements where applicable: Scope/Applicability, Core Duty/Obligation, Exceptions/Conditions, and Enforcement/Sanctions.",
+            "- Provide accurate, precise statutory details without omitting key conditions or qualifiers.",
             "",
             "Candidate provisions:",
         ]
         for pid in candidate_ids:
             prov = self._provisions.get(pid)
-            text_snippet = prov.text[:200] if prov else ""
+            text_snippet = prov.text[:400] if prov else ""
             lines.append(f"  [{pid}] {text_snippet}")
         lines += ["", f"Question: {query}"]
         return "\n".join(lines)

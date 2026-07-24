@@ -22,7 +22,10 @@ import math
 from collections import Counter
 from typing import Sequence
 
-from ..models import Provision
+try:
+    from .models import Provision
+except (ImportError, ValueError):
+    from ..models import Provision
 from .retrieval import _STOP, _TOKEN_RE, Retriever
 
 __all__ = ["Bm25Retriever"]

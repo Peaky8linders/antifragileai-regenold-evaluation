@@ -391,30 +391,18 @@ def _stage2_answer_headroom() -> int:
 
 
 def _get_groq_compressed_system_prompt() -> str:
-    """Return a highly compressed version of the Stage-2 system prompt for Groq's low TPM/token limits."""
+    """Return a compressed version of the Stage-2 system prompt for Groq Compound synthesis."""
     return (
-        "You are an EU AI Act Legal Specialist (Regulation 2024/1689).\n"
-        "Provide professional, legal analysis grounded in the regulation's verified articles and annexes.\n\n"
+        "You are the Lead EU AI Act Regulatory Counsel (Regulation (EU) 2024/1689).\n"
+        "Provide precise, authoritative legal analysis grounded in verified statutory provisions and live tools.\n\n"
         "RULES:\n"
-        "1. Cite only the exact Article or Annex provided in references. Use format: 'Article N' or 'Annex R', "
-        "optionally with sub-points (e.g. 'Article 3.2', 'Annex III.2'). Do NOT use 'Art.' and do NOT use parentheses "
-        "for paragraphs (e.g. use 'Article 3.2', not 'Article 3(2)').\n"
-        "2. Write the answer as ONE continuous, cohesive paragraph of plain prose. Write AT MOST 4 sentences total.\n"
-        "3. Do NOT use markdown headers, bullet points, bold text, tables, or any formatting. Plain text only.\n"
-        "4. Bottom-Line Up Front (BLUF): Lead with the direct verdict first (e.g. 'Yes', 'No', 'Likely high-risk', 'Not high-risk', "
-        "'Prohibited', 'Out of scope', or a conditional verdict like 'High-risk only where...') in the first clause. "
-        "Never open with 'It depends' or 'Article N is the operative provision'.\n"
-        "5. State the risk tier with its verbatim name ('prohibited', 'high-risk', 'limited risk', 'minimal risk') and use 'not high-risk' "
-        "if it sits outside the high-risk tiers.\n"
-        "6. Use EU AI Act terminology: 'provider', 'deployer', 'authorised representative', 'operator'; NEVER use 'user', 'customer', "
-        "'developer', 'creator'.\n"
-        "7. For emotion recognition, it is prohibited only in workplace/education (Article 5(1)(f)); outside those, it is high-risk under "
-        "Annex III(1)(c) triggering Article 50(3) transparency.\n"
-        "8. Biometric categorisation (Article 5(1)(g)) prohibition applies only if inferring sensitive attributes (race, political opinions, "
-        "trade union membership, religious beliefs, sex life, sexual orientation).\n"
-        "9. Emergency triage is high-risk under Annex III(5)(d); clinical-trial participant selection is not high-risk unless it determines "
-        "access to essential healthcare.\n"
-        "10. Do not reference the source of your information (e.g. do not say 'the graph', 'references', 'the data provided')."
+        "1. Cite exact Akoma Ntoso subpoint provisions using standard formats: 'Article N' or 'Annex R', "
+        "with paragraph/point sub-points (e.g. 'Article 6(2)(a)', 'Annex III point 5(a)'). Do NOT cite bare top-level articles when specific subpoints apply.\n"
+        "2. Deontic Structure: Address the 4 Deontic Elements where applicable: Scope/Applicability, Core Duty/Obligation, Exceptions/Conditions, and Enforcement/Sanctions.\n"
+        "3. Write cohesive, authoritative legal analysis. Lead with the direct verdict (Bottom-Line Up Front - BLUF) in the first clause.\n"
+        "4. Risk Tiers: State exact verbatim risk tiers ('prohibited', 'high-risk', 'limited risk', 'minimal risk', 'GPAI with systemic risk').\n"
+        "5. Terminology: Use official Act terms: 'provider', 'deployer', 'authorised representative', 'importer', 'distributor'. NEVER use 'user', 'developer', 'customer'.\n"
+        "6. Verification: When questions involve external NLF regulations (GDPR, MDR 2017/745, Annex I directives) or fine calculations under Art. 99 (€35 000 000 / 7% worldwide annual turnover), verify exact numbers before emitting your final answer.\n"
     )
 
 
@@ -502,7 +490,7 @@ def _openai_wrapper_complete_for_graph_rag(
         stage2_model = ""
         thinking_budget = 0
         standard_thinking = 0
-    base_model = configured or "claude-sonnet-4-6"
+    base_model = configured or "claude-opus-4-8"
     # R139 — Stage-2 answer model routing (operator directive: ALWAYS Opus 4.8
     # for the Stage-2 answer, moderate thinking on simple questions, extended
     # thinking on complex ones). ``is_stage2`` keys off the caller's
@@ -633,25 +621,25 @@ def _openai_wrapper_complete_for_graph_rag(
                 "graph_rag.openai_wrapper_call_failed: %s",
                 response.error[:200],
             )
-        # ── Groq Qwen 3.6 automatic fallback ────────────────────────────
+        # ── Groq Compound automatic fallback ─────────────────────────────
         # When the Claude Max wrapper fails for ANY reason (rate limit,
         # quota exhaustion, 500/401/403 outage, network error, CLI error),
-        # attempt a fallback to Groq Qwen 3.6 with reasoning tokens before
-        # raising RuntimeError and falling back to deterministic. This
-        # keeps Stage-1/2 LLM-powered answers alive even when the Claude
-        # Max subscription is maxxed out or the tunnel is down.
+        # attempt a fallback to Groq Compound before raising RuntimeError
+        # and falling back to deterministic. This keeps Stage-1/2
+        # LLM-powered answers alive even when the Claude Max subscription
+        # is maxxed out or the tunnel is down.
         try:
             from app.llm.openai_wrapper_provider import is_groq_provider_enabled
             if is_groq_provider_enabled():
                 logger.warning(
                     "graph_rag.groq_auto_fallback — Claude Max wrapper failed (%s). "
-                    "Attempting Groq Qwen 3.6 with reasoning.",
+                    "Attempting Groq Compound synthesis.",
                     response.error[:80],
                 )
                 from app.llm.openai_wrapper_provider import get_groq_provider, OpenAIWrapperRequest
-                # Groq Qwen 3.6 has a strict 4,096 total token limit (prompt + completion).
-                # Cap completion tokens and truncate large reference context if needed.
-                groq_max_tokens = min(safe_max_tokens, 1024)
+                # groq/compound supports larger context than Qwen 3.6;
+                # cap completion tokens to a reasonable ceiling.
+                groq_max_tokens = min(safe_max_tokens, 4096)
                 groq_user = user
                 if len(system) + len(user) > 11000:
                     # Preserve start (system description, references) and end (draft answer + instructions)
@@ -667,10 +655,9 @@ def _openai_wrapper_complete_for_graph_rag(
                     OpenAIWrapperRequest(
                         system=groq_system,
                         user=groq_user,
-                        model="qwen/qwen3.6-27b",
+                        model=os.environ.get("REGENOLD_SYNTHESIS_MODEL_GROQ", "groq/compound"),
                         max_tokens=groq_max_tokens,
                         temperature=temperature,
-                        reasoning_effort="none",  # R264: disable Qwen chain-of-thought — "default" leaks raw thinking tokens into resp.text
                     )
                 )
                 if not groq_resp.error:
@@ -841,7 +828,7 @@ def _anthropic_complete_for_graph_rag(
         stage2_model = ""
         thinking_budget = 0
         standard_thinking = 0
-    base_model = configured or "claude-sonnet-4-6"
+    base_model = configured or "claude-opus-4-8"
     # R139 — mirror the wrapper path: Stage-2 answer is ALWAYS Opus 4.8.
     # complex Stage-2 → ``complex_model`` (Opus); standard Stage-2 →
     # ``stage2_model`` (Opus); Stage-1 parse / other → ``base_model`` (Sonnet).
@@ -1248,7 +1235,7 @@ def _llm_parse_query(question: str) -> GraphQuery:
                 OpenAIWrapperRequest(
                     system=system_prompt,
                     user=sanitized_question,
-                    model=os.getenv("REGENOLD_STAGE1_MODEL_GROQ", "qwen/qwen3.6-27b"),  # R264: Llama 3.3 70B deprecated
+                    model=os.getenv("REGENOLD_STAGE1_MODEL_GROQ", "groq/compound"),
                     max_tokens=2048,
                     temperature=0.0,
                 )
@@ -1456,7 +1443,7 @@ def _llm_generate_answer(
                 OpenAIWrapperRequest(
                     system=groq_system,
                     user=user_message,
-                    model=os.getenv("REGENOLD_STAGE2_MODEL_GROQ", "qwen/qwen3.6-27b"),  # R264: Llama 3.3 70B deprecated
+                    model=os.getenv("REGENOLD_STAGE2_MODEL_GROQ", "groq/compound"),
                     max_tokens=settings.graph_rag.max_tokens,
                     temperature=settings.graph_rag.temperature,
                 )
@@ -6790,7 +6777,7 @@ def _claude_max_enhance_answer(
                     _model = (
                         getattr(settings.graph_rag, "stage2_model", "")
                         or settings.graph_rag.model
-                        or "claude-sonnet-4-6"
+                        or "claude-opus-4-8"
                     )
                 record_note(f"stage2_model={_model} complex={complex_q}")
             except Exception: pass

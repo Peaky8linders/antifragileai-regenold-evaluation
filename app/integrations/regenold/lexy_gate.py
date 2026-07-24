@@ -291,7 +291,7 @@ def _safety_llm_candidates() -> list[tuple[object, str]]:
     out: list[tuple[object, str]] = []
     for enabled_fn, getter, env_key, default_model in (
         (is_groq_provider_enabled, get_groq_provider,
-         "REGENOLD_SAFETY_MODEL_GROQ", "qwen/qwen3.6-27b"),
+         "REGENOLD_SAFETY_MODEL_GROQ", "groq/compound"),
         (is_gemini_provider_enabled, get_gemini_provider,
          "REGENOLD_SAFETY_MODEL_GEMINI", "gemini-2.5-flash"),
         (is_mistral_provider_enabled, get_mistral_provider,

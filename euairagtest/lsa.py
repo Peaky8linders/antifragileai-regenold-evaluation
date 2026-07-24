@@ -22,7 +22,10 @@ from __future__ import annotations
 import math
 from collections import Counter
 
-from ..models import Provision
+try:
+    from .models import Provision
+except (ImportError, ValueError):
+    from ..models import Provision
 from .retrieval import Retriever, tokenize
 
 try:  # numpy is guaranteed via pyarrow, but gate anyway so the failure is legible

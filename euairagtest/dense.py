@@ -24,7 +24,10 @@ from __future__ import annotations
 import math
 from typing import Any, Protocol, runtime_checkable
 
-from ..models import Provision
+try:
+    from .models import Provision
+except (ImportError, ValueError):
+    from ..models import Provision
 from .retrieval import Retriever
 
 __all__ = ["DenseRetriever", "Embedder"]

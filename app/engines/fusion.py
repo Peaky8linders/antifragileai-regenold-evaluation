@@ -109,17 +109,17 @@ logger = logging.getLogger(__name__)
 # Panel registry: label -> (model id, transport key). The transport key
 # selects the pooled provider singleton + its enablement gate.
 _PANEL_REGISTRY: dict[str, tuple[str, str]] = {
-    "sonnet": ("claude-sonnet-4-6", "wrapper"),
+    "sonnet": ("claude-opus-4-8", "wrapper"),
     "opus": ("claude-opus-4-8", "wrapper"),
-    "groq": ("qwen/qwen3.6-27b", "groq"),  # R264: Llama 3.3 70B deprecated
+    "groq": (os.getenv("REGENOLD_FUSION_MODEL_GROQ", "groq/compound"), "groq"),
     "mistral": ("mistral-large-latest", "mistral"),
     "gemini": ("gemini-2.5-flash", "gemini"),
 }
 
 _DEFAULT_PANEL = ("sonnet", "groq", "mistral")
-# Sonnet 4.6 is the judge (fast, tone-calibrated, picks the most concise +
-# correct draft). Opus 4.8 rides the PANEL for complex questions instead.
-_DEFAULT_JUDGE_MODEL = "claude-sonnet-4-6"
+# Opus 4.8 is the judge (fast, tone-calibrated, picks the most concise +
+# correct draft). Opus 4.8 rides the PANEL for complex questions as well.
+_DEFAULT_JUDGE_MODEL = "claude-opus-4-8"
 
 # R124 — transports that hit their OWN fast serverless endpoint (NOT the single
 # slow Claude-Max wrapper). They answer in genuine parallel and finish fast, so

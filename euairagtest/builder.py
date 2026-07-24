@@ -14,8 +14,12 @@ import re
 from pathlib import Path
 from typing import Any, Iterable
 
-from ..ids import ProvisionId, ProvisionIdError
-from ..models import Provision
+try:
+    from .ids import ProvisionId, ProvisionIdError
+    from .models import Provision
+except (ImportError, ValueError):
+    from ..ids import ProvisionId, ProvisionIdError
+    from ..models import Provision
 from .citations import extract_reference_eids
 from .model import KnowledgeGraph
 from .schema import ACTOR_VOCAB, RISK_CLASS_VOCAB, EdgeType, NodeType
