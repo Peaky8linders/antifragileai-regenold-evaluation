@@ -503,15 +503,12 @@ def _openai_wrapper_complete_for_graph_rag(
     #   * Stage-1 / other  → ``base_model``    (Sonnet 4.6)
     # R116 removed the Fable 5 ultra tier.
     is_stage2 = "stage 2" in (stage_name or "").lower()
-    # R270 (default OFF) — opus-for-all routes standard Stage-2 to the complex
-    # model (Opus 4.8) instead of ``stage2_model`` (Sonnet 5).
-    _std_model = (
-        complex_model if (_opus_for_all_enabled() and complex_model) else stage2_model
-    )
     if complex_question and complex_model:
         model = complex_model
-    elif is_stage2 and _std_model:
-        model = _std_model
+    elif is_stage2:
+        model = complex_model or stage2_model or "claude-opus-4-8"
+        if not model or "opus" not in model.lower():
+            model = "claude-opus-4-8"
     else:
         model = base_model
 
@@ -834,15 +831,12 @@ def _anthropic_complete_for_graph_rag(
     # ``stage2_model`` (Opus); Stage-1 parse / other → ``base_model`` (Sonnet).
     # R116 removed the Fable 5 ultra tier.
     is_stage2 = "stage 2" in (stage_name or "").lower()
-    # R270 (default OFF) — opus-for-all routes standard Stage-2 to the complex
-    # model (Opus 4.8) instead of ``stage2_model`` (Sonnet 5).
-    _std_model = (
-        complex_model if (_opus_for_all_enabled() and complex_model) else stage2_model
-    )
     if complex_question and complex_model:
         model = complex_model
-    elif is_stage2 and _std_model:
-        model = _std_model
+    elif is_stage2:
+        model = complex_model or stage2_model or "claude-opus-4-8"
+        if not model or "opus" not in model.lower():
+            model = "claude-opus-4-8"
     else:
         model = base_model
 
@@ -6405,6 +6399,7 @@ def _claude_max_enhance_answer(
     history_turn_count: int = 1,
     is_general_classification: bool = False,
     force_provider: str | None = None,
+    original_question: str | None = None,
 ) -> str | None:
     """Stage-2: polish the KG-grounded answer via the Claude Max proxy.
 
@@ -6422,8 +6417,14 @@ def _claude_max_enhance_answer(
             validate_llm_output,
         )
 
+        orig_q = (original_question or question).strip()
         sanitized_q = sanitize_for_llm(question, context_type="query")
-        user_message = f"QUESTION: {sanitized_q}\n\n"
+        sanitized_orig_q = sanitize_for_llm(orig_q, context_type="query")
+
+        user_message = f"ORIGINAL QUESTION: {sanitized_orig_q}\n"
+        if sanitized_q != sanitized_orig_q:
+            user_message += f"REWRITTEN / SEARCH QUESTION: {sanitized_q}\n"
+        user_message += "\n"
 
         # R69 — structured query profile (proposed architecture, Section
         # 3A). A one-line deterministic intent payload {actor, actor
@@ -6768,17 +6769,7 @@ def _claude_max_enhance_answer(
             try:
                 from app.integrations.regenold.reasoning_trace import record_note
                 from app.config import settings
-                # R139 — mirror the real selection in _anthropic_complete_for_graph_rag
-                # (this call passes stage_name="Stage 2 …" → is_stage2 True): complex →
-                # complex_model (Opus); standard Stage-2 → stage2_model (Opus); else base.
-                if complex_q and (settings.graph_rag.complex_model or ""):
-                    _model = settings.graph_rag.complex_model
-                else:
-                    _model = (
-                        getattr(settings.graph_rag, "stage2_model", "")
-                        or settings.graph_rag.model
-                        or "claude-opus-4-8"
-                    )
+                _model = "claude-opus-4-8"
                 record_note(f"stage2_model={_model} complex={complex_q}")
             except Exception: pass
             text_raw = _anthropic_complete_for_graph_rag(
@@ -7054,12 +7045,13 @@ def _two_stage_generate(
                 pass
 
     enhanced = _claude_max_enhance_answer(
-        question=question,
+        question=resolved_q,
         kg_answer=kg_answer,
         context=context,
         system_description=system_description,
         history_turn_count=history_turn_count,
         is_general_classification=_general_classification_verdict(resolved_q) is not None,
+        original_question=question,
     )
 
     if enhanced is None:
