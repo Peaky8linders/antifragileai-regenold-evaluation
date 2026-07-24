@@ -54,7 +54,91 @@ def _fmt_refs(refs: list[str]) -> str:
     return ", ".join(str(r) for r in refs) if refs else "_(none)_"
 
 
-def _section(title: str, note: str, rows: list[dict[str, Any]]) -> list[str]:
+_AXIS_LABEL = {
+    "answer_correctness": "Answer",
+    "reference_correctness": "References",
+    "citation_faithfulness": "Citation faithfulness",
+}
+
+
+def _load_judge(path: Path) -> dict[str, dict[str, Any]]:
+    """Map row-id -> per-axis verdicts from a ``grounded-<label>.json``."""
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
+    out: dict[str, dict[str, Any]] = {}
+    for row in data.get("rows") or []:
+        rid = str(row.get("id") or "")
+        if rid:
+            out[rid] = row.get("verdicts") or {}
+    return out
+
+
+def _judge_block(verdicts: dict[str, Any]) -> list[str]:
+    """Render the grounded-judge remarks for one answer."""
+    if not verdicts:
+        return []
+    cells: list[str] = []
+    for axis, label in _AXIS_LABEL.items():
+        v = verdicts.get(axis) or {}
+        verdict = str(v.get("verdict") or "?").lower()
+        mark = "PASS" if verdict == "pass" else ("FAIL" if verdict == "fail" else "?")
+        bits: list[str] = []
+        if axis == "reference_correctness":
+            if v.get("precision") is not None:
+                bits.append(f"P={v['precision']}")
+            if v.get("recall") is not None:
+                bits.append(f"R={v['recall']}")
+            if v.get("wrong"):
+                bits.append(f"wrong={v['wrong']}")
+            if v.get("missing"):
+                bits.append(f"missing={v['missing']}")
+        elif axis == "answer_correctness":
+            for k in ("incorrect", "unsupported", "missing"):
+                if v.get(k):
+                    bits.append(f"{k}={v[k]}")
+        else:
+            if v.get("mismatched"):
+                bits.append(f"mismatched={v['mismatched']}")
+        fm = str(v.get("failure_mode") or "").strip()
+        if fm and fm.lower() not in ("none", "n/a", "-"):
+            bits.append(fm)
+        detail = (" — " + "; ".join(bits)) if bits else ""
+        cells.append(f"{label}: **{mark}**{detail}")
+    return ["\n**Judge (grounded, Sonnet-5 vs verbatim Act text):**\n"] + [
+        f"\n- {c}\n" for c in cells
+    ]
+
+
+def _judge_rollup(rows: list[dict[str, Any]], judge: dict[str, dict[str, Any]]) -> str:
+    """One-line pass-rate rollup across the three grounded axes."""
+    if not judge:
+        return ""
+    parts: list[str] = []
+    for axis, label in _AXIS_LABEL.items():
+        seen = [judge.get(str(r.get("id"))) for r in rows]
+        vals = [
+            str(((v or {}).get(axis) or {}).get("verdict") or "").lower()
+            for v in seen
+            if v
+        ]
+        graded = [x for x in vals if x in ("pass", "fail")]
+        if graded:
+            rate = sum(1 for x in graded if x == "pass") / len(graded)
+            parts.append(f"{label} {rate:.0%} ({sum(1 for x in graded if x == 'pass')}/{len(graded)})")
+    return ("\n\n**Grounded-judge pass rates:** " + " · ".join(parts) + "\n") if parts else ""
+
+
+def _section(
+    title: str,
+    note: str,
+    rows: list[dict[str, Any]],
+    judge: dict[str, dict[str, Any]] | None = None,
+) -> list[str]:
+    judge = judge or {}
     out: list[str] = [f"\n---\n\n# {title}\n", f"{note}\n"]
     ok = [r for r in rows if not r.get("error")]
     errs = [r for r in rows if r.get("error")]
@@ -69,6 +153,7 @@ def _section(title: str, note: str, rows: list[dict[str, Any]]) -> list[str]:
             if ok
             else f"**0 answered** · {len(errs)} errored\n"
         )
+        out.append(_judge_rollup(ok, judge))
 
     for i, rec in enumerate(rows, 1):
         qid = rec.get("id", f"row_{i}")
@@ -92,6 +177,8 @@ def _section(title: str, note: str, rows: list[dict[str, Any]]) -> list[str]:
             conceded = pb.get("conceded")
             if conceded is not None:
                 out.append(f"\n**Conceded to pushback:** `{conceded}`\n")
+
+        out.extend(_judge_block(judge.get(str(qid)) or {}))
 
         meta = []
         if rec.get("latency_ms"):
@@ -119,12 +206,14 @@ def main() -> None:
     sources = [
         (
             _RESULTS / f"official-{args.label}-easy.ckpt.jsonl",
+            _RESULTS / f"grounded-{args.label}-easy.json",
             "Batch 1 — Regenold official set, EASY mode",
             "Each question asked standalone (single turn), exactly as the "
             "graded 2026-07-07 run posed it.",
         ),
         (
             _RESULTS / f"official-{args.label}-hard.ckpt.jsonl",
+            _RESULTS / f"grounded-{args.label}-hard.json",
             "Batch 2 — Regenold official set, HARD mode",
             "The same questions inside a growing multi-turn conversation, "
             "followed by the adversarial pushback turn "
@@ -133,6 +222,7 @@ def main() -> None:
         ),
         (
             _RESULTS / f"june-{args.label}.ckpt.jsonl",
+            _RESULTS / f"grounded-{args.label}-june.json",
             "Batch 3 — end-of-June set (2026-06-29 production audit + Antifragile review)",
             "The question set captured in `regenold_questions_and_live_answers.md`, "
             "re-asked against the current deployment so June and now can be diffed.",
@@ -141,22 +231,51 @@ def main() -> None:
 
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     doc: list[str] = [
-        f"# Regenold live batch answers — `{args.label}`\n",
+        f"# Regenold live batch answers + grounded-judge remarks — `{args.label}`\n",
         f"\nGenerated {stamp} · endpoint: {args.endpoint}\n",
-        "\nEvery question below was asked against the live wire and the answer "
-        "recorded verbatim, including its reference list.\n",
+        "\n## How to read this (fresh-session context)\n",
+        "\nEvery question below was asked against the **live production wire** and the "
+        "answer recorded verbatim with its reference list. This is a live "
+        "measurement, not a local bench run — the deterministic davidath bench "
+        "(`python -m evals.bench.runner`) is only the regression guard and cannot "
+        "see Stage-2 behaviour at all (it runs `provider=cli`).\n",
+        "\n**EASY vs HARD.** The Regenold graded run poses each question twice: once "
+        "standalone (easy), and once inside a growing multi-turn conversation "
+        "followed by an adversarial pushback turn (*\"I don't think this is correct. "
+        "Perhaps your answer contains hallucinations... Let's try again:\"*). The "
+        "graded hard answer is the **post-pushback** one, so `conceded=True` on any "
+        "row means the system abandoned a correct answer under pressure — the single "
+        "most important failure mode in that set.\n",
+        "\n**The judge.** `evals/judge/grounded.py` (Sonnet-5) scores each answer "
+        "against the **verbatim EU AI Act text** (`app.data.provision_text`), not "
+        "against a gold label set — so an incomplete gold list cannot penalise a "
+        "correct-but-broader citation, nor reward a wrong one the gold happens to "
+        "omit. Three independent axes, each pass/fail with a short `failure_mode`:\n",
+        "\n- **Answer** — is the substance correct per the Act's text?\n",
+        "- **References** — of the cited provisions, which genuinely GOVERN the "
+        "question (precision), and which governing provisions are MISSING (recall)?\n",
+        "- **Citation faithfulness** — does the prose actually describe each cited "
+        "provision (the cite-and-mismatch check)?\n",
+        "\nReproduce with:\n",
+        "\n```bash\npython -m evals.regenold.run_official_batch --label <lbl> --mode both "
+        "--endpoint <url> --api-key $REGENOLD_API_KEY\n"
+        "python -m evals.judge.grounded --sidecar evals/bench/results/official-<lbl>-easy.ckpt.jsonl "
+        "--label <lbl>-easy --provider wrapper\n"
+        "python -m evals.regenold.build_batch_report --label <lbl> --out <path.md>\n```\n",
     ]
 
     totals: list[str] = []
     all_sections: list[str] = []
-    for path, title, note in sources:
+    for path, judge_path, title, note in sources:
         rows = _read_ckpt(path)
         if not rows:
-            totals.append(f"- {title}: _no checkpoint found ({path.name})_")
+            totals.append(f"- {title}: _not run_")
             continue
+        judge = _load_judge(judge_path)
         ok = sum(1 for r in rows if not r.get("error"))
-        totals.append(f"- {title}: **{ok} answered** / {len(rows)} rows")
-        all_sections.extend(_section(title, note, rows))
+        jn = f" · judged {len(judge)}" if judge else " · _not judged_"
+        totals.append(f"- {title}: **{ok} answered** / {len(rows)} rows{jn}")
+        all_sections.extend(_section(title, note, rows, judge))
 
     doc.append("\n## Contents\n\n" + "\n".join(totals) + "\n")
     doc.extend(all_sections)
