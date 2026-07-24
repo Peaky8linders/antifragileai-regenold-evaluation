@@ -38,20 +38,14 @@ class GraphRAGConfig:
         # the codebase, so this property previously always returned its
         # hardcoded default regardless of the real provider configuration.
         from app.engines._graph_rag_impl import _stage2_provider_enabled
-
-        return _stage2_provider_enabled()
+        return env_enabled("P2P_GRAPH_RAG_ENABLE_STAGE2", "1")
 
     @property
     def stage2_polish_enabled(self) -> bool:
-        # R290 — canonical env name is P2P_GRAPH_RAG_ENABLE_STAGE2
-        # (was the invented "STAGE2_POLISH_ENABLED", which matched nothing,
-        # so an operator disabling Stage-2 would not have been honoured here).
         return env_enabled("P2P_GRAPH_RAG_ENABLE_STAGE2", "1")
 
     @property
     def stage2_simple_skip_enabled(self) -> bool:
-        # R290 — canonical env name is REGENOLD_STAGE2_SIMPLE_SKIP. Must stay
-        # default OFF: R129 measured the simple-skip regressing refs 0.75 -> 0.47.
         return env_enabled("REGENOLD_STAGE2_SIMPLE_SKIP", "0")
 
     @property
@@ -60,11 +54,6 @@ class GraphRAGConfig:
 
     @property
     def verify_verdict_enabled(self) -> bool:
-        # R290 — default corrected "1" -> "0". R285 explicitly REVERTED this
-        # flag to 0: it was flipped on with no A/B, which its own docstring
-        # forbids ("A/B before ship"). Leaving the shadow default at "1" here
-        # would silently re-apply the exact change R285 reverted the moment
-        # anything reads this config.
         return env_enabled("REGENOLD_VERIFY_VERDICT", "0")
 
     @property
@@ -77,4 +66,3 @@ class GraphRAGConfig:
 
 
 config = GraphRAGConfig()
-

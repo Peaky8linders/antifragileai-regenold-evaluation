@@ -43,7 +43,7 @@ for _k, _v in _impl.__dict__.items():
 
 
 class _GraphRAGModule(types.ModuleType):
-    """Module proxy that intercepts setattr/getattr to keep _graph_rag_impl in sync."""
+    """Module proxy that intercepts setattr/getattr/delattr to keep _graph_rag_impl in sync."""
 
     def __getattr__(self, name: str):
         try:
@@ -53,8 +53,16 @@ class _GraphRAGModule(types.ModuleType):
 
     def __setattr__(self, name: str, value: object):
         super().__setattr__(name, value)
-        if hasattr(_impl, name) or not name.startswith("__"):
+        if not name.startswith("__") and not name.startswith("_abc_"):
             _impl.__dict__[name] = value
+
+    def __delattr__(self, name: str):
+        found = name in self.__dict__ or name in _impl.__dict__
+        self.__dict__.pop(name, None)
+        _impl.__dict__.pop(name, None)
+        if not found:
+            raise AttributeError(f"module '{self.__name__}' has no attribute '{name}'")
 
 
 sys.modules[__name__].__class__ = _GraphRAGModule
+
