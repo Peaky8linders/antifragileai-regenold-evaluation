@@ -5764,7 +5764,6 @@ def partition_context_references(
         return set(), set()
 
     q_text = str(question or "")
-    q_lower = q_text.lower()
 
     target_art_nums: set[int] = set()
     target_annexes: set[str] = set()
@@ -5774,25 +5773,36 @@ def partition_context_references(
         from app.engines.entity_extractor import extract_entities
         ents = extract_entities(q_text)
         for item in (ents.get("role") or []) + (ents.get("roles") or []):
-            if isinstance(item, tuple) and len(item) >= 2:
-                target_art_nums.add(int(item[1]))
-            elif isinstance(item, dict) and item.get("art"):
-                target_art_nums.add(int(item["art"]))
+            try:
+                if isinstance(item, tuple) and len(item) >= 2:
+                    target_art_nums.add(int(item[1]))
+                elif isinstance(item, dict) and item.get("art"):
+                    target_art_nums.add(int(item["art"]))
+            except (ValueError, TypeError):
+                pass
         for item in (ents.get("concept") or []) + (ents.get("concepts") or []):
-            if isinstance(item, tuple) and len(item) >= 2:
-                target_art_nums.add(int(item[1]))
-            elif isinstance(item, dict) and item.get("art"):
-                target_art_nums.add(int(item["art"]))
+            try:
+                if isinstance(item, tuple) and len(item) >= 2:
+                    target_art_nums.add(int(item[1]))
+                elif isinstance(item, dict) and item.get("art"):
+                    target_art_nums.add(int(item["art"]))
+            except (ValueError, TypeError):
+                pass
     except Exception:
         pass
 
-    # 2. Explicit mentions in question
-    for m in re.finditer(r"\b(?:Art\.?|Article)\s+(\d{1,3})\b", q_text, re.IGNORECASE):
-        target_art_nums.add(int(m.group(1)))
-    for m in re.finditer(r"\bAnnex\s+([IVXLCDM]+)\b", q_text, re.IGNORECASE):
-        target_annexes.add(m.group(1).upper())
+    # 2. Explicit mentions in question (plural-aware: "Articles 9 and 10", "Annexes III and IV")
+    for m in re.finditer(r"\b(?:Articles?|Art\.?s?)\s+(\d{1,3}(?:\s*(?:,|and|or|&)\s*\d{1,3})*)", q_text, re.IGNORECASE):
+        for num_str in re.findall(r"\b\d{1,3}\b", m.group(1)):
+            try:
+                target_art_nums.add(int(num_str))
+            except ValueError:
+                pass
+    for m in re.finditer(r"\bAnnex(?:es)?\s+([IVXLCDM]+(?:\s*(?:,|and|or|&)\s*[IVXLCDM]+)*)", q_text, re.IGNORECASE):
+        for roman in re.findall(r"\b[IVXLCDM]+\b", m.group(1), re.IGNORECASE):
+            target_annexes.add(roman.upper())
 
-    # 3. Check if classification question (word-boundary safe regex so 'article 5' does not match 'article 50')
+    # 3. Check if classification question (word-boundary safe regex)
     is_classification = bool(
         re.search(
             r"\b(?:high-risk|high risk|prohibited|annex iii|annex i|article 5|article 6|risk tier|classification|gpai|systemic risk|is it high risk|is it prohibited)\b",
@@ -5806,11 +5816,17 @@ def partition_context_references(
         target_annexes.update({"I", "III"})
 
     def _extract_num_or_annex(ref_str: str) -> tuple[int | None, str | None]:
-        m_num = re.search(r"\b(\d{1,3})\b", ref_str)
-        num = int(m_num.group(1)) if m_num else None
-        m_ann = re.search(r"\bAnnex\s+([IVXLCDM]+)\b", ref_str, re.IGNORECASE)
-        ann = m_ann.group(1).upper() if m_ann else None
-        return num, ann
+        s = ref_str.strip()
+        m_ann = re.search(r"\bAnnex\s+([IVXLCDM]+)\b", s, re.IGNORECASE)
+        if m_ann:
+            return None, m_ann.group(1).upper()
+        m_art = re.search(r"\b(?:Art\.?|Article)\s+(\d{1,3})\b", s, re.IGNORECASE)
+        if m_art:
+            return int(m_art.group(1)), None
+        if s.isdigit():
+            return int(s), None
+        m_num = re.search(r"\b(\d{1,3})\b", s)
+        return (int(m_num.group(1)) if m_num else None), None
 
     operative: set[str] = set()
     background: set[str] = set()
@@ -5855,6 +5871,30 @@ def _build_context_references_block(
     op_refs, bg_refs = (set(), set())
     if question and user_ref_partition_enabled():
         op_refs, bg_refs = partition_context_references(context, question)
+
+    def _extract_num_or_annex(ref_str: str) -> tuple[int | None, str | None]:
+        s = str(ref_str or "").strip()
+        m_ann = re.search(r"\bAnnex\s+([IVXLCDM]+)\b", s, re.IGNORECASE)
+        if m_ann:
+            return None, m_ann.group(1).upper()
+        m_art = re.search(r"\b(?:Art\.?|Article)\s+(\d{1,3})\b", s, re.IGNORECASE)
+        if m_art:
+            return int(m_art.group(1)), None
+        if s.isdigit():
+            return int(s), None
+        m_num = re.search(r"\b(\d{1,3})\b", s)
+        return (int(m_num.group(1)) if m_num else None), None
+
+    op_nums = {num for num, ann in (_extract_num_or_annex(r) for r in op_refs) if num is not None}
+    op_annexes = {ann for num, ann in (_extract_num_or_annex(r) for r in op_refs) if ann is not None}
+
+    def _is_operative_ref(ref_val: str) -> bool:
+        num, ann = _extract_num_or_annex(ref_val)
+        if num is not None and num in op_nums:
+            return True
+        if ann is not None and ann in op_annexes:
+            return True
+        return False
 
     if not bg_refs:
         # Standard unpartitioned rendering
@@ -5927,13 +5967,9 @@ def _build_context_references_block(
     op_parts: list[str] = []
     bg_parts: list[str] = []
 
-    def _is_op(art_val: str) -> bool:
-        a = str(art_val or "").strip()
-        return a in op_refs or f"Article {a}" in op_refs or f"Art. {a}" in op_refs
-
     all_obs = (getattr(context, "obligations", None) or []) + (getattr(context, "article_info", None) or [])
-    op_obs = [o for o in all_obs if _is_op(o.get("article", ""))]
-    bg_obs = [o for o in all_obs if not _is_op(o.get("article", ""))]
+    op_obs = [o for o in all_obs if _is_operative_ref(o.get("article", ""))]
+    bg_obs = [o for o in all_obs if not _is_operative_ref(o.get("article", ""))]
 
     if op_obs:
         op_parts.append(
@@ -5952,14 +5988,37 @@ def _build_context_references_block(
             )
         )
 
+    # Per-reference verbatim grounding text partitioning
     if include_grounding and _grounding_text_enabled():
         try:
             g_texts = _render_grounding_text(context)
-            for gt in g_texts:
-                if any(f"[{ref}]" in gt for ref in bg_refs):
-                    bg_parts.append(gt)
-                else:
-                    op_parts.append(gt)
+            for g_block in g_texts:
+                lines = g_block.split("\n")
+                op_lines: list[str] = []
+                bg_lines: list[str] = []
+                header = ""
+
+                for line in lines:
+                    if line.startswith(_GROUNDING_SECTION_MARKER) or "REFERENCED ANNEXES" in line:
+                        header = line
+                        continue
+                    m_item = re.search(r"^\s*-\s*\[([^\]]+)\]", line)
+                    if m_item:
+                        ref_item = m_item.group(1)
+                        if _is_operative_ref(ref_item):
+                            op_lines.append(line)
+                        else:
+                            bg_lines.append(line)
+                    elif line.strip():
+                        op_lines.append(line)
+
+                if op_lines:
+                    if header:
+                        op_parts.append(header + "\n" + "\n".join(op_lines))
+                    else:
+                        op_parts.append("\n".join(op_lines))
+                if bg_lines:
+                    bg_parts.append("\n".join(bg_lines))
         except Exception:  # noqa: BLE001
             pass
 
