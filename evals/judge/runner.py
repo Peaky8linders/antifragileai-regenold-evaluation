@@ -235,8 +235,8 @@ _groq_last_call_time = 0.0
 # 4 axes × 300 ≈ 1,200 tokens/row, so the 70B model is exhausted in ~5 rows.
 # The 8B instant model gives 20k TPM → ~16 rows before a 1-min window resets.
 # With a 4-second inter-call sleep: 15 calls/min × 300 tok = 4,500 TPM < 20k. ✓
-_GROQ_DEFAULT_MODEL = "llama-3.1-8b-instant"
-_GROQ_INTER_REQUEST_SLEEP = 2.0  # seconds — 30 RPM × 300 tok ≈ 9,000 TPM
+_GROQ_DEFAULT_MODEL = "llama-3.3-70b-versatile"
+_GROQ_INTER_REQUEST_SLEEP = 4.0  # seconds — 15 RPM safe headroom under 30 RPM cap
 
 def _rate_limit_groq() -> None:
     global _groq_last_call_time
@@ -283,7 +283,7 @@ def _call_judge_groq(prompt: str, timeout_s: float = 30.0) -> dict[str, Any]:
         system=_JUDGE_SYSTEM,
         user=prompt,
         model=model,
-        max_tokens=400,
+        max_tokens=800,
         temperature=0.0,
         timeout_seconds=timeout_s,
     )
@@ -295,6 +295,65 @@ def _call_judge_groq(prompt: str, timeout_s: float = 30.0) -> dict[str, Any]:
         return {"judge_error": "groq_returned_none"}
     if resp.error:
         return {"judge_error": f"groq_error: {resp.error[:160]}"}
+    return _parse_judge_json(resp.text or "")
+
+
+_gemini_lock = threading.Lock()
+_gemini_last_call_time = 0.0
+
+def _rate_limit_gemini() -> None:
+    global _gemini_last_call_time
+    with _gemini_lock:
+        now = time.monotonic()
+        elapsed = now - _gemini_last_call_time
+        delay = 0.5 - elapsed
+        if delay > 0:
+            time.sleep(delay)
+        _gemini_last_call_time = time.monotonic()
+
+
+def _call_judge_gemini(prompt: str, timeout_s: float = 30.0) -> dict[str, Any]:
+    """Send the judge prompt through Google Gemini 2.5 Flash via Open AI compatibility endpoint."""
+    try:
+        from app.llm.openai_wrapper_provider import (  # noqa: PLC0415
+            OpenAIWrapperRequest,
+            _OpenAIWrapperProvider,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return {"judge_error": f"wrapper_unavailable: {exc}"}
+
+    gemini_api_key = os.getenv("GEMINI_API_KEY", "").strip()
+    if not gemini_api_key:
+        return {"judge_error": "no_api_key: GEMINI_API_KEY environment variable is not set."}
+
+    _rate_limit_gemini()
+
+    try:
+        provider = _OpenAIWrapperProvider(
+            base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+            api_key=gemini_api_key,
+            timeout=timeout_s,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return {"judge_error": f"gemini_init_failed: {exc}"}
+
+    model = os.environ.get("GEMINI_JUDGE_MODEL", "gemini-2.5-flash")
+    req = OpenAIWrapperRequest(
+        system=_JUDGE_SYSTEM,
+        user=prompt,
+        model=model,
+        max_tokens=1000,
+        temperature=0.0,
+        timeout_seconds=timeout_s,
+    )
+    try:
+        resp = provider.complete(req)
+    except Exception as exc:  # noqa: BLE001
+        return {"judge_error": f"call_failed: {exc}"}
+    if resp is None:
+        return {"judge_error": "gemini_returned_none"}
+    if resp.error:
+        return {"judge_error": f"gemini_error: {resp.error[:160]}"}
     return _parse_judge_json(resp.text or "")
 
 
@@ -488,6 +547,8 @@ def _resolve_caller(provider: str, timeout_s: float = 30.0) -> Callable[[str], d
         return lambda p: _call_judge_anthropic(p, timeout_s=timeout_s)
     if provider == "groq":
         return lambda p: _call_judge_groq(p, timeout_s=timeout_s)
+    if provider == "gemini":
+        return lambda p: _call_judge_gemini(p, timeout_s=timeout_s)
     # "wrapper" or anything else falls back to the wrapper (historical
     # default) — runner_v2 / bench-runner sidecars produced pre-R66-C
     # all assume the wrapper path is active.

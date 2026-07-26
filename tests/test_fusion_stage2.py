@@ -62,9 +62,24 @@ def test_fusion_enabled_explicit_on(monkeypatch):
 
 # ── judge model ─────────────────────────────────────────────────────────────────
 
-def test_default_judge_is_sonnet(monkeypatch):
+def test_default_judge_is_the_opus_seat(monkeypatch):
+    """R289 — the judge is Opus BY DESIGN, and must not be a panel member.
+
+    Renamed from ``test_default_judge_is_sonnet`` (R297): the assertion had gone
+    stale. R123 made the judge Sonnet 4.6; 8145be2 then swapped every seat to
+    Opus, which silently put THE JUDGE ON THE PANEL — the self-evaluation bias
+    the panel exists to avoid. R289 (029dcb0) fixed that by restoring the panel's
+    sonnet seat while deliberately KEEPING the Opus judge (see the comment above
+    ``_PANEL_SONNET_MODEL`` in ``app/engines/fusion.py``). The test kept asserting
+    the pre-8145be2 value, so it failed on ``main`` for two rounds and guarded
+    nothing.
+
+    The load-bearing invariant is not "which model" but "the judge is NOT a panel
+    seat" — assert that, so a future blanket model swap fails loudly again.
+    """
     monkeypatch.delenv("REGENOLD_FUSION_JUDGE_MODEL", raising=False)
-    assert fusion._judge_model() == "claude-sonnet-4-6"
+    assert fusion._judge_model() == "claude-opus-5"
+    assert fusion._judge_model() != fusion._PANEL_SONNET_MODEL
 
 
 def test_judge_model_env_override(monkeypatch):
@@ -196,18 +211,53 @@ class _FakeProvider:
         return fn(req)
 
 
-def _sonnet_script(*, panel_text: str, judge_resp: OpenAIWrapperResponse):
-    """Sonnet (``claude-sonnet-4-6``) serves BOTH the panel draft AND the judge.
+def _model_ids() -> dict[str, str]:
+    """Live model ids, read from the module's OWN registry — never hardcoded.
 
-    The judge call carries the ``"FUSION JUDGE"`` marker in its user message;
-    the panel-draft call does not.
+    R297 — the fixtures below used to hardcode literals (``"claude-sonnet-4-6"``
+    for the judge seat, ``"qwen/qwen3.6-27b"`` for groq). Both went stale:
+    R289 moved the judge to Opus and the groq default is now
+    ``openai/gpt-oss-120b``. Because ``_FakeProvider`` answers an unknown model
+    with ``no_script``, the judge call failed on every fusion test — which made
+    four of them fail outright AND made three others (``judge_error`` /
+    ``judge_empty`` / ``judge_truncated``) pass VACUOUSLY: they assert ``None``
+    and got ``None`` from the missing script rather than from the error path
+    they were written to exercise. Resolving the ids from the registry means a
+    future model bump can no longer silently hollow these tests out.
+    """
+    reg = fusion._panel_registry()
+    return {
+        "sonnet": reg["sonnet"][0],
+        "opus": reg["opus"][0],
+        "groq": reg["groq"][0],
+        "mistral": reg["mistral"][0],
+        "judge": fusion._judge_model(),
+    }
+
+
+def _wrapper_script(*, panel_text: str, judge_resp: OpenAIWrapperResponse) -> dict:
+    """Script the WRAPPER transport for every seat it serves.
+
+    The wrapper backs the sonnet panel seat, the opus panel seat (complex
+    questions swap sonnet -> opus) and the judge. One handler serves all three:
+    the judge call is the one carrying the ``"FUSION JUDGE"`` marker in its user
+    message; a panel-draft call is not.
     """
     def _fn(req):
         if "FUSION JUDGE" in (req.user or ""):
             return judge_resp
         return OpenAIWrapperResponse(text=panel_text)
 
-    return _fn
+    ids = _model_ids()
+    return {ids["sonnet"]: _fn, ids["opus"]: _fn, ids["judge"]: _fn}
+
+
+def _fast_script(*, groq_text: str, mistral_text: str) -> tuple[dict, dict]:
+    """Scripts for the two fast serverless transports, keyed off the registry."""
+    ids = _model_ids()
+    groq = {ids["groq"]: lambda r: OpenAIWrapperResponse(text=groq_text)}
+    mistral = {ids["mistral"]: lambda r: OpenAIWrapperResponse(text=mistral_text)}
+    return groq, mistral
 
 
 def _wire_three_transports(monkeypatch, *, wrapper, groq, mistral):
@@ -226,26 +276,23 @@ def _wire_three_transports(monkeypatch, *, wrapper, groq, mistral):
 def test_fusion_complete_happy_path(monkeypatch):
     # Sonnet (wrapper) is BOTH a panel member AND the judge — keyed on the
     # FUSION JUDGE marker so the judge's SELECTED final answer reaches the wire.
-    wrapper = _FakeProvider({
-        "claude-sonnet-4-6": _sonnet_script(
-            panel_text="Article 50 requires the deployer to inform exposed persons.",
-            judge_resp=OpenAIWrapperResponse(
-                text="Article 50 requires the deployer to inform exposed persons "
-                     "that they are interacting with an AI system."
-            ),
+    wrapper = _FakeProvider(_wrapper_script(
+        panel_text="Article 50 requires the deployer to inform exposed persons.",
+        judge_resp=OpenAIWrapperResponse(
+            text="Article 50 requires the deployer to inform exposed persons "
+                 "that they are interacting with an AI system."
         ),
-    })
-    groq = _FakeProvider({
-        "qwen/qwen3.6-27b": lambda r: OpenAIWrapperResponse(
-            text="Deployers must inform people under Article 50."
-        )
-    })
-    mistral = _FakeProvider({
-        "mistral-large-latest": lambda r: OpenAIWrapperResponse(
-            text="Article 50 transparency applies to the deployer."
-        )
-    })
-    _wire_three_transports(monkeypatch, wrapper=wrapper, groq=groq, mistral=mistral)
+    ))
+    groq_s, mistral_s = _fast_script(
+        groq_text="Deployers must inform people under Article 50.",
+        mistral_text="Article 50 transparency applies to the deployer.",
+    )
+    _wire_three_transports(
+        monkeypatch,
+        wrapper=wrapper,
+        groq=_FakeProvider(groq_s),
+        mistral=_FakeProvider(mistral_s),
+    )
 
     out = fusion.fusion_complete(
         system="SYS", user="QUESTION: x\n\nEU AI ACT REFERENCES:\n- Article 50",
@@ -276,50 +323,53 @@ def test_fusion_complete_too_few_drafts_returns_none(monkeypatch):
 
 
 def test_fusion_complete_judge_error_returns_none(monkeypatch):
-    wrapper = _FakeProvider({
-        "claude-sonnet-4-6": _sonnet_script(
-            panel_text="draft A",
-            judge_resp=OpenAIWrapperResponse(error="api_status_500"),
-        ),
-    })
-    ok = _FakeProvider({
-        "qwen/qwen3.6-27b": lambda r: OpenAIWrapperResponse(text="draft B"),
-        "mistral-large-latest": lambda r: OpenAIWrapperResponse(text="draft C"),
-    })
-    _wire_three_transports(monkeypatch, wrapper=wrapper, groq=ok, mistral=ok)
+    wrapper = _FakeProvider(_wrapper_script(
+        panel_text="draft A",
+        judge_resp=OpenAIWrapperResponse(error="api_status_500"),
+    ))
+    groq_s, mistral_s = _fast_script(groq_text="draft B", mistral_text="draft C")
+    _wire_three_transports(
+        monkeypatch,
+        wrapper=wrapper,
+        groq=_FakeProvider(groq_s),
+        mistral=_FakeProvider(mistral_s),
+    )
     out = fusion.fusion_complete(system="SYS", user="QUESTION: x", max_tokens=512)
     assert out is None  # judge failed -> fall through to single-provider path
 
 
 def test_fusion_complete_judge_empty_returns_none(monkeypatch):
-    wrapper = _FakeProvider({
-        "claude-sonnet-4-6": _sonnet_script(
-            panel_text="draft A",
-            judge_resp=OpenAIWrapperResponse(text="   "),
-        ),
-    })
-    ok = _FakeProvider({
-        "qwen/qwen3.6-27b": lambda r: OpenAIWrapperResponse(text="draft B"),
-        "mistral-large-latest": lambda r: OpenAIWrapperResponse(text="draft C"),
-    })
-    _wire_three_transports(monkeypatch, wrapper=wrapper, groq=ok, mistral=ok)
+    wrapper = _FakeProvider(_wrapper_script(
+        panel_text="draft A",
+        judge_resp=OpenAIWrapperResponse(text="   "),
+    ))
+    groq_s, mistral_s = _fast_script(groq_text="draft B", mistral_text="draft C")
+    _wire_three_transports(
+        monkeypatch,
+        wrapper=wrapper,
+        groq=_FakeProvider(groq_s),
+        mistral=_FakeProvider(mistral_s),
+    )
     assert fusion.fusion_complete(system="SYS", user="Q", max_tokens=512) is None
 
 
 def test_fusion_complete_judge_truncated_returns_none(monkeypatch):
-    wrapper = _FakeProvider({
-        "claude-sonnet-4-6": _sonnet_script(
-            panel_text="draft A",
-            judge_resp=OpenAIWrapperResponse(
-                text="Article 50 requires", finish_reason="length"
-            ),
+    wrapper = _FakeProvider(_wrapper_script(
+        panel_text="draft A",
+        judge_resp=OpenAIWrapperResponse(
+            text="Article 50 requires", finish_reason="length"
         ),
-    })
-    ok = _FakeProvider({
-        "qwen/qwen3.6-27b": lambda r: OpenAIWrapperResponse(text="draft B"),
-        "mistral-large-latest": lambda r: OpenAIWrapperResponse(text="draft C"),
-    })
-    _wire_three_transports(monkeypatch, wrapper=wrapper, groq=ok, mistral=ok)
+    ))
+    groq_s, mistral_s = _fast_script(groq_text="draft B", mistral_text="draft C")
+    _wire_three_transports(
+        monkeypatch,
+        wrapper=wrapper,
+        groq=_FakeProvider(groq_s),
+        mistral=_FakeProvider(mistral_s),
+    )
+    # NOTE the truncation stub in _wire_three_transports forces _looks_truncated
+    # False, so this asserts the finish_reason="length" guard specifically.
+    monkeypatch.setattr(fusion, "_looks_truncated", lambda _t: True)
     assert fusion.fusion_complete(system="SYS", user="Q", max_tokens=512) is None
 
 
@@ -344,24 +394,28 @@ def test_fusion_complete_complex_adds_opus_panel_member(monkeypatch):
             return OpenAIWrapperResponse(text="Article 6 classifies the system as high-risk.")
         return OpenAIWrapperResponse(text=f"draft from {req.model}")
 
-    wrapper = _FakeProvider({
-        "claude-sonnet-4-6": _track,
-        "claude-opus-5": _track,
-    })
-    groq = _FakeProvider({
-        "qwen/qwen3.6-27b": lambda r: OpenAIWrapperResponse(text="draft groq"),
-    })
-    mistral = _FakeProvider({
-        "mistral-large-latest": lambda r: OpenAIWrapperResponse(text="draft mistral"),
-    })
-    _wire_three_transports(monkeypatch, wrapper=wrapper, groq=groq, mistral=mistral)
+    ids = _model_ids()
+    wrapper = _FakeProvider({ids["sonnet"]: _track, ids["opus"]: _track, ids["judge"]: _track})
+    groq_s, mistral_s = _fast_script(groq_text="draft groq", mistral_text="draft mistral")
+    _wire_three_transports(
+        monkeypatch,
+        wrapper=wrapper,
+        groq=_FakeProvider(groq_s),
+        mistral=_FakeProvider(mistral_s),
+    )
 
     out = fusion.fusion_complete(
         system="SYS", user="QUESTION: x", max_tokens=512, complex_question=True
     )
     assert out is not None
-    assert "claude-opus-5" in seen_models  # opus answered as a panel member
-    assert "claude-sonnet-4-6" in seen_models  # sonnet judged (FUSION JUDGE call)
+    # R124 swap-not-add: on a complex question the WRAPPER seat is swapped
+    # sonnet -> opus, so exactly ONE wrapper-bound panel member runs (never two
+    # concurrent calls down the single slow Claude-Max tunnel).
+    assert ids["opus"] in seen_models  # opus answered as the wrapper panel seat
+    assert ids["sonnet"] not in seen_models  # ...and sonnet was swapped OUT, not added to
+    # R289 — the judge is its own seat. Assert it ran, by its registry id rather
+    # than a literal, so a future model bump cannot hollow this out again.
+    assert ids["judge"] in seen_models
 
 
 # ── cache-key invalidation ──────────────────────────────────────────────────────
@@ -440,17 +494,16 @@ def test_fusion_complete_gate_complex_skips_simple(monkeypatch):
 def test_fusion_complete_gate_complex_fires_complex(monkeypatch):
     """Default gate=complex: a COMPLEX question DOES fuse."""
     monkeypatch.setenv("REGENOLD_FUSION_GATE", "complex")
-    wrapper = _FakeProvider({
-        "claude-sonnet-4-6": _sonnet_script(
-            panel_text="draft", judge_resp=OpenAIWrapperResponse(text="Final selected answer."),
-        ),
-        "claude-opus-5": lambda r: OpenAIWrapperResponse(text="opus draft"),
-    })
-    ok = _FakeProvider({
-        "qwen/qwen3.6-27b": lambda r: OpenAIWrapperResponse(text="groq draft"),
-        "mistral-large-latest": lambda r: OpenAIWrapperResponse(text="mistral draft"),
-    })
-    _wire_three_transports(monkeypatch, wrapper=wrapper, groq=ok, mistral=ok)
+    wrapper = _FakeProvider(_wrapper_script(
+        panel_text="draft", judge_resp=OpenAIWrapperResponse(text="Final selected answer."),
+    ))
+    groq_s, mistral_s = _fast_script(groq_text="groq draft", mistral_text="mistral draft")
+    _wire_three_transports(
+        monkeypatch,
+        wrapper=wrapper,
+        groq=_FakeProvider(groq_s),
+        mistral=_FakeProvider(mistral_s),
+    )
     out = fusion.fusion_complete(
         system="SYS", user="QUESTION: x", max_tokens=512, complex_question=True
     )
@@ -460,16 +513,16 @@ def test_fusion_complete_gate_complex_fires_complex(monkeypatch):
 def test_fusion_complete_gate_all_fires_on_simple(monkeypatch):
     """gate=all (R123): fuse even a simple question."""
     monkeypatch.setenv("REGENOLD_FUSION_GATE", "all")
-    wrapper = _FakeProvider({
-        "claude-sonnet-4-6": _sonnet_script(
-            panel_text="draft", judge_resp=OpenAIWrapperResponse(text="Selected."),
-        ),
-    })
-    ok = _FakeProvider({
-        "qwen/qwen3.6-27b": lambda r: OpenAIWrapperResponse(text="b"),
-        "mistral-large-latest": lambda r: OpenAIWrapperResponse(text="c"),
-    })
-    _wire_three_transports(monkeypatch, wrapper=wrapper, groq=ok, mistral=ok)
+    wrapper = _FakeProvider(_wrapper_script(
+        panel_text="draft", judge_resp=OpenAIWrapperResponse(text="Selected."),
+    ))
+    groq_s, mistral_s = _fast_script(groq_text="b", mistral_text="c")
+    _wire_three_transports(
+        monkeypatch,
+        wrapper=wrapper,
+        groq=_FakeProvider(groq_s),
+        mistral=_FakeProvider(mistral_s),
+    )
     out = fusion.fusion_complete(
         system="SYS", user="QUESTION: x", max_tokens=512, complex_question=False
     )
@@ -518,11 +571,9 @@ def test_panel_members_get_per_transport_timeout(monkeypatch):
         return label, f"draft from {label}", ""
 
     monkeypatch.setattr(fusion, "_one_candidate", _capture)
-    wrapper = _FakeProvider({
-        "claude-sonnet-4-6": _sonnet_script(
-            panel_text="x", judge_resp=OpenAIWrapperResponse(text="final"),
-        ),
-    })
+    wrapper = _FakeProvider(_wrapper_script(
+        panel_text="x", judge_resp=OpenAIWrapperResponse(text="final"),
+    ))
     _wire_three_transports(monkeypatch, wrapper=wrapper, groq=wrapper, mistral=wrapper)
     fusion.fusion_complete(system="SYS", user="Q", max_tokens=512, complex_question=False)
     assert seen.get("wrapper") == 60.0
@@ -595,16 +646,17 @@ class TestDeterministicJudge:
                 text="Article 50 requires the deployer to inform exposed persons."
             )
 
-        wrapper = _FakeProvider({"claude-sonnet-4-6": _sonnet_panel_only})
-        ok = _FakeProvider({
-            "qwen/qwen3.6-27b": lambda r: OpenAIWrapperResponse(
-                text="Groq draft about Article 50 transparency here."
-            ),
-            "mistral-large-latest": lambda r: OpenAIWrapperResponse(
-                text="Mistral draft about Article 50 transparency here."
-            ),
-        })
-        _wire_three_transports(monkeypatch, wrapper=wrapper, groq=ok, mistral=ok)
+        wrapper = _FakeProvider({_model_ids()["sonnet"]: _sonnet_panel_only})
+        groq_s, mistral_s = _fast_script(
+            groq_text="Groq draft about Article 50 transparency here.",
+            mistral_text="Mistral draft about Article 50 transparency here.",
+        )
+        _wire_three_transports(
+            monkeypatch,
+            wrapper=wrapper,
+            groq=_FakeProvider(groq_s),
+            mistral=_FakeProvider(mistral_s),
+        )
         out = fusion.fusion_complete(
             system="SYS",
             user="QUESTION: x\n\nEU AI ACT REFERENCES:\n- Article 50",
@@ -655,18 +707,17 @@ class TestR131_3FusionThinking:
                 model="claude-opus-5",
             )
 
-        wrapper = _FakeProvider({"claude-opus-5": _opus_panel})
-        groq = _FakeProvider({
-            "qwen/qwen3.6-27b": lambda r: OpenAIWrapperResponse(
-                text="GPAI is systemic under Article 51."
-            )
-        })
-        mistral = _FakeProvider({
-            "mistral-large-latest": lambda r: OpenAIWrapperResponse(
-                text="Article 51 governs systemic GPAI."
-            )
-        })
-        _wire_three_transports(monkeypatch, wrapper=wrapper, groq=groq, mistral=mistral)
+        wrapper = _FakeProvider({_model_ids()["opus"]: _opus_panel})
+        groq_s, mistral_s = _fast_script(
+            groq_text="GPAI is systemic under Article 51.",
+            mistral_text="Article 51 governs systemic GPAI.",
+        )
+        _wire_three_transports(
+            monkeypatch,
+            wrapper=wrapper,
+            groq=_FakeProvider(groq_s),
+            mistral=_FakeProvider(mistral_s),
+        )
 
         trace = rt.activate()
         try:
@@ -702,14 +753,14 @@ class TestR131_3FusionThinking:
             seen_headers.update(req.extra_headers or {})
             return OpenAIWrapperResponse(text="Art 51 systemic GPAI.", model="claude-opus-5")
 
-        wrapper = _FakeProvider({"claude-opus-5": _opus_panel})
-        groq = _FakeProvider({
-            "qwen/qwen3.6-27b": lambda r: OpenAIWrapperResponse(text="Art 51.")
-        })
-        mistral = _FakeProvider({
-            "mistral-large-latest": lambda r: OpenAIWrapperResponse(text="Art 51.")
-        })
-        _wire_three_transports(monkeypatch, wrapper=wrapper, groq=groq, mistral=mistral)
+        wrapper = _FakeProvider({_model_ids()["opus"]: _opus_panel})
+        groq_s, mistral_s = _fast_script(groq_text="Art 51.", mistral_text="Art 51.")
+        _wire_three_transports(
+            monkeypatch,
+            wrapper=wrapper,
+            groq=_FakeProvider(groq_s),
+            mistral=_FakeProvider(mistral_s),
+        )
 
         trace = rt.activate()
         try:

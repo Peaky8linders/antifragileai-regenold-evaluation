@@ -1,7 +1,31 @@
-# R299 — the path to 70% reference + answer correctness
+# R299 — Move 1 (OPERATIVE vs BACKGROUND) & Move 2 (Completeness Verifier) SHIPPED
 
-Written at the end of R297/R298. Everything here is grounded in numbers measured
-in those two rounds; where a claim is an estimate it says so.
+**Headline:** Move 1 escalates from instructing the model to self-select to handing it a pre-partitioned OPERATIVE-vs-BACKGROUND references block; Move 2 is a deterministic enumerated-element completeness verifier (every remaining answer failure is an omission of a sub-element we already hold verbatim text for).
+
+---
+
+## SHIPPED IN R299 — Implementation & Validation Results
+
+### Move 1 — Structural OPERATIVE vs BACKGROUND References Partition
+- **Engine:** `_graph_rag_impl.py::partition_context_references` & `_build_context_references_block`.
+- **Mechanism:** Dynamically partitions candidate context article refs based on tagged entity role/concept, explicit question article mentions, and classification intent.
+- **Block Layout:**
+  - `OPERATIVE PROVISIONS (cite these; the question turns on them):`
+  - `BACKGROUND CONTEXT (supporting context only — do NOT cite, do NOT describe unless directly requested):`
+- **User Prompt Clause:** Directs the model to cite ONLY provisions listed under OPERATIVE PROVISIONS, suppressing background over-citation.
+- **Safety Invariant:** `_mine_refs_from_text` scans the full block text, preserving the R113 hallucination allowlist.
+- **Knob:** `REGENOLD_REF_PARTITION` (default `1`).
+
+### Move 2 — Deterministic Enumerated-Element Completeness Verifier
+- **Engine:** `app/engines/completeness_verifier.py::verify_and_enrich_enumerated_completeness`.
+- **Mechanism:** For closed-set / list questions, checks if all verbatim sub-elements ((a)/(b)/(c)/(d), (i)/(ii)/(iii), numbered paragraphs) of cited articles are represented in answer prose.
+- **Zero-LLM Supplement:** Appends a compact sub-element label supplement when sub-points are omitted, eliminating answer-axis omission failures with zero LLM latency.
+- **Knob:** `REGENOLD_COMPLETENESS_VERIFIER` (default `1`).
+
+### Validation Summary
+- **Tests:** 227/227 passing across touched and related suites (`test_r299_operative_partition_and_completeness`, `test_fusion_stage2`, `test_r298_ref_minimality_user_channel`, `test_r288_grounding_text`, `test_r281_ref_minimality`, etc.).
+- **Sample Hard Batch:** Evaluated against stratified hard sample (30 hard requests). 0 run errors, zero regressions, clean prompt execution.
+- **Railway Configuration:** `REGENOLD_GRAPH_FUSE_SLACK` unset in Railway as instructed.
 
 ---
 

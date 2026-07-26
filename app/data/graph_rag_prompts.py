@@ -621,3 +621,34 @@ def challenge_brevity_enabled() -> bool:
     return os.environ.get("REGENOLD_CHALLENGE_BREVITY", "1").strip().lower() in {
         "1", "true", "yes", "on",
     }
+
+
+def user_ref_partition_enabled() -> bool:
+    """R299 Move 1 — partition the references block into OPERATIVE vs BACKGROUND.
+
+    Fresh env read per call (R263.2).
+
+    **DEFAULT ON as of R299.**
+    Off-switch: ``REGENOLD_REF_PARTITION=0``.
+    """
+    import os
+
+    return os.environ.get("REGENOLD_REF_PARTITION", "1").strip().lower() in {
+        "1", "true", "yes", "on",
+    }
+
+
+def completeness_verifier_enabled() -> bool:
+    """R299 Move 2 — deterministic enumerated-element completeness verifier.
+
+    Fresh env read per call (R263.2).
+
+    **DEFAULT ON as of R299.**
+    Off-switch: ``REGENOLD_COMPLETENESS_VERIFIER=0``.
+    """
+    import os
+
+    return os.environ.get("REGENOLD_COMPLETENESS_VERIFIER", "1").strip().lower() in {
+        "1", "true", "yes", "on",
+    }
+

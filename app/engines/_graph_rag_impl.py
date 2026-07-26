@@ -5747,101 +5747,235 @@ def _render_grounding_text(context: GraphContext) -> list[str]:
     return parts
 
 
+def partition_context_references(
+    context: GraphContext | None, question: str
+) -> tuple[set[str], set[str]]:
+    """R299 Move 1 — partition context article refs into (operative_refs, background_refs).
+
+    Operative provisions are those the question specifically turns on:
+    - Matches a tagged ROLE (Art. 23 importer, Art. 16 provider, Art. 26 deployer, etc.)
+    - Matches a tagged CONCEPT (Art. 11 technical doc, Art. 27 FRIA, Art. 43 conformity, etc.)
+    - Explicitly mentioned in the question (e.g. "Article 50", "Annex IV")
+    - For classification questions: Art 5, Art 6, Art 51, Art 52, Annex I, Annex III are operative.
+    - For non-classification questions: classification apparatus (Art 6, Annex III) and general framework (Arts 9-15) are background UNLESS matching tagged role/concept or explicitly asked.
+    """
+    all_refs = set(_context_article_refs(context))
+    if not all_refs:
+        return set(), set()
+
+    q_text = str(question or "")
+    q_lower = q_text.lower()
+
+    target_art_nums: set[int] = set()
+    target_annexes: set[str] = set()
+
+    # 1. Tagged entities (roles / concepts)
+    try:
+        from app.engines.entity_extractor import extract_entities
+        ents = extract_entities(q_text)
+        for item in (ents.get("role") or []) + (ents.get("roles") or []):
+            if isinstance(item, tuple) and len(item) >= 2:
+                target_art_nums.add(int(item[1]))
+            elif isinstance(item, dict) and item.get("art"):
+                target_art_nums.add(int(item["art"]))
+        for item in (ents.get("concept") or []) + (ents.get("concepts") or []):
+            if isinstance(item, tuple) and len(item) >= 2:
+                target_art_nums.add(int(item[1]))
+            elif isinstance(item, dict) and item.get("art"):
+                target_art_nums.add(int(item["art"]))
+    except Exception:
+        pass
+
+    # 2. Explicit mentions in question
+    for m in re.finditer(r"\b(?:Art\.?|Article)\s+(\d{1,3})\b", q_text, re.IGNORECASE):
+        target_art_nums.add(int(m.group(1)))
+    for m in re.finditer(r"\bAnnex\s+([IVXLCDM]+)\b", q_text, re.IGNORECASE):
+        target_annexes.add(m.group(1).upper())
+
+    # 3. Check if classification question (word-boundary safe regex so 'article 5' does not match 'article 50')
+    is_classification = bool(
+        re.search(
+            r"\b(?:high-risk|high risk|prohibited|annex iii|annex i|article 5|article 6|risk tier|classification|gpai|systemic risk|is it high risk|is it prohibited)\b",
+            q_text,
+            re.IGNORECASE,
+        )
+    )
+
+    if is_classification:
+        target_art_nums.update({5, 6, 51, 52})
+        target_annexes.update({"I", "III"})
+
+    def _extract_num_or_annex(ref_str: str) -> tuple[int | None, str | None]:
+        m_num = re.search(r"\b(\d{1,3})\b", ref_str)
+        num = int(m_num.group(1)) if m_num else None
+        m_ann = re.search(r"\bAnnex\s+([IVXLCDM]+)\b", ref_str, re.IGNORECASE)
+        ann = m_ann.group(1).upper() if m_ann else None
+        return num, ann
+
+    operative: set[str] = set()
+    background: set[str] = set()
+
+    for ref in all_refs:
+        ref_norm = ref.strip()
+        num, ann = _extract_num_or_annex(ref_norm)
+
+        is_op = False
+        if num is not None and num in target_art_nums:
+            is_op = True
+        elif ann is not None and ann in target_annexes:
+            is_op = True
+        elif not is_classification and not target_art_nums and not target_annexes:
+            is_op = True
+
+        if is_op:
+            operative.add(ref_norm)
+        else:
+            background.add(ref_norm)
+
+    if not operative and all_refs:
+        operative = set(all_refs)
+        background = set()
+
+    return operative, background
+
+
 def _build_context_references_block(
-    context: GraphContext, *, include_grounding: bool = True
+    context: GraphContext,
+    *,
+    include_grounding: bool = True,
+    question: str | None = None,
 ) -> str:
     """Render the GraphContext as the ``EU AI ACT REFERENCES:`` block.
 
-    R288.1 — ``include_grounding=False`` renders everything EXCEPT the R288
-    verbatim-provision section. It exists for exactly one caller: the R113
-    grounding-set miner (:func:`_grounded_refs_for_guard`), which treats every
-    ``Art. N`` it can see as a citation the polish is ALLOWED to emit. Verbatim
-    regulation text is saturated with cross-references, so feeding it to the
-    miner silently widens the hallucination allowlist to provisions that were
-    never retrieved. Measured on a 3-obligation context (Arts. 9/11/13): the
-    grounded set went 3 → 6, admitting Art. 60, Art. 72 and Annex IV purely
-    because the bodies of the cited articles name them. The block itself tells
-    the model "do NOT cite anything not already listed above" — the guard must
-    enforce that sentence, not be defeated by the text it introduces.
-
-    Mirrors the structured block built by :func:`_llm_generate_answer` so
-    Stage-2 polish operates against the SAME ground-truth surface the
-    direct-LLM path uses. Without this, the Stage-2 system prompt asks
-    the LLM to "cite only articles present in the supplied references"
-    while supplying no references — pure fabrication fuel.
+    R299 Move 1 — Supports partitioning into OPERATIVE PROVISIONS vs BACKGROUND CONTEXT
+    when ``user_ref_partition_enabled()`` is ON and a ``question`` is supplied.
     """
-    parts: list[str] = []
-    if context.obligations:
-        parts.append(
-            f"APPLICABLE OBLIGATIONS ({len(context.obligations)}):\n"
+    from app.data.graph_rag_prompts import user_ref_partition_enabled
+
+    op_refs, bg_refs = (set(), set())
+    if question and user_ref_partition_enabled():
+        op_refs, bg_refs = partition_context_references(context, question)
+
+    if not bg_refs:
+        # Standard unpartitioned rendering
+        parts: list[str] = []
+        if context.obligations:
+            parts.append(
+                f"APPLICABLE OBLIGATIONS ({len(context.obligations)}):\n"
+                + "\n".join(
+                    f"- [{o.get('id', 'N/A')}] {o.get('text', '')} "
+                    f"(Article: {o.get('article', 'N/A')})"
+                    for o in context.obligations[:20]
+                )
+            )
+        if context.article_info:
+            parts.append(
+                f"\nARTICLE-SPECIFIC OBLIGATIONS ({len(context.article_info)}):\n"
+                + "\n".join(
+                    f"- [{o.get('id', 'N/A')}] {o.get('text', '')} "
+                    f"(Article: {o.get('article', 'N/A')})"
+                    for o in context.article_info[:15]
+                )
+            )
+        if context.gaps:
+            parts.append(
+                f"\nCOMPLIANCE GAPS ({len(context.gaps)}):\n"
+                + "\n".join(
+                    f"- [{g.get('obligation_id', g.get('id', 'N/A'))}] "
+                    f"{g.get('text', '')} (Severity: {g.get('severity', 'N/A')})"
+                    for g in context.gaps[:15]
+                )
+            )
+        if context.dimension_info:
+            parts.append(
+                "\nDIMENSION DETAILS:\n"
+                + "\n".join(
+                    f"- {d.get('dim_name', d.get('dim_id', 'N/A'))}: "
+                    f"{d.get('question_count', 0)} questions, "
+                    f"{d.get('obligation_count', 0)} obligations"
+                    for d in context.dimension_info
+                )
+            )
+        if context.bridging_context:
+            parts.append(
+                "\nCROSS-REGULATORY BRIDGING CONTEXT "
+                "(supporting context only — these are NON-EU-AI-Act references "
+                "(e.g. GDPR / MDR); mention them in the prose if relevant but NEVER "
+                "emit them as an Article/Annex citation — the wire references list "
+                "is EU AI Act Articles/Annexes only):\n"
+                + "\n".join(f"- {bridge}" for bridge in context.bridging_context)
+            )
+        if getattr(context, "synthesis_memory", ""):
+            parts.append(
+                "\nSYNTHESIZED MULTI-HOP ANALYSIS "
+                "(supporting context — cite only the Articles above, not this synthesis):\n"
+                + context.synthesis_memory
+            )
+        if getattr(context, "ast_evaluations", None):
+            parts.append(
+                "\nLEGAL AST LOGICAL EVALUATIONS (supporting context — do not cite as an Article/Annex):\n"
+                + "\n".join(f"- {eval_res}" for eval_res in context.ast_evaluations)
+            )
+        if include_grounding and _grounding_text_enabled():
+            try:
+                parts.extend(_render_grounding_text(context))
+            except Exception:  # noqa: BLE001
+                logger.debug("grounding-text render failed", exc_info=True)
+        return "\n".join(parts) if parts else "No EU AI Act references match this query."
+
+    # Partitioned rendering into OPERATIVE vs BACKGROUND
+    op_parts: list[str] = []
+    bg_parts: list[str] = []
+
+    def _is_op(art_val: str) -> bool:
+        a = str(art_val or "").strip()
+        return a in op_refs or f"Article {a}" in op_refs or f"Art. {a}" in op_refs
+
+    all_obs = (getattr(context, "obligations", None) or []) + (getattr(context, "article_info", None) or [])
+    op_obs = [o for o in all_obs if _is_op(o.get("article", ""))]
+    bg_obs = [o for o in all_obs if not _is_op(o.get("article", ""))]
+
+    if op_obs:
+        op_parts.append(
+            "APPLICABLE OBLIGATIONS:\n"
             + "\n".join(
-                f"- [{o.get('id', 'N/A')}] {o.get('text', '')} "
-                f"(Article: {o.get('article', 'N/A')})"
-                for o in context.obligations[:20]
+                f"- [{o.get('id', 'N/A')}] {o.get('text', '')} (Article: {o.get('article', 'N/A')})"
+                for o in op_obs[:20]
             )
         )
-    if context.article_info:
-        parts.append(
-            f"\nARTICLE-SPECIFIC OBLIGATIONS ({len(context.article_info)}):\n"
+    if bg_obs:
+        bg_parts.append(
+            "BACKGROUND OBLIGATIONS (supporting context only):\n"
             + "\n".join(
-                f"- [{o.get('id', 'N/A')}] {o.get('text', '')} "
-                f"(Article: {o.get('article', 'N/A')})"
-                for o in context.article_info[:15]
+                f"- [{o.get('id', 'N/A')}] {o.get('text', '')} (Article: {o.get('article', 'N/A')})"
+                for o in bg_obs[:20]
             )
         )
-    if context.gaps:
-        parts.append(
-            f"\nCOMPLIANCE GAPS ({len(context.gaps)}):\n"
-            + "\n".join(
-                f"- [{g.get('obligation_id', g.get('id', 'N/A'))}] "
-                f"{g.get('text', '')} (Severity: {g.get('severity', 'N/A')})"
-                for g in context.gaps[:15]
-            )
-        )
-    if context.dimension_info:
-        parts.append(
-            "\nDIMENSION DETAILS:\n"
-            + "\n".join(
-                f"- {d.get('dim_name', d.get('dim_id', 'N/A'))}: "
-                f"{d.get('question_count', 0)} questions, "
-                f"{d.get('obligation_count', 0)} obligations"
-                for d in context.dimension_info
-            )
-        )
-    if context.bridging_context:
-        parts.append(
-            "\nCROSS-REGULATORY BRIDGING CONTEXT "
-            "(supporting context only — these are NON-EU-AI-Act references "
-            "(e.g. GDPR / MDR); mention them in the prose if relevant but NEVER "
-            "emit them as an Article/Annex citation — the wire references list "
-            "is EU AI Act Articles/Annexes only):\n"
-            + "\n".join(f"- {bridge}" for bridge in context.bridging_context)
-        )
-    # R117-review — LogicRAG multi-hop synthesis. Supporting context only;
-    # the explicit "cite only the Articles above" framing stops Stage-2 from
-    # treating the synthesis as a citable provision.
-    if getattr(context, "synthesis_memory", ""):
-        parts.append(
-            "\nSYNTHESIZED MULTI-HOP ANALYSIS "
-            "(supporting context — cite only the Articles above, not this synthesis):\n"
-            + context.synthesis_memory
-        )
-    if getattr(context, "ast_evaluations", None):
-        parts.append(
-            "\nLEGAL AST LOGICAL EVALUATIONS (supporting context — do not cite as an Article/Annex):\n"
-            + "\n".join(f"- {eval_res}" for eval_res in context.ast_evaluations)
-        )
-    # R288 Arm-1 — the verbatim grounding fields the dead ``_llm_generate_answer``
-    # rendered and this (live) mirror silently dropped. Fail-soft: a bad row can
-    # never break the block that Stage-2 depends on. Suppressed for the R113
-    # miner (``include_grounding=False``) so verbatim cross-references cannot
-    # widen the citation allowlist — see this function's docstring.
+
     if include_grounding and _grounding_text_enabled():
         try:
-            parts.extend(_render_grounding_text(context))
-        except Exception:  # noqa: BLE001 — grounding is additive, never load-bearing
-            logger.debug("grounding-text render failed", exc_info=True)
-    return "\n".join(parts) if parts else "No EU AI Act references match this query."
+            g_texts = _render_grounding_text(context)
+            for gt in g_texts:
+                if any(f"[{ref}]" in gt for ref in bg_refs):
+                    bg_parts.append(gt)
+                else:
+                    op_parts.append(gt)
+        except Exception:  # noqa: BLE001
+            pass
+
+    out_sections: list[str] = []
+    if op_parts:
+        out_sections.append(
+            "OPERATIVE PROVISIONS (cite these; the question turns on them):\n"
+            + "\n".join(op_parts)
+        )
+    if bg_parts:
+        out_sections.append(
+            "\nBACKGROUND CONTEXT (supporting context only — do NOT cite, do NOT describe unless directly requested):\n"
+            + "\n".join(bg_parts)
+        )
+    return "\n".join(out_sections) if out_sections else "No EU AI Act references match this query."
+
 
 
 def _context_article_refs(context: GraphContext | None) -> list[str]:
@@ -6469,7 +6603,7 @@ def _claude_max_enhance_answer(
         if context is not None:
             user_message += (
                 f"EU AI ACT REFERENCES:\n"
-                f"{_build_context_references_block(context)}\n\n"
+                f"{_build_context_references_block(context, question=question)}\n\n"
             )
 
             # R69 — cross-reference context (the architecture's
@@ -6601,13 +6735,7 @@ def _claude_max_enhance_answer(
                 "the latest question, or when rule 12b closed-set completeness "
                 "requires naming every member of a set."
             )
-        # R298 — REFERENCE MINIMALITY on the channel that reaches the model.
-        # Appended to BOTH branches (classification and refine) because the
-        # over-citation is measured on both. Placed here, after the branch
-        # bodies, so the two branches can never drift apart (the R113
-        # guard/prompt-parity lesson). Purely subtractive guidance: it can only
-        # make the model cite FEWER provisions, so the R113 grounding guard
-        # (which checks cited ⊆ supplied) stays satisfied by construction.
+        # R298 / R299 — Prompt additions on the channel that reaches the model.
         try:
             from app.data.graph_rag_prompts import (  # noqa: PLC0415
                 USER_CHALLENGE_BREVITY_CLAUSE,
@@ -6615,10 +6743,19 @@ def _claude_max_enhance_answer(
                 challenge_brevity_enabled,
                 is_challenge_turn,
                 user_ref_minimality_enabled,
+                user_ref_partition_enabled,
             )
 
             if user_ref_minimality_enabled():
                 user_message += USER_REF_MINIMALITY_CLAUSE
+            if user_ref_partition_enabled():
+                user_message += (
+                    " OPERATIVE VS BACKGROUND PARTITION: CITE ONLY the provisions "
+                    "listed under OPERATIVE PROVISIONS. The provisions listed under "
+                    "BACKGROUND CONTEXT are supplied strictly for context; do NOT "
+                    "cite them and do NOT describe them in your prose unless the "
+                    "latest question explicitly asks for them.\n"
+                )
             if challenge_brevity_enabled() and is_challenge_turn(question):
                 user_message += USER_CHALLENGE_BREVITY_CLAUSE
         except Exception:  # noqa: BLE001 — a prompt add-on must never break Stage-2
@@ -6914,6 +7051,16 @@ def _claude_max_enhance_answer(
                 "— treating as failure"
             )
             return None
+        # R299 Move 2 — deterministic enumerated-element completeness verifier
+        try:
+            from app.engines.completeness_verifier import (  # noqa: PLC0415
+                verify_and_enrich_enumerated_completeness,
+            )
+            validated = verify_and_enrich_enumerated_completeness(
+                question, validated, context
+            )
+        except Exception:  # noqa: BLE001
+            pass
         return validated
     except Exception as exc:  # noqa: BLE001
         logger.warning("stage2_claude_max_enhance failed, keeping kg_answer: %s", exc)
