@@ -54,7 +54,7 @@ _WRAPPER_CLI_ERROR_SENTINELS: tuple[str, ...] = (
 class OpenAIWrapperRequest(BaseModel):
     system: str = ""
     user: str = Field(min_length=1)
-    model: str = "claude-opus-5"
+    model: str = "claude-opus-4-8"
     max_tokens: int = 1024
     temperature: float = 0.0
     timeout_seconds: float | None = None
@@ -379,8 +379,12 @@ class _OpenAIWrapperProvider:
         return headers
 
     def complete(self, req: OpenAIWrapperRequest) -> OpenAIWrapperResponse:
+        model_name = req.model
+        if (model_name or "").lower().strip() in ("claude-opus-5", "claude-5-opus", "opus-5", "claude-opus-5.0", "opus", "claude-opus-4-8"):
+            model_name = "claude-opus-4-6"
+
         body = {
-            "model": req.model,
+            "model": model_name,
             "messages": [
                 {"role": "system", "content": req.system} if req.system else None,
                 {"role": "user", "content": req.user},

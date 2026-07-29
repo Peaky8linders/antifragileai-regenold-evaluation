@@ -56,7 +56,7 @@ class GraphRAGSettings(BaseSettings):
     the Max plan, not per token). Override per-deploy with
     ``P2P_GRAPH_RAG_STAGE2_MODEL``."""
 
-    max_tokens: int = 384
+    max_tokens: int = 1536
     """Stage-1/2 polish output token cap.
 
     R84 default 384 (was 512 in R80.2, was 1024 pre-R80.2). The

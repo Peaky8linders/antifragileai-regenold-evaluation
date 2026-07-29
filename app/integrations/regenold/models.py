@@ -1004,6 +1004,31 @@ def _is_degenerate_sentence(sentence: str) -> bool:
     return False
 
 
+_INCOMPLETE_TRAILING_WORDS = frozenset({
+    "must", "shall", "the", "a", "an", "and", "or", "to", "with", "for",
+    "in", "under", "which", "that", "of", "by", "on", "at", "from", "be",
+    "is", "are", "were", "was", "have", "has", "had", "including", "such",
+    "as", "regarding", "concerning", "pursuant"
+})
+
+
+def _is_incomplete_trailing_sentence(sentence: str) -> bool:
+    """Check if a sentence is an incomplete trailing fragment resulting from token/char limits."""
+    s = sentence.strip()
+    if not s:
+        return True
+    core = s.rstrip(".!?\"'”’)]} ").strip()
+    if not core:
+        return True
+    words = core.split()
+    if not words:
+        return True
+    last_word = words[-1].lower()
+    if last_word in _INCOMPLETE_TRAILING_WORDS:
+        return True
+    return False
+
+
 def _split_sentences(text: str) -> list[str]:
     """Split ``text`` into sentences, glueing false splits at abbreviations.
 
@@ -1311,9 +1336,9 @@ def normalise_answer_for_regenold(
     # site. Fall back to the 400 default and clamp to a sane range so
     # a typo can never crash — or zero out — the answer cap.
     try:
-        qa_cap = int(os.getenv("REGENOLD_QA_LENGTH_CAP", "400").strip() or 400)
+        qa_cap = int(os.getenv("REGENOLD_QA_LENGTH_CAP", "1200").strip() or 1200)
     except ValueError:
-        qa_cap = 400
+        qa_cap = 1200
     qa_cap = max(100, min(qa_cap, 20000))
     is_scenario = False
     if question:
@@ -1330,8 +1355,15 @@ def normalise_answer_for_regenold(
             re.IGNORECASE,
         ))
     char_cap = 600 if is_scenario else qa_cap
-    if _is_multi or _is_enum:
-        char_cap = max(char_cap, 1500)
+    _is_obligation_ask = bool(re.search(
+        r"\b(?:obligations?|duties|requirements?|article\s+16)\b",
+        question,
+        re.IGNORECASE,
+    ))
+    if _is_multi or _is_enum or _is_obligation_ask:
+        char_cap = max(char_cap, 2000)
+        if _is_obligation_ask and not _no_cap:
+            max_sentences = max(max_sentences, 10)
 
     cleaned = _strip_markdown(text)
     sentences = _split_sentences(cleaned)
@@ -1352,6 +1384,8 @@ def normalise_answer_for_regenold(
     # The deployer must…" → "The deployer must…").
     sentences[0] = _strip_sentence_opener(sentences[0])
     sentences = [s for s in sentences if s.strip()]
+    while len(sentences) > 1 and _is_incomplete_trailing_sentence(sentences[-1]):
+        sentences.pop()
     capped = sentences if _no_cap else sentences[:max_sentences]
     # Soft char cap: prefer regulator-citation-bearing sentences when
     # we're over budget. Drop the longest sentence that does NOT cite
@@ -1575,9 +1609,9 @@ def normalise_answer_for_regenold(
                 s_clean += "."
             
         # Drop clipped sentences if we already have a complete sentence
-        # or if the remaining fragment is too short to be meaningful.
+        # or if the remaining fragment is incomplete / lacks terminal punctuation.
         if is_clip:
-            if len(cleaned_sentences) >= 1 or len(s_clean) < 40:
+            if len(cleaned_sentences) >= 1 or len(s_clean) < 50 or _is_incomplete_trailing_sentence(s_clean):
                 continue
                 
         cleaned_sentences.append(s_clean)
