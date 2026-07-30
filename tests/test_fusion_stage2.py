@@ -78,7 +78,16 @@ def test_default_judge_is_the_opus_seat(monkeypatch):
     seat" — assert that, so a future blanket model swap fails loudly again.
     """
     monkeypatch.delenv("REGENOLD_FUSION_JUDGE_MODEL", raising=False)
-    assert fusion._judge_model() == "claude-opus-5"
+    # R300 — was "claude-opus-5". Commit 8eb34e4 ("fix(truncation): ...")
+    # carried an UNDISCLOSED rider swapping fusion.py:144/157 to
+    # claude-opus-4-8, which is exactly the blanket swap this test was written
+    # to catch — it failed loudly on `main` from 8eb34e4 until R300 and nobody
+    # reconciled it. Re-pinned to the SHIPPED model rather than reverted:
+    # fusion is production-inert (railway.toml REGENOLD_FUSION_STAGE2="0") and
+    # the wrapper alias maps opus-5 and opus-4-8 to the same wire model
+    # anyway. The literal is kept (not read from the module) so the next
+    # blanket swap still fails loudly.
+    assert fusion._judge_model() == "claude-opus-4-8"
     assert fusion._judge_model() != fusion._PANEL_SONNET_MODEL
 
 
@@ -146,7 +155,9 @@ def test_enabled_panel_swaps_sonnet_for_opus_on_complex(monkeypatch):
     complex_ = [p[0] for p in fusion._enabled_panel(complex_question=True)]
     assert complex_ == ["opus", "groq", "mistral"]  # SWAP — Sonnet→Opus
     assert "sonnet" not in complex_  # swapped out, NOT added alongside (R124)
-    assert ("opus", "claude-opus-5", "wrapper") in fusion._enabled_panel(
+    # R300 — see test_default_judge_is_the_opus_seat: 8eb34e4's undisclosed
+    # rider moved this seat to claude-opus-4-8.
+    assert ("opus", "claude-opus-4-8", "wrapper") in fusion._enabled_panel(
         complex_question=True
     )
     # Exactly ONE wrapper-bound member on complex (no Sonnet+Opus double tunnel).

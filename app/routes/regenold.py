@@ -1311,6 +1311,21 @@ def _engine_cache_key(
             # answer AND its citations, so same doctrine as the lines above.
             "REGENOLD_USER_REF_MINIMALITY",
             "REGENOLD_CHALLENGE_BREVITY",
+            # R300 — the two R299 gates were shipped default-ON but never
+            # added to this key. Both flip GraphRAGResponse.answer:
+            #   * REF_PARTITION restructures the Stage-2 references block
+            #     (OPERATIVE vs BACKGROUND) AND, pre-R300, changed which
+            #     context sections it contained at all;
+            #   * COMPLETENESS_VERIFIER appends sub-point supplements to the
+            #     Stage-2 answer text.
+            # Omission is the R263.2 failure mode: an in-process two-arm
+            # ab_judge run silently serves arm A's cached answer to arm B, so
+            # the A/B measures nothing. Same doctrine as every line above.
+            "REGENOLD_REF_PARTITION",
+            "REGENOLD_COMPLETENESS_VERIFIER",
+            # R300 — the wrapper model alias decides WHICH model generates the
+            # Stage-2 answer, so flipping it flips the answer.
+            "REGENOLD_WRAPPER_MODEL_ALIAS",
             "REGENOLD_GRAPH_2HOP",
             "REGENOLD_GRAPH_AWARE",
             # R252 — KB-primary vs legacy Neo4j-primary retrieval flips the

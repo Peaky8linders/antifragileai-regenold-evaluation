@@ -526,9 +526,27 @@ def _openai_wrapper_complete_for_graph_rag(
         eff_thinking = 0
 
     # Record the chosen model in the reasoning trace so the UI can surface it.
+    # R300 — report the EFFECTIVE model actually sent to the wrapper, not the
+    # requested one. The wrapper transport applies an alias map
+    # (`_WRAPPER_MODEL_ALIASES`), so reporting `model` here made the trace
+    # claim `claude-opus-5` while `claude-opus-4-6` was on the wire — which
+    # would silently invalidate any model A/B read off the trace.
     try:
         from app.integrations.regenold.reasoning_trace import record_note as _rn
-        _rn(f"stage2_model={model} complex={complex_question}")
+        try:
+            from app.llm.openai_wrapper_provider import (  # noqa: PLC0415
+                resolve_wrapper_model as _rwm,
+            )
+            _sent = _rwm(model)
+        except Exception:  # noqa: BLE001 — alias resolution is best-effort
+            _sent = model
+        if _sent != model:
+            _rn(
+                f"stage2_model={_sent} complex={complex_question} "
+                f"(requested={model}, wrapper alias)"
+            )
+        else:
+            _rn(f"stage2_model={model} complex={complex_question}")
     except Exception:  # noqa: BLE001 — trace is optional
         pass
     extra_headers: dict[str, str] = {}
@@ -5855,6 +5873,65 @@ def partition_context_references(
     return operative, background
 
 
+def _render_supplementary_sections(context: GraphContext) -> list[str]:
+    """Render the NON-citable supporting-context sections of a GraphContext.
+
+    R300 — extracted so BOTH renderers in
+    :func:`_build_context_references_block` emit them. The R299 Move-1
+    partitioned branch built its output solely from obligations + grounding
+    text, so switching ``REGENOLD_REF_PARTITION`` ON (the production default)
+    silently DELETED all five of these sections from the Stage-2 prompt —
+    measured at 852 -> 330 chars, a 61% context loss. The most costly of them
+    is CROSS-REGULATORY BRIDGING CONTEXT: the GDPR / MDR bridges the
+    cross-framework and MedTech answers depend on.
+
+    None of these are citable provisions, so in the partitioned renderer they
+    belong under BACKGROUND CONTEXT — which preserves R299's citation
+    discipline while restoring the grounding it accidentally dropped.
+    """
+    parts: list[str] = []
+    if getattr(context, "gaps", None):
+        parts.append(
+            f"\nCOMPLIANCE GAPS ({len(context.gaps)}):\n"
+            + "\n".join(
+                f"- [{g.get('obligation_id', g.get('id', 'N/A'))}] "
+                f"{g.get('text', '')} (Severity: {g.get('severity', 'N/A')})"
+                for g in context.gaps[:15]
+            )
+        )
+    if getattr(context, "dimension_info", None):
+        parts.append(
+            "\nDIMENSION DETAILS:\n"
+            + "\n".join(
+                f"- {d.get('dim_name', d.get('dim_id', 'N/A'))}: "
+                f"{d.get('question_count', 0)} questions, "
+                f"{d.get('obligation_count', 0)} obligations"
+                for d in context.dimension_info
+            )
+        )
+    if getattr(context, "bridging_context", None):
+        parts.append(
+            "\nCROSS-REGULATORY BRIDGING CONTEXT "
+            "(supporting context only — these are NON-EU-AI-Act references "
+            "(e.g. GDPR / MDR); mention them in the prose if relevant but NEVER "
+            "emit them as an Article/Annex citation — the wire references list "
+            "is EU AI Act Articles/Annexes only):\n"
+            + "\n".join(f"- {bridge}" for bridge in context.bridging_context)
+        )
+    if getattr(context, "synthesis_memory", ""):
+        parts.append(
+            "\nSYNTHESIZED MULTI-HOP ANALYSIS "
+            "(supporting context — cite only the Articles above, not this synthesis):\n"
+            + context.synthesis_memory
+        )
+    if getattr(context, "ast_evaluations", None):
+        parts.append(
+            "\nLEGAL AST LOGICAL EVALUATIONS (supporting context — do not cite as an Article/Annex):\n"
+            + "\n".join(f"- {eval_res}" for eval_res in context.ast_evaluations)
+        )
+    return parts
+
+
 def _build_context_references_block(
     context: GraphContext,
     *,
@@ -5917,45 +5994,7 @@ def _build_context_references_block(
                     for o in context.article_info[:15]
                 )
             )
-        if context.gaps:
-            parts.append(
-                f"\nCOMPLIANCE GAPS ({len(context.gaps)}):\n"
-                + "\n".join(
-                    f"- [{g.get('obligation_id', g.get('id', 'N/A'))}] "
-                    f"{g.get('text', '')} (Severity: {g.get('severity', 'N/A')})"
-                    for g in context.gaps[:15]
-                )
-            )
-        if context.dimension_info:
-            parts.append(
-                "\nDIMENSION DETAILS:\n"
-                + "\n".join(
-                    f"- {d.get('dim_name', d.get('dim_id', 'N/A'))}: "
-                    f"{d.get('question_count', 0)} questions, "
-                    f"{d.get('obligation_count', 0)} obligations"
-                    for d in context.dimension_info
-                )
-            )
-        if context.bridging_context:
-            parts.append(
-                "\nCROSS-REGULATORY BRIDGING CONTEXT "
-                "(supporting context only — these are NON-EU-AI-Act references "
-                "(e.g. GDPR / MDR); mention them in the prose if relevant but NEVER "
-                "emit them as an Article/Annex citation — the wire references list "
-                "is EU AI Act Articles/Annexes only):\n"
-                + "\n".join(f"- {bridge}" for bridge in context.bridging_context)
-            )
-        if getattr(context, "synthesis_memory", ""):
-            parts.append(
-                "\nSYNTHESIZED MULTI-HOP ANALYSIS "
-                "(supporting context — cite only the Articles above, not this synthesis):\n"
-                + context.synthesis_memory
-            )
-        if getattr(context, "ast_evaluations", None):
-            parts.append(
-                "\nLEGAL AST LOGICAL EVALUATIONS (supporting context — do not cite as an Article/Annex):\n"
-                + "\n".join(f"- {eval_res}" for eval_res in context.ast_evaluations)
-            )
+        parts.extend(_render_supplementary_sections(context))
         if include_grounding and _grounding_text_enabled():
             try:
                 parts.extend(_render_grounding_text(context))
@@ -6021,6 +6060,10 @@ def _build_context_references_block(
                     bg_parts.append("\n".join(bg_lines))
         except Exception:  # noqa: BLE001
             pass
+
+    # R300 — the supporting-context sections belong under BACKGROUND. Without
+    # this the partitioned path (production default) dropped them entirely.
+    bg_parts.extend(_render_supplementary_sections(context))
 
     out_sections: list[str] = []
     if op_parts:
