@@ -194,3 +194,96 @@ class TestSubpointLabelQuality:
     def test_empty_input_is_safe(self):
         assert _extract_subpoint_label("") == "requirement"
         assert _extract_subpoint_label("   ") == "requirement"
+
+
+# --------------------------------------------------------------------------
+# 3. R299 partition must not drop the supporting-context sections
+# --------------------------------------------------------------------------
+_SUPP_SECTIONS = (
+    "COMPLIANCE GAPS",
+    "DIMENSION DETAILS",
+    "CROSS-REGULATORY BRIDGING",
+    "SYNTHESIZED MULTI-HOP",
+    "LEGAL AST",
+)
+
+
+def _ctx_with_all_sections():
+    from app.engines.graph_rag import GraphContext
+
+    ctx = GraphContext()
+    ctx.obligations = [
+        {"id": "o1", "text": "Provider duties.", "article": "Art. 16"},
+        {"id": "o2", "text": "Prohibited practices.", "article": "Art. 5"},
+    ]
+    ctx.article_info = []
+    ctx.gaps = [{"obligation_id": "g1", "text": "No FRIA on file.", "severity": "high"}]
+    ctx.dimension_info = [
+        {"dim_name": "governance", "question_count": 3, "obligation_count": 2}
+    ]
+    ctx.bridging_context = ["MDR Article 10 interacts with the Annex I route."]
+    ctx.synthesis_memory = "Multi-hop: Art 6 -> Art 43 -> Annex VII."
+    ctx.ast_evaluations = ["Art 6(3)(a) evaluated FALSE for this fact pattern."]
+    return ctx
+
+
+class TestPartitionKeepsSupportingContext:
+    _Q = "Is our system high-risk and what must we do?"
+
+    @pytest.mark.parametrize("gate", ["0", "1"])
+    def test_all_sections_render_under_both_gates(self, monkeypatch, gate):
+        """R300 — partition ON dropped ALL FIVE sections (852 -> 330 chars).
+
+        The costliest was CROSS-REGULATORY BRIDGING (the GDPR / MDR context
+        the cross-framework and MedTech answers depend on).
+        """
+        from app.engines.graph_rag import _build_context_references_block as build
+
+        monkeypatch.setenv("REGENOLD_REF_PARTITION", gate)
+        block = build(_ctx_with_all_sections(), question=self._Q)
+        for section in _SUPP_SECTIONS:
+            assert section in block, f"{section} missing with REF_PARTITION={gate}"
+
+    def test_partition_still_labels_operative_and_background(self, monkeypatch):
+        """The R299 citation discipline must survive the restore."""
+        from app.engines.graph_rag import _build_context_references_block as build
+
+        monkeypatch.setenv("REGENOLD_REF_PARTITION", "1")
+        block = build(_ctx_with_all_sections(), question=self._Q)
+        assert "OPERATIVE PROVISIONS" in block
+        assert "BACKGROUND CONTEXT" in block
+
+    @pytest.mark.parametrize("gate", ["0", "1"])
+    def test_empty_context_message_unchanged(self, monkeypatch, gate):
+        from app.engines.graph_rag import GraphContext
+        from app.engines.graph_rag import _build_context_references_block as build
+
+        monkeypatch.setenv("REGENOLD_REF_PARTITION", gate)
+        empty = GraphContext()
+        empty.obligations = []
+        empty.article_info = []
+        assert build(empty, question=self._Q) == "No EU AI Act references match this query."
+
+
+# --------------------------------------------------------------------------
+# 4. Cache-key doctrine (R30/R56/R79/R263.2)
+# --------------------------------------------------------------------------
+class TestEngineCacheKeyCoversR299Gates:
+    @pytest.mark.parametrize(
+        "flag",
+        [
+            "REGENOLD_REF_PARTITION",
+            "REGENOLD_COMPLETENESS_VERIFIER",
+            "REGENOLD_WRAPPER_MODEL_ALIAS",
+        ],
+    )
+    def test_flag_changes_the_cache_key(self, monkeypatch, flag):
+        """Omission silently cross-contaminates an in-process two-arm A/B."""
+        from app.routes.regenold import _engine_cache_key
+
+        q = "What are the obligations of providers of high-risk AI systems?"
+        monkeypatch.setenv(flag, "1")
+        on = _engine_cache_key(q, "")
+        monkeypatch.setenv(flag, "0")
+        off = _engine_cache_key(q, "")
+        assert on != off, f"{flag} flips the engine answer but not the cache key"
