@@ -82,14 +82,61 @@ def _get_subpoint_keywords(sub_text: str) -> list[str]:
     return out
 
 
+_MAX_LABEL_CHARS = 70
+_MIN_LABEL_CHARS = 25
+
+# Function words that must not END a label — cutting on them leaves a dangling
+# fragment ("provide information as", "the responsibilities of the").
+_LABEL_DANGLERS = frozenset(
+    "a an the and or of to in on at by for with from as into under over "
+    "that which who whose is are be been being shall must may including "
+    "such referred set out pursuant accordance".split()
+)
+
+
+def _trim_dangling(label: str) -> str:
+    """Drop trailing function words so the label ends on a content word."""
+    words = label.split()
+    while len(words) > 2 and words[-1].lower().strip(".,;:") in _LABEL_DANGLERS:
+        words.pop()
+    return " ".join(words)
+
+
 def _extract_subpoint_label(sub_text: str) -> str:
-    """Extract a concise substantive noun phrase label for a missing subpoint."""
-    kws = _get_subpoint_keywords(sub_text)
-    if kws:
-        return " ".join(kws[:3])
-    # Fallback to first few cleaned words
-    clean = " ".join((sub_text or "").split()[:4]).rstrip(";,.")
-    return clean or "requirement"
+    """Extract a concise, GRAMMATICAL label for a missing subpoint.
+
+    R300 — was ``" ".join(kws[:3])``, i.e. the first three non-stopword
+    tokens, which produced keyword salad that reads as broken English and
+    misstates the provision: Article 16(g) "draw up the EU declaration of
+    conformity" became "draw declaration conformity"; 16(d) "keep the
+    documentation referred to in Article 18" became "keep documentation
+    referred". A supplement is appended verbatim to a shipped legal answer,
+    so it must read as regulatory prose, not as a bag of words.
+
+    Now: take the VERBATIM opening clause of the sub-point, cut on a clause
+    boundary (``;`` / ``,``) or a word boundary within ``_MAX_LABEL_CHARS``.
+    Falls back to the keyword join only if no usable prose is present.
+    """
+    text = " ".join((sub_text or "").split()).strip()
+    if not text:
+        kws = _get_subpoint_keywords(sub_text)
+        return " ".join(kws[:3]) if kws else "requirement"
+
+    if len(text) <= _MAX_LABEL_CHARS:
+        return _trim_dangling(text.rstrip(" .;,"))
+
+    # Prefer a natural clause boundary inside the budget, but only when it
+    # yields a substantive label — Article 17(h) opens "the setting-up, ..."
+    # so an unguarded first-comma cut would emit the useless "the setting-up".
+    for sep in (";", ","):
+        idx = text.find(sep)
+        if _MIN_LABEL_CHARS <= idx <= _MAX_LABEL_CHARS:
+            return _trim_dangling(text[:idx].rstrip(" .;,"))
+
+    cut = text.rfind(" ", 0, _MAX_LABEL_CHARS)
+    if cut <= 0:
+        cut = _MAX_LABEL_CHARS
+    return _trim_dangling(text[:cut].rstrip(" .;,"))
 
 
 def verify_and_enrich_enumerated_completeness(
@@ -154,14 +201,33 @@ def verify_and_enrich_enumerated_completeness(
                 missing_letters.append((letter, label))
 
             if missing_letters and len(missing_letters) < len(subs):
-                # Only supplement if PARTIAL omission (some points present, some missing)
+                # Only supplement if PARTIAL omission (some points present, some
+                # missing). NOTE (R300): the complete-omission case — where the
+                # answer names NONE of the sub-points — is deliberately NOT
+                # supplemented here. That is the inverse of the intent and is a
+                # genuine defect, but widening the firing condition is an
+                # answer-affecting change that needs the hard-rule-#6 live
+                # ab_judge gate; deferred rather than shipped blind.
                 labels = ", ".join(f"({let}) {txt}" for let, txt in missing_letters)
-                missing_supplements.append(f"including points {labels}")
+                # R300 — ATTRIBUTE the points to their own Article.
+                #
+                # Was: a single flat blob joined across BOTH cited articles,
+                # e.g. "[including points (d) ..., (g) ...; including points
+                # (h) ..., (m) ...]" for an answer citing Article 16 AND
+                # Article 17. That reads as ONE list, repeats letters (i)/(j)
+                # meaning different provisions, and — worst — presents Article
+                # 17's points (a)-(m) as if they continued Article 16's list,
+                # which stops at (l). Article 16 HAS no point (m). Asserting it
+                # does is a confidently-wrong legal claim (hard rule #4), the
+                # single worst defect class in this codebase.
+                missing_supplements.append(
+                    f"Article {art_num} also requires {labels}"
+                )
 
     if missing_supplements:
-        supp = " [" + "; ".join(missing_supplements) + "]"
+        supp = " " + ". ".join(missing_supplements) + "."
         if answer_clean.endswith("."):
-            return answer_clean[:-1] + supp + "."
-        return answer_clean + supp
+            return answer_clean + supp
+        return answer_clean + "." + supp
 
     return answer

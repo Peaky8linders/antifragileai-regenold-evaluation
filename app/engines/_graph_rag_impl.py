@@ -526,9 +526,27 @@ def _openai_wrapper_complete_for_graph_rag(
         eff_thinking = 0
 
     # Record the chosen model in the reasoning trace so the UI can surface it.
+    # R300 — report the EFFECTIVE model actually sent to the wrapper, not the
+    # requested one. The wrapper transport applies an alias map
+    # (`_WRAPPER_MODEL_ALIASES`), so reporting `model` here made the trace
+    # claim `claude-opus-5` while `claude-opus-4-6` was on the wire — which
+    # would silently invalidate any model A/B read off the trace.
     try:
         from app.integrations.regenold.reasoning_trace import record_note as _rn
-        _rn(f"stage2_model={model} complex={complex_question}")
+        try:
+            from app.llm.openai_wrapper_provider import (  # noqa: PLC0415
+                resolve_wrapper_model as _rwm,
+            )
+            _sent = _rwm(model)
+        except Exception:  # noqa: BLE001 — alias resolution is best-effort
+            _sent = model
+        if _sent != model:
+            _rn(
+                f"stage2_model={_sent} complex={complex_question} "
+                f"(requested={model}, wrapper alias)"
+            )
+        else:
+            _rn(f"stage2_model={model} complex={complex_question}")
     except Exception:  # noqa: BLE001 — trace is optional
         pass
     extra_headers: dict[str, str] = {}
