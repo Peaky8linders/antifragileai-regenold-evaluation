@@ -10203,6 +10203,99 @@ i.e. exactly on the path R294 was trying to open.
 The slack knob defaults to `0` and the two integrity fixes are cache-identity /
 disabled-path only, so the wire is unchanged.
 
+## Round 300 — deep review of R299 + the two untagged truncation commits; 5 verified defects (2026-07-30)
+
+Reviewed `3b2d37d..757f0cb` — R299 plus the two untagged 2026-07-30 commits
+(`8eb34e4`, `757f0cb`) authored directly on `main` with no round entry. 8-lane
+specialist workflow + an adversarial verifier per finding (default REFUTED,
+must confirm against HEAD): 68 raw → 18 verified, **18/18 survived**. Every
+load-bearing claim below was re-proved by direct measurement.
+
+Full record incl. deferred items: [`.planning/R300-CHECKPOINT.md`](.planning/R300-CHECKPOINT.md).
+
+**P0-1 — `partition_context_references` deletes gold references.** A ref is
+OPERATIVE only if its number is in `target_art_nums`/`target_annexes`; the two
+escapes are total-miss only, so they never fire on a well-retrieved question.
+On the real 110-row graded batch: **53% of rows demote ≥1 ref; 61% of refs
+(222/364)** land under "do NOT cite, do NOT describe" — routinely the GOVERNING
+one (`rg_001` backgrounds Annex IV though Article 11(1) says the documentation
+"shall contain… the elements set out in Annex IV"; Art 43 → Annexes VI/VII;
+Art 55 → Arts 53/54). With the R72 reconcile also ON this becomes a WIRE
+DELETION: `['Article 11','Annex IV','Annex IV.1.e','Annex IV.2.c']` →
+`['Article 11']`, executed. R142.1 through a new door. R299 shipped it
+default-ON with no live `ab_judge` gate, and davidath is structurally blind
+(`provider=cli` never fires Stage-2). **Default flipped OFF**, restoring the
+last A/B-validated state — R298's USER-channel minimality is independent and
+keeps its measured win. `REGENOLD_REF_PARTITION=1` re-enables it for the A/B it
+owes; the structural fix to try first (promote refs cross-referenced FROM an
+operative provision; `kb_xrefs` already has those edges) is on the gate.
+
+**P0-2 — the partition also dropped 5 whole Stage-2 context sections.** Its
+renderer was built from obligations + grounding text only, emitting none of
+COMPLIANCE GAPS / DIMENSION DETAILS / CROSS-REGULATORY BRIDGING / SYNTHESIZED
+MULTI-HOP / LEGAL AST. Measured 852 → **330 chars, 0/5 sections** (61% context
+loss), costliest being the GDPR/MDR bridges the cross-framework + MedTech
+answers need. Extracted `_render_supplementary_sections()` for both renderers;
+under BACKGROUND in the partitioned one (they are non-citable by definition).
+After: 1065 chars, 5/5, discipline intact.
+
+**P0-3 — the completeness verifier stated the regulation backwards.** (a) It
+conflated two articles into one flat blob, implying an Article 16 point (m) —
+Article 16 stops at (l). Now attributed per article. (b) `_subpoints` returns a
+FLAT dict, so Article 5(1) yields `['a'..'h','i','ii','iii']` where the romans
+are 5(1)(h)'s law-enforcement **carve-outs** — listed as missing
+"requirements", i.e. permissions shipped as prohibitions, even on an
+already-correct answer. `_drop_nested_romans` resolves the `(i)` ambiguity by
+context (a multi-char roman can never be a letter key). Labels were a keyword
+bag ("draw declaration conformity"); now the verbatim opening clause.
+
+**P0-4 — hardcoded model downgrade in the wrapper transport.** `757f0cb` added
+an inline, ungated, unlogged rewrite of every opus-family name to
+`claude-opus-4-6`, unmentioned in its commit message — silently reverting
+R292's Opus 5 **and making the `?include_reasoning=true` trace lie** (reported
+`claude-opus-5` while `claude-opus-4-6` was on the wire), which would
+invalidate any model A/B read off the trace. Measured: the wrapper returns HTTP
+200 for opus-4-8, opus-5 AND opus-4-6, so it repairs no error. Kept as default
+(flipping it needs the A/B) but now env-gated + logged via
+`resolve_wrapper_model()`, with the trace reporting the model actually sent.
+
+**P1 — cache-key omission.** `REGENOLD_REF_PARTITION` /
+`REGENOLD_COMPLETENESS_VERIFIER` flip the answer but were absent from
+`_engine_cache_key`. Production runs one consistent arm, so this is an
+**eval-integrity** defect (R263.2): an in-process two-arm `ab_judge` serves arm
+A's cache to arm B and measures nothing. Added, with the new alias flag.
+
+**Claims that did NOT survive measurement** (recorded because the reviewers
+were confident and wrong): the `REGENOLD_QA_LENGTH_CAP` 1200→400 flip has **no
+production effect** (`MAX_ANSWER_SENTENCES="0"` ⇒ `_no_cap`; the drift is
+local-eval-only and the *sentence* cap dominates, not the char cap);
+`_hard_truncate_at_clause` — the headline of `757f0cb` — is **unreachable in
+production** (`REGENOLD_HARD_CHAR_CAP="0"`). And a self-correction: my own
+first check called the `max_tokens` 384→1536 bump inert; it is **BINDING on
+simple Stage-2** (1024→1536, +50% ceiling, the ~80% path), inert only on the
+complex path.
+
+**Live measurement — 71 requests, 25.3% of the official hard population**
+(stratified, vs deployed prod, 0 errors, 0 refusals): tone **1.000**,
+**pushback concession 0.0000** (the system never folds under the evaluator's
+"this contains hallucinations" challenge), refs/row ~2.9, p50 60.7 s / p95
+115.2 s. Two new signals, neither fixed: **36% (10/28) of multi-turn rows
+change their citation set on the pushback turn** — which is the graded one — in
+both directions (`rg_021` 4→1 refs, `rg_053` 1→4); and latency is high in
+absolute terms (the sample is hard-weighted, so it is NOT comparable to R286's
+mixed 23.8/37.4 s).
+
+**Gates.** davidath QA **byte-identical to a same-env re-run of the `757f0cb`
+baseline** (Ans Loose 0.1402 / Ans Strict 0.4032 / Ans Conc 0.198 / Ref Loose
+0.8394 / Ref Strict 0.5543 / Ref Conc 0.4395 / Tone 1.0 — CLAUDE.md's 0.4037
+was measured without the `REGENOLD_EXTERNAL_EMBEDDINGS=0` neutraliser, so the
+baseline was re-run rather than assumed); 276-runner **255/255**, RISK_F1 macro
+1.00; OOS 51 rows **49 PASS, 0 leaks**; 181 tests across touched suites incl.
+the 2 fusion tests red on `main` since `8eb34e4`'s undisclosed
+`claude-opus-5→claude-opus-4-8` rider. **Post-deploy live verification**
+(`535a0ed`): `rg_001` now ships `['Article 11', 'Annex IV']` and describes
+Annex IV — the gold reference the partition was deleting is back.
+
 ## Non-goals / things to skip
 
 - ~~Vector embeddings / dense retrieval~~ → **Round 31 added a
