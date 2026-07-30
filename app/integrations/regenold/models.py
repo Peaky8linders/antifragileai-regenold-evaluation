@@ -1151,44 +1151,45 @@ def _hard_truncate_at_clause(text: str, limit: int) -> str:
     single cite-anchored sentences carrying a long ``(a) … (b) … (c) …``
     enumeration, which the LLM judge counts as ">4 sentences".
 
-    Cut at the latest sentence end / ``;`` clause end / ``(x)``
-    enumerated-item start that fits the window. Falls back to the last
-    word boundary when no clean boundary lands in the back half of the
-    window (so a single boundary-free mega-clause is not chopped to a
-    stub). Never returns empty; appends a terminal period when the cut
-    leaves none.
+    Prefers full sentence boundaries ([.!?]) so the truncated text ends on
+    a complete, period-terminated sentence. Falls back to clause boundaries
+    (semicolons/enumerators) or word breaks when no complete sentence boundary
+    exists within limit.
     """
     if len(text) <= limit:
         return text
     window = text[:limit]
-    candidates: list[int] = []
-    # Sentence ends — include the terminator itself. R112 — filter out
-    # abbreviation periods (``e.g.`` / ``i.e.`` / ``Art.`` …) via the
-    # module's own _is_abbreviation_period helper, exactly as
-    # _split_sentences does; previously the abbreviation period could
-    # win as the "latest clean boundary" and ship a mid-sentence chop
-    # ending "…, e.g.".
-    candidates += [
+
+    # 1. Prefer full sentence ends — include the terminator itself.
+    sent_ends = [
         m.end()
-        for m in re.finditer(r"[.!?](?=\s)", window)
+        for m in re.finditer(r"[.!?](?=\s|$)", window)
         if not _is_abbreviation_period(window[: m.end()])
     ]
-    # Enumerated-clause ends.
-    candidates += [m.end() for m in re.finditer(r";(?=\s)", window)]
-    # Enumerated-item starts " (a) " / " (A) " / " (ii) " — cut just
-    # before the space. R79 — widened from lowercase-only to also catch
-    # uppercase and roman-numeral enumerators used in some Annex points.
-    candidates += [
+    if sent_ends:
+        best_sent = max(sent_ends)
+        out = text[:best_sent].strip()
+        if out:
+            return out
+
+    # 2. Enumerated-clause ends and item starts.
+    clause_candidates: list[int] = []
+    clause_candidates += [m.end() for m in re.finditer(r";(?=\s|$)", window)]
+    clause_candidates += [
         m.start()
         for m in re.finditer(r"\s\((?:[a-zA-Z]|[ivxl]{2,4})\)", window)
     ]
-    cut = max(candidates) if candidates else -1
+    cut = max(clause_candidates) if clause_candidates else -1
     if cut < limit // 2:
-        # No clean boundary in the back half — fall back to a word break
-        # near the limit rather than chop a boundary-free mega-clause.
         ws = window.rstrip().rfind(" ")
         cut = ws if ws > 0 else limit
-    out = text[:cut].rstrip().rstrip(",;:")
+
+    out = text[:cut].rstrip().rstrip(",;:—- ")
+    low = out.lower()
+    for dangler in (" and", " or", " to", " with", " for", " including", " must", " shall", " under"):
+        if low.endswith(dangler):
+            out = out[: len(out) - len(dangler)].rstrip(",;:—- ")
+            break
     if out and out[-1] not in ".!?":
         out += "."
     return out or text[:limit].rstrip()
@@ -1336,9 +1337,9 @@ def normalise_answer_for_regenold(
     # site. Fall back to the 400 default and clamp to a sane range so
     # a typo can never crash — or zero out — the answer cap.
     try:
-        qa_cap = int(os.getenv("REGENOLD_QA_LENGTH_CAP", "1200").strip() or 1200)
+        qa_cap = int(os.getenv("REGENOLD_QA_LENGTH_CAP", "400").strip() or 400)
     except ValueError:
-        qa_cap = 1200
+        qa_cap = 400
     qa_cap = max(100, min(qa_cap, 20000))
     is_scenario = False
     if question:
@@ -1355,15 +1356,8 @@ def normalise_answer_for_regenold(
             re.IGNORECASE,
         ))
     char_cap = 600 if is_scenario else qa_cap
-    _is_obligation_ask = bool(re.search(
-        r"\b(?:obligations?|duties|requirements?|article\s+16)\b",
-        question,
-        re.IGNORECASE,
-    ))
-    if _is_multi or _is_enum or _is_obligation_ask:
-        char_cap = max(char_cap, 2000)
-        if _is_obligation_ask and not _no_cap:
-            max_sentences = max(max_sentences, 10)
+    if _is_multi or _is_enum:
+        char_cap = max(char_cap, 1500)
 
     cleaned = _strip_markdown(text)
     sentences = _split_sentences(cleaned)
