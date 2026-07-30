@@ -94,6 +94,41 @@ _LABEL_DANGLERS = frozenset(
 )
 
 
+_ROMAN_KEYS = frozenset(
+    "ii iii iv v vi vii viii ix x xi xii".split()
+)
+
+
+def _drop_nested_romans(subs: dict[str, str]) -> dict[str, str]:
+    """Drop nested roman-numeral sub-points flattened in beside their siblings.
+
+    R300 — ``provision_text._subpoints`` returns a FLAT dict, so a nested
+    ``(i)/(ii)/(iii)`` block inside one lettered point lands beside the
+    top-level letters. For Article 5(1) it returns
+    ``['a'..'h', 'i', 'ii', 'iii']`` where the three romans are Article
+    5(1)(h)'s law-enforcement carve-outs.
+
+    Enumerating those as missing "requirements" states the regulation
+    backwards: 5(1)(h)(i)-(iii) are the conditions under which real-time
+    remote biometric identification is PERMITTED, not obligations. Shipping
+    that is a confidently-wrong legal claim (CLAUDE.md hard rule #4).
+
+    ``(i)`` is genuinely ambiguous — it is both a valid letter (Article 16
+    runs (a)-(l) and its (i) is a real obligation) and roman one. Resolve it
+    by context: a multi-character roman (``ii``) can never be a letter key, so
+    its presence proves a nested block exists, and ``i`` belongs to that block.
+    Absent any multi-character roman, ``i`` is kept as a letter.
+    """
+    if not subs:
+        return subs
+    romans = _ROMAN_KEYS & set(subs)
+    if not romans:
+        return subs
+    drop = set(romans)
+    drop.add("i")  # the nested block starts at (i)
+    return {k: v for k, v in subs.items() if k not in drop}
+
+
 def _trim_dangling(label: str) -> str:
     """Drop trailing function words so the label ends on a content word."""
     words = label.split()
@@ -179,7 +214,7 @@ def verify_and_enrich_enumerated_completeness(
         target_paras = list(paras.values()) if paras else [body]
 
         for p_text in target_paras:
-            subs = _subpoints(p_text)
+            subs = _drop_nested_romans(_subpoints(p_text))
             if len(subs) < 2:
                 continue
 

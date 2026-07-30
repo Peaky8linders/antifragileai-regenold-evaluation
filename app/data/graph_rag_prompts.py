@@ -628,12 +628,52 @@ def user_ref_partition_enabled() -> bool:
 
     Fresh env read per call (R263.2).
 
-    **DEFAULT ON as of R299.**
-    Off-switch: ``REGENOLD_REF_PARTITION=0``.
+    **DEFAULT OFF as of R300** (was ON in R299).
+
+    R299 shipped this default-ON without the hard-rule-#6 live ``ab_judge``
+    merge gate — its plan records validation as "0 run errors, zero
+    regressions, clean prompt execution", which is a smoke test, not a quality
+    A/B. The R300 review then measured what it actually does on the real
+    110-row graded batch:
+
+      * **58/110 rows (53%)** demote at least one retrieved reference, and
+        **222/364 refs (61%)** land under the BACKGROUND header, which reads
+        "do NOT cite, do NOT describe unless directly requested".
+      * A ref is OPERATIVE only if its number is in ``target_art_nums`` /
+        ``target_annexes``; the two escape hatches are total-miss only, so
+        they never fire on a well-retrieved question. The provision that
+        GOVERNS the answer is routinely the one demoted:
+          - ``rg_001``: OPERATIVE ``Art. 11`` / BACKGROUND ``Annex IV`` — but
+            Article 11(1) says the documentation "shall contain, at a minimum,
+            the elements set out in Annex IV".
+          - ``rg_004``: Annexes VI/VII (the conformity procedures Article 43
+            directs you to) demoted.
+          - GPAI systemic: Articles 53/54 demoted, though Article 55(1) opens
+            "In addition to the obligations listed in Articles 53 and 54".
+      * Because the R72 prose reconcile is also default-ON, a prompt
+        instruction becomes an actual WIRE DELETION: told not to describe
+        Annex IV, the answer does not, and the reconcile then drops it —
+        ``['Article 11','Annex IV','Annex IV.1.e','Annex IV.2.c']`` reduced to
+        ``['Article 11']``, executed. Gold references deleted; that is the
+        R142.1 failure mode arriving through a new door.
+
+    davidath cannot see any of this — it runs ``provider=cli`` and never fires
+    Stage-2 (CLAUDE.md hard rule #6 / the R139 note on the bench's true role).
+
+    Turning this OFF restores the last A/B-VALIDATED state: R298's USER-channel
+    reference-minimality + challenge-brevity rules are independent of the
+    partition, stay ON, and keep the win they were measured for
+    (ref precision 0.423 -> 0.735).
+
+    Re-enable with ``REGENOLD_REF_PARTITION=1`` to run the live pairwise
+    ``ab_judge`` this feature still needs. The known structural fix to try
+    first: promote to OPERATIVE any provision cross-referenced FROM an already
+    operative one — ``kb_xrefs._build_xref_graph`` already carries exactly
+    those edges (Art 11 -> Annex IV, Art 43 -> VI/VII, Art 55 -> 53/54).
     """
     import os
 
-    return os.environ.get("REGENOLD_REF_PARTITION", "1").strip().lower() in {
+    return os.environ.get("REGENOLD_REF_PARTITION", "0").strip().lower() in {
         "1", "true", "yes", "on",
     }
 

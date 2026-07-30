@@ -29,11 +29,29 @@ from app.engines.completeness_verifier import (
 )
 
 
-def test_toggles_default_on(monkeypatch):
+def test_toggles_defaults(monkeypatch):
+    """R300 — REF_PARTITION flipped default ON -> OFF; the verifier stays ON.
+
+    R299 shipped the partition default-ON with no live ``ab_judge`` gate. The
+    R300 review measured it demoting the GOVERNING provision to a "do NOT
+    cite" BACKGROUND block on 53% of the real graded batch, which the R72
+    prose reconcile then converts into an actual wire deletion of gold
+    references (``rg_001``: 4 refs -> 1). Default OFF restores the last
+    A/B-validated state; ``REGENOLD_REF_PARTITION=1`` re-enables it for the
+    A/B it still owes. See ``user_ref_partition_enabled`` for the full record.
+
+    Pinned so that re-enabling by default is a deliberate, visible act.
+    """
     monkeypatch.delenv("REGENOLD_REF_PARTITION", raising=False)
     monkeypatch.delenv("REGENOLD_COMPLETENESS_VERIFIER", raising=False)
-    assert user_ref_partition_enabled() is True
+    assert user_ref_partition_enabled() is False
     assert completeness_verifier_enabled() is True
+
+
+def test_partition_opt_in_still_works(monkeypatch):
+    """The feature must remain reachable for its pending A/B."""
+    monkeypatch.setenv("REGENOLD_REF_PARTITION", "1")
+    assert user_ref_partition_enabled() is True
 
 
 def test_toggles_off_switch(monkeypatch):

@@ -287,3 +287,69 @@ class TestEngineCacheKeyCoversR299Gates:
         monkeypatch.setenv(flag, "0")
         off = _engine_cache_key(q, "")
         assert on != off, f"{flag} flips the engine answer but not the cache key"
+
+
+# --------------------------------------------------------------------------
+# 5. Nested roman sub-points must not be listed as top-level obligations
+# --------------------------------------------------------------------------
+class TestNestedRomanSubpoints:
+    """`provision_text._subpoints` returns a FLAT dict.
+
+    For Article 5(1) that means 5(1)(h)'s law-enforcement carve-outs
+    (i)/(ii)/(iii) land beside the top-level letters (a)-(h). Listing them as
+    missing "requirements" states the regulation backwards -- they are the
+    conditions under which real-time remote biometric identification is
+    PERMITTED. Hard rule #4: a confidently-wrong legal claim is the worst
+    defect class.
+    """
+
+    def test_article_5_nested_romans_are_dropped(self):
+        from app.data.provision_text import _paragraphs, _subpoints, article_body
+        from app.engines.completeness_verifier import _drop_nested_romans
+
+        paras = _paragraphs(article_body("Article 5") or "")
+        subs = _subpoints(list(paras.values())[0])
+        assert {"ii", "iii"} <= set(subs), "fixture drifted: expected flattened romans"
+
+        kept = _drop_nested_romans(subs)
+        assert not ({"i", "ii", "iii"} & set(kept)), (
+            "Article 5(1)(h)(i)-(iii) are permissive exceptions, not obligations"
+        )
+        assert set(kept) == set("abcdefgh")
+
+    def test_article_16_genuine_letter_i_is_preserved(self):
+        """(i) is ambiguous. Article 16 runs (a)-(l); its (i) is a real point."""
+        from app.data.provision_text import _subpoints, article_body
+        from app.engines.completeness_verifier import _drop_nested_romans
+
+        subs = _subpoints(article_body("Article 16") or "")
+        kept = _drop_nested_romans(subs)
+        assert "i" in kept, "dropped a genuine lettered obligation"
+        assert set(kept) == set(subs), "no nested block here -> nothing to drop"
+
+    def test_noop_on_empty_and_letters_only(self):
+        from app.engines.completeness_verifier import _drop_nested_romans
+
+        assert _drop_nested_romans({}) == {}
+        letters = {"a": "x", "b": "y", "i": "z"}
+        assert _drop_nested_romans(letters) == letters
+
+    def test_article_5_answer_never_lists_the_carve_outs_as_requirements(
+        self, monkeypatch
+    ):
+        monkeypatch.delenv("REGENOLD_COMPLETENESS_VERIFIER", raising=False)
+        answer = (
+            "Article 5 prohibits eight practices outright, including subliminal "
+            "manipulation and social scoring."
+        )
+        out = verify_and_enrich_enumerated_completeness(
+            "What practices are prohibited under Article 5?", answer, None
+        )
+        for carve_out in (
+            "targeted search for specific victims",
+            "imminent threat to the life",
+            "localisation or identification of a person suspected",
+        ):
+            assert carve_out not in out, (
+                f"5(1)(h) carve-out shipped as a requirement: {carve_out!r}"
+            )
