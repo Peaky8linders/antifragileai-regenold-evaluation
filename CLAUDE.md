@@ -10296,6 +10296,132 @@ the 2 fusion tests red on `main` since `8eb34e4`'s undisclosed
 (`535a0ed`): `rg_001` now ships `['Article 11', 'Annex IV']` and describes
 Annex IV — the gold reference the partition was deleting is back.
 
+## Round 301 — the post-fix re-run of the 71 live hard requests, graded: recall +0.17, correctness −0.20 (2026-07-31)
+
+R300's 71-request live measurement was taken at **21:29**; the partition-OFF +
+context-restore fixes merged at **21:48**. So that scorecard is the **PRE-fix**
+number. R301 replays the identical deterministic sample against the now-deployed
+`4a088d2` and grades **both** arms with the grounded Sonnet-5 judge — the
+comparison R300 could not make.
+
+### The A/B is clean by construction
+
+`run_hard_sample_r297` draws an evenly-spaced, RNG-free sample, so `--frac 0.25`
+reproduces the identical 71 requests (28 multi-turn × 2 turns + 15 single-turn
+hard; `--dry-run` confirmed byte-identical composition). Same endpoint, same key,
+no env overrides in either arm. **0 HTTP errors, 0 refusals, tone 1.000** in both.
+
+New tooling: [`evals/regenold/diff_hard_sample.py`](evals/regenold/diff_hard_sample.py)
+— per-row diff stratified on `provenance.stage2_polish`, because for a
+Stage-2-gated change only rows where Stage-2 actually landed are in the treatment
+population; pooling them with the deterministic rows dilutes the effect toward
+zero (the R80 lesson, applied to the hard sample). It reports refs at BOTH exact
+and head grain — R287.1 measured a case where head-level recall was invariant
+while sub-point recall collapsed.
+
+**The stratification validates itself**: the 7 multi-turn deterministic/curated
+control rows are **0/7 changed on refs and 0/7 on answers** — byte-identical, as
+a curated-intercept Stage-2 skip must be. All movement is in the treatment arm.
+
+### Grounded Sonnet-5 judge — PRE vs POST
+
+Scored against the **verbatim Act text**, not gold labels (the official regenold
+gold was never published; the judge's own banner fires: **gold coverage 0%**, so
+reference PRECISION is text-grounded while RECALL is the judge model's reading —
+do not compare this recall across datasets).
+
+| axis | multi-turn (n=28) | single-turn (n=15) | **pooled (n=43)** |
+| --- | --- | --- | --- |
+| answer_correctness | 0.571 → 0.464 | 0.400 → 0.200 | **0.512 → 0.372 (−0.140)** |
+| reference_correctness | 0.429 → 0.429 | 0.467 → 0.200 | **0.442 → 0.349 (−0.093)** |
+| ref precision | 0.720 → 0.691 | 0.676 → 0.551 | **0.704 → 0.642 (−0.062)** |
+| **ref recall** | 0.858 → **0.975** | 0.800 → **0.878** | **0.838 → 0.941 (+0.103)** |
+| ref F1 | 0.783 → 0.809 | 0.733 → 0.677 | 0.765 → 0.763 (flat) |
+| citation_faithfulness | 0.643 → 0.571 | 0.333 → 0.533 | 0.535 → 0.558 (+0.023) |
+
+**Provider failures are NOT the explanation.** The POST arm had more Stage-2
+double-failures (4 vs 2), which ship a deterministic answer and bias it down — so
+the comparison was recomputed on the 30 rows where **both** arms landed Stage-2.
+That makes it *sharper*, not better: answer_correctness **0.533 → 0.333
+(−0.200)**, ref precision 0.686 → 0.659, ref recall **0.817 → 0.989**,
+citation_faithfulness 0.533 → 0.567.
+
+### What actually moved, and the mechanism
+
+Refs per row **2.5 → 3.0** and answers **~30% longer** (mt median 833 → 1079
+chars, st 1006 → 1238) on the clean subset. That is the R300 P0-1 context restore
+(330 → 1065 chars of Stage-2 context, 5 supplementary sections returned) doing
+exactly what it was built to do — and the cost is visible in the judge's own
+failure modes: POST reference failures are overwhelmingly **"over-citation"**, and
+POST answer failures are overwhelmingly **"omits X"** ("omits Art 20(2) duty to
+investigate", "omits Art 5(1)(d)", "never explicitly answers whether…"). More
+provisions surfaced, each analysed less completely, operative holdings dropped.
+8 rows flipped answer-correctness pass→fail, 2 fail→pass.
+
+**Directly answering the question this round was run to answer** — does restoring
+`Annex IV` on `rg_001`-class rows move reference correctness? **No.** `rg_001`
+itself is byte-identical in both arms (it is a curated intercept, `stage2_polish`
+False, so the partition never touched it), and pooled reference correctness went
+**down** 0.442 → 0.349, because the binary pass-rate gates on "zero WRONG
+citations" and the restore buys recall by citing more.
+
+### Honest limits — this is one paired run
+
+Every Stage-2 answer changed between runs (21/21 mt), because Opus is
+non-deterministic. The project has **measured** that a single live run at this n
+cannot resolve reference-axis effects (identical baseline arms have drifted
+sign-flips on all three ref axes). So:
+
+* **ref recall +0.10 to +0.17, landing at 0.94-0.99**, is a large, same-signed
+  effect in both arms and is very unlikely to be pure variance;
+* **answer_correctness −0.14 to −0.20** is same-signed in both arms and is the
+  round's most important signal, but an 8-vs-2 flip count at n=30 against a
+  non-deterministic generator is **not** sufficient to flip a shipped fix.
+
+**Nothing was reverted on this evidence.** R300 also fixed genuine legal-correctness
+defects (Art 5(1)(h) carve-outs shipped as prohibitions; cross-article
+conflation), which are independent of the context restore. The next round's lever
+is to A/B the *supplementary-context restore alone*, with repeat runs per arm.
+
+### Two live defects this measurement surfaced
+
+1. **Stage-2 double-failure ships a raw KB dump, not an answer.** `rg_109`
+   ("…we can skip Chapter 3 Section 2, right?") shipped prose opening mid-fragment
+   — *"Union harmonisation legislation list (Section A: New Legislative Framework,
+   machinery, toys…"* — and never answered the yes/no. **Reproduced 100%
+   deterministically** (`provider=cli`), byte-identical to the live wire, so it is
+   a pre-existing composer defect, not an R300 regression. Root cause is exact,
+   from the live trace: `groq_fallback_failed: api_status_429` →
+   `stage2_failed_both_providers_deterministic_ship` → `_two_stage_generate`
+   returns the raw `kg_answer`, whose lead ref `Annex I` has a KB summary that is
+   a **noun-phrase fragment**. 11 of 13 Annex summaries open as fragments — fine
+   as grounding context, broken as an answer's lead sentence. NOT fixed here: this
+   composer *is* the davidath path (`provider=cli` scores exactly it), so changing
+   it moves davidath and needs its own gated round; and a lead-fragment patch
+   would be a symptom fix — the answer's real defect is that it never answers.
+2. **The Stage-2 Gemini fallback never fires in production.** The trace shows no
+   `stage2_primary_failed_fallback_gemini` note, and `is_gemini_provider_enabled()`
+   only requires `GEMINI_API_KEY` — present in the local `.env`, evidently **unset
+   on Railway**. So the documented Groq→Gemini→Mistral chain collapses and a
+   wrapper failure falls straight to the deterministic dump. **Operator action,
+   zero code:** `railway variables --set GEMINI_API_KEY=…`. This is the cheapest
+   available reliability win on the hard surface.
+
+### Operational reading
+
+* p50 latency 60.7 s → 69.4 s (mt) — high against a scored axis, and the sample is
+  hard-weighted and multi-turn-heavy, so it is not comparable to R286's mixed
+  23.8 s / 37.4 s. Treat as an absolute reading.
+* **Answer length is the standing risk.** Conciseness is the ONLY axis the official
+  scorecard says we lead, i.e. the one with zero headroom, and this round moved
+  answers ~30% longer. The grounded judge has no conciseness axis, so it cannot
+  arbitrate this — it must be watched separately.
+* R300's trace-honesty fix confirmed live: `stage2_model` now reports
+  `claude-opus-4-6` (the model actually sent) where it previously reported
+  `claude-opus-5`.
+* Sidecars: `hardsample-r301-postfix.json`, `official-r301-postfix-{mt-hard,st-easy}.ckpt.jsonl`,
+  `grounded-r30{0,1}-{mt,st}.json`, `diff-r300-live-vs-r301-postfix.json`.
+
 ## Non-goals / things to skip
 
 - ~~Vector embeddings / dense retrieval~~ → **Round 31 added a
