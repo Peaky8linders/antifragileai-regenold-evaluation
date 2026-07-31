@@ -2175,6 +2175,25 @@ _CLASSIFICATION_FRAGMENT_RE = re.compile(
     re.IGNORECASE,
 )
 
+# R305 — "which risk category does X belong to?" is a verdict ask, but neither
+# regex above recognises it: ``_CLASSIFICATION_QUESTION_RE`` anchors on a
+# leading is/are/does + a tier predicate, and the fragment regex requires the
+# clause to BE a bare tier word. Measured failure on the graded evaluator
+# batch: "Is irregular migration a topic considered in the AI Act? If so, to
+# what risk category does it belong?" split into a clause with no tier
+# predicate and a clause starting "If so", so the whole question was read as a
+# DESCRIPTION and fell through to the Article 3 QA-dump — shipping an Article 5
+# biometric-identification answer for a migration classification question.
+#
+# This is a general shape (what/which risk category|tier|class|level ...), not
+# a per-row pattern; it is deliberately restricted to an explicit risk-TIER
+# noun so a content lookup ("what category of documentation...") cannot match.
+_RISK_CATEGORY_ASK_RE = re.compile(
+    r"\b(?:to\s+)?(?:what|which)\s+risk\s+"
+    r"(?:categor(?:y|ies)|tier|class(?:ification)?|level)\b",
+    re.IGNORECASE,
+)
+
 # Narrow risk-tier verdict gate for the GENERAL classification fallback
 # (:func:`_general_classification_verdict`).
 #
@@ -2224,6 +2243,11 @@ def _is_classification_question(question: str) -> bool:
         clause = clause.strip()
         if _CLASSIFICATION_QUESTION_RE.match(clause) or _CLASSIFICATION_FRAGMENT_RE.match(clause):
             return True
+    # R305 — explicit "what/which risk category|tier|class|level" verdict ask.
+    # Searched over the whole live question (not per-clause) because the ask
+    # commonly trails a scope clause ("... If so, to what risk category ...").
+    if _RISK_CATEGORY_ASK_RE.search(live):
+        return True
     # R149 — also test the FULL un-split live question. The clause splitter
     # breaks on " or " inside a subject noun phrase ("Are subliminal OR
     # manipulative AI techniques prohibited?" -> ["Are subliminal",
@@ -3965,6 +3989,16 @@ def _detect_robotic_surgery_inquiry(question: str) -> bool:
     idx = raw_q.rfind(_FLATTEN_MARKER)
     if idx >= 0:
         raw_q = raw_q[idx + len(_FLATTEN_MARKER):]
+    # R305 — scenario shapes belong to ``scenario_classifier``, not to a
+    # curated QA verdict. Seven sibling detectors already carry this guard;
+    # this one did not, so a davidath SCENARIO row ("We are a provider,
+    # offering a real-time safety monitoring ai for medical robots ...
+    # autonomous surgical robots ...") hijacked the curated gate and skipped
+    # Stage-2, leaving the file-level davidath 0-hit guard in
+    # ``tests/test_r144_emotion_curated.py`` RED and falsifying the CLAUDE.md
+    # "curated intercepts fire on 0 davidath rows" invariant.
+    if _MINIMAL_RISK_SCENARIO_OPENER_RE.search(raw_q):
+        return False
     q = raw_q.strip().lower()
     if not ("robotic surgery" in q or "surgical robot" in q):
         return False
@@ -4056,6 +4090,39 @@ def _curated_stage2_skip_enabled() -> bool:
     return os.getenv("REGENOLD_CURATED_STAGE2_SKIP", "1").strip().lower() not in (
         "0", "false", "no", "off",
     )
+
+
+# ── R305 — the three R304 curated intercepts were REMOVED ────────────────
+#
+# R304 shipped three hardcoded verdicts (annex_iii_amendment /
+# sandbox_definition / irregular_migration), one per graded evaluator row.
+# The R305 review measured all three and removed them:
+#
+#   * ``_detect_sandbox_definition_inquiry`` returned **False** on the very
+#     question it was built for. Its negative guard rejected ``"how long"``,
+#     and the real evaluator question ends "...to do what, for how long)."
+#     The R304 unit test passed only because it asserted against a TRUNCATED
+#     copy of the question with that clause removed.
+#   * ``_detect_irregular_migration_inquiry`` fired on non-classification
+#     questions (e.g. "Which documentation must a provider keep for an AI
+#     system used in irregular migration control under Annex IV?"), and a
+#     curated intercept SKIPS Stage-2 — so an obligations question was
+#     answered with a classification verdict that no LLM could correct.
+#   * All three verdicts carried verbatim-text defects (hard rule #4). The
+#     worst: the amendment verdict said Article 7(3) "permits removing a
+#     use-case where it no longer presents a significant risk", but Art 7(3)
+#     requires BOTH (a) no significant risk AND (b) that the deletion does
+#     not decrease the overall level of protection under Union law.
+#
+# Measured on the live wire, the underlying failures were NOT answer-template
+# gaps and did not need a hardcode — two are ordinary retrieval/routing bugs,
+# now fixed generically (see ``_KEYWORD_ENTITY_MAP`` "irregular migration"
+# and ``sentence_index.classify_question`` definitional precedence), and the
+# third (Annex III amendment) production already answers correctly and more
+# completely than the hardcode did.
+#
+# Hard rule #3 (no per-example overfit) applies: one hardcoded answer per
+# graded question is exactly the pattern this project reverted once before.
 
 
 def _is_curated_authoritative_intercept(question: str) -> bool:
@@ -4226,6 +4293,13 @@ def _deterministic_answer(question: str, context: GraphContext) -> str:
         }
         _seed_classification_obligations(context, verdict, question)
         return verdict["answer"]
+
+    # R305 — the three R304 per-row curated verdicts were removed here.
+    # See the block comment above ``_is_curated_authoritative_intercept`` for
+    # the measured reasons (one never fired on its target question, one had a
+    # false-positive surface that hijacked obligations questions, and all
+    # three carried verbatim-text defects). The underlying failures are fixed
+    # generically instead.
 
     # R275 (Antifragile Q10) — provider-vs-deployer role-difference verdict.
     # The role-definition contrast + the Article 25 deployer->provider
@@ -6874,17 +6948,21 @@ def _claude_max_enhance_answer(
                 "the latest question, or when rule 12b closed-set completeness "
                 "requires naming every member of a set."
             )
-        # R298 / R299 — Prompt additions on the channel that reaches the model.
+        # R298 / R299 / R304 — Prompt additions on the channel that reaches the model.
         try:
             from app.data.graph_rag_prompts import (  # noqa: PLC0415
                 USER_CHALLENGE_BREVITY_CLAUSE,
                 USER_REF_MINIMALITY_CLAUSE,
+                USER_SUBPARAGRAPH_ATTRIBUTION_CLAUSE,
                 challenge_brevity_enabled,
                 is_challenge_turn,
+                subparagraph_attribution_enabled,
                 user_ref_minimality_enabled,
                 user_ref_partition_enabled,
             )
 
+            if subparagraph_attribution_enabled():
+                user_message += USER_SUBPARAGRAPH_ATTRIBUTION_CLAUSE
             if user_ref_minimality_enabled():
                 user_message += USER_REF_MINIMALITY_CLAUSE
             if user_ref_partition_enabled():
@@ -7298,7 +7376,12 @@ def _two_stage_generate(
     # and complete here, so ship it. Env-reversible
     # (REGENOLD_CURATED_STAGE2_SKIP=0); fires on 0 davidath rows so the
     # deterministic bench is byte-identical.
-    if _curated_stage2_skip_enabled() and _is_curated_authoritative_intercept(question):
+    # R305 — gate on ``resolved_q`` (the LIVE turn), not the flattened
+    # ``question``. The sibling gate 20 lines below already does. Scanning the
+    # whole conversation lets a PRIOR turn's topic fire the curated gate and
+    # skip Stage-2 for an unrelated live question — the flattened-prompt bug
+    # class this project has fixed four times (R60.1, R64 [C1], R71, R133).
+    if _curated_stage2_skip_enabled() and _is_curated_authoritative_intercept(resolved_q):
         try:
             from app.integrations.regenold.reasoning_trace import (  # noqa: PLC0415
                 record_note,
