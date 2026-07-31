@@ -10296,6 +10296,101 @@ the 2 fusion tests red on `main` since `8eb34e4`'s undisclosed
 (`535a0ed`): `rg_001` now ships `['Article 11', 'Annex IV']` and describes
 Annex IV — the gold reference the partition was deleting is back.
 
+## Round 302 — why correctness is low, and two fixes: one refuted, one shipped (2026-07-31)
+
+Root-caused the R301 levels (answer 0.372 / reference 0.349) with a 19-agent
+adversarial workflow, then built and measured the two highest-ranked fixes.
+
+### Root cause — three findings that change what you should fix
+
+1. **~Half the "badness" is the metric.** The judge gates are zero-tolerance
+   conjunctions. Recomputed with partial credit on the SAME verdicts: answer
+   **0.372 → 0.733**, reference **0.349 → 0.717**. Quote both, or 0.35 reads as
+   broken when it is not.
+2. **Reference correctness is ~purely precision.** 53 of 131 refs wrong, only
+   **6 missing**, and **zero rows fail on missing alone**; recall 0.94.
+3. **The obvious fix is a trap.** The ref-count pass-rate collapse (1 ref 80% →
+   5 refs 0%) *survives difficulty stratification* — but it is the **arithmetic
+   signature** of a 40%-per-ref error rate under a conjunctive gate
+   (independence predicts 59/35/21/13/7%), NOT evidence that removing refs
+   helps. Removing refs only helps if you remove the WRONG ones, and R298 proved
+   wrong/correct refs are positionally inseparable. Also measured: **86% of
+   wrong refs are described in the prose**, so the R72 prose-driven pruner is
+   structurally a no-op here.
+
+Answer-side: at ROW level **incorrect (16 rows) outranks pure omission (11)**,
+and incorrect is a Stage-2 phenomenon (0.97/row vs 0.33 deterministic) — Stage-2
+trades omission for fabrication. The errors are mechanically specific:
+`55(1)(c)` for `55(1)(d)`, `point 4.6` attributed to `5.1`, `Art 49` for
+`Art 71(4)`, fabricated Annex VIII items.
+
+Also: the 43 rows are **three populations** — curated intercept (n=7, 86% answer
+pass, 0.00 incorrect/row), un-curated deterministic (n=5, **0%**), Stage-2
+(n=31, 32%). Never pool them again; a Stage-2 fix measured across all 43 is
+scored on 12 rows it provably cannot move.
+
+### Fix 1 — pushback-turn reference freeze: BUILT, REFUTED, ships default OFF
+
+Hypothesis: the graded multi-turn answer is the post-pushback turn, 61% of rows
+churn citations there (29 added / 29 removed = pure churn), and non-increasing
+rows passed 69% vs 20% for any-addition. Validated **offline** (a pure wire-ref
+transform on recorded rows — no live re-run). Paired on the 11 rows judged in
+both arms: ref pass 0.091 → 0.182, but **precision 0.477 → 0.430** and **recall
+0.845 → 0.576**, with recall going 1.0 → **0.0** on `rg_029`, `rg_070`, `rg_102`.
+It gains 2 rows, breaks a passing one, and does not even improve precision —
+the R142.1 gold-drop mode. The churn correlation is real but **not causal**:
+turn 2's additions are often the governing provisions. Ships gated + tested with
+the negative result recorded (`REGENOLD_PUSHBACK_REF_FREEZE=1` to enable).
+davidath byte-identical by construction — `is_challenge_turn` fires on 0/476
+rows, asserted as a test.
+
+### Fix 3 — verbatim grounding text: A/B'd and flipped DEFAULT ON
+
+R288 built this and parked it. R301 supplied the motive: the judge scores
+against **verbatim** Act text while the model was handed KB **paraphrases**.
+Identical deterministic sample, both arms in-process against the live wrapper
+(43 rows/arm), grounded Sonnet-5 judge. Paired on the 25 both-Stage-2 rows:
+
+| axis | OFF | ON | Δ |
+| --- | --- | --- | --- |
+| answer_correctness | 0.600 | 0.640 | +0.040 |
+| **mean factual score** | 0.827 | **0.929** | **+0.103** |
+| reference_correctness | 0.381 | 0.429 | +0.048 |
+| ref precision | 0.738 | 0.664 | −0.074 |
+| ref recall | 0.976 | 1.000 | +0.024 |
+| citation_faithfulness | 0.720 | 0.760 | +0.040 |
+
+Every pass-rate axis improves; the load-bearing signal is the CONTINUOUS one.
+Multi-turn alone (n=28): answer 0.500 → 0.607, factual 0.799 → 0.885,
+faithfulness 0.679 → 0.750. **Latency flat** (p50 58.4 → 59.7 s). A/B integrity
+verified four ways before running: knob IS in `_engine_cache_key`; NOT inert
+(block 95 → 1482 chars); same transport both arms; and **all 10
+deterministic-path rows byte-identical between arms** as the control. One paired
+run — repeat before treating as settled. Rollback `REGENOLD_GROUNDING_TEXT=0`.
+
+### Also shipped
+
+`evals/judge/grounded.py` now emits **`wrong_refs` / `missing_refs`** (it was
+counts-only, so no precision fix could be aimed at anything — every prior
+attempt had to guess at rank, which is the R142.1 clamp). Validated live:
+`rg_018` → wrong `['Article 6','Article 50','Annex III','Annex I']`, missing
+`['Article 7']`.
+
+Gates across the round: davidath QA **byte-identical** (Ans Loose 0.1402 / Ans
+Strict 0.4032 / Ans Conc 0.1980 / Ref Loose 0.8394 / Ref Strict 0.5543 / Ref
+Conc 0.4395 / Tone 1.0); OOS 51 rows **49 PASS / 0 leaks**; 276-runner **0
+failures**; 61 new tests.
+
+### Explicitly rejected (do not re-propose)
+
+Positional/top-N ref clamps (R142.1, lost 11-0 p=0.001); prose-driven pruners
+(86% already described); a completeness instruction (R284 measured it INCREASES
+over-citation, and would add fabrication pressure to rows already fabricating);
+answer length caps (the length signal is a difficulty confound — flat on HARD,
+33% vs 30%); article-identity blocklists (Annex III runs 75% gold);
+xref-inheritance promotion to repair the R299 partition (rescues only 19-37% of
+the 56% it demotes — still a gold-deleter under every variant).
+
 ## Round 301 — the post-fix re-run of the 71 live hard requests, graded: recall +0.17, correctness −0.20 (2026-07-31)
 
 R300's 71-request live measurement was taken at **21:29**; the partition-OFF +
