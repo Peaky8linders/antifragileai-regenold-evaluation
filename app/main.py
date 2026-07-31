@@ -658,8 +658,31 @@ def _run_index_warmup_in_thread() -> None:
         client = get_graph_client()
         if not client.enabled:
             return
-        # Cheapest possible round-trip that still opens the pool.
+        # Open the connection pool.
         client.execute_read("RETURN 1 AS ok", {})
+
+        # R303 — ``RETURN 1`` warms the POOL but NOT the query-plan cache, and
+        # the plan is where the cold cost actually is. Measured against the
+        # live Aura instance (R291 full seed) through ``expand_2hop`` itself:
+        #
+        #     call 1 (cold)   1356 ms  -> EXCEEDS the 250 ms budget -> 0 refs
+        #     call 2           202 ms  -> works (hop1=10, hop2=5)
+        #     calls 3-6      43-48 ms  -> works
+        #
+        # So the first REAL 2-hop of each connection lifetime silently lost the
+        # entire graph contribution, and with the R294 breaker three such cold
+        # failures open it for 60 s. Warming the actual Cypher (not a trivial
+        # probe) compiles the plan here, at boot, so the first user request
+        # lands on the ~45 ms warm path.
+        #
+        # Uses a real seed so the planner sees the real pattern. Fail-soft via
+        # ``_step``; a graph-less or embedded deploy already returned above.
+        try:
+            from app.engines.graph_expand_2hop import _CYPHER_2HOP
+
+            client.execute_read(_CYPHER_2HOP, {"seed_nums": ["6"], "cap": 8})
+        except Exception:  # noqa: BLE001 — plan warm is best-effort
+            logger.debug("neo4j 2-hop plan warm-up failed", exc_info=True)
 
     _step("kb_search_bm25", _warm_kb_search)
     _step("sentence_index", _warm_sentence_index)
