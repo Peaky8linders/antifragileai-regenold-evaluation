@@ -636,12 +636,61 @@ def _run_index_warmup_in_thread() -> None:
         if embedded_backend_selected():
             get_embedded_graph()
 
+    def _warm_neo4j_graph() -> None:
+        # R294 — the hosted-Neo4j counterpart of ``_warm_embedded_graph``.
+        #
+        # Measured against the live Aura instance, the production 2-hop
+        # CROSS_REFERENCES Cypher costs ~703 ms COLD but only ~64 ms once
+        # the driver connection + query-plan cache are hot. Without this
+        # step the cold cost lands on the first user request, blows the
+        # per-query wall-clock budget, and that request silently loses the
+        # whole graph contribution.
+        #
+        # No-op unless the neo4j backend is actually selected AND the
+        # client is enabled, so an embedded / graph-less deploy pays
+        # nothing. Fail-soft: ``_step`` already logs and swallows.
+        from app.graph.embedded_graph import embedded_backend_selected
+
+        if embedded_backend_selected():
+            return
+        from app.graph.client import get_graph_client
+
+        client = get_graph_client()
+        if not client.enabled:
+            return
+        # Open the connection pool.
+        client.execute_read("RETURN 1 AS ok", {})
+
+        # R303 — ``RETURN 1`` warms the POOL but NOT the query-plan cache, and
+        # the plan is where the cold cost actually is. Measured against the
+        # live Aura instance (R291 full seed) through ``expand_2hop`` itself:
+        #
+        #     call 1 (cold)   1356 ms  -> EXCEEDS the 250 ms budget -> 0 refs
+        #     call 2           202 ms  -> works (hop1=10, hop2=5)
+        #     calls 3-6      43-48 ms  -> works
+        #
+        # So the first REAL 2-hop of each connection lifetime silently lost the
+        # entire graph contribution, and with the R294 breaker three such cold
+        # failures open it for 60 s. Warming the actual Cypher (not a trivial
+        # probe) compiles the plan here, at boot, so the first user request
+        # lands on the ~45 ms warm path.
+        #
+        # Uses a real seed so the planner sees the real pattern. Fail-soft via
+        # ``_step``; a graph-less or embedded deploy already returned above.
+        try:
+            from app.engines.graph_expand_2hop import _CYPHER_2HOP
+
+            client.execute_read(_CYPHER_2HOP, {"seed_nums": ["6"], "cap": 8})
+        except Exception:  # noqa: BLE001 — plan warm is best-effort
+            logger.debug("neo4j 2-hop plan warm-up failed", exc_info=True)
+
     _step("kb_search_bm25", _warm_kb_search)
     _step("sentence_index", _warm_sentence_index)
     _step("embeddings_index", _warm_embeddings_index)
     _step("turboquant_dense", _warm_turboquant)
     _step("eu_ai_act_tree", _warm_tree)
     _step("embedded_graph", _warm_embedded_graph)
+    _step("neo4j_graph", _warm_neo4j_graph)
 
     logger.info(
         "regenold.startup index_warmup_completed elapsed_s=%.2f %s",
