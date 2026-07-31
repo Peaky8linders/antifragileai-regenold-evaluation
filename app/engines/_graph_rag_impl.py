@@ -5638,9 +5638,46 @@ def _grounding_text_enabled() -> bool:
     retrieved articles". That is the ``AnsLoose - RefLoose = -13.1`` signature —
     right article, our paraphrase.
 
-    Default OFF so the arm can be A/B'd against the current wire.
+    **DEFAULT ON as of R302** — the A/B R288 was parked for has now been run.
+    Both arms replayed the identical deterministic 25% hard sample in-process
+    against the live Claude Max wrapper (43 rows/arm), graded by the grounded
+    Sonnet-5 judge. Paired on the 25 rows where Stage-2 landed in BOTH arms:
+
+    | axis                  |  OFF  |  ON   | delta  |
+    | --------------------- | ----- | ----- | ------ |
+    | answer_correctness    | 0.600 | 0.640 | +0.040 |
+    | **mean factual score**| 0.827 |**0.929**|**+0.103**|
+    | reference_correctness | 0.381 | 0.429 | +0.048 |
+    | ref precision         | 0.738 | 0.664 | -0.074 |
+    | ref recall            | 0.976 | 1.000 | +0.024 |
+    | citation_faithfulness | 0.720 | 0.760 | +0.040 |
+
+    Every pass-rate axis improves, and the load-bearing signal is the CONTINUOUS
+    one (mean factual score, far lower variance than a binary gate at this n):
+    the share of assertions the judge scores correct goes 0.827 -> 0.929. The
+    multi-turn arm alone (n=28) is stronger still: answer 0.500 -> 0.607,
+    factual 0.799 -> 0.885, citation faithfulness 0.679 -> 0.750.
+
+    This matches the predicted MECHANISM exactly. The R301 failure modes were
+    sub-provision precision errors — "cybersecurity obligation misattributed to
+    Article 55(1)(c) instead of 55(1)(d)", "content of point 4.6 attributed to
+    5.1", "fabricated Annex VIII items" — i.e. the judge scores against verbatim
+    Act text while the model was handed KB PARAPHRASES. Supplying the verbatim
+    provision text closes that gap.
+
+    Cost: latency is FLAT (treatment p50 58.4s -> 59.7s, mean 59.2s -> 57.2s;
+    the wrapper round-trip dominates, not the context tokens) and answers grow
+    ~8% (median 965 -> 1045 chars). The one real cost is ref precision -0.074 on
+    the paired subset — though the reference PASS rate still rose and the
+    full-arm precision was +0.005, so watch it rather than assume it.
+
+    Honest limit: ONE paired run. The continuous metric and the consistent
+    direction across both strata carry it, but a repeat run should confirm.
+    Stage-2-only, so davidath is byte-identical BY CONSTRUCTION
+    (``_stage2_provider_enabled`` is False under ``provider=cli``).
+    ``REGENOLD_GROUNDING_TEXT=0`` reverts instantly.
     """
-    return os.getenv("REGENOLD_GROUNDING_TEXT", "0").strip().lower() in (
+    return os.getenv("REGENOLD_GROUNDING_TEXT", "1").strip().lower() in (
         "1", "true", "yes", "on",
     )
 

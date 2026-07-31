@@ -26,12 +26,28 @@ def _ctx(**kw):
 
 
 class TestDefaultOff:
-    def test_gate_defaults_off(self, monkeypatch):
-        monkeypatch.delenv("REGENOLD_GROUNDING_TEXT", raising=False)
-        assert G._grounding_text_enabled() is False
+    """R302 — the gate flipped to DEFAULT ON after the A/B R288 was parked for.
 
-    def test_block_unchanged_when_off(self, monkeypatch):
+    Paired on the 25 rows where Stage-2 landed in both arms (grounded Sonnet-5
+    judge, identical deterministic hard sample): every pass-rate axis improved
+    and the continuous mean-factual-score went 0.827 -> 0.929. These tests now
+    pin the NEW default, and the OFF path keeps its own explicit coverage below
+    so the rollback (``REGENOLD_GROUNDING_TEXT=0``) stays tested.
+    """
+
+    def test_gate_defaults_on_r302(self, monkeypatch):
         monkeypatch.delenv("REGENOLD_GROUNDING_TEXT", raising=False)
+        assert G._grounding_text_enabled() is True
+
+    def test_block_carries_verbatim_text_by_default_r302(self, monkeypatch):
+        monkeypatch.delenv("REGENOLD_GROUNDING_TEXT", raising=False)
+        ctx = _ctx(question="What does Article 13 require?")
+        block = G._build_context_references_block(ctx)
+        assert "VERBATIM PROVISION TEXT" in block
+
+    def test_block_unchanged_when_explicitly_off(self, monkeypatch):
+        """The rollback path — ``=0`` must still fully suppress the block."""
+        monkeypatch.setenv("REGENOLD_GROUNDING_TEXT", "0")
         ctx = _ctx(question="What does Article 13 require?")
         block = G._build_context_references_block(ctx)
         assert "VERBATIM PROVISION TEXT" not in block
