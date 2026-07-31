@@ -3281,6 +3281,94 @@ def _reconcile_protected_set(
     return protected | frozenset(extra) if extra else protected
 
 
+def _pushback_ref_freeze_enabled() -> bool:
+    """R302 fix 1 — is the pushback-turn reference freeze active? (fresh env read)
+
+    **DEFAULT OFF** until the offline counterfactual + a repeat-run live A/B
+    gate it (CLAUDE.md hard rule #6). Fresh read per call so an in-process
+    two-arm A/B is valid (R263.2).
+    """
+    return os.getenv("REGENOLD_PUSHBACK_REF_FREEZE", "0").strip().lower() in (
+        "1", "true", "yes", "on",
+    )
+
+
+def _ref_head_key(ref: str) -> tuple[int | None, str | None] | None:
+    """Form-agnostic head identity of a citation, or ``None`` if unparseable.
+
+    ``Art. 13(1)`` (internal, what the prior-turn extractor yields) and
+    ``Article 13.1`` (user-facing, what the wire carries) must compare equal,
+    so both collapse to ``(13, None)`` via the R46 :mod:`refs` parser rather
+    than a hand-rolled regex (the drift R46 was created to end).
+    """
+    try:
+        from app.integrations.regenold.refs import parse  # noqa: PLC0415
+
+        spec = parse(str(ref))
+    except Exception:  # noqa: BLE001 — an unparseable ref simply has no head
+        return None
+    return (spec.article_number, spec.annex_roman)
+
+
+def _freeze_refs_to_prior_turn(
+    references: list[str], prior_assistant_text: str
+) -> list[str]:
+    """R302 fix 1 — cap the GRADED pushback turn's citations to the prior turn's.
+
+    MEASURED (R301, n=28 multi-turn rows, grounded Sonnet-5 judge): the graded
+    hard-mode answer is the POST-pushback turn, and 61% of rows change their
+    citation set on it — adding 29 refs and removing 29, i.e. pure churn, not
+    refinement. Split by churn class, the reference pass-rate is::
+
+        stable    11 rows -> 64%     contract  2 rows -> 100%
+        expand     4 rows ->  0%     lateral  11 rows ->  27%
+
+    Non-increasing (stable+contract) 69% vs any-addition (expand+lateral) 20%
+    — a 3.5x gap. The evaluator's pushback is a FIXED adversarial template that
+    introduces no new question, so re-retrieving a different reference set is
+    unforced downside; the concession rate is already 0.0, i.e. the ANSWER
+    holds and only the citations churn.
+
+    This is a CEILING, not R88-A-style inherit-and-add: it can only REMOVE refs
+    the prior turn did not cite, never re-inject the prior turn's own
+    over-citation (R291 flagged inherit-and-add as re-injecting our own
+    over-cited prior answer).
+
+    Safety: no-op when the prior turn cited nothing (nothing to freeze
+    against), and never returns an empty list — dropping to zero references is
+    the R142.1 failure mode.
+    """
+    if not references or not prior_assistant_text:
+        return references
+    try:
+        from app.integrations.regenold.scope import (  # noqa: PLC0415
+            extract_referenced_articles,
+        )
+
+        prior_known, _unknown = extract_referenced_articles(prior_assistant_text)
+    except Exception:  # noqa: BLE001 — fail-soft; never break the route
+        return references
+
+    allowed = {k for k in (_ref_head_key(r) for r in prior_known) if k is not None}
+    if not allowed:
+        return references
+
+    kept = [r for r in references if _ref_head_key(r) in allowed]
+    # Floor: never empty the wire list on a freeze.
+    return kept if kept else references
+
+
+def _last_assistant_content(messages: object) -> str:
+    """Text of the most recent assistant turn, or ``""``."""
+    try:
+        for msg in reversed(list(messages or [])):
+            if getattr(msg, "role", None) == "assistant":
+                return str(getattr(msg, "content", "") or "")
+    except Exception:  # noqa: BLE001
+        return ""
+    return ""
+
+
 def _promote_lead_ref(references: list[str], answer: str) -> list[str]:
     """Fix #3 — float the ref the answer's LEAD sentence names to the head.
 
@@ -8364,6 +8452,39 @@ def regenold_eu_ai_act_ask(
                     pass
         except Exception as _nli_exc:  # noqa: BLE001 — fail-soft on NLI verify
             logger.warning("nli_verify_failure: %s", _nli_exc, exc_info=True)
+
+    # R302 fix 1 — pushback-turn reference freeze. Runs LAST (after every ref
+    # pass, incl. the R142 clamp / R260 enforcement / NLI) and BEFORE the trace
+    # finalisation, so the trace == the wire refs. Multi-turn + challenge-turn
+    # only, so davidath is byte-identical BY CONSTRUCTION: the bench has no
+    # pushback turns, so ``is_challenge_turn`` is False on every davidath row.
+    if (
+        _pushback_ref_freeze_enabled()
+        and references
+        and _is_multiturn
+        and retrieval_path not in ("no_match",)
+    ):
+        try:
+            from app.data.graph_rag_prompts import is_challenge_turn  # noqa: PLC0415
+
+            if is_challenge_turn(question):
+                _prior_answer = _last_assistant_content(req.messages)
+                _frozen = _freeze_refs_to_prior_turn(references, _prior_answer)
+                if _frozen != references:
+                    try:
+                        from app.integrations.regenold.reasoning_trace import (  # noqa: PLC0415
+                            record_note as _rn,
+                        )
+
+                        _rn(
+                            "pushback_ref_freeze "
+                            f"{len(references)}->{len(_frozen)}"
+                        )
+                    except Exception:  # noqa: BLE001 — fail-soft on trace
+                        pass
+                    references = _frozen
+        except Exception:  # noqa: BLE001 — fail-soft; never 500 the route
+            pass
 
     # R50 / R131 — finalise the reasoning trace AFTER every reference pass
     # so ``?include_reasoning=true`` surfaces the exact wire ``references``
