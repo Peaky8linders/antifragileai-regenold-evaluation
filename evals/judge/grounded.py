@@ -165,9 +165,17 @@ def render_reference_correctness(r: dict[str, Any]) -> str:
         "and recall = correct_governing / (correct_governing + missing). Verdict "
         "'pass' iff there are ZERO WRONG citations AND zero MISSING load-bearing "
         "provisions.\n\n"
+        "R302 — you MUST also NAME them: list in `wrong_refs` the exact predicted "
+        "citation strings you classified WRONG (verbatim, as they appear in "
+        "PREDICTED CITATIONS above), and in `missing_refs` the provisions that "
+        "govern but were not cited. `wrong_refs` must have exactly `wrong` "
+        "entries and `missing_refs` exactly `missing` entries; use [] for none. "
+        "Counts alone cannot be acted on — without the names no precision fix can "
+        "be targeted at the provisions actually responsible.\n\n"
         "Respond with ONE JSON object only:\n"
         '{"verdict":"pass"|"fail","n_predicted":N,"correct":N,"wrong":N,'
-        '"missing":N,"precision":0.0,"recall":0.0,"failure_mode":"<one short phrase>"}'
+        '"missing":N,"precision":0.0,"recall":0.0,"wrong_refs":["..."],'
+        '"missing_refs":["..."],"failure_mode":"<one short phrase>"}'
     )
 
 
@@ -243,6 +251,11 @@ def _aggregate(judged: list[dict[str, Any]]) -> dict[str, Any]:
         n = len(judged); p = f = e = 0
         prec: list[float] = []; rec: list[float] = []; fact: list[float] = []
         modes: dict[str, int] = {}
+        # R302 — tally which PROVISIONS the judge actually called wrong/missing.
+        # The axis was previously counts-only, so a precision fix could not be
+        # aimed at anything; a rank/position-based guess is exactly the R142.1
+        # clamp that lost a live pairwise 11-0 by dropping gold.
+        wrong_refs: dict[str, int] = {}; missing_refs: dict[str, int] = {}
         for row in judged:
             v = (row.get("verdicts") or {}).get(axis) or {}
             if v.get("judge_error"):
@@ -262,6 +275,14 @@ def _aggregate(judged: list[dict[str, Any]]) -> dict[str, Any]:
                 pr = _num(v.get("precision")) or (c / (c + w) if (c + w) else 0.0)
                 rc = _num(v.get("recall")) or (c / (c + ms) if (c + ms) else 0.0)
                 prec.append(pr); rec.append(rc)
+                for ref in (v.get("wrong_refs") or []):
+                    key = str(ref).strip()
+                    if key:
+                        wrong_refs[key] = wrong_refs.get(key, 0) + 1
+                for ref in (v.get("missing_refs") or []):
+                    key = str(ref).strip()
+                    if key:
+                        missing_refs[key] = missing_refs.get(key, 0) + 1
             if axis == "answer_correctness":
                 c, i, m2 = _num(v.get("correct")), _num(v.get("incorrect")), _num(v.get("missing"))
                 tot = c + i + m2
@@ -277,6 +298,10 @@ def _aggregate(judged: list[dict[str, Any]]) -> dict[str, Any]:
             entry["mean_recall"] = round(sum(rec) / len(rec), 4)
             pm, rm = entry["mean_precision"], entry["mean_recall"]
             entry["mean_f1"] = round(2 * pm * rm / (pm + rm), 4) if (pm + rm) else 0.0
+        if wrong_refs:
+            entry["top_wrong_refs"] = sorted(wrong_refs.items(), key=lambda kv: -kv[1])[:15]
+        if missing_refs:
+            entry["top_missing_refs"] = sorted(missing_refs.items(), key=lambda kv: -kv[1])[:15]
         if fact:
             entry["mean_factual_score"] = round(sum(fact) / len(fact), 4)
         agg[axis] = entry
