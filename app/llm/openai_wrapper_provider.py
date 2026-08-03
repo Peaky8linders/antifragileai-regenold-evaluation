@@ -51,6 +51,113 @@ _WRAPPER_CLI_ERROR_SENTINELS: tuple[str, ...] = (
 )
 
 
+<<<<<<< HEAD
+=======
+# R300 — wrapper model-alias map.
+#
+# The 2026-07-30 truncation commit (757f0cb) introduced a HARDCODED rewrite of
+# every ``opus``-family model name to ``claude-opus-4-6`` inline in
+# ``complete()``: no env gate, no log line, and unmentioned in its commit
+# message. It silently reverted R292's shipped Opus 5 Stage-2 and made the
+# ``?include_reasoning=true`` trace LIE — the trace reports
+# ``stage2_model=claude-opus-5`` while the transport sends ``claude-opus-4-6``,
+# which would silently corrupt any future model A/B (the R263.2 class of
+# measurement bug).
+#
+# Verified 2026-07-30 against the live wrapper: ``claude-opus-4-8``,
+# ``claude-opus-5`` AND ``claude-opus-4-6`` all return HTTP 200, so the rewrite
+# is NOT repairing a wrapper error. It is kept as the DEFAULT only because
+# flipping it is an answer-affecting change that needs the hard-rule-#6 live
+# ``ab_judge`` gate — but it is now env-gated, logged once per distinct
+# rewrite, and reported truthfully on the wire.
+#
+# Set ``REGENOLD_WRAPPER_MODEL_ALIAS=0`` to send the requested model verbatim
+# (the arm a future A/B should measure).
+_WRAPPER_MODEL_ALIASES: dict[str, str] = {
+    "claude-opus-5": "claude-opus-4-6",
+    "claude-5-opus": "claude-opus-4-6",
+    "opus-5": "claude-opus-4-6",
+    "claude-opus-5.0": "claude-opus-4-6",
+    "opus": "claude-opus-4-6",
+    "claude-opus-4-8": "claude-opus-4-6",
+}
+
+_ALIAS_LOGGED: set[str] = set()
+
+
+def _model_alias_enabled() -> bool:
+    """Fresh env read per call (R263.2).
+
+    **DEFAULT OFF as of R308** (was ON). Operator directive 2026-08-03: Stage-2
+    must run on Opus 5, not Sonnet 4.6 or Opus 4.6.
+
+    WHY THE DEFAULT FLIPPED. ``GraphRAGSettings.stage2_model`` and
+    ``complex_model`` have both been ``claude-opus-5`` since R292, but this
+    table silently rewrote it to ``claude-opus-4-6`` on the way to the wire, so
+    NO request has actually run on Opus 5. The rewrite arrived ungated and
+    unlogged in an undisclosed rider to commit 757f0cb; R300 caught it, made it
+    loggable and env-gated, but kept the default ON because flipping it needed
+    evidence. That evidence now exists.
+
+    MEASURED against the live wrapper 2026-08-03 (POST /v1/chat/completions,
+    one tiny probe each):
+        claude-opus-5              -> HTTP 200, model echoed 'claude-opus-5'
+        claude-opus-4-6            -> HTTP 200
+        claude-opus-4-8            -> HTTP 200
+        claude-sonnet-5            -> HTTP 200
+        definitely-not-a-model-xyz -> HTTP 500 "No response from Claude Code"
+    A bogus name fails loudly, so the 200 on ``claude-opus-5`` is real
+    acceptance and not silent coercion. The wrapper's ``/v1/models`` list stops
+    at ``claude-opus-4-6``, but that list is STALE: the model string is passed
+    through to the Claude Code CLI, which resolves it. Do not treat
+    ``/v1/models`` as the source of truth for what the wrapper accepts.
+
+    So the alias was downgrading a model that works. With it off, the model on
+    the wire is exactly the model in the config - which also makes the
+    ``?include_reasoning=true`` trace honest again (R300 found it reporting
+    ``claude-opus-5`` while ``claude-opus-4-6`` was actually being sent, which
+    would silently invalidate any model A/B read off the trace).
+
+    The table and the gate are kept, not deleted: ``REGENOLD_WRAPPER_MODEL_ALIAS=1``
+    restores the pre-R308 downgrade in one env var if an Opus 5 rollout has to
+    be backed out without a code revert.
+    """
+    return os.environ.get("REGENOLD_WRAPPER_MODEL_ALIAS", "0").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def resolve_wrapper_model(requested: str) -> str:
+    """Return the model name actually sent to the wrapper for ``requested``.
+
+    Public so the engine can report the EFFECTIVE model in the reasoning
+    trace instead of the requested one.
+    """
+    name = (requested or "").strip()
+    if not _model_alias_enabled():
+        return name
+    target = _WRAPPER_MODEL_ALIASES.get(name.lower())
+    if not target or target == name:
+        return name
+    if name not in _ALIAS_LOGGED:
+        _ALIAS_LOGGED.add(name)
+        logger.warning(
+            "openai_wrapper.model_alias requested=%s sent=%s "
+            "(REGENOLD_WRAPPER_MODEL_ALIAS=0 to disable)",
+            name,
+            target,
+        )
+    return target
+
+
+# Backwards-compatible private alias.
+_resolve_wrapper_model = resolve_wrapper_model
+
+
+>>>>>>> d5985e7 (R308 — uncap the answer, deliver the content rules, and actually run Stage-2 on Opus 5 (#318))
 class OpenAIWrapperRequest(BaseModel):
     system: str = ""
     user: str = Field(min_length=1)

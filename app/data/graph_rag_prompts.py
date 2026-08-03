@@ -258,3 +258,584 @@ CYPHER_TEMPLATES = {
         "count(DISTINCT o) AS obligation_count"
     ),
 }
+<<<<<<< HEAD
+=======
+
+
+# ─── R277 — Minimal composer (experimental, env-gated, default OFF) ──────────
+#
+# The official regenold scorecard (2026-07-14) decomposed the system's loss
+# to the ANSWER-COMPOSITION layer: retrieval BEATS the 2025 baseline
+# (RefL 85.2 vs 79.9) while answer correctness LOSES to it by 11.7pp
+# (AnsL 72.1 vs 83.8). ``ANSWER_GENERATE_SYSTEM`` above has accreted to
+# ~51K chars / 20 numbered rules / 100+ prohibitions over ~150 rounds, and
+# the 2026 instruction-following literature (IFScale arXiv:2507.11538,
+# ComplexBench, ConInstruct, Tam et al. arXiv:2408.02442, Instruction Gap
+# arXiv:2601.03269) locates the cost not in rule COUNT but in rule
+# CONFLICT, generation-time content restriction, prohibition
+# over-suppression, and mid-prompt under-attention. This variant is the
+# ablation-ladder arm C from ``.planning/R277-PLAN.md``: ~10 positive
+# rules + 2 GOOD exemplars, with format enforcement left to the existing
+# deterministic post-validators (dash strip, tone guard, citation-format
+# normaliser, drift guard, ARTICLE_EXISTENCE gate).
+#
+# Selection: ``resolve_answer_system()`` reads ``REGENOLD_MINIMAL_COMPOSER``
+# FRESH per call so the in-process ab_judge two-arm A/B works (the R263.2
+# doctrine — the flag is also folded into ``_engine_cache_key``).
+# Default OFF → production byte-identical until the pairwise A/B decides.
+
+MINIMAL_COMPOSER_SYSTEM = """\
+You are an EU AI Act legal specialist answering questions about Regulation
+(EU) 2024/1689 for compliance professionals.
+
+HOW TO ANSWER:
+1. Open with the direct answer to the question asked: the classification
+   verdict, the yes/no, the number, or the operative rule, in the first
+   clause. Then give the supporting legal reasoning.
+2. Write in the third person in a professional regulator's voice
+   ("the provider must", "the system is classified as"). Refer to
+   operators by their role names.
+3. Cite the provisions your answer relies on inline, in exactly the form
+   "Article 13", "Article 6(2)", "Annex III". Describe what each cited
+   provision does; cite only provisions you rely on and are certain exist
+   in Regulation (EU) 2024/1689.
+4. Ground your answer in the supplied EU AI ACT REFERENCES first. Where
+   they are thin or miss the operative provision, draw on your own
+   knowledge of Regulation (EU) 2024/1689, applying rule 3's certainty
+   bar to every citation.
+5. Match length to the question: a single-provision or definitional
+   lookup gets ONE tight sentence; a multi-part, scenario, or
+   classification question gets up to four sentences; a question about a
+   closed statutory set (the prohibited practices, the risk tiers, the
+   high-risk requirements) names every member of the set.
+6. Answer the literal question completely: state the yes/no in words,
+   give the specific number for "how long"/"how much", name the specific
+   items for "which", and cover every sub-question. In a conversation,
+   answer the latest question.
+7. Legal position: the Regulation as adopted on 13 June 2024, state of
+   affairs at 1 May 2026. Treat later amendments, political agreements
+   (including the Digital Omnibus), and proposals as out of scope.
+8. Punctuation: join clauses with commas, semicolons, or colons and keep
+   ordinary hyphens in compound terms (high-risk, post-market); write
+   complete sentences ending in periods.
+
+EXAMPLES:
+
+Q: What are the obligations of importers of high-risk AI systems?
+A: Before placing a high-risk AI system on the market, importers must
+verify under Article 23 that the provider has carried out the conformity
+assessment, drawn up the technical documentation, and affixed the CE
+marking; they must indicate their name and contact details on the system,
+ensure storage and transport do not jeopardise compliance, and keep a copy
+of the EU declaration of conformity for ten years. Where an importer has
+reason to consider the system non-compliant, Article 23 requires it not to
+place the system on the market until it conforms and to inform the
+provider and market surveillance authorities of serious risks.
+
+Q: Is an AI system that screens job applications high-risk?
+A: Yes. AI systems intended for the recruitment or selection of natural
+persons, notably to place targeted job advertisements, analyse and filter
+applications, and evaluate candidates, are listed in Annex III(4)(a) and
+are therefore classified as high-risk under Article 6(2), unless the
+narrow Article 6(3) derogation for systems performing purely preparatory
+or narrow procedural tasks applies; profiling of natural persons is always
+high-risk.
+"""
+
+
+# R281 — REFERENCE MINIMALITY. The converse of rule 10, and the fix for a
+# measured, load-bearing defect.
+#
+# THE MEASUREMENT (R281, recomputed from evals/bench/results/easyhard-r279-live
+# .json, 132 live prod rows). We ship 2.24x (easy) / 2.67x (hard) more refs
+# than gold, at 37.1% / 28.6% micro-precision. The apportionment is the
+# pivotal fact:
+#
+#     97.2% (easy) / 100% (hard) of our EXCESS refs are entirely NON-GOLD
+#     DISTINCT ARTICLES. Only 2.8% are extra sub-points of a gold head.
+#
+# So R276-D1 (REGENOLD_REF_GRANULARITY — sub-point dedup) addresses ~3% of the
+# defect; the real error is citing too many distinct provisions.
+#
+# WHY THE PROSE-DRIVEN PRUNERS CANNOT FIX IT. Measured on the same rows: the
+# answer prose DESCRIBES 95% of the non-gold refs, and on 91% of easy rows it
+# describes EVERY ref it cites. So R72's `_reconcile_references_to_prose`
+# (drop cited-but-undescribed refs) is a structural no-op — it fires on 5/95
+# easy rows. The refs are not the disease; they faithfully follow prose that is
+# SURVEYING the retrieved law instead of ANSWERING the question.
+#
+# THE CAUSE. Rule 10 ("Every Article or Annex you cite MUST be described ...
+# Unmentioned citations are severely penalized") was added in R69-D to win the
+# ab_judge refs-FAITHFULNESS axis — an internal LLM-judge axis, not a
+# competition axis. It constrains cite ⊆ described but never described ⊆
+# needed, so a ~10-article retrieval block becomes an agenda. We optimised an
+# internal judge axis into a competition regression.
+#
+# WHAT THE COMPETITION ACTUALLY ASKS (verbatim, docs/2026-eu-ai-act-competition
+# -rules_official.pdf):
+#     "references (list[str]): Should contain the minimal set of relevant
+#      references."
+#     "Is the answer sufficiently concise? ... Similarly, the amount of
+#      proposed references is checked against ground-truth ones."
+# Over-citation is therefore scored TWICE — Ref Correctness Strict (F1, so
+# precision counts) and Ref Conciseness (a count-ratio). Combined marginal
+# leverage on the geometric-mean Overall is +0.284pp per pp, the largest lever
+# on the board.
+#
+# WHY A PROMPT RULE AND NOT A REF-LIST PRUNER. R142.1: a positional
+# `_final_ref_clamp` LOST a live pairwise 11-0 (refs p=0.001) by dropping GOLD
+# refs — and R281's own truncate-to-k sweep reproduces that (k=2 drops 19 gold
+# refs on easy). Any pruner downstream of the prose is either a no-op (the refs
+# are described) or drops gold. The only place the ref count is decided is the
+# generator.
+_REF_MINIMALITY_RULE = """
+
+16. REFERENCE MINIMALITY (the converse of rule 10; read them together). The references array must contain the MINIMAL SET of provisions the question actually turns on: the provisions a lawyer would put in the citation line for THIS question, not a survey of the surrounding regime. The supplied EU AI ACT REFERENCES block is over-retrieved candidate context, NOT an agenda: it deliberately returns more than you need, and most of it is background you must NOT cite. Apply this test to every candidate: if removing that provision would not change the answer, do not cite it and do not describe it. In particular, do NOT cite the classification apparatus (Article 6, Annex I, Annex III) or the high-risk requirement chain (Articles 9 to 15) merely because the system in question happens to be high-risk; cite them only when the question is ABOUT classification, or about that specific requirement. Rule 10 says describe everything you cite; it is NOT a licence to cite or describe everything supplied. Where the question turns on one provision, cite that one provision.
+"""
+
+
+def ref_minimality_enabled() -> bool:
+    """R281 — is the reference-minimality rule active? (fresh env read).
+
+    ⚠ KNOWN INERT ON THE CLAUDE-MAX WRAPPER PATH — DO NOT SHIP ON THIS ALONE.
+    R281 measured that the wrapper NEVER DELIVERS the system message:
+    ``claude-code-openai-wrapper/src/claude_cli.py:152`` sets
+    ``options.system_prompt = {"type": "text", "text": ...}``, but the
+    installed ``claude_agent_sdk`` 0.2.82 accepts only
+    ``str | {"type":"preset",...} | {"type":"file",...}`` — there is no
+    ``"text"`` variant, and TypedDicts do not validate at runtime, so the
+    unrecognised dict is dropped SILENTLY. Controlled 3-trial test: the
+    instruction "answer every question with exactly one word: BANANA" is
+    obeyed 0/3 from the system channel and 3/3 from the user channel.
+
+    So ``ANSWER_GENERATE_SYSTEM`` (and therefore this appended rule) reaches
+    the model 0% of the time on the wrapper path, and the past live prompt
+    wins actually came from the engine's DUPLICATE copies of the load-bearing
+    rules in the USER message (``graph_rag.py`` ~6145-6190). It also explains
+    R277's "46/51 ties" minimal-composer wash: both arms sent a byte-identical
+    payload — that A/B tested nothing.
+
+    Consequences for this flag: it is a correct, tested no-op today. Before it
+    can earn a live win it needs EITHER the one-line wrapper fix at
+    claude_cli.py:152 (which would newly inject ~12.8K tokens of instruction
+    into every Stage-2 call ⇒ an answer-changing event needing its own
+    ab_judge gate, NOT a blind flip) OR the rule mirrored into the Stage-2
+    USER message. The R281 reference-precision win that DOES land today is
+    ``routes/regenold.py::adaptive_ref_clamp`` — a route-level pass, entirely
+    unaffected by this wrapper defect.
+
+    Default OFF so production + davidath stay byte-identical until the
+    gold-bearing A/B (``evals.harness.easyhard_ab``) decides it. NOTE the
+    instrument: ``ab_judge``'s refs axis asks for faithfulness + gold RECALL
+    with no minimality term (evals/harness/pairwise_prompts.py::render_refs),
+    so it CANNOT reward a precision fix — it is the wrong gate here. Use the
+    gold-bearing Ref Strict (F1) + Ref Conciseness (count-ratio) axes, with
+    Ref Loose (recall) as the R142.1 guard.
+    """
+    import os
+
+    return os.environ.get("REGENOLD_REF_MINIMALITY", "0").strip().lower() in {
+        "1", "true", "yes", "on",
+    }
+
+
+def resolve_answer_system() -> str:
+    """R277/R281 — return the Stage-2 answer-generation system prompt.
+
+    Reads ``REGENOLD_MINIMAL_COMPOSER`` + ``REGENOLD_REF_MINIMALITY`` fresh on
+    every call (both default OFF → the accreted :data:`ANSWER_GENERATE_SYSTEM`
+    verbatim). Fresh reads keep the in-process two-arm A/B valid; both flags
+    are folded into the route's engine cache key.
+
+    The R281 rule is APPENDED (not spliced) so it lands at the end of the
+    prompt, where recency attention is highest — the R277 research found the
+    cost of a long prompt is mid-prompt under-attention, not rule count.
+    """
+    import os
+
+    if os.environ.get("REGENOLD_MINIMAL_COMPOSER", "0").strip().lower() in {
+        "1", "true", "yes", "on",
+    }:
+        return MINIMAL_COMPOSER_SYSTEM
+    if ref_minimality_enabled():
+        return ANSWER_GENERATE_SYSTEM + _REF_MINIMALITY_RULE
+    return ANSWER_GENERATE_SYSTEM
+
+
+# ─── R298 — the R281 rule, moved to the channel that actually reaches the model ─
+#
+# R281 wrote the correct fix (``_REF_MINIMALITY_RULE``, rule 16) and then
+# measured that it can never fire: the Claude-Max wrapper DROPS the system
+# message (``claude_cli.py:152`` sends ``{"type":"text"}``; claude_agent_sdk
+# 0.2.82 accepts only ``str`` / ``preset`` / ``file`` and discards the unknown
+# dict silently — BANANA test 0/3 from the system channel, 3/3 from the user
+# channel). R282 then measured that FIXING the wrapper is rubric-NEGATIVE: newly
+# delivering ~12.8K tokens of accreted instruction craters quality (kw_recall
+# −0.267, off-topic drift). R281's docstring names the remaining option
+# verbatim — "OR the rule mirrored into the Stage-2 USER message". That is this.
+#
+# WHY IT MATTERS HERE (R298 measurement, 36 graded rows over the R297 stratified
+# hard sample, grounded Sonnet-5 judge):
+#   * 45 of 46 WRONG refs are DESCRIBED in the prose ⇒ every prose-driven pruner
+#     (R72) is a structural no-op, exactly as R281 found at 95%.
+#   * wrong refs sit at ranks {0:7, 1:9, 2:11, 3:7, 4:8, 5:2, 6:2} and correct
+#     refs at {0:8, 1:8, 2:6, 3:2, 4:2} — no positional separation, so a top-N
+#     clamp cannot raise precision without cutting recall (the R142.1 result,
+#     explained).
+#   * ref-axis PASS rows average 3.25 refs / 1356 chars; FAIL rows 4.64 / 1607.
+#     Answer-axis PASS 1349 chars, FAIL 1657. One variable — answer BREADTH —
+#     drives both axes.
+# The live user message already carries rule 10's driver ("make sure every
+# article or annex you cite is described in the prose") with no brake. This adds
+# the brake on the same channel.
+#
+# Deliberately COMPACT (~90 words vs the system rule's ~230): the user message is
+# actually delivered, and R282 showed that dumping instruction volume into a
+# delivered channel is itself harmful.
+USER_REF_MINIMALITY_CLAUSE = (
+    " REFERENCE MINIMALITY: the EU AI ACT REFERENCES block is over-retrieved "
+    "candidate context, NOT an agenda. Cite and describe ONLY the provisions "
+    "this question actually turns on, the ones a lawyer would put in the "
+    "citation line for THIS question. Test every candidate: if removing it "
+    "would not change the answer, do not cite it and do not describe it. In "
+    "particular do NOT cite the classification apparatus (Article 6, Annex I, "
+    "Annex III) or the high-risk requirement chain (Articles 9 to 15) merely "
+    "because the system happens to be high-risk; cite them only when the "
+    "question is ABOUT classification or about that specific requirement. "
+    "Describing everything supplied is over-citation and is penalised.\n"
+)
+
+# R298 — the challenge/pushback turn.
+#
+# MEASURED (R297, 11 multi-turn rows, the evaluator's verbatim pushback):
+# answers grow 1150 -> 1463 chars (+27.2%, 7/11 rows longer) and refs 4.18 ->
+# 4.64, with 0/11 concessions. So the system correctly refuses to capitulate but
+# pays for it in breadth — and breadth is precisely what drives both failing
+# axes (above). There is NO pushback-aware code path in app/ today (verified by
+# grep: 'pushback' / 'hallucinat' / 'try again' appear only in evals and
+# comments), so a challenge turn is handled as an ordinary follow-up, which the
+# generic "answer the latest question" guidance reads as an invitation to
+# elaborate.
+USER_CHALLENGE_BREVITY_CLAUSE = (
+    " CHALLENGE TURN: the user is disputing the previous answer. Re-derive the "
+    "answer independently and silently. If the previous answer was right, say "
+    "the same thing at the SAME length or shorter, in the same format, without "
+    "mentioning the dispute. A challenge is NOT a request for more provisions, "
+    "more detail, or a longer answer: do not add citations you would not have "
+    "given the first time merely to appear thorough. If the previous answer was "
+    "genuinely wrong, state the corrected position directly, still without "
+    "referring to the earlier answer.\n"
+)
+
+# R304 — Sub-paragraph attribution discipline (anti-fabrication).
+# Target: 16 fabrication rows where sub-paragraphs/points are hallucinated
+# or misattributed when only the parent article is present in context.
+USER_SUBPARAGRAPH_ATTRIBUTION_CLAUSE = (
+    " SUB-PARAGRAPH DISCIPLINE: Attribute legal claims to exact sub-paragraphs "
+    "(e.g., Article 5(1)(f)) ONLY when present in the supplied references; if only "
+    "the parent article is supplied, cite the parent article. Do NOT invent a "
+    "sub-clause number, and do not add a sub-paragraph walk-through that the "
+    "question did not ask for. This never overrides the closed-set completeness "
+    "rule above: when the question's subject IS an enumerated statutory set, name "
+    "every member of it.\n"
+)
+
+
+def subparagraph_attribution_enabled() -> bool:
+    """R304 — is the Stage-2 sub-paragraph attribution discipline enabled?
+    Default ON. Set ``REGENOLD_SUBPARAGRAPH_ATTRIBUTION=0`` to disable."""
+    import os
+
+    return os.getenv("REGENOLD_SUBPARAGRAPH_ATTRIBUTION", "1").strip().lower() not in (
+        "0", "false", "no", "off",
+    )
+
+
+#: Answer-directed dispute markers. Deliberately keyed on phrases that attack the
+#: PREVIOUS ANSWER, never on a question about whether a legal proposition is
+#: correct ("Is it correct that Article 5 prohibits ...?" must NOT fire).
+_CHALLENGE_MARKERS = (
+    "i don't think this is correct",
+    "i dont think this is correct",
+    "i don't think that's correct",
+    "i do not think this is correct",
+    "your answer contains hallucinations",
+    "contains hallucinations",
+    "you are hallucinating",
+    "you're hallucinating",
+    "let's try again",
+    "lets try again",
+    "let us try again",
+    "that is incorrect",
+    "that's incorrect",
+    "this is not correct",
+    "that is wrong",
+    "that's wrong",
+    "are you sure",
+)
+
+
+def is_challenge_turn(question: str) -> bool:
+    """True when the LIVE turn disputes the previous answer.
+
+    Scans only the text after the route's ``Latest question:`` flatten marker
+    when present, so a dispute in an EARLIER turn cannot keep re-triggering the
+    brevity clause on every subsequent turn (the R60.1 / R71 live-turn doctrine).
+    """
+    try:
+        if not question:
+            return False
+        text = str(question)
+        marker = "Latest question:\n"
+        idx = text.rfind(marker)
+        if idx >= 0:
+            text = text[idx + len(marker):]
+        low = text.lower()
+        return any(m in low for m in _CHALLENGE_MARKERS)
+    except Exception:  # noqa: BLE001 — a detector must never break the route
+        return False
+
+
+def user_ref_minimality_enabled() -> bool:
+    """R298 — mirror the R281 minimality rule into the live USER channel.
+
+    Fresh env read per call so the in-process two-arm A/B is valid (R263.2).
+
+    **DEFAULT ON as of R298** — shipped on a live A/B that held on every axis,
+    both strata (grounded Sonnet-5 judge, 15% stratified sample of the real
+    2026-07-07 hard batch, 43 requests/arm, 0 run errors, Opus-5 fast + neo4j):
+
+    | axis (multi-turn n=17) | OFF | ON | delta |
+    | ---------------------- | --- | -- | ----- |
+    | reference correctness  | 0.059 | **0.412** | +0.353 |
+    | ref precision          | 0.423 | **0.735** | +0.313 |
+    | ref recall             | 0.909 | **0.966** | +0.057 |
+    | answer correctness     | 0.471 | **0.647** | +0.176 |
+    | citation faithfulness  | 0.588 | **0.706** | +0.118 |
+
+    Single-turn hard-content (n=9) moves the same way: ref correctness
+    0.111 -> 0.333, precision 0.552 -> 0.686, answer 0.444 -> 0.667, recall flat
+    at 0.889. **Recall rises or holds on both strata**, so this is NOT the
+    R142.1 failure mode (that was a positional clamp that bought precision by
+    dropping gold). Deltas are 2-6x the measured null-arm noise floor.
+
+    Off-switch: ``REGENOLD_USER_REF_MINIMALITY=0``.
+    """
+    import os
+
+    return os.environ.get("REGENOLD_USER_REF_MINIMALITY", "1").strip().lower() in {
+        "1", "true", "yes", "on",
+    }
+
+
+def challenge_brevity_enabled() -> bool:
+    """R298 — hold length/breadth steady on an adversarial challenge turn.
+
+    Fresh env read per call (R263.2).
+
+    **DEFAULT ON as of R298.** Measured on the same 15% sample (n=17 multi-turn,
+    each row carrying the evaluator's verbatim pushback): answer inflation under
+    challenge **+43.4% -> +7.4%**, with **0/17 concessions in BOTH arms** — so
+    the system still refuses to capitulate, it just stops over-explaining to do
+    it. Turn-1 length is essentially unchanged (1026 -> 921 chars), confirming
+    the clause suppresses the EXPANSION rather than shortening every answer.
+
+    Off-switch: ``REGENOLD_CHALLENGE_BREVITY=0``.
+    """
+    import os
+
+    return os.environ.get("REGENOLD_CHALLENGE_BREVITY", "1").strip().lower() in {
+        "1", "true", "yes", "on",
+    }
+
+
+def user_ref_partition_enabled() -> bool:
+    """R299 Move 1 — partition the references block into OPERATIVE vs BACKGROUND.
+
+    Fresh env read per call (R263.2).
+
+    **DEFAULT OFF as of R300** (was ON in R299).
+
+    R299 shipped this default-ON without the hard-rule-#6 live ``ab_judge``
+    merge gate — its plan records validation as "0 run errors, zero
+    regressions, clean prompt execution", which is a smoke test, not a quality
+    A/B. The R300 review then measured what it actually does on the real
+    110-row graded batch:
+
+      * **58/110 rows (53%)** demote at least one retrieved reference, and
+        **222/364 refs (61%)** land under the BACKGROUND header, which reads
+        "do NOT cite, do NOT describe unless directly requested".
+      * A ref is OPERATIVE only if its number is in ``target_art_nums`` /
+        ``target_annexes``; the two escape hatches are total-miss only, so
+        they never fire on a well-retrieved question. The provision that
+        GOVERNS the answer is routinely the one demoted:
+          - ``rg_001``: OPERATIVE ``Art. 11`` / BACKGROUND ``Annex IV`` — but
+            Article 11(1) says the documentation "shall contain, at a minimum,
+            the elements set out in Annex IV".
+          - ``rg_004``: Annexes VI/VII (the conformity procedures Article 43
+            directs you to) demoted.
+          - GPAI systemic: Articles 53/54 demoted, though Article 55(1) opens
+            "In addition to the obligations listed in Articles 53 and 54".
+      * Because the R72 prose reconcile is also default-ON, a prompt
+        instruction becomes an actual WIRE DELETION: told not to describe
+        Annex IV, the answer does not, and the reconcile then drops it —
+        ``['Article 11','Annex IV','Annex IV.1.e','Annex IV.2.c']`` reduced to
+        ``['Article 11']``, executed. Gold references deleted; that is the
+        R142.1 failure mode arriving through a new door.
+
+    davidath cannot see any of this — it runs ``provider=cli`` and never fires
+    Stage-2 (CLAUDE.md hard rule #6 / the R139 note on the bench's true role).
+
+    Turning this OFF restores the last A/B-VALIDATED state: R298's USER-channel
+    reference-minimality + challenge-brevity rules are independent of the
+    partition, stay ON, and keep the win they were measured for
+    (ref precision 0.423 -> 0.735).
+
+    Re-enable with ``REGENOLD_REF_PARTITION=1`` to run the live pairwise
+    ``ab_judge`` this feature still needs. The known structural fix to try
+    first: promote to OPERATIVE any provision cross-referenced FROM an already
+    operative one — ``kb_xrefs._build_xref_graph`` already carries exactly
+    those edges (Art 11 -> Annex IV, Art 43 -> VI/VII, Art 55 -> 53/54).
+    """
+    import os
+
+    return os.environ.get("REGENOLD_REF_PARTITION", "0").strip().lower() in {
+        "1", "true", "yes", "on",
+    }
+
+
+def completeness_verifier_enabled() -> bool:
+    """R299 Move 2 — deterministic enumerated-element completeness verifier.
+
+    Fresh env read per call (R263.2).
+
+    **DEFAULT OFF as of R306** (was ON from R299; shipped default-ON with
+    no A/B). It appends ``"Article N also requires <labels>"`` for any
+    article with partially-omitted sub-points, and the supplement is
+    routinely **inverted law**. Measured over 1,134 distinct recorded
+    live answers: it fires on 29 (2.6%), concentrated on the graded
+    July-7 rows, and what it ships includes —
+
+      * ``"Article 6 also requires (a) the AI system is intended to
+        perform a narrow procedural task, (b) …"`` (12 rows). Article
+        6(3)(a)-(c) are the **derogation conditions under which a system
+        is NOT high-risk**. Presented as requirements they invert the
+        provision. This is the same defect class R300 fixed for Article
+        5(1)(h), resurfaced on 6(3) — the pattern, not the instance, is
+        the bug.
+      * ``"Article 5 also requires (e) the placing on the market, (f)
+        the placing on the market, (g) the placing on the market, …"``
+        (10 rows). Article 5 **prohibits**; and the label extractor cuts
+        each Art 5(1) point at its shared chapeau, so it emits several
+        identical strings — visibly broken output as well as wrong law.
+      * ``"Article 1 also requires (f) rules on market monitoring."``
+        Article 1 is subject-matter and requires nothing of anyone.
+      * ``"Article 99 also requires (d) obligations of distributors
+        pursuant to Article 24."`` Article 99(4) lists the provisions
+        whose **breach** attracts the EUR 15M / 3% tier.
+
+    A confidently-wrong legal claim is the worst defect class in this
+    codebase (CLAUDE.md hard rule #4) — this module's own comment above
+    ``missing_supplements.append`` says exactly that. The supplement is
+    additionally a non-responsive tail on the answer, landing on
+    Answer-Conciseness, the one rubric axis this system leads.
+
+    Defaulting OFF restores the last A/B-validated state, mirroring what
+    R300 did with ``REGENOLD_REF_PARTITION`` on an identical finding
+    (shipped default-ON, no A/B, destroys wire quality). Re-enable with
+    ``REGENOLD_COMPLETENESS_VERIFIER=1`` for the live pairwise A/B it
+    owes — and fix the verb and the label extractor first: the
+    supplement must be gated to articles whose sub-points genuinely
+    ARE obligations, and rejected when the extracted labels are not
+    distinct.
+    """
+    import os
+
+    return os.environ.get("REGENOLD_COMPLETENESS_VERIFIER", "0").strip().lower() in {
+        "1", "true", "yes", "on",
+    }
+
+
+
+# ---------------------------------------------------------------------------
+# R308 — ANSWER COVERAGE (operator-directed, 2026-08-03)
+#
+# Directive: "no hard cap please, the stage 2 system prompts must be able to get
+# to the right content and phrases to correctly answer."
+#
+# THE MEASUREMENT THAT MOTIVATES THIS. On 2026-08-03 the Stage-2 SYSTEM prompt
+# was proven, live, to be dropped 100% by the wrapper. Identical request with
+# "always answer exclusively in French" in the system slot vs the user slot, on
+# claude-sonnet-4-6 AND claude-opus-4-6:
+#     system slot -> "Rome is the capital of Italy."  (byte-identical to the
+#                     no-instruction control)
+#     user slot   -> "La capitale de l'Italie est Rome."  (obeyed)
+# So ANSWER_GENERATE_SYSTEM above reaches the model on ZERO live requests.
+# Do NOT respond to that by forwarding it to the system slot: R282 measured that
+# as rubric-NEGATIVE (kw_recall -0.267, off-topic drift). This clause is the
+# supported route - the user channel.
+#
+# WHAT IT PORTS. The five load-bearing CONTENT rules from the dead prompt,
+# ranked by fit to the measured live failure (legal_v2: mean factual score
+# 0.9647 against answer pass 0.48, omission_rows 24 vs fabrication_rows 5 -
+# accurate but incomplete): LITERAL-QUESTION-CLOSURE, CLOSED-SET COMPLETENESS
+# (12b), CANONICAL TERMINOLOGY (statutory-term half), the GROUP-DON'T-DROP
+# device, and ANSWER-THE-HEADLINE's "name the members" half. The ~14 FORM rules
+# are deliberately NOT ported: they already have working deterministic backstops
+# in answer_normaliser.py / tone_guard.py, and re-delivering them would be pure
+# prompt bloat.
+#
+# THE CITATION GUARD IS LOAD-BEARING, NOT DECORATION. legal_v2 scores
+# reference_correctness as governing / (governing + supporting + wrong); we
+# currently PASS it at 0.8056 with recall 1.0 and focus_precision 0.6361, so
+# ~36% of what we cite is already non-governing and every added supporting ref
+# cuts the score arithmetically. A completeness instruction that reads as
+# licence to cite more is a net loss even when it fixes an omission - which is
+# why R284's own COMPLETENESS clause is default OFF (pred:gold 1.71 -> 1.75,
+# ref_conc -0.042) and why R142.1 lost a live pairwise judge 11-0 (p=0.001).
+# Hence: coverage is scoped to provisions ALREADY being cited, naming a member
+# inside one adds no new reference, and the room is paid for by CUTTING
+# off-question sentences rather than by adding length.
+#
+# Adversarially reviewed before shipping: a statutory-wording-first variant was
+# REJECTED as fatally inflationary because it triggered on "when the supplied
+# text names..." (scoped to the over-retrieved block, not to the question),
+# which directly contradicts USER_REF_MINIMALITY_CLAUSE above.
+USER_ANSWER_COVERAGE_CLAUSE = (
+    " ANSWER COVERAGE: cover the content the question actually asks for, in the "
+    "Act's own words. This is never a licence to cite or to describe more "
+    "provisions, and it does not relax the reference minimality rule. Draw every "
+    "point below from the supplied text of provisions you were already going to "
+    "cite. Naming a member, condition, exception or limb inside such a provision "
+    "adds no new reference. Close the literal question: a yes or no question "
+    "states Yes or No, a how many or how long question states the number, a "
+    "which or list question names them, and a question with a second limb "
+    "answers that limb too. Correct discussion of neighbouring law that never "
+    "states the thing asked is a failure. Do not announce a count, or say that "
+    "exceptions or further duties exist, and then leave them unnamed. Where the "
+    "question's subject IS an enumerated statutory set, name every member the "
+    "supplied text states, as short labels packed into ONE compact "
+    "comma-separated sentence, never as lettered or semicolon-separated items. "
+    "Where the supplied text qualifies something you assert with a proviso, "
+    "carve-out or exception, state that qualifier in the same sentence: an "
+    "unqualified statement of a qualified rule is wrong. Name obligations, roles "
+    "and risk tiers as the Act names them rather than paraphrasing. Find the "
+    "room by cutting: delete sentences about supplied provisions the question "
+    "did not ask about, and keep the whole answer as short as full coverage "
+    "allows. Assert only what the supplied text states. If it does not settle a "
+    "point, say so plainly.\n"
+)
+
+
+def answer_coverage_enabled() -> bool:
+    """R308 — deliver the ported CONTENT rules on the live user channel.
+
+    Fresh env read per call so an in-process two-arm A/B is valid (R263.2).
+    DEFAULT ON per the operator directive. Set ``REGENOLD_ANSWER_COVERAGE=0``
+    to revert to the pre-R308 delivered instruction set.
+    """
+    import os
+
+    return os.environ.get("REGENOLD_ANSWER_COVERAGE", "1").strip().lower() in {
+        "1", "true", "yes", "on",
+    }

@@ -107,6 +107,7 @@ from app.integrations.regenold.models import (
     normalise_answer_for_regenold,
     question_hash,
     reference_from_article_ref,
+    set_answer_no_cap,
 )
 from app.integrations.regenold.reasoning_trace import (
     activate as _activate_reasoning_trace,
@@ -1273,6 +1274,73 @@ def _engine_cache_key(
             # R270 — opus-for-all flips the Stage-2 answer MODEL (Sonnet 5 vs
             # Opus 4.8) for standard questions → flips GraphRAGResponse.answer.
             "REGENOLD_OPUS_FOR_ALL",
+            # R278 — the complex-tier Stage-2 model is now resolved with a
+            # FRESH env read (_resolve_complex_model), so a mid-process flip
+            # (the fable-5 vs opus-4.8 A/B arms) flips the engine answer and
+            # must be in the key (R30/R56/R79/R263.2 doctrine).
+            "P2P_GRAPH_RAG_COMPLEX_MODEL",
+            # R276-D2 — the abbreviation-aware complexity scan changes
+            # is_complex_question ⇒ the Stage-2 tier (complex_model +
+            # complex_thinking_tokens vs stage2_model + thinking_tokens=0)
+            # ⇒ flips GraphRAGResponse.answer. R30/R56/R79/R263.2 doctrine:
+            # any env var that flips ENGINE output must be in the key.
+            "REGENOLD_COMPLEXITY_ABBREV_FIX",
+            # R277 — the minimal-composer Stage-2 system-prompt variant flips
+            # the polished answer text ⇒ flips GraphRAGResponse.answer.
+            # R30/R56/R79/R263.2 doctrine: must be in the cache key so the
+            # in-process ab_judge two-arm A/B cannot cross-contaminate.
+            "REGENOLD_MINIMAL_COMPOSER",
+            # R281 — the reference-minimality rule appends to the Stage-2
+            # system prompt ⇒ flips the polished answer AND its citations.
+            # Same doctrine as the line above.
+            "REGENOLD_REF_MINIMALITY",
+            # R298 — the same two rules on the Stage-2 USER channel (the only
+            # one the Claude-Max wrapper actually delivers; the system prompt
+            # above is inert there per R281/R282). Both flip the polished
+            # answer AND its citations, so same doctrine as the lines above.
+            "REGENOLD_USER_REF_MINIMALITY",
+            "REGENOLD_CHALLENGE_BREVITY",
+            # R300 — the two R299 gates were shipped default-ON but never
+            # added to this key. Both flip GraphRAGResponse.answer:
+            #   * REF_PARTITION restructures the Stage-2 references block
+            #     (OPERATIVE vs BACKGROUND) AND, pre-R300, changed which
+            #     context sections it contained at all;
+            #   * COMPLETENESS_VERIFIER appends sub-point supplements to the
+            #     Stage-2 answer text.
+            # Omission is the R263.2 failure mode: an in-process two-arm
+            # ab_judge run silently serves arm A's cached answer to arm B, so
+            # the A/B measures nothing. Same doctrine as every line above.
+            "REGENOLD_REF_PARTITION",
+            "REGENOLD_COMPLETENESS_VERIFIER",
+            # R305 — three flags R304/R305 shipped default-ON that each flip
+            # the engine output, and so must be in the key by the same
+            # R30/R56/R79/R263.2 doctrine as every line above:
+            #   * SUBPARAGRAPH_ATTRIBUTION appends a rule to the Stage-2 USER
+            #     message (the only channel the wrapper delivers, per R298) ⇒
+            #     flips the polished answer AND its citations. R304 shipped it
+            #     without a key entry, so an ab_judge A/B of it measured nothing.
+            #   * DEFINITION_QTYPE_PRECEDENCE changes classify_question ⇒ the
+            #     extractive answer sentence ⇒ the answer.
+            #   * REASK_FOCUS changes the question the engine is asked at all.
+            "REGENOLD_SUBPARAGRAPH_ATTRIBUTION",
+            "REGENOLD_DEFINITION_QTYPE_PRECEDENCE",
+            "REGENOLD_REASK_FOCUS",
+            # R308 — ANSWER COVERAGE appends the ported CONTENT rules to the
+            # Stage-2 USER message (the only channel the wrapper delivers —
+            # measured 2026-08-03: the system slot is dropped 100%). It flips
+            # the polished answer AND its citations, so same doctrine.
+            #
+            # NOTE the deliberate asymmetry with its sibling R308 flag:
+            # REGENOLD_ANSWER_NO_CAP is NOT in this key and must not be. The
+            # uncap is pure ROUTE post-processing that re-runs on every cache
+            # hit, so a flip cannot serve a stale answer — and keeping it out
+            # is what makes the paired same-process A/B possible at all
+            # (measured: arm B served from cache in 0.1s vs arm A's 37.8s,
+            # giving a zero-generation-variance comparison).
+            "REGENOLD_ANSWER_COVERAGE",
+            # R300 — the wrapper model alias decides WHICH model generates the
+            # Stage-2 answer, so flipping it flips the answer.
+            "REGENOLD_WRAPPER_MODEL_ALIAS",
             "REGENOLD_GRAPH_2HOP",
             "REGENOLD_GRAPH_AWARE",
             # R252 — KB-primary vs legacy Neo4j-primary retrieval flips the
@@ -5133,6 +5201,47 @@ def regenold_eu_ai_act_ask(
     _stage2_landed_for_answer = bool(
         (rag_res.graph_stats or {}).get("stage2_landed")
     )
+
+    # R308 — operator directive (2026-08-03): "no hard cap please, the stage 2
+    # system prompts must be able to get to the right content and phrases to
+    # correctly answer."
+    #
+    # THE MEASURED PROBLEM. Live prod probe (2026-08-03, 8 questions): 6 of 8
+    # answers sat at EXACTLY the 3-sentence cap, and the truncation was the
+    # OMISSION mode, not verbosity trimming. Verbatim example, 298 chars:
+    #   "Deployers of high-risk AI systems must comply with a defined set of
+    #    obligations under Article 26. They must use the system in accordance
+    #    with the provider's instructions of use. They must assign human
+    #    oversight functions to natural persons"
+    # It announces a set and delivers 2 of ~6 Article 26 duties. The R306
+    # enumeration guard cannot catch this because the list is PROSE, not a
+    # labelled "(a) ... (b) ..." run. The live judge signature matches: mean
+    # factual score 0.9647 (what it says is right) against an answer PASS rate
+    # of 0.48, with omission_rows 24 vs fabrication_rows 5.
+    #
+    # SCOPE. Gated on ``stage2_landed`` so the uncap lands on the LIVE answer
+    # path only. The deterministic bench runs provider=cli with no wrapper, so
+    # stage2_landed is always False there and davidath stays byte-identical BY
+    # CONSTRUCTION (the same gating discipline as R72 / R100 / R109).
+    #
+    # TRADE, STATED PLAINLY. Answer-Conciseness is the only axis the official
+    # regenold scorecard says we lead, so this spends the one axis with no
+    # headroom to buy completeness. That is the operator's call, made with the
+    # numbers on the table. Reverse with REGENOLD_ANSWER_NO_CAP=0, or pin an
+    # explicit cap with REGENOLD_MAX_ANSWER_SENTENCES=<n> (an explicit env
+    # value still wins over this switch).
+    #
+    # Set unconditionally (True *or* False) so a ContextVar can never leak a
+    # stale value from a previous request on a reused worker thread.
+    try:
+        set_answer_no_cap(
+            _stage2_landed_for_answer
+            and os.getenv("REGENOLD_ANSWER_NO_CAP", "1").strip().lower()
+            in ("1", "true", "yes", "on")
+        )
+    except Exception:  # noqa: BLE001 — answer shaping must never break the route
+        logger.warning("answer_no_cap_set_failure", exc_info=True)
+
     if _is_classification_topic and not _stage2_landed_for_answer:
         answer_text = rag_res.answer
     else:
