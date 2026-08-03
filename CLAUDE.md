@@ -10801,6 +10801,131 @@ measured with the cap at 3, and uncapping swings the only axis we lead.
 3. **Fix the completeness verifier properly** (gate to articles whose sub-points
    really are obligations; reject non-distinct labels), then A/B it back ON.
 
+## Round 307 / 307.1 — cite what you quote; role-duty rescue off the zero-retrieval floor; the OTHER sentence splitter (2026-08-03)
+
+Closes the two follow-ups R306 documented, plus a defect the live probe caught
+*after* R307 deployed. Merged as
+[#316](https://github.com/Peaky8linders/regenold-eu-ai-act-rag/pull/316) (`eead7ec`)
+and [#317](https://github.com/Peaky8linders/regenold-eu-ai-act-rag/pull/317) (`b114e4f`).
+
+### Fix A — cite-and-mismatch on the extractive composer
+
+    Q "What are the deployer obligations under Art 50"
+      select_answer_sentence(Q, 'Art. 50') -> None   (confidence gate)
+      select_answer_sentence(Q, 'Art. 26') -> "Where applicable, deployers of
+         high-risk AI systems shall use the information provided under
+         Article 13 ... data protection impact assessment under Article 35
+         of Regulation (EU) 2016/679..."
+
+That **Article 26(9)** sentence shipped as the answer while
+`_prune_non_anchor_refs` collapsed `references` to `['Article 50']` — the wire
+quoted one provision and cited another (hard rule #4). The loop returns the
+FIRST citation that yields a sentence, so it silently borrows a later article's
+prose; nothing ties the provision that *sourced* the answer to the ones cited
+(`answer_text` is frozen early while `references` is rewritten by ~25 later
+passes).
+
+**Fixed at SELECTION, not at pruning**: when the live question names specific
+provisions, `_prune_non_anchor_refs` keeps only those, so the extractive
+sentence must come from one of them. `_live_explicit_anchor_sets` deliberately
+**mirrors that pruner's own extraction** (same regexes, same
+`"Latest question:"` slicing) so the two cannot drift. If no anchored citation
+yields a sentence → `None` → the engine's own prose answers. Env
+`REGENOLD_EXTRACT_CITED_ONLY=0`.
+
+### Fix B — the two most canonical questions hit the zero-retrieval floor
+
+Measured live: *"What obligations does a provider have?"* →
+`['Article 1','Article 2','Article 3.3']`, `retrieval_path=
+"zero_retrieval_fallback"`, `engine_confidence 0.0`; *"…deployer…"* →
+`['Article 1','Article 2','Article 3.4']`, same path, same 0.0. **Both returned
+byte-identical Article 1/2 boilerplate** — the provider and deployer answers
+were the same text.
+
+`_role_duty_seeds` adds a deterministic **role-aware** seed on the
+zero-retrieval path ONLY (provider→16, deployer→26, importer→23,
+distributor→24, authrep→22), gated on a co-occurring duty marker so
+*"What is a provider?"* (gold: the Article 3 definition) does not fire. That
+path by definition has no retrieval to damage — which is what makes it
+davidath-safe where the general-candidate variant is not: the pre-existing R93
+`REGENOLD_ROLE_DUTY_NOUN_SEED` injects into the NORMAL candidate list and
+measured **−0.0115 Ref Strict / −0.0137 Ref Conciseness at flat Ref Loose**
+(references without gold — over-citation), so it is deliberately not used. One
+article per role, not the chain (Article 16 IS "obligations of providers of
+high-risk AI systems") — also more precise than the R93 seed, 1 ref vs 5. Env
+`REGENOLD_ROLE_DUTY_ZRF=0`.
+
+### Fix C + R307.1 — TWO sentence splitters, two abbreviation tables
+
+R307's live A/B for Fix B surfaced a mid-citation cut: with Article 16 correctly
+surfaced, its KB stub split after `(Arts.` and the cap shipped
+*"…keep the technical documentation **(Arts.**"*. `_split_sentences` protected
+`Art.` but not the plural `Arts.` — the R59 Annex-lookbehind class.
+
+**R307.1 is the important half.** After R307 deployed, the live probe showed the
+cut *still on the wire*: there are **two independent splitters with separate
+tables**, and R307 fixed only one —
+
+| splitter | table | R307 |
+| --- | --- | --- |
+| `models._split_sentences` | `_ABBREVIATIONS` | fixed |
+| `sentence_index.split_legal_sentences` | `_ABBREV_LEFTS` | still missing them |
+
+The per-reference description augmenter — the pass that produces exactly that
+*"Under Article 16, …"* text — uses the **second** one. Measured on the failing
+string after R307: `models` → 1 sentence, `legal` → **2**. Adding an
+abbreviation can only SUPPRESS a false split, never create one, so both tables
+ship the plural / related forms, and **+9 tests pin them IN AGREEMENT** on a
+shared corpus so a future edit to one without the other fails in CI rather than
+in production. (One corpus case, *"Refer to Sections 2 and 3."*, splits
+differently between the two — git-stash-A/B-verified **pre-existing** legal-splitter
+numbered-list behaviour, so it is excluded from the agreement set rather than
+papered over.)
+
+### Gates
+
+| Gate | Result |
+| ---- | ------ |
+| davidath 476, per-row diff (R307) | **1 row changes** (`qa_036`) and it **improves** (conciseness 0.0134→0.0233); `pred_refs` 0 differ |
+| davidath 476 (R307.1) | net-neutral — Ans Loose **0.1884** · Ans Strict **0.3547** · **Ref Loose 0.5971 / Ref Strict 0.4750 / Ref Conc 0.4320 identical** · Tone 1.0 · mt 20/20 |
+| `evals.regenold.runner` (276) | **255/255**, RISK_F1 macro 1.00 |
+| OOS probe (`--oos-suite all`, 51) | 49 pass, **0 scope leaks** |
+| tests | **+68** across the round; 103 on the two splitter suites |
+
+**Live, post-deploy (`b114e4f`)** — all three verified on the production wire:
+provider → `['Article 16','Article 17','Article 19']`, 386 chars, complete, no
+mid-citation cut; *"deployer obligations under Art 50"* → announces "three
+distinct transparency duties" and **delivers all three** (the R306 enumeration
+guard composing with R307); *"What is a provider?"* → `['Article 3.3']`
+definition (negative control holds).
+
+### Measured and deliberately NOT shipped — the metric trap
+
+Uncapping the answer (`REGENOLD_MAX_ANSWER_SENTENCES=0`) scores **+0.0200
+davidath Ans Strict with all three reference axes flat** — the largest
+single-axis number available, essentially matching the all-time best
+(`r126-nocap` 0.3736 vs current 0.3547). Under the R306 finding that production
+runs the 3-sentence code default, it is a one-line change.
+
+**Not shipped.** Ans Strict is a *recall* metric (fraction-of-gold-tokens) that
+rises monotonically with length; Ans **Loose** (Jaccard, precision-balanced) is
+**flat** (0.1882 → 0.1877) and conciseness falls. That is metric-gaming, not
+quality — and a cap sweep confirms the "win" is concentrated at full uncap
+(cap=4 buys only +0.0024), i.e. it is length, not correctness. The genuine case
+for relaxing the cap is the live judge's omission-dominant profile
+(`omission_rows 24` vs `fabrication_rows 5`, mean factual score 0.9647 against
+answer pass 0.48 — accurate but incomplete), and that is where it should be
+decided, with the live judge, not on a recall artifact. R306's enumeration guard
+already captures the specific omission mode (announced-count truncation) at a
+measured **+3.1 chars/answer** corpus-wide.
+
+For reference, best-ever davidath vs current (full 476-row runs only): Ref Loose
+**0.5971 = current is the all-time best**; Ans Loose 0.1889 (`r144-fix1`) vs
+0.1884; Ref Strict 0.4770 (`r112-baseline`) vs 0.4750 — both inside the noise
+band. The two real historical gaps are Ans Strict (the length artifact above) and
+Ref Conciseness 0.4779 (`r99-graphfix`), which came from the **verbatim** mode
+R100 replaced after measuring its judge answer-correctness at 0.25.
+
 ## Non-goals / things to skip
 
 - ~~Vector embeddings / dense retrieval~~ → **Round 31 added a
