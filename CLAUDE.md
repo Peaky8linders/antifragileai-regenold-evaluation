@@ -10675,6 +10675,132 @@ demoted to additive-only), and the additive path is then zeroed at the fusion
 cap (R295: 660 hop2 refs available, 4 added). Opening it is item 7 on the
 do-not-repropose list — `REGENOLD_GRAPH_FUSE_SLACK=2` destroyed gold refs.
 
+## Round 306 — the answer cap cuts lists mid-run; `railway.toml [deploy.envs]` has never applied (2026-08-03)
+
+Reported live defect: *"What are the deployer obligations under Art 50"* shipped
+*"deployers have **three** transparency obligations"* and then delivered **two**.
+Reproduced against deployed production, root-caused, generalised. Merged as
+[#315](https://github.com/Peaky8linders/regenold-eu-ai-act-rag/pull/315) (`77d2c17`).
+
+### ⚠ `railway.toml [deploy.envs]` has NEVER been applied — and this corrects R80.2
+
+Railway's config-as-code `[deploy]` schema has **no `envs` key**; env vars cannot
+be set from `railway.toml` at all. So the block was never *read* — it is **not**
+"overridden by the dashboard", which is how ~20 rounds of this file have recorded
+the symptom (the R80.2 reading). Practical difference: you cannot fix it by
+unsetting a dashboard var; the value must be set on the service or baked as a
+**code default**.
+
+Confirmed live (2026-08-03) with a discriminator visible on the wire:
+
+```
+POST "What obligations does a provider have?"
+  ROLE_DUTY_NOUN_SEED=0 (code default) -> ['Article 1','Article 2']
+  ROLE_DUTY_NOUN_SEED=1 (toml intent)  -> ['Article 16','Article 11', ...]
+```
+
+Production returned `['Article 1','Article 2']`, `retrieval_path=
+"zero_retrieval_fallback"`, `engine_confidence 0.0`. **The single most canonical
+question in the domain answers from the purpose/scope floor at zero confidence.**
+
+Only **5 of 34** assignments ever differed from a code default (the other 29 are
+cosmetic — which is why this went unnoticed): `MAX_ANSWER_SENTENCES` `0` vs **3**,
+`QA_LENGTH_CAP` `1200` vs **400**, `ROLE_DUTY_NOUN_SEED` `1` vs **0**,
+`R89A_FORCE_APPEND` `1` vs **0**, `INTENT_PROVIDER` `groq` vs `""`. The block is
+deliberately NOT deleted (it is the record of operator intent) but now carries a
+large inert-block header.
+
+### Root cause of the truncation (118/120 predictive on recorded prod rows)
+
+Production runs `MAX_ANSWER_SENTENCES=3`. An answer escapes that cap only when
+`_is_closed_set_enumeration_ask` / `_is_multi_phrase` / `is_complex_question`
+fires — and **all three inspect the QUESTION**. All three return `False` for both
+failing questions, so Opus's 7- and 9-sentence answers are guillotined at three,
+mid-list. Guarding a content-destroying cap behind a question-phrasing allowlist
+is whack-a-mole. Also reproduced twice on the **actually graded** July-7 batch on
+a question that literally asks for a four-item set (`july7-219`: *"…the following
+four grounds. (a) …"*, 277 chars; and 363 chars delivering `(a) (b)`).
+
+### The fix — read the ANSWER, not the question
+
+`answer_normaliser.enumeration_run_end` / `_run_indices` /
+`inline_enumeration_length` / `answer_has_enumeration` detect a run of ≥2
+consecutively labelled items (`First, … Second, …`, `(a) … (b) …`, inline
+`(a); (b); (c)`) and refuse to cut through it. Structure-keyed ⇒ no topic,
+article number or evaluator row (hard rule #3), and it holds whatever the
+deployed cap turns out to be. Wired at **all four** cutters:
+
+* the sentence slice;
+* the **soft char-cap loop** — which drops the longest *non-citation* sentence,
+  i.e. exactly the list members that don't name an article, and deletes from the
+  **middle**: measured shipping `(a) (b) (d)`, an answer that looks complete and
+  is **legally wrong** about which grounds exist (hard rule #4);
+* `_hard_truncate_at_clause`, which truncates *at* an enumerator boundary;
+* the route's readable-unit cap, whose `_relax_caps` was the same question-keyed
+  anti-pattern with a comment naming this exact bug.
+
+Additive-only (can raise a cap, never lower one), never invents content, ceilinged
+at 12, off-switch `REGENOLD_ENUM_GUARD=0`. Correctly **not** in
+`_engine_cache_key` — route-level post-processing that re-runs on every cache hit,
+same class as `REGENOLD_HARD_CHAR_CAP`.
+
+### Completeness verifier → DEFAULT OFF (hard rule #4)
+
+R299 shipped it default-ON with no A/B. Over 1,134 recorded live answers it fires
+on 29 (2.6%), concentrated on graded rows, appending **inverted law**:
+`Article 6 also requires (a) … narrow procedural task` ×12 (Art 6(3) are the
+derogation conditions for **NOT** being high-risk); `Article 5 also requires
+(e) the placing on the market, (f) the placing on the market…` ×10 (Article 5
+**prohibits**, and the labels are degenerate duplicates); `Article 1 also requires
+(f) rules on market monitoring` ×3 (subject-matter, requires nothing of anyone);
+`Article 99 also requires (d) obligations of distributors` ×4 (Art 99(4) lists
+provisions whose **breach** attracts a fine tier). The module's own comment calls
+this "the single worst defect class in this codebase"; R300 fixed one instance and
+the class resurfaced on Art 6(3) — the pattern is the bug. Defaulting OFF restores
+the last A/B-validated state, exactly as R300 did with `REGENOLD_REF_PARTITION`.
+Re-enable with `REGENOLD_COMPLETENESS_VERIFIER=1` **after** fixing the verb and the
+label extractor.
+
+### Gates
+
+| Gate | Result |
+| ---- | ------ |
+| davidath 476, **per-row byte diff** | `pred_answer` 0 / `pred_refs` 0 / scores 0 differ — **byte-identical**. Ans Strict 0.3533 · Ref Loose 0.5971 · Ref Strict 0.4750 · Ref Conc 0.4320 · Tone 1.0 · mt 20/20 |
+| `evals.regenold.runner` (276) | **255/255 (100%)**, RISK_F1 macro 1.00, every category |
+| OOS probe (`--oos-suite all`, 51) | 49 pass, **0 scope leaks** (same 2 pre-existing soft fails) |
+| new tests | **+39**, each written against the VERBATIM failing question |
+
+**Variance-free replay over 1,134 recorded live answers** (isolates the guard from
+Opus non-determinism): **10 answers change (0.9%)**, all 10 deliver **more** items,
+**0** deliver fewer, mean cost across ALL answers **+3.1 chars**. Answer-Conciseness
+— the one rubric axis we lead, i.e. zero headroom — is protected: 99.1%
+byte-identical. Live end-to-end through the Claude Max wrapper at the prod cap:
+art50 becomes internally consistent and complete; art79 delivers all four grounds.
+
+### Measured and deliberately NOT shipped
+
+`REGENOLD_ROLE_DUTY_NOUN_SEED=1` fixes the two canonical role questions (provider →
+`Art 16/11/13/17/18`, deployer → `Art 26/13/14/9`, both off the zero-retrieval
+floor) **but** costs davidath Ref Strict **−0.0115** / Ref Conciseness **−0.0137**
+at flat Ref Loose — it adds references without adding gold, i.e. over-citation.
+Needs a live pairwise `ab_judge`, not a unilateral flip. Likewise do **not**
+reflexively bake `MAX_ANSWER_SENTENCES=0`: the official 77.5/73.0 scorecard was
+measured with the cap at 3, and uncapping swings the only axis we lead.
+
+### Open, ranked (each with its gate)
+
+1. **`ROLE_DUTY_NOUN_SEED`** — canonical role questions at conf 0.0 vs −0.011 Ref
+   Strict. *Gate:* live pairwise `ab_judge`.
+2. **Deterministic composer cite-and-mismatch** — *"deployer obligations under
+   Art 50"* answers with **verbatim Article 26(9) text while citing Article 50**.
+   Adversarially CONFIRMED this round (`_try_extractive_answer` fall-through at
+   `regenold.py:2183-2188` + `answer_text` frozen while `references` keeps being
+   mutated by ~25 downstream passes). Prevalence 4/526 deterministic rows, 1 on
+   the graded batch (`july7_065`). The verifier **REFUTED** that the proposed fix
+   is a clean win (costs conciseness) — needs its own round.
+3. **Fix the completeness verifier properly** (gate to articles whose sub-points
+   really are obligations; reject non-distinct labels), then A/B it back ON.
+
 ## Non-goals / things to skip
 
 - ~~Vector embeddings / dense retrieval~~ → **Round 31 added a
