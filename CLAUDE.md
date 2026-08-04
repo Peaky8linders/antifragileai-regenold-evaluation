@@ -11289,12 +11289,22 @@ and `Article 43` (2):
   test literally contains "third-party conformity assessment", so every
   question that states the Article 6(1) criterion trips it.
 
-**The rule was already written and delivered to nobody.** The dead
+**Half the rule was already written and delivered to nobody.** The dead
 `ANSWER_GENERATE_SYSTEM` says verbatim at line 117: *"Do NOT cite Article 16
 (provider obligations), Article 5 (prohibitions), or Annex III (the separate
 use-case route) for an Annex I product-conformity question."* Per R308 the
-wrapper drops the system slot 100%, so it has never been enforced. R311 is the
-deterministic enforcement.
+wrapper drops the system slot 100%, so it has never been enforced. R311
+enforces **that half** deterministically.
+
+⚠ **Do NOT port line 117 wholesale.** The same line also says *"foreground
+Article 43 (the conformity-assessment procedure)"* and *"you MUST explicitly
+cite Article 6 and Annex I … alongside Article 43"* — and Article 43 is the
+**WRONG** reference on july7-004 and july7-074, where the offending sentence
+IS that mandated Article 43 content. Porting the line as written would
+**entrench two of the five MedTech failures** and risk adding Article 43 to
+the three rows that currently avoid it. Line 115 in the same block separately
+forbids `Annex I`, which is GOVERNING on three MedTech rows. The prohibitive
+half is right; the prescriptive half is wrong against measurement.
 
 Four fixes, all measured before being written:
 
@@ -11376,14 +11386,37 @@ a governing anchor, the other refuses to treat a negation as a description).
 
 Drift (31 rows) remains the largest conciseness cluster and is **not** fixed
 here: the generic instruction is already delivered three times and still
-fails. The un-ported half of the dead system prompt is the untested candidate
-— its REFERENCE SELECTION rules name CONCRETE targets (`Article 49`, `Annex
-II`, `Article 27` …) where the delivered clause's negative list stops at
-"Article 6, Annex I, Annex III". That is a prompt change on the live Stage-2
-channel and therefore needs `evals.harness.ab_judge`, not davidath (hard rule
-#6). Also still open: the R308 `easyhard_ab` gate — note its documented
-invocation is missing `--endpoint`/`--local` and will `SystemExit` as written,
-and `--local` silently forces `?include_reasoning=true`, contradicting its own
+fails.
+
+**The obvious next candidate was investigated and REFUTED — do not re-pay
+it.** Porting the un-ported REFERENCE SELECTION rules from the dead system
+prompt looks attractive because they name CONCRETE targets where the
+delivered clause's negative list stops at "Article 6, Annex I, Annex III".
+Measured against the same 72 rows, that is the identity blocklist under a new
+name: of the 11 articles the drift actually targets, **9 are GOVERNING
+somewhere in the same batch** — `Article 53` GOV 4 / WRONG 0 (blocklisting it
+is pure loss), `Article 27` GOV 3 / WRONG 2, `Article 24` GOV 2 / WRONG 0,
+`Article 25` GOV 2 / WRONG 1. Only `Article 26` (GOV 0 / WRONG 3) and
+`Article 74` (GOV 0 / WRONG 2) are clean, at n=3 and n=2 — far too small to
+act on. Plus the line-117 hazard above.
+
+Two further claims about drift were investigated and did **not** survive, so
+the causal picture is genuinely open: (a) "drift is a Stage-2 phenomenon"
+rests on a 30/63-vs-1/9 contrast that is a **length artifact** — 7 of the 9
+control rows are shorter than the shortest drifted answer anywhere, and above
+600 chars the rates are 0.48 vs 0.50; (b) "`USER_ANSWER_COVERAGE_CLAUSE`
+manufactures drift" has **no before/after evidence** — a pre-R308 batch
+(`legalv2-r305-final`, same judge) already shows drift at 31%, and on the 14
+shared rows drift went **down** 7 → 4 after R308.
+
+Any drift fix is also **not** reference-neutral: the effect reaches the wire
+through the stage2-gated R72 reconcile, and `_add_prose_named_refs` can
+CREATE a reference from a drift sentence — so it is a reference-affecting
+change that needs the same gold-protection discipline as a ref pass.
+
+Also still open: the R308 `easyhard_ab` gate — its documented invocation is
+missing `--endpoint`/`--local` and will `SystemExit` as written, and
+`--local` silently forces `?include_reasoning=true`, contradicting its own
 docstring.
 
 ## Non-goals / things to skip
