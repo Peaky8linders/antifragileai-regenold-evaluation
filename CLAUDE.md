@@ -11270,7 +11270,7 @@ on drift.
   20). A hypothesis of my own — that wrong refs are the citation footprint of
   drift — explains only 23% and was dropped too.
 
-### Shipped — L5, root-caused and fixed
+### Shipped — L5, root-caused; 3 of its 5 rows fixed
 
 L5 (MedTech, answer 0.80 / **references 0.00 on 5/5**) is the one lever that
 survived, and it is a single structural defect, not five. All five questions
@@ -11341,6 +11341,30 @@ WRONG refs removed     : 4
 reference_correctness  : 35/72 = 0.486  ->  39/72 = 0.542
 davidath               : gate fires on 18 rows, GOLD dropped on 0
 ```
+
+**Per-row, stated plainly — the MedTech stratum goes 0/5 -> 3/5, not 5/5**,
+and the fourth flipped row is outside the stratum:
+
+| row | refs before -> after | outcome |
+| --- | --- | --- |
+| july7-008 | `[6, Annex III, Annex I]` -> `[6, Annex I]` | **FIXED** |
+| july7-071 | `[6, Annex III, Annex I]` -> `[6, Annex I]` | **FIXED** |
+| july7-074 | `[6, 43]` -> `[6]` | **FIXED** |
+| july7-004 | unchanged | still fails — deliberate |
+| july7-092 | unchanged | still fails — gate does not fire |
+| july7-255 | `[6, Annex I, Annex III]` -> `[6, Annex I]` | **FIXED** (Multi-Turn stratum) |
+
+* **july7-004** keeps `Article 43` because its question states "undergoes a
+  3rd party conformity assessment", which trips the procedure-ask guard. That
+  is the CONSERVATIVE side of a deliberate trade: loosening the guard to catch
+  this row also strips the GOVERNING `Article 43` from july7-110. One row of
+  precision is worth more than one governing reference.
+* **july7-092** ("AI software that helps clinicians take medical decisions")
+  matches none of the `annex_i_safety_component` patterns — no "safety
+  component", no "medical device" token — so it reaches the wire through
+  `_GENERAL_CLASSIFICATION_REFS`, a different emission site this pass does not
+  touch. Extending the topic patterns to cover clinical-decision-support
+  phrasing is the obvious follow-up and needs its own davidath check.
 
 A broader **co-occurrence** form ("drop Annex III whenever Annex I is also
 predicted") was tested and **REJECTED** — it hits GOVERNING 5 times, including
