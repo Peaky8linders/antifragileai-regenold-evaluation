@@ -11550,17 +11550,71 @@ saturated (arm A: answer 13 pass / 16 fail, refs 11 / 18).
 
 Stage-2-only + default OFF ⇒ zero production behaviour change on merge.
 
-### Next, in order
+### The grounded-judge verdict — the draft is doing TWO jobs
 
-1. Finish the grounded-judge A/B (answer correctness + omission/fabrication
-   decomposition) on the two arms already generated. That is the axis R312
-   targets; `kw_recall` cannot resolve it.
-2. If answer-first holds, re-run on a HARDER, unsaturated population (the R309
-   hard batch: 45/72 conciseness fails, 36 omission rows) before flipping.
-3. **Then** test mechanism 2 — relax the knowledge cap so the model may state
-   law it is confident of while citations stay bound to the verified block.
-   Gate on `fabrication_present`, which is the risk it creates.
-4. Mechanism 3 is a standing opportunity, not a fix: 7,637 words of tuned
+Both arms graded by the grounded Sonnet-5 judge against the verbatim Act text,
+40 paired rows, **0 judge errors on either side** (so no axis is excluded; the
+R309 §6.5 trap — diffing a `fail` against an ERRORED axis and inventing a
+regression — cannot apply here):
+
+| axis | A refine | B answer-first | delta | B>A | A>B | tie | p |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| answer_correctness | 0.475 | **0.575** | **+0.100** | 6 | 2 | 32 | 0.289 |
+| reference_correctness | 0.375 | 0.375 | 0.000 | 3 | 3 | 34 | 1.000 |
+| **citation_faithfulness** | **0.925** | 0.800 | **-0.125** | **0** | **5** | 35 | **0.062** |
+
+mean reference recall 0.8750 -> 0.8625 (-0.0125).
+
+**The targeted axis moved the right way and a different one broke.** The
+citation regression is the strongest single signal in the entire round — 0
+wins against 5 losses, p=0.062, the closest to significant anything measured —
+and every one of the five is textbook cite-and-mismatch, the model asserting
+things about a provision from its own knowledge that the verbatim text does
+not say:
+
+* `st_v4_001` — Article 3 cited for deployer / emotion-recognition definitions
+  that Article 3(1) does not contain.
+* `st_v4_006` — claims Article 6 classification is automatic "without any
+  further condition", ignoring the Article 6(3) derogations.
+* `tp_v4_011` — Article 6(2) mischaracterised as an
+  intended-purpose-over-commercial-label test.
+* `tp_v4_012` — Article 6(4)'s documentation duty attributed to Article 6(3).
+* `st_v4_019` — Article 101 cited and then never described.
+
+**So the draft is not only an anchor.** It caps the answer (mechanism 1, real:
++0.100 when removed) AND it is what keeps the prose tethered to the supplied
+text (-0.125 when removed). Removing it trades one for the other. Geometric
+mean across the three axes barely moves (0.548 -> 0.557) and buys +4.1 s.
+
+**Default stays OFF** — on evidence, not caution.
+
+⚠ **Correction to my own comparison script.** It printed
+`omission_present 0 rows / fabrication_present 0 rows / delta +0`. Those
+fields do **not exist** in the grounded judge's schema (its
+`answer_correctness` carries `correct / incorrect / unsupported / missing`;
+`omission_present` / `fabrication_present` are **legal_v2** fields). Absent is
+not zero — that line was a false reading and no omission/fabrication
+conclusion should be drawn from this run.
+
+### Next, in order — and the design the evidence now points at
+
+1. **Do NOT simply remove the draft.** Measured: it costs citation
+   faithfulness more than it buys answer correctness. The win requires
+   DECOUPLING the draft's two jobs — let the model answer freely, then run a
+   faithfulness VERIFICATION pass against the verbatim text of each cited
+   provision, dropping or repairing a claim the text does not support. That is
+   the bounded CoVe-style check R110 built the scaffolding for and deferred on
+   latency grounds; this round is the first hard evidence that it is the
+   load-bearing piece, because it is exactly the failure the draft was
+   silently preventing.
+2. Re-run any answer-side arm on a HARDER, unsaturated population (the R309
+   hard batch: 45/72 conciseness fails) — `kw_recall` on the probe set is
+   saturated at 0.9333 with 34/40 ties and cannot resolve these effects.
+3. Mechanism 2 (relax the knowledge cap) is now **more** dangerous, not less:
+   this round shows that loosening the model's tether to the supplied text
+   produces cite-and-mismatch at p=0.062 on 40 rows. Do not test it without
+   the verification pass from step 1 in place.
+4. Mechanism 3 remains a standing opportunity, not a fix: 7,637 words of tuned
    answer guidance are undelivered. Porting is **not** mechanical — R311
    measured that line 117's prescriptive half would entrench two MedTech
    failures, and the concrete negative lists are identity blocklists where 9
