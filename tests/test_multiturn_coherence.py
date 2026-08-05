@@ -132,8 +132,14 @@ def test_history_turns_increased_to_8() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_truncation_still_works() -> None:
-    """Very long history is truncated to ≤2000 chars; 'Latest question' marker survives."""
+def test_truncation_still_works(monkeypatch) -> None:
+    """Truncation invariants hold when the cap DOES bite.
+
+    R314 raised the default cap from 2 000 to 64 000 chars, so this
+    exercises the bound explicitly via the env override (which is also
+    the pre-R314 A/B arm).
+    """
+    monkeypatch.setenv("REGENOLD_MAX_QUESTION_CHARS", "2000")
     msgs = [
         RegenoldChatMessage(role="user", content="Article 13: " + "A" * 900),
         RegenoldChatMessage(role="assistant", content="B" * 900),
@@ -143,6 +149,38 @@ def test_truncation_still_works() -> None:
     assert len(question) <= 2000
     assert "LIVE_QUESTION_SENTINEL" in question
     assert "Latest question:" in question
+
+
+def test_realistic_multiturn_history_is_not_truncated() -> None:
+    """R314 — a real 8-turn legal conversation survives intact.
+
+    Under the pre-R314 2 000-char cap this history was amputated (and
+    the ``[Context anchors — ...]`` prefix shredded mid-word). The
+    7 July 2026 evaluator batch pinned 64 of 67 adversarial pushback
+    turns at exactly 2 000 chars.
+    """
+    msgs = []
+    for i in range(4):
+        msgs.append(
+            RegenoldChatMessage(
+                role="user", content=f"Question {i} about Article 1{i} obligations?"
+            )
+        )
+        msgs.append(
+            RegenoldChatMessage(
+                role="assistant",
+                content=f"ASSISTANT_TURN_{i}_SENTINEL. " + "Regulatory prose. " * 60,
+            )
+        )
+    msgs.append(RegenoldChatMessage(role="user", content="LIVE_QUESTION_SENTINEL"))
+
+    question, _ = _build_question_from_history(msgs)
+
+    assert len(question) > 2000, "test fixture must exceed the old cap"
+    assert "LIVE_QUESTION_SENTINEL" in question
+    # Every turn inside the history window survives — nothing amputated.
+    for i in range(4):
+        assert f"ASSISTANT_TURN_{i}_SENTINEL" in question
 
 
 # ---------------------------------------------------------------------------
