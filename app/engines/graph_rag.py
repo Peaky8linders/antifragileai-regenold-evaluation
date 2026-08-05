@@ -6183,6 +6183,12 @@ def _claude_max_enhance_answer(
                 "the latest question, or when rule 12b closed-set completeness "
                 "requires naming every member of a set."
             )
+        try:
+            from app.data.graph_rag_prompts import (  # noqa: PLC0415
+                USER_ANSWER_COVERAGE_CLAUSE,
+                answer_coverage_enabled,
+            )
+
             if answer_coverage_enabled():
                 user_message += USER_ANSWER_COVERAGE_CLAUSE
         except Exception:  # noqa: BLE001 — a prompt add-on must never break Stage-2

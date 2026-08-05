@@ -227,8 +227,8 @@ class TestClauseIsActuallyDelivered:
     """R256 — a change that never reaches the wire is worse than no change."""
 
     def _capture_user_message(self) -> str:
-        import app.engines._graph_rag_impl as impl
-        from app.engines._graph_rag_impl import GraphContext
+        import app.engines.graph_rag as impl
+        from app.engines.graph_rag import GraphContext
 
         captured: dict = {}
 

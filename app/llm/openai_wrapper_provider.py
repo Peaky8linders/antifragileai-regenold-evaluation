@@ -51,8 +51,6 @@ _WRAPPER_CLI_ERROR_SENTINELS: tuple[str, ...] = (
 )
 
 
-<<<<<<< HEAD
-=======
 # R300 — wrapper model-alias map.
 #
 # The 2026-07-30 truncation commit (757f0cb) introduced a HARDCODED rewrite of
@@ -157,7 +155,6 @@ def resolve_wrapper_model(requested: str) -> str:
 _resolve_wrapper_model = resolve_wrapper_model
 
 
->>>>>>> d5985e7 (R308 — uncap the answer, deliver the content rules, and actually run Stage-2 on Opus 5 (#318))
 class OpenAIWrapperRequest(BaseModel):
     system: str = ""
     user: str = Field(min_length=1)

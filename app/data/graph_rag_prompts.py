@@ -258,10 +258,6 @@ CYPHER_TEMPLATES = {
         "count(DISTINCT o) AS obligation_count"
     ),
 }
-<<<<<<< HEAD
-=======
-
-
 # ─── R277 — Minimal composer (experimental, env-gated, default OFF) ──────────
 #
 # The official regenold scorecard (2026-07-14) decomposed the system's loss
