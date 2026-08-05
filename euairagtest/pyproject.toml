@@ -1,0 +1,83 @@
+[project]
+name = "euaiact-graphrag"
+version = "0.1.0"
+description = "Structure-preserving GraphRAG for the EU AI Act — Phase 1: corpus ingestion & provision-ID parser"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+dependencies = [
+    "pydantic>=2.11",
+    "polars>=1.40",
+    "pyarrow>=18",
+]
+
+[project.optional-dependencies]
+# Pulling the corpus from Hugging Face. Kept optional so the core ID parser and
+# data model install and test with zero heavy/ML dependencies.
+# polars reads `hf://datasets/...parquet` directly, so `datasets` is only needed
+# for the `load_dataset` convenience path.
+hf = [
+    "datasets>=4.0",
+    "huggingface-hub>=0.34",
+]
+# Phase-2 ML enrichment (deontic/actor/risk layer). Heavy + optional: the deterministic
+# graph backbone builds and tests without any of these.
+enrich = [
+    "gliner>=0.2.13",
+    "transformers>=4.44",
+    "llama-index-core>=0.11",
+]
+# Loading the emitted Cypher into a live Neo4j (export-time only; not needed to build).
+neo4j = [
+    "neo4j>=5.24",
+]
+# §8 frontier-LLM baseline. Optional: the naive-retrieval baseline and the whole
+# harness (extraction, TF-IDF retriever) run with zero extra deps.
+baselines = [
+    "anthropic>=0.40",
+]
+# Offline latent-semantic (LSA) retriever/seeder. numpy already ships transitively
+# via pyarrow, so this group is a no-op in practice -- declared for provenance so
+# the LSA path's one real dependency is explicit.
+lsa = [
+    "numpy>=1.26",
+]
+# Neural NLI citation verification (CRAG/ALCE, plan §6/§8). Heavy + optional: the
+# lexical-coverage proxy and the whole corrective control-flow (VerifiedBaseline)
+# run with zero extra deps; only the `--verify nli` cross-encoder needs this.
+verify = [
+    "sentence-transformers>=3.0",
+]
+# API-route dense retriever (plan §9 -- the neural semantic-seed slot around local
+# torch). DenseRetriever has zero import-time deps (pure-Python cosine over injected
+# embeddings); this group names the intended embeddings client (voyage-law-2) for
+# provenance. Any object exposing `.embed(texts) -> list[list[float]]` can be
+# injected instead, so this dep is not load-bearing for the module itself.
+dense = [
+    "voyageai>=0.2",
+]
+
+[project.scripts]
+euaiact-ingest = "euaiact.ingest.cli:main"
+euaiact-graph = "euaiact.graph.cli:main"
+euaiact-baseline = "euaiact.baselines.cli:main"
+euaiact-cellar = "euaiact.ingest.cellar:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/euaiact"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.uv]
+package = true

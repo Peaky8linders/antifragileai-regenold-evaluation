@@ -30,7 +30,7 @@ class GraphRAGSettings(BaseSettings):
     The Stage-2 ANSWER is governed by :attr:`stage2_model`, not this field.
     Override per-deploy with ``P2P_GRAPH_RAG_MODEL``."""
 
-    stage2_model: str = "claude-opus-4-8"
+    stage2_model: str = "claude-opus-5"
     """Model for the Stage-2 ANSWER (the user-facing legal prose) on the
     STANDARD (simple / low-complexity) path — the ~80% of questions the
     complexity gate does NOT flag. Complex questions use :attr:`complex_model`
@@ -56,7 +56,7 @@ class GraphRAGSettings(BaseSettings):
     the Max plan, not per token). Override per-deploy with
     ``P2P_GRAPH_RAG_STAGE2_MODEL``."""
 
-    max_tokens: int = 384
+    max_tokens: int = 1536
     """Stage-1/2 polish output token cap.
 
     R84 default 384 (was 512 in R80.2, was 1024 pre-R80.2). The
@@ -118,13 +118,54 @@ class GraphRAGSettings(BaseSettings):
     # with history=1, which can never satisfy the history>=3 gate), so
     # removal is wire-neutral.
     #
+    # R279 (2026-07-17): default flipped to ``claude-fable-5`` per
+    # operator directive, gated on a CLEAN live pairwise A/B
+    # (ab-judge-r278-fable-complex-v2, n=32 complex/hard-mode rows,
+    # position-swapped, Sonnet judge, healthy wrapper): conciseness
+    # fable WINS significantly 19-7 (p=0.029); correctness leans fable
+    # 6-4 (ns); refs even 9-9; tone dead-even 8-9 (ns).
+    #
+    # R280 (2026-07-17): **REVERTED to ``claude-opus-4-8``** per operator
+    # directive — "fable 5 is not worth the extra cost and latency".
+    # The R280 live measurement supports this:
+    #   * R279's ONLY significant win was CONCISENESS — and conciseness is
+    #     the one axis we already LEAD (official AnsCon 96.0 vs frontier
+    #     89.1). On a plain geometric mean an axis you lead has ZERO
+    #     headroom, so that win buys ~nothing.
+    #   * Correctness / refs / tone were all ns ⇒ nothing else was gained.
+    #   * The full R280 easy/hard re-measure (132 live rows, 0 errors)
+    #     found Ref correctness UNCHANGED vs the official run (85.8/60.8
+    #     vs 85.2/58.8) ⇒ R279 did not move correctness at all.
+    #
+    # ⚠ HONEST CORRECTION — the LATENCY half of the revert rationale is
+    # FALSIFIED; do not repeat it. Post-revert live probe, same 4 complex
+    # questions, same wrapper: Opus 4.8 is **36% SLOWER** than fable-5
+    # (mean 45.0 s vs 33.1 s; conflict 28.6 vs 18.7, gpai 43.3 vs 28.9,
+    # role_ambiguity 53.6 vs 51.1, multi_turn 54.4 vs 33.8 — 4/4 consistent,
+    # n=1 each so noisy but directionally clear). The earlier "18.7-51.1 s
+    # vs 12.8-17.7 s" figure compared the COMPLEX TIER (fable + 4000
+    # extended thinking) against the STANDARD TIER (opus, NO thinking) —
+    # a TIER comparison misread as a model indictment. **The complex tier's
+    # latency is the `complex_thinking_tokens=4000` budget, which Opus pays
+    # too.** Cost is also NOT a differentiator: both bill flat-rate through
+    # the Claude Max wrapper.
+    #
+    # So this revert stands on the HEADROOM argument + the operator
+    # directive, NOT on latency or cost. **The real latency lever is
+    # `complex_thinking_tokens` (or the complex gate itself, which routes on
+    # SENTENCE COUNT rather than difficulty) — measure that, not the model.**
+    # Evidence: `.planning/R280-CHECKPOINT.md`.
+    #
     # Operator overrides (per-deploy): set
-    # ``P2P_GRAPH_RAG_COMPLEX_MODEL=`` (empty) to disable the swap and
-    # keep every Stage-2 call on Sonnet, or point it at another model.
-    complex_model: str = "claude-opus-4-8"
+    # ``P2P_GRAPH_RAG_COMPLEX_MODEL=claude-fable-5`` to restore the R279
+    # Fable tier, or ``=`` (empty) to disable the swap and keep every
+    # Stage-2 call on the standard tier.
+    complex_model: str = "claude-opus-5"
     """Model name for the complex-question path. Default:
-    ``claude-opus-4-8``. Set empty to disable the swap (every Stage-2
-    polish call uses the base ``model``)."""
+    ``claude-opus-4-8`` (R280 revert of R279 — Fable 5's only win was on a
+    zero-headroom axis and it cost 20-30 s of latency on a scored weak
+    axis). Set ``claude-fable-5`` to restore R279; set empty to disable the
+    swap (every Stage-2 polish call uses the base ``model``)."""
 
     complex_thinking_tokens: int = 4000
     """``max_thinking_tokens`` — the **EXTENDED** thinking budget for the

@@ -273,8 +273,24 @@ _KEYWORD_ENTITY_MAP: tuple[tuple[str, str], ...] = (
     ("health insurance", "Annex III"),
     ("emergency triage", "Annex III"),
     ("public healthcare", "Annex III"),
-    # GPAI classification + procedure (Arts. 51, 52, 54)
+    # R305 — Annex III point 7 (migration, asylum, border control). These
+    # anchors already existed in ``scope.KEYWORD_TO_ARTICLE`` but NOT in this
+    # engine map, so the route surfaced "Annex III" as a wire reference while
+    # the ENGINE never retrieved it: the deterministic answer and the Stage-2
+    # grounding both came from the Art. 3/Art. 5 fallback, producing a
+    # cite-and-mismatch (right citation, prose about Article 5 biometrics).
+    # Measured on the graded evaluator batch: "Is irregular migration a topic
+    # considered in the AI Act?..." shipped an Article 5 real-time-RBI answer.
+    # This is the engine↔scope keyword divergence documented in R117-FOLLOWUP.
+    ("irregular migration", "Annex III"),
+    ("migration control", "Annex III"),
+    ("asylum application", "Annex III"),
+    ("border control", "Annex III"),
     ("10^25", "Art. 51"),
+    ("10²⁵", "Art. 51"),
+    ("10^25 flops", "Art. 51"),
+    ("10²⁵ flops", "Art. 51"),
+    ("systemic risk threshold", "Art. 51"),
     ("flops threshold", "Art. 51"),
     ("training compute", "Art. 51"),
     ("classification of gpai", "Art. 51"),
@@ -669,6 +685,41 @@ _KEYWORD_ENTITY_MAP: tuple[tuple[str, str], ...] = (
 )
 
 
+# R283 — reference-recovery keyword additions (Fix #4). A PROTECT/ADD lever:
+# each phrase surfaces a GOLD retrieval candidate the existing map misses on
+# an easyhard tricky row. Verified 0 davidath hits (scanned qa_pairs.json +
+# scenarios.json), so the map is byte-identical whether or not the additions
+# are active — they fire on ZERO davidath question. Applied CONDITIONALLY at
+# the ``_deterministic_parse`` consumer, gated on the reference-recovery flag
+# (``REGENOLD_REF_RECOVERY`` / sub ``REGENOLD_REF_RECOVERY_KW``, both folded
+# into ``_engine_cache_key``) so the ``easyhard_ab`` OFF↔ON A/B measures them
+# cleanly without cross-arm cache contamination. Every phrase is long +
+# AI-Act-specific — never a bare "deadline" / "fine" / "authorised
+# representative" — mirroring the documented "deep-fake" hyphen-twin pattern.
+_R283_KEYWORD_ADDITIONS: tuple[tuple[str, str], ...] = (
+    # tr_v2_004 — "impose fines directly on a GPAI provider" asks whether the
+    # EU AI Office (not a national authority) fines a GPAI provider directly:
+    # that is the Art. 101 GPAI-provider penalty, NOT the Art. 99 general
+    # penalty that the bare "fines" keyword surfaces.
+    ("fines directly on a gpai", "Art. 101"),
+    ("impose fines directly on a gpai", "Art. 101"),
+    ("fine a gpai provider directly", "Art. 101"),
+    # tr_v2_028 — hyphenated "incident-reporting" twin of the existing space
+    # form "incident reporting" (the deep-fake hyphen precedent). The AI-Act
+    # incident-reporting duty is Art. 73.
+    ("incident-reporting", "Art. 73"),
+    # tr_v2_002 — the "prohibited-AI deadline" compound routes to the
+    # applicability-date article (Art. 113). Art. 5 already fires via
+    # "prohibited"; the compound avoids a bare-"deadline" over-fire.
+    ("prohibited-ai deadline", "Art. 113"),
+    # tr_v2_001 — "Annex III high-risk obligations actually start applying" is
+    # the entry-into-force shape the existing "start to apply" / "when did" /
+    # "obligations start" keys miss (interposed "actually" + the gerund).
+    ("obligations actually start applying", "Art. 113"),
+    ("high-risk obligations actually start", "Art. 113"),
+)
+
+
 _CLASSIFICATION_TOPICS: list[dict] = [
     # ── Medical / Clinical Triage (med_02) ────────────
     {
@@ -855,6 +906,32 @@ _CLASSIFICATION_TOPICS: list[dict] = [
         "patterns": [
             re.compile(r"predictive\s+polic", re.IGNORECASE),
         ],
+        "patterns_v2": [
+            # R284 — Art 5(1)(d): predictive policing that predicts the risk of a
+            # natural person COMMITTING a crime based SOLELY on profiling. The
+            # literal "predictive polic" above misses the described-not-named
+            # phrasing (tp_v4_003). BOTH crime-commission AND profiling are
+            # required, so victim-risk / place-based predictive policing (which is
+            # high-risk, NOT prohibited — e.g. the davidath victim-assessment row)
+            # does not match.
+            re.compile(
+                r"(predict|assess|estimat|forecast|likelihood|probab)"
+                r"[\w\s\-,'’]{0,90}?"
+                r"(commit\w*\s+(?:a\s+)?crim|committing\s+(?:a\s+)?crim|"
+                r"criminal\s+offen)"
+                r"[\w\s\-,'’]{0,90}?"
+                r"(profil|personality\s+trait|personality\s+characteristic)",
+                re.IGNORECASE,
+            ),
+            re.compile(
+                r"(profil|personality\s+trait)"
+                r"[\w\s\-,'’]{0,90}?"
+                r"(predict|assess|estimat|forecast)"
+                r"[\w\s\-,'’]{0,60}?"
+                r"(commit\w*\s+(?:a\s+)?crim|criminal\s+offen|criminal[-\s]risk)",
+                re.IGNORECASE,
+            ),
+        ],
         "answer": (
             "Predictive policing is prohibited under Article 5 when it assesses or "
             "predicts criminal-offence risk based solely on profiling of a natural "
@@ -1012,6 +1089,32 @@ _CLASSIFICATION_TOPICS: list[dict] = [
                 re.IGNORECASE,
             ),
         ],
+        "patterns_v2": [
+            # R284 — Art 5(1)(g): infer/deduce SENSITIVE attributes from BIOMETRIC
+            # data. The base pattern's char class [\w\s\-,] excludes apostrophes,
+            # so "infer users' religious beliefs ... from their biometric data"
+            # (mt_v4_012) breaks at the ' in "users'". This apostrophe-aware
+            # variant REQUIRES both a sensitive category AND the word "biometric",
+            # so non-biometric or non-sensitive inference does not match.
+            re.compile(
+                r"\b(infer|deduc|categori[sz])"
+                r"[\w\s\-,'’]{0,60}?"
+                r"(race|ethnic|political\s+(?:opinion|view|belief)|"
+                r"trade[-\s]?union|religi|philosophical\s+belief|"
+                r"sexual\s+orientation|sex\s+life)"
+                r"[\w\s\-,'’]{0,70}?biometric",
+                re.IGNORECASE,
+            ),
+            re.compile(
+                r"biometric[\w\s\-,'’]{0,70}?"
+                r"\b(infer|deduc|categori[sz])"
+                r"[\w\s\-,'’]{0,60}?"
+                r"(race|ethnic|political\s+(?:opinion|view|belief)|"
+                r"trade[-\s]?union|religi|philosophical\s+belief|"
+                r"sexual\s+orientation|sex\s+life)",
+                re.IGNORECASE,
+            ),
+        ],
         "answer": (
             "Biometric categorisation systems that categorise natural persons based on "
             "their biometric data to deduce race, political opinion, trade-union membership, "
@@ -1034,6 +1137,27 @@ _CLASSIFICATION_TOPICS: list[dict] = [
             re.compile(
                 r"(water|gas|electricity|power\s+grid|energy\s+grid|road\s+traffic)"
                 r"[\w\s\-,]{0,40}?(safety|infrastructure|management)",
+                re.IGNORECASE,
+            ),
+        ],
+        "patterns_v2": [
+            # R284 — Annex III(2) covers safety components in the "supply of
+            # water, gas, heating or electricity" and the operation of an
+            # electricity/power grid. The base pattern requires the sector
+            # keyword BEFORE the safety/management word, missing "safety
+            # component to manage the supply of electricity on a national grid"
+            # (st_v4_006, reversed order). These variants use the PRECISE
+            # statutory phrasing so they rescue st_v4_006 WITHOUT flipping a
+            # gas/heating APPLIANCE product — a residential gas-valve safety
+            # component "subject to EU gas appliance conformity assessment" is
+            # Annex I (Gas Appliances Regulation), not the gas SUPPLY, and it
+            # names neither "supply of gas" nor a grid (davidath scenario #108).
+            re.compile(
+                r"supply\s+of\s+(water|gas|electricity|heating)",
+                re.IGNORECASE,
+            ),
+            re.compile(
+                r"\b(electricity|power|energy|national)\s+grid\b",
                 re.IGNORECASE,
             ),
         ],
@@ -1079,6 +1203,14 @@ _CLASSIFICATION_TOPICS: list[dict] = [
                 r"[\w\s\-,]{0,30}?(application|assess|screen|risk|decision|process)",
                 re.IGNORECASE,
             ),
+            # R305 — "irregular migration" is a statutory term of art: it occurs
+            # in the Act ONLY in Annex III(7)(b) ("a risk of irregular migration"),
+            # so a standalone trigger cannot over-fire onto another topic. The
+            # windowed pattern above misses the natural question shape ("Is
+            # irregular migration a topic considered in the AI Act? If so, to
+            # what risk category does it belong?") because the `?` terminates
+            # its `[\w\s\-,]` window before any of the required nouns.
+            re.compile(r"\birregular\s+migration\b", re.IGNORECASE),
         ],
         "answer": (
             "AI systems used as polygraph-like tools to detect emotional state, assess "

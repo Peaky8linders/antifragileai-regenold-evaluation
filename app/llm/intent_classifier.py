@@ -66,6 +66,7 @@ from typing import Any
 
 from app.llm.openai_wrapper_provider import (
     OpenAIWrapperRequest,
+    default_groq_model,
     get_groq_intent_provider,
     get_openai_wrapper_provider,
     is_groq_intent_provider_enabled,
@@ -342,19 +343,12 @@ class IntentResult:
 # ── Module-level config + state ──────────────────────────────────────────────
 
 _DEFAULT_MODEL = os.getenv("REGENOLD_INTENT_MODEL", "claude-haiku-4-5-20251001")
-# Round 52: Groq Stage-0 model. R264 — swapped off Llama 3.3 70B Versatile
-# (Groq deprecated it 2026-06-30, decommission 2026-08-16) to
-# ``qwen/qwen3.6-27b``, Groq's recommended replacement. Live-measured on the
-# real Stage-0 prompt (n=10 EU-AI-Act intents): 5/5 JSON valid, 5/5 intent +
-# anchor correct, p50 722 ms — with ``reasoning_effort=none`` auto-injected by
-# the provider (Qwen is a hybrid reasoning model; unconstrained it burns the
-# 250-token budget on hidden reasoning and truncates). GPT-OSS 120B was the
-# faster-but-equal alternative; Qwen chosen per operator directive. Override
+# Round 52+: Groq Stage-0 model. Migrated to openai/gpt-oss-120b. Override
 # via REGENOLD_INTENT_MODEL_GROQ.
 _DEFAULT_GROQ_MODEL = os.getenv(
-    "REGENOLD_INTENT_MODEL_GROQ", "qwen/qwen3.6-27b"
+    "REGENOLD_INTENT_MODEL_GROQ", default_groq_model()
 )
-_TIMEOUT_SECONDS = float(os.getenv("REGENOLD_INTENT_TIMEOUT", "2.5"))
+_TIMEOUT_SECONDS = float(os.getenv("REGENOLD_INTENT_TIMEOUT", "3.5"))
 _CACHE_MAX = int(os.getenv("REGENOLD_INTENT_CACHE_MAX", "2048"))
 _FAILURE_THRESHOLD = int(os.getenv("REGENOLD_INTENT_FAILURE_THRESHOLD", "3"))
 _FAILURE_WINDOW_SECONDS = float(

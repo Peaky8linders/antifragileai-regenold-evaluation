@@ -235,8 +235,8 @@ _groq_last_call_time = 0.0
 # 4 axes × 300 ≈ 1,200 tokens/row, so the 70B model is exhausted in ~5 rows.
 # The 8B instant model gives 20k TPM → ~16 rows before a 1-min window resets.
 # With a 4-second inter-call sleep: 15 calls/min × 300 tok = 4,500 TPM < 20k. ✓
-_GROQ_DEFAULT_MODEL = "llama-3.1-8b-instant"
-_GROQ_INTER_REQUEST_SLEEP = 2.0  # seconds — 30 RPM × 300 tok ≈ 9,000 TPM
+_GROQ_DEFAULT_MODEL = "llama-3.3-70b-versatile"
+_GROQ_INTER_REQUEST_SLEEP = 4.0  # seconds — 15 RPM safe headroom under 30 RPM cap
 
 def _rate_limit_groq() -> None:
     global _groq_last_call_time
@@ -283,7 +283,7 @@ def _call_judge_groq(prompt: str, timeout_s: float = 30.0) -> dict[str, Any]:
         system=_JUDGE_SYSTEM,
         user=prompt,
         model=model,
-        max_tokens=400,
+        max_tokens=800,
         temperature=0.0,
         timeout_seconds=timeout_s,
     )
@@ -295,6 +295,65 @@ def _call_judge_groq(prompt: str, timeout_s: float = 30.0) -> dict[str, Any]:
         return {"judge_error": "groq_returned_none"}
     if resp.error:
         return {"judge_error": f"groq_error: {resp.error[:160]}"}
+    return _parse_judge_json(resp.text or "")
+
+
+_gemini_lock = threading.Lock()
+_gemini_last_call_time = 0.0
+
+def _rate_limit_gemini() -> None:
+    global _gemini_last_call_time
+    with _gemini_lock:
+        now = time.monotonic()
+        elapsed = now - _gemini_last_call_time
+        delay = 0.5 - elapsed
+        if delay > 0:
+            time.sleep(delay)
+        _gemini_last_call_time = time.monotonic()
+
+
+def _call_judge_gemini(prompt: str, timeout_s: float = 30.0) -> dict[str, Any]:
+    """Send the judge prompt through Google Gemini 2.5 Flash via Open AI compatibility endpoint."""
+    try:
+        from app.llm.openai_wrapper_provider import (  # noqa: PLC0415
+            OpenAIWrapperRequest,
+            _OpenAIWrapperProvider,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return {"judge_error": f"wrapper_unavailable: {exc}"}
+
+    gemini_api_key = os.getenv("GEMINI_API_KEY", "").strip()
+    if not gemini_api_key:
+        return {"judge_error": "no_api_key: GEMINI_API_KEY environment variable is not set."}
+
+    _rate_limit_gemini()
+
+    try:
+        provider = _OpenAIWrapperProvider(
+            base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+            api_key=gemini_api_key,
+            timeout=timeout_s,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return {"judge_error": f"gemini_init_failed: {exc}"}
+
+    model = os.environ.get("GEMINI_JUDGE_MODEL", "gemini-2.5-flash")
+    req = OpenAIWrapperRequest(
+        system=_JUDGE_SYSTEM,
+        user=prompt,
+        model=model,
+        max_tokens=1000,
+        temperature=0.0,
+        timeout_seconds=timeout_s,
+    )
+    try:
+        resp = provider.complete(req)
+    except Exception as exc:  # noqa: BLE001
+        return {"judge_error": f"call_failed: {exc}"}
+    if resp is None:
+        return {"judge_error": "gemini_returned_none"}
+    if resp.error:
+        return {"judge_error": f"gemini_error: {resp.error[:160]}"}
     return _parse_judge_json(resp.text or "")
 
 
@@ -419,6 +478,7 @@ def _call_judge_with_retry(
     *,
     max_retries: int = 1,
     backoff_s: float = 4.0,
+    backoff_mult: float = 1.0,
 ) -> tuple[dict[str, Any], int, list[str]]:
     """Invoke ``caller(prompt)`` and retry once on retryable failures.
 
@@ -464,9 +524,18 @@ def _call_judge_with_retry(
             retried_errors.append(str(err))
             return last_result, attempts, retried_errors
         # Retryable + budget remaining — record + back off + loop.
+        #
+        # R309 — ``backoff_mult`` makes the wait EXPONENTIAL when > 1.0.
+        # Default 1.0 keeps the historical fixed-delay behaviour for every
+        # existing caller. Measured motivation: the Cloudflare-tunnel ->
+        # Claude Max path fails in BURSTS, not at a flat rate — the same
+        # prompt scored 2/5 OK in one window and 4/5 in another, and one
+        # axis call lost all 6 attempts. A fixed 4s delay retries straight
+        # back into the same degraded window; widening the gap each time
+        # lets the burst pass instead of hammering through it.
         retried_errors.append(str(err))
         if backoff_s > 0:
-            time.sleep(backoff_s)
+            time.sleep(backoff_s * (max(1.0, backoff_mult) ** retry_idx))
 
     return last_result, attempts, retried_errors
 
@@ -488,6 +557,8 @@ def _resolve_caller(provider: str, timeout_s: float = 30.0) -> Callable[[str], d
         return lambda p: _call_judge_anthropic(p, timeout_s=timeout_s)
     if provider == "groq":
         return lambda p: _call_judge_groq(p, timeout_s=timeout_s)
+    if provider == "gemini":
+        return lambda p: _call_judge_gemini(p, timeout_s=timeout_s)
     # "wrapper" or anything else falls back to the wrapper (historical
     # default) — runner_v2 / bench-runner sidecars produced pre-R66-C
     # all assume the wrapper path is active.
@@ -699,17 +770,35 @@ def run(
         )
         concurrency = 1
     started_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-    payload = json.loads(bench_sidecar.read_text(encoding="utf-8"))
+    text = bench_sidecar.read_text(encoding="utf-8")
 
     # Flatten rows from the V2 sidecar (tricky + multiturn) OR the davidath
     # sidecar (qa + scenarios) OR the GraphRAG-sidecar (ground_truth + no_ground_truth). We handle all shapes.
     rows: list[dict[str, Any]] = []
-    for bucket_key in ("tricky", "multiturn", "qa", "scenarios", "rows", "ground_truth", "no_ground_truth"):
-        bucket = payload.get(bucket_key)
-        if isinstance(bucket, dict):
-            rows.extend(bucket.get("rows") or [])
-        elif isinstance(bucket, list):
-            rows.extend(bucket)
+    if bench_sidecar.suffix == ".jsonl":
+        # R298 — the official-batch runner writes a per-row CHECKPOINT in JSONL
+        # (`official-<label>-<mode>.ckpt.jsonl`), which `json.loads` cannot
+        # parse ("Extra data: line 2"). `evals.judge.grounded` already accepts
+        # it; this judge did not, so pointing it at a batch run died with a
+        # traceback that a `grep`-filtered batch loop swallowed silently. Accept
+        # the same shape here.
+        rows = [json.loads(ln) for ln in text.splitlines() if ln.strip()]
+    else:
+        payload = json.loads(text)
+        for bucket_key in ("tricky", "multiturn", "qa", "scenarios", "rows", "ground_truth", "no_ground_truth"):
+            bucket = payload.get(bucket_key)
+            if isinstance(bucket, dict):
+                rows.extend(bucket.get("rows") or [])
+            elif isinstance(bucket, list):
+                rows.extend(bucket)
+
+    # Checkpoint rows name the prediction `pred_answer`/`pred_refs`; the judge's
+    # renderers expect `predicted_answer`/`pred_refs`. Normalise both ways.
+    for r in rows:
+        if "predicted_answer" not in r and "pred_answer" in r:
+            r["predicted_answer"] = r["pred_answer"]
+        if "pred_refs" not in r and "predicted_refs" in r:
+            r["pred_refs"] = r["predicted_refs"]
 
     if rows_limit:
         rows = rows[:rows_limit]

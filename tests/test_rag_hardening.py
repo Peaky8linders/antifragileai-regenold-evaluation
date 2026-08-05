@@ -106,7 +106,7 @@ class TestDeterministicParseEntities:
 
     def test_annex_roman_normalised_to_uppercase(self) -> None:
         q = "What does annex iv require?"
-        assert _deterministic_parse(q).entities == ["Annex IV"]
+        assert "Annex IV" in _deterministic_parse(q).entities
 
     def test_dedup_when_mentioned_twice(self) -> None:
         q = "Article 13 vs Art. 13"

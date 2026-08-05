@@ -1,0 +1,639 @@
+{
+  "stratum": "gpai",
+  "items": [
+    {
+      "id": "easy_gpai_001",
+      "difficulty": "easy",
+      "task_type": "risk_classification",
+      "stratum": "gpai",
+      "question": "A foundation model provider trained their model using a cumulative compute of 2 × 10^25 floating-point operations. Does the EU AI Act presume this model to have high-impact capabilities warranting systemic-risk classification?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "large language model",
+        "intended_use": "general-purpose text generation",
+        "input_data": "text",
+        "domain": "general"
+      },
+      "gold_answer": "Yes. Under Art. 51(2), a GPAI model is presumed to have high-impact capabilities — and therefore to qualify as a systemic-risk model under Art. 51(1)(a) — when the cumulative training compute exceeds 10^25 floating-point operations. 2 × 10^25 FLOP exceeds that threshold, so the presumption applies.",
+      "risk_level": "not_applicable",
+      "gold_citations": [
+        {
+          "citation": "Art. 51(1)(a)",
+          "provision_id": "art_51__para_1__point_a",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 51(2)",
+          "provision_id": "art_51__para_2",
+          "role": "primary"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Direct lookup of the Art. 51(2) compute presumption. Art. 51(1)(a) is included as primary because the presumption feeds into that sub-condition; no additional hops needed."
+    },
+    {
+      "id": "easy_gpai_002",
+      "difficulty": "easy",
+      "task_type": "article_retrieval",
+      "stratum": "gpai",
+      "question": "Which article of the EU AI Act establishes the baseline obligations that ALL providers of general-purpose AI models must fulfil, regardless of whether their model presents systemic risk?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "general-purpose AI model",
+        "intended_use": "downstream integration",
+        "input_data": "various",
+        "domain": "general"
+      },
+      "gold_answer": "Article 53. It requires all GPAI model providers to: (a) draw up and keep up-to-date technical documentation per Annex XI; (b) prepare information for downstream providers per Annex XII; (c) put in place a copyright-compliance policy; and (d) publish a summary of training content. These duties apply to every GPAI model provider; Art. 55 adds further obligations only for those whose models carry systemic risk.",
+      "risk_level": "not_applicable",
+      "gold_citations": [
+        {
+          "citation": "Art. 53(1)",
+          "provision_id": "art_53__para_1",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 53(1)(a)",
+          "provision_id": "art_53__para_1__point_a",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 53(1)(b)",
+          "provision_id": "art_53__para_1__point_b",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 53(1)(c)",
+          "provision_id": "art_53__para_1__point_c",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 53(1)(d)",
+          "provision_id": "art_53__para_1__point_d",
+          "role": "supporting"
+        },
+        {
+          "citation": "Annex XI",
+          "provision_id": "annex_XI",
+          "role": "definition"
+        },
+        {
+          "citation": "Annex XII",
+          "provision_id": "annex_XII",
+          "role": "definition"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Straightforward article retrieval. Includes sub-point citations as supporting to make the citation set exhaustive for a benchmark that scores at sub-point granularity."
+    },
+    {
+      "id": "easy_gpai_003",
+      "difficulty": "easy",
+      "task_type": "obligation_generation",
+      "stratum": "gpai",
+      "question": "A company provides a general-purpose AI model in the EU. What copyright-related obligation does the EU AI Act impose on them under Article 53?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "general-purpose AI model",
+        "intended_use": "text and code generation",
+        "input_data": "text",
+        "domain": "general"
+      },
+      "gold_answer": "Under Art. 53(1)(c), providers of GPAI models must put in place a policy to comply with Union law on copyright and related rights, including by identifying and respecting reservations of rights expressed by rightsholders under Art. 4(3) of Directive (EU) 2019/790 on text and data mining.",
+      "risk_level": "not_applicable",
+      "gold_citations": [
+        {
+          "citation": "Art. 53(1)(c)",
+          "provision_id": "art_53__para_1__point_c",
+          "role": "primary"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Single-provision lookup. The obligation is entirely contained in Art. 53(1)(c); no cross-reference to Art. 55 is needed because this duty applies to all GPAI providers."
+    },
+    {
+      "id": "easy_gpai_004",
+      "difficulty": "easy",
+      "task_type": "obligation_generation",
+      "stratum": "gpai",
+      "question": "Under the EU AI Act, what training-data transparency obligation must providers of general-purpose AI models satisfy regarding the content used to train their model?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "general-purpose AI model",
+        "intended_use": "general-purpose generation tasks",
+        "input_data": "large-scale web and licensed data",
+        "domain": "general"
+      },
+      "gold_answer": "Art. 53(1)(d) requires GPAI model providers to draw up and make publicly available a sufficiently detailed summary about the content used for training the model, prepared in accordance with a template provided by the AI Office.",
+      "risk_level": "not_applicable",
+      "gold_citations": [
+        {
+          "citation": "Art. 53(1)(d)",
+          "provision_id": "art_53__para_1__point_d",
+          "role": "primary"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Direct lookup of Art. 53(1)(d). No systemic-risk condition required; this duty applies to all GPAI model providers."
+    },
+    {
+      "id": "easy_gpai_005",
+      "difficulty": "easy",
+      "task_type": "article_retrieval",
+      "stratum": "gpai",
+      "question": "Which article of the EU AI Act imposes additional obligations exclusively on providers of general-purpose AI models that have been classified as presenting systemic risk?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "large-scale GPAI model with systemic risk",
+        "intended_use": "general-purpose",
+        "input_data": "various",
+        "domain": "general"
+      },
+      "gold_answer": "Article 55. It requires providers of GPAI models with systemic risk to: perform model evaluation including adversarial testing (Art. 55(1)(a)); assess and mitigate systemic risks (Art. 55(1)(b)); track, document, and report serious incidents to the AI Office (Art. 55(1)(c)); and ensure adequate cybersecurity protection (Art. 55(1)(d)).",
+      "risk_level": "not_applicable",
+      "gold_citations": [
+        {
+          "citation": "Art. 55(1)",
+          "provision_id": "art_55__para_1",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 55(1)(a)",
+          "provision_id": "art_55__para_1__point_a",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 55(1)(b)",
+          "provision_id": "art_55__para_1__point_b",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 55(1)(c)",
+          "provision_id": "art_55__para_1__point_c",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 55(1)(d)",
+          "provision_id": "art_55__para_1__point_d",
+          "role": "supporting"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Direct article retrieval. Supporting citations included at sub-point level for exhaustive scoring."
+    },
+    {
+      "id": "easy_gpai_006",
+      "difficulty": "easy",
+      "task_type": "qa",
+      "stratum": "gpai",
+      "question": "What is the definition of a 'general-purpose AI model' under the EU AI Act, and how does it differ from a 'general-purpose AI system'?",
+      "scenario": {
+        "role": null,
+        "system_type": "definitional question",
+        "intended_use": "regulatory interpretation",
+        "input_data": "n/a",
+        "domain": "general"
+      },
+      "gold_answer": "Art. 3(63) defines a 'general-purpose AI model' as an AI model — typically trained with large amounts of data using self-supervision at scale — that displays significant generality and can competently perform a wide range of distinct tasks, and can be integrated into a variety of downstream systems. Art. 3(66) defines a 'general-purpose AI system' as an AI system based on a GPAI model that can serve a variety of purposes, both for direct use and for integration into other AI systems. The key distinction: a GPAI model is the underlying trained artefact; a GPAI system is a deployed system built on top of that model.",
+      "risk_level": "not_applicable",
+      "gold_citations": [
+        {
+          "citation": "Art. 3(63)",
+          "provision_id": "art_3__para_63",
+          "role": "definition"
+        },
+        {
+          "citation": "Art. 3(66)",
+          "provision_id": "art_3__para_66",
+          "role": "definition"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Definitions-lookup item. Both Art. 3(63) and Art. 3(66) are necessary and sufficient; no further provisions are needed to answer the question."
+    },
+    {
+      "id": "easy_gpai_007",
+      "difficulty": "easy",
+      "task_type": "obligation_generation",
+      "stratum": "gpai",
+      "question": "Under the EU AI Act, when a GPAI model provider is established in a third country outside the EU, what representative obligation must they fulfil before placing their model on the EU market?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "general-purpose AI model",
+        "intended_use": "EU market placement",
+        "input_data": "various",
+        "domain": "general"
+      },
+      "gold_answer": "Under Art. 54(1), providers of general-purpose AI models established in third countries must appoint an authorised representative established in the Union before placing their model on the EU market. The representative must be empowered to verify compliance with technical documentation requirements and obligations under Arts. 53 and 55, maintain documentation for 10 years, and cooperate with authorities. This requirement does not apply to providers releasing their model under a free and open-source licence — unless the model presents systemic risk (Art. 54(6)).",
+      "risk_level": "not_applicable",
+      "gold_citations": [
+        {
+          "citation": "Art. 54(1)",
+          "provision_id": "art_54__para_1",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 54(6)",
+          "provision_id": "art_54__para_6",
+          "role": "supporting"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Straightforward retrieval of Art. 54(1). Art. 54(6) is included as supporting because it contains the open-source exception that forms part of the full, accurate answer. Two-hop only in the sense of model-plus-exception; single lookup for classification purposes."
+    },
+    {
+      "id": "hard_gpai_001",
+      "difficulty": "hard",
+      "task_type": "obligation_generation",
+      "stratum": "gpai",
+      "question": "A US-based company has released a large language model whose cumulative training compute was 5 × 10^25 FLOP. It now wishes to make this model available to European businesses. List every obligation under the EU AI Act that this provider must satisfy, organised by the article that imposes each duty.",
+      "scenario": {
+        "role": "provider",
+        "system_type": "large language model with systemic risk",
+        "intended_use": "downstream integration by EU businesses",
+        "input_data": "large-scale text",
+        "domain": "general"
+      },
+      "gold_answer": "The model exceeds the 10^25 FLOP threshold (Art. 51(2)), so it is presumed to be a GPAI model with systemic risk.\n\nArt. 52 — Notification: notify the Commission within two weeks and provide supporting documentation (Art. 52(1)); optionally submit rebuttal arguments (Art. 52(2)).\n\nArt. 53 — Base GPAI obligations: (a) draw up and maintain technical documentation per Annex XI; (b) provide downstream-provider information per Annex XII; (c) implement a copyright-compliance policy; (d) publish a training-content summary.\n\nArt. 54(1) — Authorised representative: appoint an EU-established representative (third-country provider; open-source exemption of Art. 54(6) does not apply here because the model has systemic risk).\n\nArt. 55 — Systemic-risk obligations: (a) adversarial testing and model evaluation; (b) assess and mitigate Union-level systemic risks; (c) track, document, and report serious incidents to the AI Office; (d) ensure adequate cybersecurity for the model and infrastructure.",
+      "risk_level": "not_applicable",
+      "gold_citations": [
+        {
+          "citation": "Art. 51(2)",
+          "provision_id": "art_51__para_2",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 51(1)(a)",
+          "provision_id": "art_51__para_1__point_a",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 52(1)",
+          "provision_id": "art_52__para_1",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 53(1)(a)",
+          "provision_id": "art_53__para_1__point_a",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 53(1)(b)",
+          "provision_id": "art_53__para_1__point_b",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 53(1)(c)",
+          "provision_id": "art_53__para_1__point_c",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 53(1)(d)",
+          "provision_id": "art_53__para_1__point_d",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 54(1)",
+          "provision_id": "art_54__para_1",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 54(6)",
+          "provision_id": "art_54__para_6",
+          "role": "interpretive"
+        },
+        {
+          "citation": "Art. 55(1)(a)",
+          "provision_id": "art_55__para_1__point_a",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 55(1)(b)",
+          "provision_id": "art_55__para_1__point_b",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 55(1)(c)",
+          "provision_id": "art_55__para_1__point_c",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 55(1)(d)",
+          "provision_id": "art_55__para_1__point_d",
+          "role": "primary"
+        },
+        {
+          "citation": "Annex XI",
+          "provision_id": "annex_XI",
+          "role": "definition"
+        },
+        {
+          "citation": "Annex XII",
+          "provision_id": "annex_XII",
+          "role": "definition"
+        }
+      ],
+      "reasoning_hops": 4,
+      "multi_hop": true,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Multi-hop aggregation: hop 1 = compute threshold → systemic-risk presumption (Art. 51(2)); hop 2 = systemic-risk status → notification obligation (Art. 52(1)); hop 3 = all GPAI providers → Art. 53 base duties; hop 4 = systemic risk + third-country provider → Art. 55 additional duties + Art. 54(1) representative requirement. Exhaustive citation set by design."
+    },
+    {
+      "id": "hard_gpai_002",
+      "difficulty": "hard",
+      "task_type": "qa",
+      "stratum": "gpai",
+      "question": "A company open-sources a general-purpose AI model by publishing all weights and architecture under a permissive licence. Is this company fully exempt from all obligations under Articles 53 and 54 of the EU AI Act? Explain the conditions.",
+      "scenario": {
+        "role": "provider",
+        "system_type": "open-source general-purpose AI model",
+        "intended_use": "public release, downstream use by third parties",
+        "input_data": "text",
+        "domain": "general"
+      },
+      "gold_answer": "No — not a full exemption. Art. 53(2) exempts open-source GPAI model providers from the technical-documentation obligation (Art. 53(1)(a)) and the downstream-information obligation (Art. 53(1)(b)), provided the model is released under a free and open-source licence with parameters publicly available. However, the exemption does NOT cover Art. 53(1)(c) (copyright policy) or Art. 53(1)(d) (training-content summary) — those duties remain. Furthermore, the Art. 53(2) exemption is entirely disapplied if the model is classified as presenting systemic risk (Art. 51), in which case the full Art. 53 obligations as well as Art. 55 obligations apply. Similarly, Art. 54(6) exempts open-source-licence providers from the authorised-representative requirement — again unless the model presents systemic risk.",
+      "risk_level": "not_applicable",
+      "gold_citations": [
+        {
+          "citation": "Art. 53(2)",
+          "provision_id": "art_53__para_2",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 53(1)(a)",
+          "provision_id": "art_53__para_1__point_a",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 53(1)(b)",
+          "provision_id": "art_53__para_1__point_b",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 53(1)(c)",
+          "provision_id": "art_53__para_1__point_c",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 53(1)(d)",
+          "provision_id": "art_53__para_1__point_d",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 54(6)",
+          "provision_id": "art_54__para_6",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 51(1)",
+          "provision_id": "art_51__para_1",
+          "role": "interpretive"
+        }
+      ],
+      "reasoning_hops": 3,
+      "multi_hop": true,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Tests knowledge of the partial open-source exemption in Art. 53(2) and its systemic-risk carve-out. Common error: assuming open-source = full exemption. Three hops: (1) open-source triggers Art. 53(2) partial exemption; (2) Art. 53(2) carve-out for systemic risk references Art. 51; (3) Art. 54(6) parallel exemption + same carve-out."
+    },
+    {
+      "id": "hard_gpai_003",
+      "difficulty": "hard",
+      "task_type": "risk_classification",
+      "stratum": "gpai",
+      "question": "A company builds and deploys an AI system that uses a third-party GPAI model as its backbone and is specifically designed for CV-screening in recruitment. The AI system itself is listed in Annex III of the EU AI Act. Does the GPAI model provider bear high-risk AI system obligations under Chapter III of the Act? Does the downstream deployer?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "GPAI model integrated into a recruitment CV-screening AI system",
+        "intended_use": "employment recruitment screening",
+        "input_data": "CVs and candidate profiles",
+        "domain": "employment"
+      },
+      "gold_answer": "The GPAI model provider is governed exclusively by the GPAI obligations in Arts. 53-55 (and Art. 51-52 if systemic risk applies). The GPAI model itself is not subject to the Chapter III high-risk obligations, even if downstream systems built on it are high-risk. The downstream company that deploys the CV-screening AI system — listed in Annex III — is the provider of a high-risk AI system and bears the Chapter III obligations (including conformity assessment, registration, technical documentation, etc.) under Arts. 6, 16, and related provisions. Art. 3(63) defines the GPAI model as the trained artefact; Art. 3(66) defines the GPAI system (which may be classified high-risk); these are legally distinct. The GPAI model provider's obligations are set by Art. 53(1)(b) — they must supply sufficient information to enable the downstream provider to comply with their high-risk obligations.",
+      "risk_level": "high",
+      "gold_citations": [
+        {
+          "citation": "Art. 3(63)",
+          "provision_id": "art_3__para_63",
+          "role": "definition"
+        },
+        {
+          "citation": "Art. 3(66)",
+          "provision_id": "art_3__para_66",
+          "role": "definition"
+        },
+        {
+          "citation": "Art. 6(2)",
+          "provision_id": "art_6__para_2",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 53(1)(b)",
+          "provision_id": "art_53__para_1__point_b",
+          "role": "supporting"
+        },
+        {
+          "citation": "Annex XII",
+          "provision_id": "annex_XII",
+          "role": "definition"
+        }
+      ],
+      "reasoning_hops": 3,
+      "multi_hop": true,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Tests the GPAI model vs GPAI system vs high-risk AI system distinction — a classic confusion point. Three hops: (1) identify the system as Annex III listed → Art. 6(2) high-risk for the downstream provider; (2) distinguish the GPAI model (Art. 3(63)) from the GPAI system (Art. 3(66)); (3) Art. 53(1)(b) links GPAI provider duties to downstream compliance enablement."
+    },
+    {
+      "id": "hard_gpai_004",
+      "difficulty": "hard",
+      "task_type": "risk_classification",
+      "stratum": "gpai",
+      "question": "A company has developed an AI model trained on 10^24 floating-point operations. The model is designed exclusively to predict equipment maintenance schedules for a single industrial client. Does the EU AI Act classify this as a GPAI model subject to Articles 51-55?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "narrow predictive maintenance model",
+        "intended_use": "predicting equipment failure for a single industrial client",
+        "input_data": "sensor and maintenance logs",
+        "domain": "industrial"
+      },
+      "gold_answer": "No. This model is not a GPAI model and Articles 51-55 do not apply. Under Art. 3(63), a GPAI model must display 'significant generality' and be 'capable of competently performing a wide range of distinct tasks'. A model trained solely to predict equipment maintenance schedules for a single client is narrow and task-specific — it does not meet the generality requirement. Additionally, its compute (10^24 FLOP) is below the 10^25 FLOP systemic-risk presumption threshold in Art. 51(2), though that threshold is irrelevant here because the model fails the GPAI definition threshold first. The applicable framework would be Art. 6 and Annex III if the system falls within a listed high-risk category, but Arts. 51-55 are not triggered.",
+      "risk_level": "not_applicable",
+      "gold_citations": [],
+      "reasoning_hops": 2,
+      "multi_hop": true,
+      "negative_control": true,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Negative control: the model is not a GPAI model, so Arts. 51-55 produce no obligations. Gold citations are empty because no GPAI provision applies. Two hops: (1) check Art. 3(63) generality requirement — fails; (2) confirm the compute figure (10^24 FLOP) is also below the Art. 51(2) threshold, but this is moot given the definitional failure. Tests whether the system avoids over-applying the GPAI framework."
+    },
+    {
+      "id": "hard_gpai_005",
+      "difficulty": "hard",
+      "task_type": "qa",
+      "stratum": "gpai",
+      "question": "What is the exact computational threshold, including unit specification, at which the EU AI Act presumes a GPAI model to have high-impact capabilities under Article 51? What is the legal effect of that presumption, and can a provider rebut it?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "large-scale AI model near the systemic-risk threshold",
+        "intended_use": "general-purpose text and multimodal generation",
+        "input_data": "large-scale text and multimodal data",
+        "domain": "general"
+      },
+      "gold_answer": "Art. 51(2) sets the threshold at cumulative training compute greater than 10^25 floating-point operations (FLOP). The legal effect is a rebuttable presumption: the model is presumed to have high-impact capabilities within the meaning of Art. 51(1)(a), triggering classification as a GPAI model with systemic risk. The presumption is rebuttable: under Art. 52(2), the provider may submit 'sufficiently substantiated arguments' demonstrating that, despite meeting the compute threshold, the model does not present systemic risks due to its specific characteristics. The Commission may accept those arguments; if it rejects them under Art. 52(3), the model is designated as a systemic-risk model. Additionally, the Commission may revise the threshold via delegated acts under Art. 51(3).",
+      "risk_level": "not_applicable",
+      "gold_citations": [
+        {
+          "citation": "Art. 51(2)",
+          "provision_id": "art_51__para_2",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 51(1)(a)",
+          "provision_id": "art_51__para_1__point_a",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 52(2)",
+          "provision_id": "art_52__para_2",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 52(3)",
+          "provision_id": "art_52__para_3",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 51(3)",
+          "provision_id": "art_51__para_3",
+          "role": "interpretive"
+        }
+      ],
+      "reasoning_hops": 2,
+      "multi_hop": true,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Tests precise threshold knowledge and the rebuttal mechanism. Two hops: (1) Art. 51(2) for the threshold and its presumptive effect; (2) Art. 52(2)-(3) for the rebuttal procedure. Art. 51(3) included as interpretive because it addresses threshold revisability — relevant to completeness. Common trap avoided: do NOT cite 10^24 FLOP (incorrect)."
+    },
+    {
+      "id": "hard_gpai_006",
+      "difficulty": "hard",
+      "task_type": "obligation_generation",
+      "stratum": "gpai",
+      "question": "Does the EU AI Act require providers of general-purpose AI models to submit to the Art. 43 conformity assessment procedure applicable to high-risk AI systems?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "general-purpose AI model",
+        "intended_use": "general-purpose, possibly integrated into high-risk downstream systems",
+        "input_data": "various",
+        "domain": "general"
+      },
+      "gold_answer": "No. Article 43 conformity assessment procedures apply to providers of high-risk AI systems as defined under Art. 6 and Annex III. GPAI model providers are not required to conduct Art. 43 conformity assessments. Their obligations are governed exclusively by Arts. 53-55 (and Arts. 51-52 for systemic-risk classification). The Annexes relevant to GPAI model providers are Annex XI (technical documentation), Annex XII (downstream information), and Annex XIII (systemic-risk classification criteria) — not Annex VI, VII, or the conformity assessment procedure under Art. 43. If a GPAI system built on a GPAI model is itself classified as a high-risk AI system, it is the provider of that downstream system — not the GPAI model provider — who must comply with Art. 43.",
+      "risk_level": "not_applicable",
+      "gold_citations": [
+        {
+          "citation": "Art. 53(1)",
+          "provision_id": "art_53__para_1",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 55(1)",
+          "provision_id": "art_55__para_1",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 3(63)",
+          "provision_id": "art_3__para_63",
+          "role": "definition"
+        }
+      ],
+      "reasoning_hops": 2,
+      "multi_hop": true,
+      "negative_control": false,
+      "hallucination_trap": true,
+      "trap_note": "Tempting wrong citation: Art. 43 (conformity assessment for high-risk AI systems). A retrieval system that conflates GPAI model obligations with high-risk AI system obligations may incorrectly cite Art. 43 as applying to GPAI model providers. Art. 43 does not apply to GPAI model providers; their obligations are in Arts. 53-55.",
+      "confidence": "high",
+      "annotator_notes": "Hallucination trap: designed to catch systems that wrongly apply Art. 43 conformity assessment to GPAI model providers. The correct answer is a definitive 'no', with the correct obligation framework (Arts. 53-55) as gold citations. The trap makes Art. 43 tempting because GPAI models may feed into high-risk AI systems."
+    },
+    {
+      "id": "hard_gpai_007",
+      "difficulty": "hard",
+      "task_type": "article_retrieval",
+      "stratum": "gpai",
+      "question": "A GPAI model with systemic risk causes a serious incident affecting multiple EU users. Which specific provision of the EU AI Act requires the provider to track, document, and report this incident, and to whom must the report be made?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "GPAI model with systemic risk",
+        "intended_use": "large-scale deployment",
+        "input_data": "various",
+        "domain": "general"
+      },
+      "gold_answer": "Art. 55(1)(c) requires providers of GPAI models with systemic risk to 'keep track of, document, and report, without undue delay, to the AI Office and, as appropriate, to national competent authorities, relevant information about serious incidents and possible corrective measures to address them.' The report must be made to the AI Office as the primary recipient, and to national competent authorities as appropriate. Note: this duty arises under Art. 55, which applies only to systemic-risk GPAI models; it does not apply to all GPAI model providers.",
+      "risk_level": "not_applicable",
+      "gold_citations": [
+        {
+          "citation": "Art. 55(1)(c)",
+          "provision_id": "art_55__para_1__point_c",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 51(1)",
+          "provision_id": "art_51__para_1",
+          "role": "interpretive"
+        }
+      ],
+      "reasoning_hops": 2,
+      "multi_hop": true,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Two hops: (1) systemic-risk classification is a prerequisite for Art. 55 duties, so Art. 51(1) is interpretive context; (2) Art. 55(1)(c) is the specific incident-reporting provision. Common confusion: conflating this with Art. 73 (market surveillance) or the high-risk AI system serious incident reporting under Art. 73 — those do not apply to GPAI model providers as such."
+    }
+  ]
+}

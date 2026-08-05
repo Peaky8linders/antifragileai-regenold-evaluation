@@ -38,10 +38,26 @@ class CitationNode(BaseModel):
     article_ref: str = ""
 
 
+# Upper bound on the flattened question the engine will accept.
+#
+# This used to be a hard 2 000 characters. That was never a model or
+# provider limit — it was a self-imposed Pydantic bound, and on a real
+# 18-20 turn conversation it silently amputated the history (and the
+# route's own ``[Context anchors — ...]`` prefix) before retrieval ever
+# ran. The 7 July 2026 evaluator batch showed 64 of 67 adversarial
+# pushback turns pinned at exactly the old cap.
+#
+# 64 000 characters (~16k tokens) comfortably holds a 20-turn legal
+# conversation while still bounding a hostile payload. Override with
+# ``REGENOLD_MAX_QUESTION_CHARS`` (set it to 2000 to reproduce the
+# pre-R314 behaviour for an A/B).
+_MAX_QUESTION_CHARS = 64_000
+
+
 class GraphRAGRequest(BaseModel):
     """Input to the graph-RAG engine."""
 
-    question: str = Field(min_length=1, max_length=2_000)
+    question: str = Field(min_length=1, max_length=_MAX_QUESTION_CHARS)
     risk_level: RiskLevel | None = None
     system_description: str | None = Field(default=None, max_length=1_000)
     answers: dict[str, AssessmentAnswer] = Field(default_factory=dict)
@@ -51,7 +67,7 @@ class GraphRAGRequest(BaseModel):
     complex-question gate can fire on multi-turn finals (3+ turns +
     short coreferent). Default 1 keeps single-turn callers unaffected.
     """
-    resolved_question: str | None = Field(default=None, max_length=2_000)
+    resolved_question: str | None = Field(default=None, max_length=_MAX_QUESTION_CHARS)
     bridging_context: list[str] = Field(default_factory=list)
 
 

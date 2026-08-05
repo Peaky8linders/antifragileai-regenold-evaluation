@@ -10,10 +10,15 @@ from pydantic import BaseModel, Field, model_validator
 
 from app.data.article_existence import ARTICLE_EXISTENCE
 from app.integrations.regenold.answer_normaliser import (
+    enumeration_guard_enabled,
+    enumeration_run_end,
+    enumeration_run_indices,
+    inline_enumeration_length,
     repair_elided_citation_anchors,
     strip_dash_separators,
     strip_hedge_opener,
     strip_meta_commentary,
+    strip_retrieval_meta,
     strip_preamble_templates,
     strip_section_headers,
 )
@@ -960,11 +965,34 @@ def _strip_markdown(text: str) -> str:
 
 _ABBREVIATIONS = (
     "art",
+    # R307 — the PLURAL citation forms were missing, so every answer
+    # using them split mid-citation. Measured live: the Article 16 KB
+    # stub contains "keep the technical documentation (Arts. 11 and
+    # 18)"; the splitter accepted a boundary after "(Arts." and the
+    # 3-sentence cap then shipped an answer ending mid-citation:
+    #   "...operate a quality-management system (Art. 17), keep the
+    #    technical documentation (Arts."
+    # ``Art.`` was protected; ``Arts.``, ``Artt.``, ``Annexes`` and the
+    # rest below were not. Same class as the R59 tone-guard Annex
+    # lookbehind bug. Purely additive: adding an abbreviation can only
+    # SUPPRESS a false split, never create one.
+    "arts",
+    "artt",
     "annex",
+    "annexes",
     "recital",
+    "recitals",
     "sec",
+    "secs",
     "ch",
+    "chs",
     "para",
+    "paras",
+    "pt",
+    "pts",
+    "reg",
+    "regs",
+    "dir",
     "pp",
     "etc",
     "e.g",
@@ -1038,6 +1066,31 @@ def _is_degenerate_sentence(sentence: str) -> bool:
     if s.rstrip(".!?").strip().lower() in _SHORT_VERDICT_WORDS:
         return False
     if len(s) < _MIN_SENTENCE_CHARS:
+        return True
+    return False
+
+
+_INCOMPLETE_TRAILING_WORDS = frozenset({
+    "must", "shall", "the", "a", "an", "and", "or", "to", "with", "for",
+    "in", "under", "which", "that", "of", "by", "on", "at", "from", "be",
+    "is", "are", "were", "was", "have", "has", "had", "including", "such",
+    "as", "regarding", "concerning", "pursuant"
+})
+
+
+def _is_incomplete_trailing_sentence(sentence: str) -> bool:
+    """Check if a sentence is an incomplete trailing fragment resulting from token/char limits."""
+    s = sentence.strip()
+    if not s:
+        return True
+    core = s.rstrip(".!?\"'”’)]} ").strip()
+    if not core:
+        return True
+    words = core.split()
+    if not words:
+        return True
+    last_word = words[-1].lower()
+    if last_word in _INCOMPLETE_TRAILING_WORDS:
         return True
     return False
 
@@ -1164,44 +1217,45 @@ def _hard_truncate_at_clause(text: str, limit: int) -> str:
     single cite-anchored sentences carrying a long ``(a) … (b) … (c) …``
     enumeration, which the LLM judge counts as ">4 sentences".
 
-    Cut at the latest sentence end / ``;`` clause end / ``(x)``
-    enumerated-item start that fits the window. Falls back to the last
-    word boundary when no clean boundary lands in the back half of the
-    window (so a single boundary-free mega-clause is not chopped to a
-    stub). Never returns empty; appends a terminal period when the cut
-    leaves none.
+    Prefers full sentence boundaries ([.!?]) so the truncated text ends on
+    a complete, period-terminated sentence. Falls back to clause boundaries
+    (semicolons/enumerators) or word breaks when no complete sentence boundary
+    exists within limit.
     """
     if len(text) <= limit:
         return text
     window = text[:limit]
-    candidates: list[int] = []
-    # Sentence ends — include the terminator itself. R112 — filter out
-    # abbreviation periods (``e.g.`` / ``i.e.`` / ``Art.`` …) via the
-    # module's own _is_abbreviation_period helper, exactly as
-    # _split_sentences does; previously the abbreviation period could
-    # win as the "latest clean boundary" and ship a mid-sentence chop
-    # ending "…, e.g.".
-    candidates += [
+
+    # 1. Prefer full sentence ends — include the terminator itself.
+    sent_ends = [
         m.end()
-        for m in re.finditer(r"[.!?](?=\s)", window)
+        for m in re.finditer(r"[.!?](?=\s|$)", window)
         if not _is_abbreviation_period(window[: m.end()])
     ]
-    # Enumerated-clause ends.
-    candidates += [m.end() for m in re.finditer(r";(?=\s)", window)]
-    # Enumerated-item starts " (a) " / " (A) " / " (ii) " — cut just
-    # before the space. R79 — widened from lowercase-only to also catch
-    # uppercase and roman-numeral enumerators used in some Annex points.
-    candidates += [
+    if sent_ends:
+        best_sent = max(sent_ends)
+        out = text[:best_sent].strip()
+        if out:
+            return out
+
+    # 2. Enumerated-clause ends and item starts.
+    clause_candidates: list[int] = []
+    clause_candidates += [m.end() for m in re.finditer(r";(?=\s|$)", window)]
+    clause_candidates += [
         m.start()
         for m in re.finditer(r"\s\((?:[a-zA-Z]|[ivxl]{2,4})\)", window)
     ]
-    cut = max(candidates) if candidates else -1
+    cut = max(clause_candidates) if clause_candidates else -1
     if cut < limit // 2:
-        # No clean boundary in the back half — fall back to a word break
-        # near the limit rather than chop a boundary-free mega-clause.
         ws = window.rstrip().rfind(" ")
         cut = ws if ws > 0 else limit
-    out = text[:cut].rstrip().rstrip(",;:")
+
+    out = text[:cut].rstrip().rstrip(",;:—- ")
+    low = out.lower()
+    for dangler in (" and", " or", " to", " with", " for", " including", " must", " shall", " under"):
+        if low.endswith(dangler):
+            out = out[: len(out) - len(dangler)].rstrip(",;:—- ")
+            break
     if out and out[-1] not in ".!?":
         out += "."
     return out or text[:limit].rstrip()
@@ -1398,7 +1452,34 @@ def normalise_answer_for_regenold(
     # The deployer must…" → "The deployer must…").
     sentences[0] = _strip_sentence_opener(sentences[0])
     sentences = [s for s in sentences if s.strip()]
-    capped = sentences if _no_cap else sentences[:max_sentences]
+    while len(sentences) > 1 and _is_incomplete_trailing_sentence(sentences[-1]):
+        sentences.pop()
+    # R306 — enumeration-span guard. Neither cap below may cut inside a
+    # list the answer already started. ``enumeration_run_end`` reads the
+    # ANSWER's structure (a run of >= 2 consecutively-labelled items),
+    # not the question, so it catches the phrasings the question-side
+    # escapes (``_is_closed_set_enumeration_ask`` / ``_is_multi_phrase``
+    # / ``is_complex_question``) miss. It can only RAISE the effective
+    # cap, never lower it, and it is hard-ceilinged at 12.
+    _enum_floor = 0
+    # Protected by VALUE, not index: the soft char-cap loop below pops
+    # from ``capped``, so positional indices shift under it.
+    _enum_texts: set[str] = set()
+    try:
+        if enumeration_guard_enabled():
+            _enum_floor = enumeration_run_end(sentences)
+            if _enum_floor:
+                _enum_texts = {
+                    sentences[i] for i in enumeration_run_indices(sentences)
+                }
+    except Exception:
+        _enum_floor = 0
+        _enum_texts = set()
+
+    _effective_max = max_sentences
+    if not _no_cap and _enum_floor > max_sentences:
+        _effective_max = _enum_floor
+    capped = sentences if _no_cap else sentences[:_effective_max]
     # Soft char cap: prefer regulator-citation-bearing sentences when
     # we're over budget. Drop the longest sentence that does NOT cite
     # an article/annex; iterate until ≤ char_cap OR only
@@ -1429,6 +1510,14 @@ def normalise_answer_for_regenold(
         # stop (we'd rather ship a slightly over-budget answer than
         # drop the only citation prose).
         non_cite_idxs = [i for i, s in enumerate(capped) if not _has_cite_anchor(s)]
+        # R306 — never drop a member of an enumeration the answer
+        # started. The items most at risk here are exactly the ones
+        # that happen not to name an article ("(b) A failure of a
+        # high-risk AI system to meet the requirements set out in
+        # Chapter III, Section 2."), so without this the char-cap loop
+        # silently eats the middle of a list.
+        if _enum_texts:
+            non_cite_idxs = [i for i in non_cite_idxs if capped[i] not in _enum_texts]
         if not non_cite_idxs:
             break
         drop_idx = max(non_cite_idxs, key=lambda i: len(capped[i]))
@@ -1494,6 +1583,11 @@ def normalise_answer_for_regenold(
     # REGENOLD_STRIP_META=0. davidath byte-identical (deterministic answers
     # carry no such internal language; bench runs provider=cli with no Stage-2).
     result = strip_meta_commentary(result)
+    # R310 — structural counterpart to the R264 literal-marker pass above.
+    # Runs AFTER it so the cheap literal hits are already gone and this only
+    # sees the phrasings the marker list misses (on the r309 live batch that
+    # was 4 rows out of 4 leaked -- the markers caught none of them).
+    result = strip_retrieval_meta(result)
 
     # R268 — repair a mid-sentence citation-anchor the Stage-2 model elided
     # ("...harmonisation legislation listed in which/here/such as ..." dropped
@@ -1532,8 +1626,24 @@ def normalise_answer_for_regenold(
     # judge-conciseness win is real but unmeasurable locally (the R76
     # judge flagged exactly these rows); set REGENOLD_HARD_CHAR_CAP=1
     # for a live representative-100 + judge A/B before defaulting it ON.
+    # R306 — the hard cap truncates AT an "(x)" enumerator boundary, so
+    # on an enumerated answer it does precisely the damage this round
+    # exists to stop: it lops the tail members off a list the answer
+    # already opened. Skip it when an enumeration run is present. (The
+    # cap is default-OFF today; this keeps the guard honest if a future
+    # round flips it ON after the live A/B its comment calls for.)
+    # An INLINE "(a) …; (b) …; (c) …" list is ONE sentence, so the
+    # sentence-cap floor above never sees it; the hard cap truncates AT
+    # an enumerator boundary and would lop off its tail members.
+    _enum_present = bool(_enum_floor)
+    if not _enum_present:
+        try:
+            _enum_present = bool(inline_enumeration_length(result))
+        except Exception:
+            _enum_present = False
     if (
         len(result) > char_cap
+        and not _enum_present
         and os.getenv("REGENOLD_HARD_CHAR_CAP", "0").strip().lower()
         in ("1", "true", "yes", "on")
     ):
@@ -1621,9 +1731,9 @@ def normalise_answer_for_regenold(
                 s_clean += "."
             
         # Drop clipped sentences if we already have a complete sentence
-        # or if the remaining fragment is too short to be meaningful.
+        # or if the remaining fragment is incomplete / lacks terminal punctuation.
         if is_clip:
-            if len(cleaned_sentences) >= 1 or len(s_clean) < 40:
+            if len(cleaned_sentences) >= 1 or len(s_clean) < 50 or _is_incomplete_trailing_sentence(s_clean):
                 continue
                 
         cleaned_sentences.append(s_clean)

@@ -1,0 +1,1515 @@
+{
+  "metadata": {
+    "name": "EU AI Act GraphRAG Citation Benchmark",
+    "regulation": "Regulation (EU) 2024/1689 (EU AI Act)",
+    "celex": "32024R1689",
+    "citation_granularity": "article / paragraph / point / sub-point + annex point + recital",
+    "provision_id_scheme": "Akoma Ntoso eId style, e.g. art_6__para_2__point_a, annex_III__point_5, recital_27",
+    "methodology": "arXiv:2603.09435 risk-tier + task-category construction, extended with subpoint citation sets, negative controls, and hallucination traps for the GraphRAG eval harness (see eu-ai-act-graphrag-plan.md, section 8).",
+    "task_types": [
+      "article_retrieval",
+      "obligation_generation",
+      "qa",
+      "risk_classification"
+    ],
+    "strata": [
+      "prohibited",
+      "high_risk_classification",
+      "high_risk_requirements",
+      "transparency",
+      "gpai",
+      "governance"
+    ],
+    "split": "easy",
+    "difficulty_definition": "single-hop lookup/classification on clear-boundary provisions; 1-2 citation atoms; no negative controls or traps.",
+    "stats": {
+      "count": 42,
+      "by_stratum": {
+        "governance": 7,
+        "gpai": 7,
+        "high_risk_classification": 7,
+        "high_risk_requirements": 7,
+        "prohibited": 7,
+        "transparency": 7
+      },
+      "by_task_type": {
+        "article_retrieval": 15,
+        "obligation_generation": 9,
+        "qa": 4,
+        "risk_classification": 14
+      },
+      "by_risk_level": {
+        "not_applicable": 14,
+        "prohibited": 8,
+        "high": 14,
+        "limited": 6
+      },
+      "negative_controls": 0,
+      "hallucination_traps": 0,
+      "negative_control_and_trap": 0,
+      "multi_hop": 0,
+      "medium_confidence": 0,
+      "distinct_provisions": 77
+    }
+  },
+  "items": [
+    {
+      "id": "easy_gov_001",
+      "difficulty": "easy",
+      "task_type": "article_retrieval",
+      "stratum": "governance",
+      "question": "Which provision of the EU AI Act defines the term 'provider'?",
+      "scenario": null,
+      "gold_answer": "Article 3(3) defines 'provider' as a natural or legal person, public authority, agency or other body that develops an AI system or a general-purpose AI model or that has one developed and places it on the market or puts it into service under its own name or trademark.",
+      "risk_level": "not_applicable",
+      "gold_citations": [
+        {
+          "citation": "Art. 3(3)",
+          "provision_id": "art_3__para_3",
+          "role": "primary"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Direct single-hop definition lookup. Art. 3(3) is the sole and exhaustive citation. Verified via artificialintelligenceact.eu/article/3/."
+    },
+    {
+      "id": "easy_gov_002",
+      "difficulty": "easy",
+      "task_type": "article_retrieval",
+      "stratum": "governance",
+      "question": "Which provision of the EU AI Act defines the term 'deployer'?",
+      "scenario": null,
+      "gold_answer": "Article 3(4) defines 'deployer' as a natural or legal person, public authority, agency or other body using an AI system under its authority, except where the AI system is used in the course of a personal non-professional activity.",
+      "risk_level": "not_applicable",
+      "gold_citations": [
+        {
+          "citation": "Art. 3(4)",
+          "provision_id": "art_3__para_4",
+          "role": "primary"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Direct single-hop definition lookup. Art. 3(4) is the sole exhaustive citation. Verified via artificialintelligenceact.eu/article/3/."
+    },
+    {
+      "id": "easy_gov_003",
+      "difficulty": "easy",
+      "task_type": "article_retrieval",
+      "stratum": "governance",
+      "question": "Which provision of the EU AI Act defines 'AI system'?",
+      "scenario": null,
+      "gold_answer": "Article 3(1) defines 'AI system' as a machine-based system that is designed to operate with varying levels of autonomy and that may exhibit adaptiveness after deployment, and that, for explicit or implicit objectives, infers from the input it receives how to generate outputs such as predictions, content, recommendations, or decisions.",
+      "risk_level": "not_applicable",
+      "gold_citations": [
+        {
+          "citation": "Art. 3(1)",
+          "provision_id": "art_3__para_1",
+          "role": "primary"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Core definition lookup. Art. 3(1) is the single exhaustive citation. Verified via artificialintelligenceact.eu/article/3/."
+    },
+    {
+      "id": "easy_gov_004",
+      "difficulty": "easy",
+      "task_type": "obligation_generation",
+      "stratum": "governance",
+      "question": "What is the maximum administrative fine for a breach of the Article 5 prohibited AI practices under the EU AI Act?",
+      "scenario": null,
+      "gold_answer": "Up to EUR 35,000,000 or, if the offender is an undertaking, up to 7% of its total worldwide annual turnover for the preceding financial year, whichever is higher.",
+      "risk_level": "prohibited",
+      "gold_citations": [
+        {
+          "citation": "Art. 99(3)",
+          "provision_id": "art_99__para_3",
+          "role": "primary"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Single-hop penalty cap lookup. Art. 99(3) is the sole citation. Verified via artificialintelligenceact.eu/article/99/."
+    },
+    {
+      "id": "easy_gov_005",
+      "difficulty": "easy",
+      "task_type": "qa",
+      "stratum": "governance",
+      "question": "From what date do the prohibited AI practices in Chapter II of the EU AI Act apply?",
+      "scenario": null,
+      "gold_answer": "The prohibited AI practices (Chapter II, including Article 5) apply from 2 February 2025.",
+      "risk_level": "not_applicable",
+      "gold_citations": [
+        {
+          "citation": "Art. 113",
+          "provision_id": "art_113",
+          "role": "primary"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Single-hop timeline fact. Art. 113(a) specifies 2 Feb 2025 for Chapters I and II. Verified via artificialintelligenceact.eu/article/113/."
+    },
+    {
+      "id": "easy_gov_006",
+      "difficulty": "easy",
+      "task_type": "risk_classification",
+      "stratum": "governance",
+      "question": "A company develops and deploys an AI system exclusively for its own national-security intelligence operations with no civilian use. Does the EU AI Act apply to this system?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "AI system for intelligence analysis",
+        "intended_use": "national security intelligence operations, no civilian deployment",
+        "input_data": "classified signals and surveillance data",
+        "domain": "national security"
+      },
+      "gold_answer": "No. The EU AI Act does not apply to AI systems placed on the market or put into service exclusively for military, defence, or national-security purposes. The system is outside the Regulation's scope.",
+      "risk_level": "not_applicable",
+      "gold_citations": [
+        {
+          "citation": "Art. 2(3)",
+          "provision_id": "art_2__para_3",
+          "role": "primary"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Scope exclusion lookup. Art. 2(3) is the exhaustive citation; the exclusion itself is the answer, so this is NOT a negative_control (gold_citations is non-empty). Verified via artificialintelligenceact.eu/article/2/."
+    },
+    {
+      "id": "easy_gov_007",
+      "difficulty": "easy",
+      "task_type": "qa",
+      "stratum": "governance",
+      "question": "What is the maximum fine for supplying incorrect, incomplete, or misleading information to a national competent authority under the EU AI Act?",
+      "scenario": null,
+      "gold_answer": "Up to EUR 7,500,000 or, if the offender is an undertaking, up to 1% of its total worldwide annual turnover for the preceding financial year, whichever is higher.",
+      "risk_level": "not_applicable",
+      "gold_citations": [
+        {
+          "citation": "Art. 99(5)",
+          "provision_id": "art_99__para_5",
+          "role": "primary"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Single-hop penalty tier lookup. Art. 99(5) is the sole citation covering misleading information to authorities. Verified via artificialintelligenceact.eu/article/99/."
+    },
+    {
+      "id": "easy_gpai_001",
+      "difficulty": "easy",
+      "task_type": "risk_classification",
+      "stratum": "gpai",
+      "question": "A foundation model provider trained their model using a cumulative compute of 2 × 10^25 floating-point operations. Does the EU AI Act presume this model to have high-impact capabilities warranting systemic-risk classification?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "large language model",
+        "intended_use": "general-purpose text generation",
+        "input_data": "text",
+        "domain": "general"
+      },
+      "gold_answer": "Yes. Under Art. 51(2), a GPAI model is presumed to have high-impact capabilities — and therefore to qualify as a systemic-risk model under Art. 51(1)(a) — when the cumulative training compute exceeds 10^25 floating-point operations. 2 × 10^25 FLOP exceeds that threshold, so the presumption applies.",
+      "risk_level": "not_applicable",
+      "gold_citations": [
+        {
+          "citation": "Art. 51(1)(a)",
+          "provision_id": "art_51__para_1__point_a",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 51(2)",
+          "provision_id": "art_51__para_2",
+          "role": "primary"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Direct lookup of the Art. 51(2) compute presumption. Art. 51(1)(a) is included as primary because the presumption feeds into that sub-condition; no additional hops needed."
+    },
+    {
+      "id": "easy_gpai_002",
+      "difficulty": "easy",
+      "task_type": "article_retrieval",
+      "stratum": "gpai",
+      "question": "Which article of the EU AI Act establishes the baseline obligations that ALL providers of general-purpose AI models must fulfil, regardless of whether their model presents systemic risk?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "general-purpose AI model",
+        "intended_use": "downstream integration",
+        "input_data": "various",
+        "domain": "general"
+      },
+      "gold_answer": "Article 53. It requires all GPAI model providers to: (a) draw up and keep up-to-date technical documentation per Annex XI; (b) prepare information for downstream providers per Annex XII; (c) put in place a copyright-compliance policy; and (d) publish a summary of training content. These duties apply to every GPAI model provider; Art. 55 adds further obligations only for those whose models carry systemic risk.",
+      "risk_level": "not_applicable",
+      "gold_citations": [
+        {
+          "citation": "Art. 53(1)",
+          "provision_id": "art_53__para_1",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 53(1)(a)",
+          "provision_id": "art_53__para_1__point_a",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 53(1)(b)",
+          "provision_id": "art_53__para_1__point_b",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 53(1)(c)",
+          "provision_id": "art_53__para_1__point_c",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 53(1)(d)",
+          "provision_id": "art_53__para_1__point_d",
+          "role": "supporting"
+        },
+        {
+          "citation": "Annex XI",
+          "provision_id": "annex_XI",
+          "role": "definition"
+        },
+        {
+          "citation": "Annex XII",
+          "provision_id": "annex_XII",
+          "role": "definition"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Straightforward article retrieval. Includes sub-point citations as supporting to make the citation set exhaustive for a benchmark that scores at sub-point granularity."
+    },
+    {
+      "id": "easy_gpai_003",
+      "difficulty": "easy",
+      "task_type": "obligation_generation",
+      "stratum": "gpai",
+      "question": "A company provides a general-purpose AI model in the EU. What copyright-related obligation does the EU AI Act impose on them under Article 53?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "general-purpose AI model",
+        "intended_use": "text and code generation",
+        "input_data": "text",
+        "domain": "general"
+      },
+      "gold_answer": "Under Art. 53(1)(c), providers of GPAI models must put in place a policy to comply with Union law on copyright and related rights, including by identifying and respecting reservations of rights expressed by rightsholders under Art. 4(3) of Directive (EU) 2019/790 on text and data mining.",
+      "risk_level": "not_applicable",
+      "gold_citations": [
+        {
+          "citation": "Art. 53(1)(c)",
+          "provision_id": "art_53__para_1__point_c",
+          "role": "primary"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Single-provision lookup. The obligation is entirely contained in Art. 53(1)(c); no cross-reference to Art. 55 is needed because this duty applies to all GPAI providers."
+    },
+    {
+      "id": "easy_gpai_004",
+      "difficulty": "easy",
+      "task_type": "obligation_generation",
+      "stratum": "gpai",
+      "question": "Under the EU AI Act, what training-data transparency obligation must providers of general-purpose AI models satisfy regarding the content used to train their model?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "general-purpose AI model",
+        "intended_use": "general-purpose generation tasks",
+        "input_data": "large-scale web and licensed data",
+        "domain": "general"
+      },
+      "gold_answer": "Art. 53(1)(d) requires GPAI model providers to draw up and make publicly available a sufficiently detailed summary about the content used for training the model, prepared in accordance with a template provided by the AI Office.",
+      "risk_level": "not_applicable",
+      "gold_citations": [
+        {
+          "citation": "Art. 53(1)(d)",
+          "provision_id": "art_53__para_1__point_d",
+          "role": "primary"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Direct lookup of Art. 53(1)(d). No systemic-risk condition required; this duty applies to all GPAI model providers."
+    },
+    {
+      "id": "easy_gpai_005",
+      "difficulty": "easy",
+      "task_type": "article_retrieval",
+      "stratum": "gpai",
+      "question": "Which article of the EU AI Act imposes additional obligations exclusively on providers of general-purpose AI models that have been classified as presenting systemic risk?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "large-scale GPAI model with systemic risk",
+        "intended_use": "general-purpose",
+        "input_data": "various",
+        "domain": "general"
+      },
+      "gold_answer": "Article 55. It requires providers of GPAI models with systemic risk to: perform model evaluation including adversarial testing (Art. 55(1)(a)); assess and mitigate systemic risks (Art. 55(1)(b)); track, document, and report serious incidents to the AI Office (Art. 55(1)(c)); and ensure adequate cybersecurity protection (Art. 55(1)(d)).",
+      "risk_level": "not_applicable",
+      "gold_citations": [
+        {
+          "citation": "Art. 55(1)",
+          "provision_id": "art_55__para_1",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 55(1)(a)",
+          "provision_id": "art_55__para_1__point_a",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 55(1)(b)",
+          "provision_id": "art_55__para_1__point_b",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 55(1)(c)",
+          "provision_id": "art_55__para_1__point_c",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 55(1)(d)",
+          "provision_id": "art_55__para_1__point_d",
+          "role": "supporting"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Direct article retrieval. Supporting citations included at sub-point level for exhaustive scoring."
+    },
+    {
+      "id": "easy_gpai_006",
+      "difficulty": "easy",
+      "task_type": "qa",
+      "stratum": "gpai",
+      "question": "What is the definition of a 'general-purpose AI model' under the EU AI Act, and how does it differ from a 'general-purpose AI system'?",
+      "scenario": {
+        "role": null,
+        "system_type": "definitional question",
+        "intended_use": "regulatory interpretation",
+        "input_data": "n/a",
+        "domain": "general"
+      },
+      "gold_answer": "Art. 3(63) defines a 'general-purpose AI model' as an AI model — typically trained with large amounts of data using self-supervision at scale — that displays significant generality and can competently perform a wide range of distinct tasks, and can be integrated into a variety of downstream systems. Art. 3(66) defines a 'general-purpose AI system' as an AI system based on a GPAI model that can serve a variety of purposes, both for direct use and for integration into other AI systems. The key distinction: a GPAI model is the underlying trained artefact; a GPAI system is a deployed system built on top of that model.",
+      "risk_level": "not_applicable",
+      "gold_citations": [
+        {
+          "citation": "Art. 3(63)",
+          "provision_id": "art_3__para_63",
+          "role": "definition"
+        },
+        {
+          "citation": "Art. 3(66)",
+          "provision_id": "art_3__para_66",
+          "role": "definition"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Definitions-lookup item. Both Art. 3(63) and Art. 3(66) are necessary and sufficient; no further provisions are needed to answer the question."
+    },
+    {
+      "id": "easy_gpai_007",
+      "difficulty": "easy",
+      "task_type": "obligation_generation",
+      "stratum": "gpai",
+      "question": "Under the EU AI Act, when a GPAI model provider is established in a third country outside the EU, what representative obligation must they fulfil before placing their model on the EU market?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "general-purpose AI model",
+        "intended_use": "EU market placement",
+        "input_data": "various",
+        "domain": "general"
+      },
+      "gold_answer": "Under Art. 54(1), providers of general-purpose AI models established in third countries must appoint an authorised representative established in the Union before placing their model on the EU market. The representative must be empowered to verify compliance with technical documentation requirements and obligations under Arts. 53 and 55, maintain documentation for 10 years, and cooperate with authorities. This requirement does not apply to providers releasing their model under a free and open-source licence — unless the model presents systemic risk (Art. 54(6)).",
+      "risk_level": "not_applicable",
+      "gold_citations": [
+        {
+          "citation": "Art. 54(1)",
+          "provision_id": "art_54__para_1",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 54(6)",
+          "provision_id": "art_54__para_6",
+          "role": "supporting"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Straightforward retrieval of Art. 54(1). Art. 54(6) is included as supporting because it contains the open-source exception that forms part of the full, accurate answer. Two-hop only in the sense of model-plus-exception; single lookup for classification purposes."
+    },
+    {
+      "id": "easy_hrclass_001",
+      "difficulty": "easy",
+      "task_type": "risk_classification",
+      "stratum": "high_risk_classification",
+      "question": "A company provides an AI system that automatically screens and ranks job applicants' CVs for an employer's recruitment process. What is the risk level of this AI system under the EU AI Act?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "CV screening and candidate ranking tool",
+        "intended_use": "Automated filtering and ranking of job applications for recruitment",
+        "input_data": "CVs, application forms, candidate profiles",
+        "domain": "Employment / HR"
+      },
+      "gold_answer": "The system is high-risk. AI systems intended for recruitment and the filtering and evaluation of candidates fall within Annex III point 4(a), which covers employment, workers management and self-employment access. Art. 6(2) therefore classifies it as high-risk.",
+      "risk_level": "high",
+      "gold_citations": [
+        {
+          "citation": "Art. 6(2)",
+          "provision_id": "art_6__para_2",
+          "role": "primary"
+        },
+        {
+          "citation": "Annex III point 4(a)",
+          "provision_id": "annex_III__point_4__point_a",
+          "role": "supporting"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Annex III point 4(a) expressly lists 'AI systems intended to be used for recruitment or selection of natural persons, notably for advertising vacancies, screening or filtering applications, evaluating candidates in the course of interviews or tests'. Art. 6(2) is the operative classification rule for Annex III systems. Single hop: question -> Art. 6(2) -> Annex III point 4(a)."
+    },
+    {
+      "id": "easy_hrclass_002",
+      "difficulty": "easy",
+      "task_type": "risk_classification",
+      "stratum": "high_risk_classification",
+      "question": "A fintech company deploys an AI model that calculates credit scores for individuals applying for personal loans. Is this system high-risk under the EU AI Act, and if so, under which provision?",
+      "scenario": {
+        "role": "deployer",
+        "system_type": "Credit scoring model",
+        "intended_use": "Evaluating creditworthiness and generating credit scores for loan applicants",
+        "input_data": "Financial history, income data, personal data of natural persons",
+        "domain": "Financial services"
+      },
+      "gold_answer": "Yes, this system is high-risk. AI systems used to evaluate the creditworthiness of natural persons or establish their credit score are explicitly listed in Annex III point 5(b), making them high-risk under Art. 6(2). The exception in point 5(b) for fraud-detection systems does not apply here.",
+      "risk_level": "high",
+      "gold_citations": [
+        {
+          "citation": "Art. 6(2)",
+          "provision_id": "art_6__para_2",
+          "role": "primary"
+        },
+        {
+          "citation": "Annex III point 5(b)",
+          "provision_id": "annex_III__point_5__point_b",
+          "role": "supporting"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Annex III point 5(b) explicitly covers 'AI systems intended to be used to evaluate the creditworthiness of natural persons or establish their credit score, with the exception of AI systems used for the purpose of detecting financial fraud'. Art. 6(2) is the operative classification rule. The fraud-detection carve-out confirms the default classification, as this system is for creditworthiness, not fraud detection."
+    },
+    {
+      "id": "easy_hrclass_003",
+      "difficulty": "easy",
+      "task_type": "risk_classification",
+      "stratum": "high_risk_classification",
+      "question": "A border management authority uses an AI system to assess the security risk posed by individuals crossing an external border. What risk level does the EU AI Act assign to this system?",
+      "scenario": {
+        "role": "deployer",
+        "system_type": "Border security risk assessment tool",
+        "intended_use": "Assessing security, health, or irregular migration risk of persons at border crossings",
+        "input_data": "Traveller data, passport information, behavioural signals",
+        "domain": "Migration / Border control"
+      },
+      "gold_answer": "High-risk. AI systems intended to be used by competent authorities to assess a risk, including a security risk, posed by natural persons attempting to cross borders are listed in Annex III point 7(b). Art. 6(2) therefore classifies this system as high-risk.",
+      "risk_level": "high",
+      "gold_citations": [
+        {
+          "citation": "Art. 6(2)",
+          "provision_id": "art_6__para_2",
+          "role": "primary"
+        },
+        {
+          "citation": "Annex III point 7(b)",
+          "provision_id": "annex_III__point_7__point_b",
+          "role": "supporting"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Annex III point 7(b) lists 'AI systems intended to be used by competent public authorities as polygraphs and similar tools or to detect the emotional state of a natural person; to assess a risk, including a security risk, posed by a natural person who intends to enter or has entered into the territory of a Member State'. This is a direct match. Art. 6(2) is the operative rule."
+    },
+    {
+      "id": "easy_hrclass_004",
+      "difficulty": "easy",
+      "task_type": "risk_classification",
+      "stratum": "high_risk_classification",
+      "question": "A public authority uses an AI system to determine whether individuals are eligible for social housing assistance. Under the EU AI Act, is this a high-risk AI system?",
+      "scenario": {
+        "role": "deployer",
+        "system_type": "Public benefit eligibility assessment tool",
+        "intended_use": "Evaluating individuals' eligibility for social housing public assistance",
+        "input_data": "Personal data, income records, household information",
+        "domain": "Public administration / Social services"
+      },
+      "gold_answer": "Yes, this is a high-risk AI system under Art. 6(2). Annex III point 5(a) covers AI systems used to evaluate eligibility for public assistance benefits and services, which explicitly includes social housing assistance.",
+      "risk_level": "high",
+      "gold_citations": [
+        {
+          "citation": "Art. 6(2)",
+          "provision_id": "art_6__para_2",
+          "role": "primary"
+        },
+        {
+          "citation": "Annex III point 5(a)",
+          "provision_id": "annex_III__point_5__point_a",
+          "role": "supporting"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Annex III point 5(a) covers 'AI systems intended to be used by public authorities to evaluate the eligibility of natural persons for essential public assistance benefits and services, including healthcare services, housing, and educational and professional training'. Social housing is a prototypical example. Art. 6(2) is the operative rule."
+    },
+    {
+      "id": "easy_hrclass_005",
+      "difficulty": "easy",
+      "task_type": "risk_classification",
+      "stratum": "high_risk_classification",
+      "question": "A university deploys an AI system that decides which applicants are admitted to its undergraduate programmes. What is the risk classification of this AI system under the EU AI Act?",
+      "scenario": {
+        "role": "deployer",
+        "system_type": "University admissions decision tool",
+        "intended_use": "Automated determination of admission to higher education institutions",
+        "input_data": "Application forms, academic records, personal statements",
+        "domain": "Education"
+      },
+      "gold_answer": "High-risk. Annex III point 3(a) expressly lists AI systems intended to determine access or admission to educational and vocational training institutions. Art. 6(2) therefore classifies this system as high-risk.",
+      "risk_level": "high",
+      "gold_citations": [
+        {
+          "citation": "Art. 6(2)",
+          "provision_id": "art_6__para_2",
+          "role": "primary"
+        },
+        {
+          "citation": "Annex III point 3(a)",
+          "provision_id": "annex_III__point_3__point_a",
+          "role": "supporting"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Annex III point 3(a) covers 'AI systems intended to be used to determine access or admission to or assignment of natural persons to educational and vocational training institutions at all levels'. Undergraduate admission decisions are a direct match."
+    },
+    {
+      "id": "easy_hrclass_006",
+      "difficulty": "easy",
+      "task_type": "article_retrieval",
+      "stratum": "high_risk_classification",
+      "question": "Which article and annex of the EU AI Act govern the high-risk classification of AI systems used for remote biometric identification in public spaces, and what is the precise Annex III reference?",
+      "scenario": {
+        "role": null,
+        "system_type": "Remote biometric identification system",
+        "intended_use": "Identifying natural persons at a distance without active involvement",
+        "input_data": "Biometric data, facial images, video footage",
+        "domain": "Law enforcement / Public security"
+      },
+      "gold_answer": "Art. 6(2) is the operative classification rule: AI systems listed in Annex III are high-risk. Annex III point 1(a) specifically lists remote biometric identification systems (excluding biometric verification). Art. 3(41) defines the remote biometric identification system (Art. 3(40) is the distinct 'biometric categorisation system'). Remote biometric identification systems for law-enforcement use are additionally subject to the prohibition conditions in Art. 5, but the classification as high-risk for non-prohibited uses derives from Art. 6(2) and Annex III point 1(a).",
+      "risk_level": "high",
+      "gold_citations": [
+        {
+          "citation": "Art. 6(2)",
+          "provision_id": "art_6__para_2",
+          "role": "primary"
+        },
+        {
+          "citation": "Annex III point 1(a)",
+          "provision_id": "annex_III__point_1__point_a",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 3(41)",
+          "provision_id": "art_3__para_41",
+          "role": "definition"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Annex III point 1(a) lists 'remote biometric identification systems, other than AI systems intended to be used for biometric verification whose sole purpose is to confirm that a specific natural person is who that person claims to be'. Art. 3(41) provides the definition of remote biometric identification system (definition 41 per the retrieved text, labelled there as (41)). Art. 6(2) is the operative classification rule for all Annex III systems."
+    },
+    {
+      "id": "easy_hrclass_007",
+      "difficulty": "easy",
+      "task_type": "risk_classification",
+      "stratum": "high_risk_classification",
+      "question": "An insurance company uses an AI system to assess health risks and calculate life insurance premiums for individual customers. Is this a high-risk AI system under the EU AI Act?",
+      "scenario": {
+        "role": "deployer",
+        "system_type": "Life and health insurance risk assessment and pricing tool",
+        "intended_use": "Assessing individual health risk and calculating life insurance premiums",
+        "input_data": "Medical history, health data, personal data of natural persons",
+        "domain": "Insurance"
+      },
+      "gold_answer": "Yes, this is a high-risk AI system. Annex III point 5(c) explicitly covers AI systems intended for risk assessment and pricing in relation to natural persons in the area of life and health insurance. Art. 6(2) therefore classifies it as high-risk.",
+      "risk_level": "high",
+      "gold_citations": [
+        {
+          "citation": "Art. 6(2)",
+          "provision_id": "art_6__para_2",
+          "role": "primary"
+        },
+        {
+          "citation": "Annex III point 5(c)",
+          "provision_id": "annex_III__point_5__point_c",
+          "role": "supporting"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Annex III point 5(c) covers 'AI systems intended to be used to evaluate and classify risks in relation to natural persons for the purpose of health and life insurance, including underwriting and pricing'. The scenario maps exactly to this sub-point. Art. 6(2) is the operative rule."
+    },
+    {
+      "id": "easy_hrreq_001",
+      "difficulty": "easy",
+      "task_type": "article_retrieval",
+      "stratum": "high_risk_requirements",
+      "question": "Which article of the EU AI Act requires providers of high-risk AI systems to establish, implement, document, and maintain a risk management system throughout the system's lifecycle?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "high-risk AI system (Annex III)",
+        "intended_use": "General high-risk AI deployment",
+        "input_data": "Various",
+        "domain": "General compliance"
+      },
+      "gold_answer": "Article 9 requires providers of high-risk AI systems to establish, implement, document and maintain a risk management system. This must be a continuous iterative process covering identification and analysis of known/foreseeable risks, estimation and evaluation of risks arising from intended use and reasonably foreseeable misuse, and adoption of appropriate risk management measures.",
+      "risk_level": "high",
+      "gold_citations": [
+        {
+          "citation": "Art. 9",
+          "provision_id": "art_9",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 9(1)",
+          "provision_id": "art_9__para_1",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 9(2)",
+          "provision_id": "art_9__para_2",
+          "role": "supporting"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Direct single-hop retrieval. Art. 9(1) imposes the obligation; Art. 9(2) defines the four steps of the continuous iterative process. No ambiguity — the text of Art. 9 unambiguously names the risk management system."
+    },
+    {
+      "id": "easy_hrreq_002",
+      "difficulty": "easy",
+      "task_type": "article_retrieval",
+      "stratum": "high_risk_requirements",
+      "question": "Under the EU AI Act, which article governs the data and data governance requirements for high-risk AI systems that use techniques involving the training of AI models with data?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "high-risk AI system using ML training",
+        "intended_use": "Supervised machine learning application",
+        "input_data": "Training, validation, and testing datasets",
+        "domain": "General compliance"
+      },
+      "gold_answer": "Article 10 governs data and data governance requirements. It requires that training, validation, and testing datasets meet quality criteria including appropriate governance and management practices, relevance, sufficiency, representativeness, and to the best extent possible freedom from errors. It also addresses examination for possible biases and includes rules for the exceptional use of special categories of personal data for bias detection.",
+      "risk_level": "high",
+      "gold_citations": [
+        {
+          "citation": "Art. 10",
+          "provision_id": "art_10",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 10(1)",
+          "provision_id": "art_10__para_1",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 10(2)",
+          "provision_id": "art_10__para_2",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 10(3)",
+          "provision_id": "art_10__para_3",
+          "role": "supporting"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Direct single-hop retrieval. Art. 10(1) establishes the scope; Art. 10(2) lists governance practices; Art. 10(3) sets the quality standard. Art. 10(6) extends paragraphs 2-5 to testing datasets for non-training-based systems."
+    },
+    {
+      "id": "easy_hrreq_003",
+      "difficulty": "easy",
+      "task_type": "article_retrieval",
+      "stratum": "high_risk_requirements",
+      "question": "Which article of the EU AI Act requires providers of high-risk AI systems to draw up technical documentation before placing the system on the market, with minimum content specified in Annex IV?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "high-risk AI system",
+        "intended_use": "Pre-market documentation compliance",
+        "input_data": "System design and specification information",
+        "domain": "General compliance"
+      },
+      "gold_answer": "Article 11 requires that technical documentation for a high-risk AI system be drawn up before the system is placed on the market or put into service and be kept up to date. The minimum information to be included is set out in Annex IV.",
+      "risk_level": "high",
+      "gold_citations": [
+        {
+          "citation": "Art. 11",
+          "provision_id": "art_11",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 11(1)",
+          "provision_id": "art_11__para_1",
+          "role": "primary"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Direct single-hop retrieval. Art. 11(1) is unambiguous. Annex IV is the referenced content but is not a separately citable 'article' for the citation question asked."
+    },
+    {
+      "id": "easy_hrreq_004",
+      "difficulty": "easy",
+      "task_type": "article_retrieval",
+      "stratum": "high_risk_requirements",
+      "question": "Which article of the EU AI Act requires high-risk AI systems to technically enable the automatic recording of events (logs) over the lifetime of the system?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "high-risk AI system",
+        "intended_use": "Post-market monitoring and accountability",
+        "input_data": "Operational event data",
+        "domain": "General compliance"
+      },
+      "gold_answer": "Article 12 requires high-risk AI systems to technically allow for the automatic recording of events (logs) over the lifetime of the system. The logging capability must capture events relevant to identifying situations where the system might present a risk, enabling post-market monitoring, and monitoring operational performance.",
+      "risk_level": "high",
+      "gold_citations": [
+        {
+          "citation": "Art. 12",
+          "provision_id": "art_12",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 12(1)",
+          "provision_id": "art_12__para_1",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 12(2)",
+          "provision_id": "art_12__para_2",
+          "role": "supporting"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Direct single-hop retrieval. Art. 12(1) imposes the obligation; Art. 12(2) specifies what events must be captured. Art. 12(3) adds further requirements specifically for biometric identification systems."
+    },
+    {
+      "id": "easy_hrreq_005",
+      "difficulty": "easy",
+      "task_type": "article_retrieval",
+      "stratum": "high_risk_requirements",
+      "question": "Under the EU AI Act, which article requires that high-risk AI systems be designed and developed so that they can be effectively overseen by natural persons during use, including by enabling them to override or stop the system?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "high-risk AI system",
+        "intended_use": "Operational deployment with human oversight capability",
+        "input_data": "System outputs and recommendations",
+        "domain": "General compliance"
+      },
+      "gold_answer": "Article 14 requires human oversight. High-risk AI systems must be designed and developed with appropriate human-machine interface tools so they can be effectively overseen by natural persons during use. Oversight measures must enable natural persons to understand the system's capacities and limitations, recognise automation bias risks, interpret outputs, and choose not to use the system or override or stop its operation.",
+      "risk_level": "high",
+      "gold_citations": [
+        {
+          "citation": "Art. 14",
+          "provision_id": "art_14",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 14(1)",
+          "provision_id": "art_14__para_1",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 14(4)",
+          "provision_id": "art_14__para_4",
+          "role": "supporting"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Direct single-hop retrieval. Art. 14(1) states the general obligation; Art. 14(4) lists the specific capabilities the system must give to overseers including stopping/overriding the system."
+    },
+    {
+      "id": "easy_hrreq_006",
+      "difficulty": "easy",
+      "task_type": "article_retrieval",
+      "stratum": "high_risk_requirements",
+      "question": "Which article of the EU AI Act requires high-risk AI systems to achieve an appropriate level of accuracy, robustness, and cybersecurity, and to be resilient against attempts by unauthorised third parties to alter their use, outputs, or performance?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "high-risk AI system",
+        "intended_use": "Secure and reliable AI deployment",
+        "input_data": "Operational data and model inputs",
+        "domain": "General compliance / cybersecurity"
+      },
+      "gold_answer": "Article 15 requires that high-risk AI systems achieve an appropriate level of accuracy, robustness, and cybersecurity. Article 15(5) specifically requires resilience against attempts by unauthorised third parties to alter the system's use, outputs, or performance, including against data poisoning, model poisoning, adversarial examples, confidentiality attacks, and model flaws.",
+      "risk_level": "high",
+      "gold_citations": [
+        {
+          "citation": "Art. 15",
+          "provision_id": "art_15",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 15(1)",
+          "provision_id": "art_15__para_1",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 15(5)",
+          "provision_id": "art_15__para_5",
+          "role": "supporting"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Direct single-hop retrieval. Art. 15(1) states the general obligation; Art. 15(5) is the specific cybersecurity provision addressing adversarial manipulation. Art. 15(4) addresses resilience to errors and faults."
+    },
+    {
+      "id": "easy_hrreq_007",
+      "difficulty": "easy",
+      "task_type": "article_retrieval",
+      "stratum": "high_risk_requirements",
+      "question": "Which article of the EU AI Act requires high-risk AI systems to be designed with sufficient transparency so that deployers can interpret the system's output and use it appropriately, and requires instructions for use to be provided?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "high-risk AI system",
+        "intended_use": "Deployment by a downstream deployer organisation",
+        "input_data": "System outputs presented to deployers",
+        "domain": "General compliance / transparency"
+      },
+      "gold_answer": "Article 13 requires transparency and provision of information to deployers. High-risk AI systems must be designed and developed in such a way that their operation is sufficiently transparent to enable deployers to interpret the system's output and use it appropriately. Providers must supply instructions for use in digital or other appropriate formats containing concise, complete, correct, and clear information.",
+      "risk_level": "high",
+      "gold_citations": [
+        {
+          "citation": "Art. 13",
+          "provision_id": "art_13",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 13(1)",
+          "provision_id": "art_13__para_1",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 13(2)",
+          "provision_id": "art_13__para_2",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 13(3)",
+          "provision_id": "art_13__para_3",
+          "role": "supporting"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Direct single-hop retrieval. Art. 13(1) states the transparency obligation; Art. 13(2) mandates instructions for use; Art. 13(3) enumerates the content that instructions must cover (including accuracy metrics, human oversight measures referencing Art. 14, and logging mechanisms referencing Art. 12)."
+    },
+    {
+      "id": "easy_prohibited_001",
+      "difficulty": "easy",
+      "task_type": "risk_classification",
+      "stratum": "prohibited",
+      "question": "A municipal authority deploys an AI system that monitors all residents' social-media activity, purchasing behaviour, and movement patterns over time, then assigns each resident a composite 'civic reliability score' that determines eligibility for public housing and reduced-rate public transport. Is this system permitted under the EU AI Act?",
+      "scenario": {
+        "role": "deployer",
+        "system_type": "Social scoring system aggregating multi-context behavioural data into a civic reliability score",
+        "intended_use": "Determining eligibility for public housing and subsidised transport based on social score",
+        "input_data": "Social-media activity, purchasing behaviour, movement patterns",
+        "domain": "Public administration / social welfare"
+      },
+      "gold_answer": "No. This system is prohibited under Art. 5(1)(c) of the EU AI Act. It evaluates natural persons based on their social behaviour and inferred personal characteristics, and the detrimental treatment (denial of housing and transport access) is both unrelated to the original data-collection context and disproportionate to actual social behaviour. The prohibition applies to both public and private actors.",
+      "risk_level": "prohibited",
+      "gold_citations": [
+        {
+          "citation": "Art. 5(1)(c)",
+          "provision_id": "art_5__para_1__point_c",
+          "role": "primary"
+        },
+        {
+          "citation": "Recital (31)",
+          "provision_id": "recital_31",
+          "role": "interpretive"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Art. 5(1)(c) is the direct prohibition on social scoring. The system meets all three statutory indicia: (i) evaluation based on social behaviour or inferred personality characteristics; (ii) detrimental treatment (denial of benefits); (iii) treatment unrelated to original context or disproportionate to gravity. Recital (31) confirms the prohibition extends to both public and private actors and explains the discriminatory-outcome rationale."
+    },
+    {
+      "id": "easy_prohibited_002",
+      "difficulty": "easy",
+      "task_type": "risk_classification",
+      "stratum": "prohibited",
+      "question": "A tech company operates a commercial service that continuously crawls public CCTV feeds and social-media platforms to harvest facial images and add them to a proprietary facial-recognition database it licenses to retailers. Which provision of the EU AI Act prohibits this practice?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "Automated facial-image harvesting and database construction service",
+        "intended_use": "Building and licensing a commercial facial-recognition database",
+        "input_data": "Facial images scraped from internet sources and CCTV footage",
+        "domain": "Commercial technology / retail security"
+      },
+      "gold_answer": "Art. 5(1)(e) of the EU AI Act prohibits this practice. It bans the placing on the market, putting into service, or use of AI systems that create or expand facial-recognition databases through untargeted scraping of facial images from the internet or CCTV footage. The prohibition applies regardless of whether the system is used for commercial or law-enforcement purposes.",
+      "risk_level": "prohibited",
+      "gold_citations": [
+        {
+          "citation": "Art. 5(1)(e)",
+          "provision_id": "art_5__para_1__point_e",
+          "role": "primary"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Art. 5(1)(e) is the precise provision: untargeted scraping of facial images from internet or CCTV to create or expand databases. No definition from Art. 3 is required — the text is self-contained. No recital is needed for the easy item; the provision is unambiguous. The commercial nature of the service is irrelevant to the prohibition."
+    },
+    {
+      "id": "easy_prohibited_003",
+      "difficulty": "easy",
+      "task_type": "article_retrieval",
+      "stratum": "prohibited",
+      "question": "Which article and paragraph point of the EU AI Act prohibits AI systems that use biometric data to infer or deduce a person's religious beliefs, political opinions, or sexual orientation?",
+      "scenario": null,
+      "gold_answer": "Art. 5(1)(g) prohibits AI systems that categorise natural persons based on their biometric data to deduce or infer their race, political opinions, trade-union membership, religious or philosophical beliefs, sex life, or sexual orientation. An exception exists for the lawful labelling or filtering of biometric datasets acquired in line with Union or national law (e.g. sorting by hair colour) that does not involve inferring those sensitive attributes.",
+      "risk_level": "prohibited",
+      "gold_citations": [
+        {
+          "citation": "Art. 5(1)(g)",
+          "provision_id": "art_5__para_1__point_g",
+          "role": "primary"
+        },
+        {
+          "citation": "Recital (30)",
+          "provision_id": "recital_30",
+          "role": "interpretive"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Art. 5(1)(g) is the direct provision. Recital (30) confirms the prohibition and clarifies the lawful-labelling carve-out (sorting by observable features like hair/eye colour for law-enforcement datasets). Definition of 'biometric categorisation system' at Art. 3(40) provides background but is not required for the answer to be complete — the question is an article-retrieval item."
+    },
+    {
+      "id": "easy_prohibited_004",
+      "difficulty": "easy",
+      "task_type": "risk_classification",
+      "stratum": "prohibited",
+      "question": "An online gambling platform integrates an AI system that analyses micro-expressions and speech patterns to detect gamblers showing signs of emotional distress, then uses this real-time emotional profiling to present personalised high-stake game offers specifically when distress is detected, in order to prolong play sessions. Is this system prohibited under the EU AI Act, and if so, under which provision?",
+      "scenario": {
+        "role": "deployer",
+        "system_type": "Real-time emotion-detection and behavioural nudging system targeting distressed gamblers",
+        "intended_use": "Maximising gambling revenue by targeting emotionally vulnerable users with high-stake offers",
+        "input_data": "Micro-expressions, speech patterns (biometric behavioural data)",
+        "domain": "Online gambling"
+      },
+      "gold_answer": "Yes, this system is prohibited under Art. 5(1)(b). It exploits the specific vulnerability of persons in a precarious emotional and socio-economic situation to materially distort their behaviour — deliberately targeting users showing distress to induce further gambling causes significant financial and psychological harm. Recital (29) confirms that vulnerability exploitation need not require intent to harm; it is sufficient that significant harm is reasonably likely to result.",
+      "risk_level": "prohibited",
+      "gold_citations": [
+        {
+          "citation": "Art. 5(1)(b)",
+          "provision_id": "art_5__para_1__point_b",
+          "role": "primary"
+        },
+        {
+          "citation": "Recital (29)",
+          "provision_id": "recital_29",
+          "role": "interpretive"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Art. 5(1)(b) covers exploitation of vulnerabilities of specific groups/individuals based on socio-economic situation (problem gamblers in financial/psychological distress qualify) causing significant harm. Art. 5(1)(a) is a close second but (a) targets subliminal/unconscious manipulation, whereas (b) is the more precise fit when the harm vector is exploiting a known emotional/situational vulnerability to distort behaviour. Recital (29) makes explicit that 'persons living in extreme poverty, ethnic or religious minorities' are examples, and that socio-economic vulnerability includes financial stress — the gambling distress scenario falls squarely here."
+    },
+    {
+      "id": "easy_prohibited_005",
+      "difficulty": "easy",
+      "task_type": "risk_classification",
+      "stratum": "prohibited",
+      "question": "A national police force wants to deploy an AI system that, without any prior human suspicion or evidence of a specific crime, automatically profiles every individual entering a city by cross-referencing their social-media posts, historical spending data, and demographic features to assign a probability score indicating the likelihood that they will commit a violent offence in the next 30 days. Is this lawful under the EU AI Act?",
+      "scenario": {
+        "role": "deployer",
+        "system_type": "Mass predictive criminal-offending risk-scoring system",
+        "intended_use": "Pre-emptive identification of individuals likely to commit violent crimes",
+        "input_data": "Social-media posts, spending history, demographic data",
+        "domain": "Law enforcement"
+      },
+      "gold_answer": "No. Art. 5(1)(d) prohibits AI systems that make risk assessments of natural persons in order to predict the likelihood of their committing criminal offences, when those assessments are based solely on profiling or on their personality traits and characteristics rather than on objective, verifiable facts directly linked to criminal activity. This system operates without any factual basis specific to the individual and therefore falls squarely within the prohibition.",
+      "risk_level": "prohibited",
+      "gold_citations": [
+        {
+          "citation": "Art. 5(1)(d)",
+          "provision_id": "art_5__para_1__point_d",
+          "role": "primary"
+        },
+        {
+          "citation": "Recital (42)",
+          "provision_id": "recital_42",
+          "role": "interpretive"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Art. 5(1)(d) is the direct provision. The statutory test has two limbs: (i) risk assessment for criminal-offending prediction; (ii) based solely on profiling or personality/characteristic traits. Both limbs are met: no prior suspicion or verifiable individual facts are involved. Recital (42) expressly confirms this prohibition and clarifies that the carve-out for 'human assessment based on objective, verifiable facts' does not apply here because there is no prior human assessment and no specific facts directly linked to criminal activity."
+    },
+    {
+      "id": "easy_prohibited_006",
+      "difficulty": "easy",
+      "task_type": "risk_classification",
+      "stratum": "prohibited",
+      "question": "A logistics company rolls out an AI tool on its warehouse floor that continuously monitors workers' facial expressions and vocal tone via smart cameras and microphones to generate a real-time 'emotional state' score per employee, which line managers can view on a dashboard. The system is not used for medical or safety purposes. Is this practice prohibited under the EU AI Act?",
+      "scenario": {
+        "role": "deployer",
+        "system_type": "Real-time employee emotion-recognition monitoring system",
+        "intended_use": "Providing line managers with live emotional-state scores of warehouse workers",
+        "input_data": "Facial expressions, vocal tone (biometric data)",
+        "domain": "Workplace / logistics"
+      },
+      "gold_answer": "Yes. Art. 5(1)(f) prohibits the placing on the market, putting into service, or use of AI systems intended to infer the emotions of natural persons in the workplace, except when used for medical or safety reasons. This system infers workers' emotions in a workplace context for managerial oversight, which falls directly within the prohibition. The medical/safety carve-out does not apply.",
+      "risk_level": "prohibited",
+      "gold_citations": [
+        {
+          "citation": "Art. 5(1)(f)",
+          "provision_id": "art_5__para_1__point_f",
+          "role": "primary"
+        },
+        {
+          "citation": "Recital (44)",
+          "provision_id": "recital_44",
+          "role": "interpretive"
+        },
+        {
+          "citation": "Art. 3(39)",
+          "provision_id": "art_3__para_39",
+          "role": "definition"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Art. 5(1)(f) is the direct prohibition. Art. 3(39) defines 'emotion recognition system' as an AI system that identifies or infers emotions or intentions of natural persons on the basis of their biometric data — confirmed applicable. Recital (44) explains the power-imbalance rationale and confirms that only the medical/safety carve-out escapes the ban. The deployer-role actor is a private employer, which is explicitly within scope."
+    },
+    {
+      "id": "easy_prohibited_007",
+      "difficulty": "easy",
+      "task_type": "obligation_generation",
+      "stratum": "prohibited",
+      "question": "A provider is developing an AI system designed to subliminally influence voters during an election campaign by embedding imperceptible audio signals into political advertisements that induce anxiety and distrust towards opposing candidates without voters being consciously aware. What obligations or prohibitions apply under the EU AI Act?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "Subliminal audio-signal political manipulation system",
+        "intended_use": "Inducing unconscious emotional responses to influence voting behaviour",
+        "input_data": "Political advertisement audio streams delivered to voters",
+        "domain": "Political campaigning"
+      },
+      "gold_answer": "The system is absolutely prohibited under Art. 5(1)(a). Providers may not place on the market, put into service, or use AI systems that deploy subliminal techniques operating below the threshold of consciousness with the objective or effect of materially distorting a person's behaviour in a manner that causes or is likely to cause significant harm. The provider must not develop, market, or deploy this system. No derogation or authorisation mechanism exists for this prohibition.",
+      "risk_level": "prohibited",
+      "gold_citations": [
+        {
+          "citation": "Art. 5(1)(a)",
+          "provision_id": "art_5__para_1__point_a",
+          "role": "primary"
+        },
+        {
+          "citation": "Recital (29)",
+          "provision_id": "recital_29",
+          "role": "interpretive"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Art. 5(1)(a) covers AI systems that deploy 'subliminal techniques beyond the threshold of a person's consciousness' to materially distort behaviour causing significant harm. Subliminal audio signals in political ads are a textbook example. Recital (29) specifically mentions 'audio, image, video stimuli that persons cannot perceive' as covered by the prohibition. Significant harm (manipulation of electoral choice, psychological distress) is reasonably likely. No carve-out applies — the medical-treatment carve-out in Recital (29) is inapplicable here."
+    },
+    {
+      "id": "easy_transp_001",
+      "difficulty": "easy",
+      "task_type": "obligation_generation",
+      "stratum": "transparency",
+      "question": "A company deploys an AI-powered customer-service chatbot on its website. The chatbot interacts in real time with members of the public. What transparency obligation applies, and who bears it?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "Conversational AI chatbot",
+        "intended_use": "Customer-service interactions with members of the public",
+        "input_data": "Free-text natural-language input from website visitors",
+        "domain": "Retail / e-commerce"
+      },
+      "gold_answer": "The provider must design the system so that natural persons are informed they are interacting with an AI system, unless this is obvious from the context (Art. 50(1)). The obligation falls on the provider at the design/development stage.",
+      "risk_level": "limited",
+      "gold_citations": [
+        {
+          "citation": "Art. 50(1)",
+          "provision_id": "art_50__para_1",
+          "role": "primary"
+        },
+        {
+          "citation": "Recital (132)",
+          "provision_id": "recital_132",
+          "role": "interpretive"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Direct single-hop lookup of the provider-side AI-interaction disclosure obligation. Art. 50(1) is the sole operative provision; Recital 132 provides the interpretive rationale about impersonation/deception risk. No high-risk classification; no conformity assessment required."
+    },
+    {
+      "id": "easy_transp_002",
+      "difficulty": "easy",
+      "task_type": "article_retrieval",
+      "stratum": "transparency",
+      "question": "Which provision of the EU AI Act requires deployers to disclose to audiences that a video has been artificially generated or manipulated and constitutes a deep fake?",
+      "scenario": {
+        "role": "deployer",
+        "system_type": "AI video-synthesis / deepfake generation system",
+        "intended_use": "Generating synthetic video content depicting real persons for online publication",
+        "input_data": "Images and video footage of real persons",
+        "domain": "Digital media / content creation"
+      },
+      "gold_answer": "Article 50(4), first sub-paragraph. Deployers of an AI system that generates or manipulates image, audio, or video content constituting a deep fake must disclose that the content has been artificially generated or manipulated.",
+      "risk_level": "limited",
+      "gold_citations": [
+        {
+          "citation": "Art. 50(4)",
+          "provision_id": "art_50__para_4",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 3(60)",
+          "provision_id": "art_3__para_60",
+          "role": "definition"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Canonical deepfake-disclosure lookup. Art. 3(60) provides the definition of 'deep fake' that triggers Art. 50(4). Both citations are necessary: 50(4) is the obligation; 3(60) establishes what qualifies as a deep fake. Obligation falls on the deployer, not the provider."
+    },
+    {
+      "id": "easy_transp_003",
+      "difficulty": "easy",
+      "task_type": "obligation_generation",
+      "stratum": "transparency",
+      "question": "A social media platform uses an AI system to categorise users by inferred emotional state during content moderation. What obligation applies to the platform as deployer, and under which provision?",
+      "scenario": {
+        "role": "deployer",
+        "system_type": "Emotion recognition system",
+        "intended_use": "Inferring emotional states of users for content moderation decisions",
+        "input_data": "User facial images and biometric signals",
+        "domain": "Social media / content moderation"
+      },
+      "gold_answer": "Under Art. 50(3), the deployer must inform the natural persons exposed to the emotion-recognition system of its operation, and must process personal data in accordance with applicable data-protection law (GDPR / LED / Regulation 2018/1725).",
+      "risk_level": "limited",
+      "gold_citations": [
+        {
+          "citation": "Art. 50(3)",
+          "provision_id": "art_50__para_3",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 3(39)",
+          "provision_id": "art_3__para_39",
+          "role": "definition"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Direct lookup of the deployer-side emotion-recognition disclosure obligation. Art. 3(39) defines 'emotion recognition system' and establishes that the system falls within Art. 50(3)'s scope. The obligation is on the deployer (the platform), not the provider."
+    },
+    {
+      "id": "easy_transp_004",
+      "difficulty": "easy",
+      "task_type": "obligation_generation",
+      "stratum": "transparency",
+      "question": "A provider builds a general-purpose AI model that can generate synthetic text, images, and audio on demand. What machine-readable marking obligation applies to the provider under the EU AI Act?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "General-purpose AI system generating synthetic audio, image, and text",
+        "intended_use": "Multi-modal content generation for downstream integrators",
+        "input_data": "Text prompts, reference images, audio samples",
+        "domain": "Foundation model / GPAI"
+      },
+      "gold_answer": "Under Art. 50(2), the provider must ensure that outputs of the AI system are marked in a machine-readable format and detectable as artificially generated or manipulated. Technical solutions must be effective, interoperable, robust, and reliable as far as technically feasible.",
+      "risk_level": "limited",
+      "gold_citations": [
+        {
+          "citation": "Art. 50(2)",
+          "provision_id": "art_50__para_2",
+          "role": "primary"
+        },
+        {
+          "citation": "Recital (133)",
+          "provision_id": "recital_133",
+          "role": "interpretive"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Art. 50(2) explicitly includes 'general-purpose AI systems'. Recital 133 explains the policy rationale (integrity of the information ecosystem) and confirms that marking can be implemented at the model level. The obligation sits entirely with the provider."
+    },
+    {
+      "id": "easy_transp_005",
+      "difficulty": "easy",
+      "task_type": "qa",
+      "stratum": "transparency",
+      "question": "What is the EU AI Act's definition of 'deep fake', and in which provision is it found?",
+      "scenario": {
+        "role": null,
+        "system_type": "N/A — definitional question",
+        "intended_use": "N/A",
+        "input_data": "N/A",
+        "domain": "Legal / definitional"
+      },
+      "gold_answer": "'Deep fake' means AI-generated or manipulated image, audio, or video content that resembles existing persons, objects, places, entities, or events and would falsely appear to a person to be authentic or truthful. The definition is in Art. 3(60).",
+      "risk_level": "not_applicable",
+      "gold_citations": [
+        {
+          "citation": "Art. 3(60)",
+          "provision_id": "art_3__para_60",
+          "role": "primary"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Definitional lookup with single citation. Art. 3(60) is the sole authoritative source. Tests whether the retrieval system can surface the correct definition paragraph rather than the disclosure obligation paragraph."
+    },
+    {
+      "id": "easy_transp_006",
+      "difficulty": "easy",
+      "task_type": "obligation_generation",
+      "stratum": "transparency",
+      "question": "A news agency deploys an AI system that drafts factual news articles intended for publication on its website, informing the public on matters of public interest. What transparency obligation applies to the deployer?",
+      "scenario": {
+        "role": "deployer",
+        "system_type": "AI text-generation system for news content",
+        "intended_use": "Generating factual news articles published to inform the public on matters of public interest",
+        "input_data": "Factual data feeds, press releases, event summaries",
+        "domain": "Journalism / news media"
+      },
+      "gold_answer": "Under Art. 50(4), second sub-paragraph, the deployer must disclose that the text has been artificially generated or manipulated. The obligation does not apply where the AI-generated content has undergone a process of human review or editorial control and a natural or legal person holds editorial responsibility for the publication.",
+      "risk_level": "limited",
+      "gold_citations": [
+        {
+          "citation": "Art. 50(4)",
+          "provision_id": "art_50__para_4",
+          "role": "primary"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Tests the second sub-paragraph of Art. 50(4) (AI-generated text for public-interest information), which is a distinct obligation from the deep-fake video provision in the first sub-paragraph. The editorial-control carve-out is part of the same paragraph and must be mentioned in the answer."
+    },
+    {
+      "id": "easy_transp_007",
+      "difficulty": "easy",
+      "task_type": "risk_classification",
+      "stratum": "transparency",
+      "question": "A company deploys a biometric-categorisation AI system that assigns customers to demographic segments (age group, inferred gender) based on facial images captured in its retail stores. What risk classification applies, and what transparency obligation does the deployer have?",
+      "scenario": {
+        "role": "deployer",
+        "system_type": "Biometric categorisation system",
+        "intended_use": "Assigning shoppers to demographic segments for in-store personalisation",
+        "input_data": "Facial images captured by in-store cameras",
+        "domain": "Retail / marketing"
+      },
+      "gold_answer": "The system is subject to Art. 50(3) transparency obligations (limited/transparency risk tier). The deployer must inform natural persons exposed to the biometric-categorisation system of its operation. The system may also qualify as high-risk under Annex III (biometrics), but Art. 50(3) applies regardless of high-risk status.",
+      "risk_level": "limited",
+      "gold_citations": [
+        {
+          "citation": "Art. 50(3)",
+          "provision_id": "art_50__para_3",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 3(40)",
+          "provision_id": "art_3__para_40",
+          "role": "definition"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Tests Art. 50(3) with biometric categorisation. Art. 3(40) defines 'biometric categorisation system'. The question also probes risk-level understanding: the system may simultaneously attract high-risk obligations, but the question asks what the deployer's transparency obligation is — Art. 50(3) is the direct answer."
+    }
+  ]
+}

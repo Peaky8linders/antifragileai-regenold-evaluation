@@ -114,12 +114,13 @@ def _extract_subpoints(tail: str) -> tuple[str, ...]:
 
 
 def parse(ref: str) -> RefSpec:
-    """Parse a reference (any of the three forms) into a :class:`RefSpec`.
+    """Parse a reference (any of the three forms or Akoma Ntoso eId) into a :class:`RefSpec`.
 
     Accepts:
         * ``Art. 13`` / ``Article 13`` (bare base)
         * ``Art. 13(2)(a)`` / ``Article 13.2.a`` (with sub-points)
         * ``Annex IV`` / ``Annex IV(1)`` / ``Annex IV.1`` (annex variants)
+        * ``art_6__para_2__point_a`` / ``annex_III__point_4`` (Akoma Ntoso eId)
         * Mixed-case Roman (``annex iv`` → uppercased)
 
     Rejects (raises :class:`InvalidRefError`):
@@ -132,6 +133,15 @@ def parse(ref: str) -> RefSpec:
     raw = ref.strip()
     if not raw:
         raise InvalidRefError("empty ref")
+
+    # Support Akoma Ntoso eId format (art_6__para_2__point_a)
+    if raw.startswith(("art_", "annex_", "recital_", "chapter_", "section_")) or "__" in raw:
+        try:
+            from app.data.ids import ProvisionId
+            pid = ProvisionId.from_eid(raw)
+            return parse(pid.citation)
+        except Exception:
+            pass
 
     m = _ARTICLE_FULL_RE.match(raw)
     if m:

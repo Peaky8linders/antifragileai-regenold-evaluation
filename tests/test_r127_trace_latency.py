@@ -177,7 +177,10 @@ class TestR127SufficientContextGate:
 
 class TestR127ThinkingMessage:
     def test_old_misleading_string_removed_from_source(self):
-        gr = Path("app/engines/graph_rag.py").read_text(encoding="utf-8")
+        # R290 — the engine source moved to _graph_rag_impl.py when
+        # app/engines/graph_rag became a package; the old path is now a
+        # directory, so this guard raised FileNotFoundError.
+        gr = Path("app/engines/_graph_rag_impl.py").read_text(encoding="utf-8")
         assert "extended thinking is disabled by configuration" not in gr
         assert "Single-pass synthesis (no extended thinking on this call)." in gr
 
@@ -329,11 +332,21 @@ class TestR127GuidingPrinciplesKeywords:
             GraphContext(),
         )
         low = ans.lower()
-        assert "fundamental rights" in low
-        assert "democracy" in low
-        assert "rule of law" in low
-        # the seven-principles enumeration is preserved
-        assert "human agency" in low
+        # R285 — this test previously asserted "fundamental rights" / "democracy"
+        # / "rule of law". Those are Article 1(1) PURPOSE words, and the answer
+        # was deliberately re-anchored (R253) onto the actual guiding principles,
+        # which live in Recital 27. The assertions below pin that Recital-27
+        # enumeration, so this is still a content-regression guard — it just
+        # guards the right content.
+        assert "recital 27" in low
+        assert "human agency and oversight" in low
+        assert "technical robustness and safety" in low
+        assert "privacy and data governance" in low
+        assert "transparency" in low
+        assert "non-discrimination" in low
+        assert "accountability" in low
+        # Article 4 (AI literacy) is what operationalises them.
+        assert "article 4" in low
 
 
 # ── #5 — fusion-path Stage-2 observability ─────────────────────────────────

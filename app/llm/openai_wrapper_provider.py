@@ -158,7 +158,7 @@ _resolve_wrapper_model = resolve_wrapper_model
 class OpenAIWrapperRequest(BaseModel):
     system: str = ""
     user: str = Field(min_length=1)
-    model: str = "claude-sonnet-4-6"
+    model: str = "claude-opus-4-8"
     max_tokens: int = 1024
     temperature: float = 0.0
     timeout_seconds: float | None = None
@@ -236,6 +236,82 @@ _MAX_RETRY_AFTER_SECONDS = float(os.getenv("OPENAI_MAX_RETRY_AFTER", "8"))
 # for TCP+TLS to a healthy endpoint; the read/write/pool classes keep the
 # caller's full budget.
 _CONNECT_TIMEOUT_SECONDS = 5.0
+
+
+# R277 — Cloudflare Access service-token support.
+#
+# The Claude Max wrapper is exposed to Railway over a named cloudflared
+# tunnel at ``wrapper.antifragile-ai.net``. A Cloudflare Access (Zero
+# Trust) application now fronts that hostname, so unauthenticated calls
+# — including Railway's — get an HTML "Cloudflare Access" login page with
+# HTTP 401 (``Cf-Access-Aud`` header present). The engine reads that as
+# ``api_status_401`` and falls back to the deterministic path, i.e.
+# production silently serves NO Claude Max at all.
+#
+# Access is worth keeping: the wrapper has no real auth of its own (its
+# ``Authorization: Bearer`` check is a no-op), so anyone who discovers the
+# hostname could burn the Max quota. The correct fix is a service token —
+# Access stays up, and the backend is allowed through by presenting the
+# ``CF-Access-Client-Id`` / ``CF-Access-Client-Secret`` header pair.
+#
+# SCOPING IS SECURITY-CRITICAL. This provider class is reused verbatim for
+# Groq / Gemini / Mistral (see the singletons below), which point at
+# third-party hosts. Attaching the token unconditionally would transmit a
+# Cloudflare service-token SECRET to api.groq.com, api.mistral.ai and
+# generativelanguage.googleapis.com. So the headers are attached only when
+# the instance's base_url host matches the Access-protected host.
+_CF_ACCESS_CLIENT_ID_ENV = "CF_ACCESS_CLIENT_ID"
+_CF_ACCESS_CLIENT_SECRET_ENV = "CF_ACCESS_CLIENT_SECRET"
+_CF_ACCESS_HOSTNAME_ENV = "CF_ACCESS_HOSTNAME"
+_DEFAULT_WRAPPER_BASE = "https://wrapper.antifragile-ai.net/v1"
+_LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1", "0.0.0.0"})
+
+
+def _host_of(url: str) -> str:
+    from urllib.parse import urlparse
+
+    try:
+        return (urlparse(url).hostname or "").strip().lower()
+    except Exception:  # noqa: BLE001 — never let a malformed URL break provider init
+        return ""
+
+
+def _resolve_cf_access_headers(base_url: str) -> dict[str, str]:
+    """Cloudflare Access service-token headers for ``base_url``, or ``{}``.
+
+    Returns ``{}`` — i.e. behaviour identical to pre-R277 — unless ALL hold:
+      * both ``CF_ACCESS_CLIENT_ID`` and ``CF_ACCESS_CLIENT_SECRET`` are set;
+      * ``base_url`` is not a local host (a local wrapper has no Cloudflare
+        edge in front of it, so the token would be pointless and would leak
+        into a local process);
+      * ``base_url``'s host equals the Access-protected host — taken from
+        ``CF_ACCESS_HOSTNAME`` when set, else the host of ``OPENAI_API_BASE``
+        (else the default wrapper host). This is what keeps the secret off
+        the Groq / Gemini / Mistral endpoints.
+
+    Fail-soft by construction: any missing/mismatched value yields ``{}``.
+    """
+    client_id = os.getenv(_CF_ACCESS_CLIENT_ID_ENV, "").strip()
+    client_secret = os.getenv(_CF_ACCESS_CLIENT_SECRET_ENV, "").strip()
+    if not client_id or not client_secret:
+        return {}
+
+    host = _host_of(base_url)
+    if not host or host in _LOCAL_HOSTS:
+        return {}
+
+    protected = _host_of(
+        f"https://{os.getenv(_CF_ACCESS_HOSTNAME_ENV, '').strip()}"
+    ) or _host_of(
+        os.getenv("OPENAI_API_BASE", "").strip() or _DEFAULT_WRAPPER_BASE
+    )
+    if not protected or host != protected:
+        return {}
+
+    return {
+        "CF-Access-Client-Id": client_id,
+        "CF-Access-Client-Secret": client_secret,
+    }
 
 
 class _BudgetTimeout(httpx.Timeout):
@@ -329,6 +405,15 @@ class _OpenAIWrapperProvider:
             or "https://wrapper.antifragile-ai.net/v1"
         )
         self._api_key = api_key or os.getenv("OPENAI_API_KEY", "dummy")
+        # R277 — resolved once per instance (env is read at construction, as
+        # for every other setting here). Empty for the local wrapper and for
+        # the Groq / Gemini / Mistral instances; see _resolve_cf_access_headers.
+        self._cf_access_headers = _resolve_cf_access_headers(self._base_url)
+        if self._cf_access_headers:
+            logger.info(
+                "cloudflare_access_service_token_active host=%s",
+                _host_of(self._base_url),
+            )
         # 60 s default — Claude Sonnet 4.6 Stage-2 polish through the
         # claude-code-openai-wrapper takes 10-20 s for non-trivial
         # questions; the deterministic Stage-1 already landed, so the
@@ -382,16 +467,26 @@ class _OpenAIWrapperProvider:
             pass
 
     def _headers(self) -> dict[str, str]:
-        return {
+        headers = {
             "Authorization": f"Bearer {self._api_key}",
             "Content-Type": "application/json",
             "Accept": "application/json",
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         }
+        # R277 — Cloudflare Access service token, when this instance points at
+        # the Access-protected host. ``{}`` everywhere else, so every other
+        # provider path stays byte-identical. ``getattr`` guards instances
+        # built via ``__new__`` (the test suite bypasses ``__init__``); the
+        # default fails CLOSED — no token — which is the safe direction for a
+        # secret.
+        headers.update(getattr(self, "_cf_access_headers", {}) or {})
+        return headers
 
     def complete(self, req: OpenAIWrapperRequest) -> OpenAIWrapperResponse:
+        model_name = _resolve_wrapper_model(req.model)
+
         body = {
-            "model": req.model,
+            "model": model_name,
             "messages": [
                 {"role": "system", "content": req.system} if req.system else None,
                 {"role": "user", "content": req.user},
@@ -414,7 +509,7 @@ class _OpenAIWrapperProvider:
                     effort = "none"
                 elif "gpt-oss" in _model_lc:
                     effort = "low"
-            if effort:
+            if effort and "compound" not in _model_lc:
                 body["reasoning_effort"] = effort
 
         # Per-request timeout override — the intent classifier wants a
@@ -613,6 +708,54 @@ def get_openai_wrapper_provider() -> _OpenAIWrapperProvider:
 _GROQ_DEFAULT_BASE = "https://api.groq.com/openai/v1"
 _GROQ_SINGLETON: _OpenAIWrapperProvider | None = None
 _GROQ_SINGLETON_LOCK = threading.Lock()
+
+# R289 — the single source of truth for "which Groq model do we call".
+#
+# This value has now been changed twice by editing NINE separate literals, and
+# the first of those swaps took production down:
+#
+#   8145be2  qwen/qwen3.6-27b -> groq/compound        (broke every Groq path)
+#   5869eec  groq/compound    -> openai/gpt-oss-120b  (fixed it)
+#
+# The 413 is worth recording because the obvious diagnosis was wrong. A
+# controlled before/after on the SAME /healthz probe — a ~50-char system prompt
+# and a ~55-char user prompt — gave:
+#
+#   62ca878  {"status": "ok",    "model": "qwen/qwen3.6-27b"}
+#   8145be2  {"status": "error", "model": "groq/compound", 413 request_too_large}
+#   348ea6a  still 413
+#   5869eec  {"status": "ok",    "model": "openai/gpt-oss-120b"}
+#
+# A ~100-character request cannot exceed a 131,072-token context window, so the
+# payload was never the constraint. Groq's docs give the mechanism: "Rate limits
+# for groq/compound are determined by the rate limits of the individual models
+# that comprise them." compound is an agentic SYSTEM (router + built-in
+# web-search/code-exec tools + synthesis model), so ONE external call fans out
+# into several internal model calls drawing on the same account budget, and Groq
+# reuses 413 / ``request_too_large`` for budget exhaustion. Two tempting wrong
+# turns follow from misreading it as a size problem: truncation knobs cannot
+# help (the existing 11,000-char truncation would never fire on a 100-char
+# probe), and raising max_tokens makes it worse — 8145be2 also took the fallback
+# completion cap 1024 -> 4096 on the premise that compound "supports larger
+# context", conflating the context window with the completion cap and with the
+# rate budget that actually binds.
+#
+# The default lives here so the next change is one line, not nine, and so it is
+# reachable from _engine_cache_key. openai/gpt-oss-120b is the value verified
+# live on production at 5869eec.
+_GROQ_LIVE_VALIDATED_MODEL = "openai/gpt-oss-120b"
+
+
+def default_groq_model() -> str:
+    """Model id for every Groq call that has no more specific override.
+
+    Read per-call (never at import) so an in-process A/B arm can actually
+    change it — see the R263.2 note on ``_engine_cache_key``.
+    """
+    return (
+        os.getenv("REGENOLD_GROQ_DEFAULT_MODEL", "").strip()
+        or _GROQ_LIVE_VALIDATED_MODEL
+    )
 
 
 def is_groq_provider_enabled() -> bool:

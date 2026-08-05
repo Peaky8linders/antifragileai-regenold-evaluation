@@ -1,0 +1,296 @@
+{
+  "hard_gov_001": [
+    "art_3",
+    "annex_III",
+    "art_49",
+    "art_3__para_41",
+    "art_6__para_3__point_d"
+  ],
+  "hard_gov_002": [
+    "art_6",
+    "art_71",
+    "art_80",
+    "art_49",
+    "art_25"
+  ],
+  "hard_gov_003": [
+    "art_2",
+    "art_2__para_6",
+    "recital_25",
+    "art_25__para_1",
+    "art_25__para_1__point_a"
+  ],
+  "hard_gov_004": [
+    "art_10__para_5",
+    "art_3",
+    "art_10__para_5__point_b",
+    "art_10__para_5__point_e",
+    "recital_13"
+  ],
+  "hard_gov_005": [
+    "art_27",
+    "art_35",
+    "art_26",
+    "art_13",
+    "art_27__para_4"
+  ],
+  "hard_gov_006": [
+    "art_3",
+    "art_5",
+    "art_5__para_7",
+    "art_9",
+    "art_3__para_43"
+  ],
+  "hard_gov_007": [
+    "art_99__para_4",
+    "art_101__para_1",
+    "art_16",
+    "art_101",
+    "art_56"
+  ],
+  "hard_gpai_001": [
+    "art_52",
+    "annex_XII__point_1",
+    "annex_XIII",
+    "annex_XII__point_1__point_h",
+    "art_51"
+  ],
+  "hard_gpai_002": [
+    "annex_XII__point_1",
+    "art_53__para_2",
+    "art_53",
+    "art_53__para_2__point_b",
+    "annex_XII__point_1__point_h"
+  ],
+  "hard_gpai_003": [
+    "art_3",
+    "annex_XII__point_1",
+    "annex_III",
+    "annex_XII__point_1__point_h",
+    "recital_100"
+  ],
+  "hard_gpai_004": [
+    "annex_XII__point_1",
+    "annex_XII__point_1__point_h",
+    "annex_XII",
+    "annex_XI",
+    "art_53"
+  ],
+  "hard_gpai_005": [
+    "art_51",
+    "annex_XIII",
+    "recital_111",
+    "annex_XIII__point_s1",
+    "annex_XII"
+  ],
+  "hard_gpai_006": [
+    "annex_XII",
+    "recital_112",
+    "recital_100",
+    "art_3__para_66",
+    "recital_97"
+  ],
+  "hard_gpai_007": [
+    "art_73",
+    "art_73__para_2",
+    "art_73__para_4",
+    "art_3",
+    "art_73__para_6"
+  ],
+  "hard_hrclass_001": [
+    "art_6__para_1",
+    "art_6__para_1__point_b",
+    "recital_51",
+    "recital_50",
+    "art_3"
+  ],
+  "hard_hrclass_002": [
+    "art_14__para_4",
+    "art_14",
+    "annex_III",
+    "art_14__para_4__point_d",
+    "art_3"
+  ],
+  "hard_hrclass_003": [
+    "art_6__para_3",
+    "art_6__para_3__point_a",
+    "art_6__para_3__point_b",
+    "recital_53",
+    "art_3"
+  ],
+  "hard_hrclass_004": [
+    "art_13",
+    "art_50",
+    "art_13__para_3",
+    "art_14",
+    "art_50__para_4"
+  ],
+  "hard_hrclass_005": [
+    "annex_III__point_8",
+    "annex_III__point_8__point_b",
+    "art_3__para_33",
+    "annex_III",
+    "recital_62"
+  ],
+  "hard_hrclass_006": [
+    "art_3",
+    "art_3__para_33",
+    "art_26",
+    "art_24",
+    "recital_53"
+  ],
+  "hard_hrclass_007": [
+    "art_14__para_4",
+    "art_14__para_4__point_d",
+    "recital_67",
+    "art_17__para_1__point_f",
+    "art_10__para_2"
+  ],
+  "hard_hrreq_001": [
+    "annex_III",
+    "art_49",
+    "art_9",
+    "art_6",
+    "art_49__para_1"
+  ],
+  "hard_hrreq_002": [
+    "art_9",
+    "annex_III",
+    "art_27",
+    "art_27__para_1",
+    "art_13"
+  ],
+  "hard_hrreq_003": [
+    "art_14__para_4",
+    "art_14",
+    "art_26",
+    "art_14__para_4__point_b",
+    "annex_III"
+  ],
+  "hard_hrreq_004": [
+    "art_3",
+    "art_10",
+    "art_3__para_29",
+    "art_10__para_1",
+    "art_13__para_3__point_f__sub_vi"
+  ],
+  "hard_hrreq_005": [
+    "annex_III",
+    "art_27",
+    "art_27__para_1",
+    "art_6__para_2",
+    "art_6"
+  ],
+  "hard_hrreq_006": [
+    "art_10__para_5",
+    "art_10",
+    "art_10__para_5__point_b",
+    "art_10__para_5__point_e",
+    "art_10__para_5__point_d"
+  ],
+  "hard_hrreq_007": [
+    "art_15",
+    "art_15__para_3",
+    "art_13",
+    "art_13__para_3",
+    "art_15__para_2"
+  ],
+  "hard_prohibited_001": [
+    "art_3",
+    "art_5",
+    "art_5__para_3",
+    "art_3__para_43",
+    "art_3__para_42"
+  ],
+  "hard_prohibited_002": [
+    "art_5",
+    "art_3",
+    "art_5__para_3",
+    "art_5__para_2",
+    "art_3__para_43"
+  ],
+  "hard_prohibited_003": [
+    "annex_II",
+    "art_3",
+    "annex_II__point_s1",
+    "art_3__para_46",
+    "art_3__para_38"
+  ],
+  "hard_prohibited_004": [
+    "art_3",
+    "art_7__para_2__point_a",
+    "annex_IV",
+    "art_3__para_39",
+    "art_3__para_18"
+  ],
+  "hard_prohibited_005": [
+    "art_3",
+    "art_5__para_1__point_g",
+    "art_3__para_33",
+    "art_3__para_41",
+    "recital_30"
+  ],
+  "hard_prohibited_006": [
+    "art_3",
+    "art_3__para_39",
+    "recital_18",
+    "art_3__para_35",
+    "art_3__para_41"
+  ],
+  "hard_prohibited_007": [
+    "art_3",
+    "art_5__para_1",
+    "art_5__para_1__point_d",
+    "recital_53",
+    "art_3__para_33"
+  ],
+  "hard_transp_001": [
+    "art_3",
+    "art_3__para_41",
+    "art_9",
+    "art_3__para_39",
+    "art_3__para_40"
+  ],
+  "hard_transp_002": [
+    "art_50",
+    "art_50__para_4",
+    "art_50__para_2",
+    "recital_134",
+    "art_3__para_60"
+  ],
+  "hard_transp_003": [
+    "art_50",
+    "annex_III__point_6",
+    "art_50__para_2",
+    "art_50__para_4",
+    "annex_III__point_6__point_c"
+  ],
+  "hard_transp_004": [
+    "annex_III__point_4",
+    "annex_III__point_4__point_a",
+    "annex_III__point_4__point_b",
+    "art_26",
+    "art_3"
+  ],
+  "hard_transp_005": [
+    "annex_VI",
+    "art_43__para_1__point_a",
+    "art_17",
+    "art_17__para_4",
+    "art_26"
+  ],
+  "hard_transp_006": [
+    "art_99__para_4",
+    "art_99__para_4__point_g",
+    "art_13",
+    "art_13__para_1",
+    "art_99__para_4__point_e"
+  ],
+  "hard_transp_007": [
+    "art_50",
+    "art_50__para_2",
+    "art_50__para_4",
+    "recital_133",
+    "recital_134"
+  ]
+}

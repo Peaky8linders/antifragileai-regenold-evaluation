@@ -69,6 +69,13 @@ def _isolate_r308_env():
             "REGENOLD_ANSWER_NO_CAP",
             "REGENOLD_ANSWER_COVERAGE",
             "REGENOLD_MAX_ANSWER_SENTENCES",
+            # R315 — TestClauseIsActuallyDelivered sets these to fake a
+            # wired Claude Max wrapper. Without restoring them the whole
+            # rest of the session believes Stage-2 is available, which
+            # engages the R308 uncap and breaks every later assertion
+            # about the 3-sentence cap.
+            "OPENAI_API_BASE",
+            "P2P_GRAPH_RAG_PROVIDER",
         )
     }
     for k in saved:
@@ -220,15 +227,20 @@ class TestAnswerCoverageClause:
     def test_is_compact(self):
         """R277 measured a 3.2K vs 51K prompt as quality-neutral, so compact is
         fine; but an unbounded clause would crowd the delivered channel."""
-        assert 900 <= len(USER_ANSWER_COVERAGE_CLAUSE) <= 1800
+        # R315 — upper bound raised 1800 -> 2200 on the merge onto main: R310
+        # extended this clause with the anti-meta-commentary rule (do not
+        # discuss the reference block itself), taking it to ~1955 chars.
+        # Still bounded, and still an order of magnitude under the 3.2K/51K
+        # prompts R277 measured as quality-neutral.
+        assert 900 <= len(USER_ANSWER_COVERAGE_CLAUSE) <= 2200
 
 
 class TestClauseIsActuallyDelivered:
     """R256 — a change that never reaches the wire is worse than no change."""
 
     def _capture_user_message(self) -> str:
-        import app.engines.graph_rag as impl
-        from app.engines.graph_rag import GraphContext
+        import app.engines._graph_rag_impl as impl
+        from app.engines._graph_rag_impl import GraphContext
 
         captured: dict = {}
 

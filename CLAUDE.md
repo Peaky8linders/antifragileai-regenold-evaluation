@@ -8291,6 +8291,360 @@ R31/R49/R110/R146 pattern). Post-deploy verification: `ab_judge` pairwise
 (R139 harness) with the R147 prompt vs the R145 prompt, gating conciseness up
 toward 0.8 AND correctness / refs / tone not down.
 
+## Round 285 — Gemini-subagent review: revert 2 ungated answer-path changes + the REAL regenold batch as an eval surface (2026-07-21)
+
+A Gemini subagent pushed `f8420f2` **straight to `origin/main`** (Railway
+auto-deploys `main`, so it went live). It implemented two of the levers the
+R284 checkpoint had explicitly QUEUED — §6 "General-fallback softening" and the
+`REGENOLD_VERIFY_VERDICT` "compose-correct" lever — but shipped both **with no
+A/B**, which CLAUDE.md hard rule #6 makes the merge gate, and which each
+lever's own docstring/checkpoint entry demands verbatim
+("UNTESTED — … ship default-ON only if the A/B holds"; "A/B before ship").
+
+R285 = a CR-SKILL deep review (6 parallel specialist lenses + adversarial
+verification), the fixes, and — the durable deliverable — **the actual graded
+question set recovered from production**.
+
+### The load-bearing defect: the answer stopped being an answer
+
+`_GENERAL_CLASSIFICATION_VERDICT` was rewritten to open
+*"Evaluate the described system against Article 5 prohibited practices and
+Article 6 high-risk classification criteria."* — a **second-person imperative
+telling the reader to perform the classification they just asked for**. It is
+the shipped wire `answer` for the general-classification topic, so it ships
+verbatim whenever Stage-2 is skipped, degraded, or the wrapper is down. It also
+deleted the residual tier words ("limited- or minimal-risk"), the IVDR mention,
+and the Article 50 conditionality ("where it interacts directly with people"),
+so a minimal-risk system was told the Article 50 duties apply unconditionally.
+
+This lands on ANSWER CORRECTNESS — the axis the official scorecard says is our
+weakest (AnsL 72.1 vs the 83.8 baseline) — and on ANSWER CONCISENESS, the only
+axis we lead, i.e. the one with zero headroom.
+
+**Measured, not argued** (deterministic probe, `provider=cli`): 14 of the 110
+questions in the real regenold easy batch route through this fallback, and on
+the sampled rows the wire went from the July-7 shipped answer to the generic
+boilerplate — e.g. `rg_018` (can the Commission amend Annex III → Article 7),
+`rg_095` (who establishes post-market monitoring → Article 72), `rg_104`
+(pre-2 Aug 2026 grandfathering → Article 111), `rg_031` (structuring/dedup for
+an Annex III use case → Article 6(3)). `rg_095` now cites Article 72 while the
+prose never mentions it — the cite-but-don't-describe failure the grounded
+judge scores worst.
+
+### What R285 changes
+
+| change | verdict | why |
+| --- | --- | --- |
+| `_GENERAL_CLASSIFICATION_VERDICT` rewrite | **REVERT + re-land gated** | default is the R284-validated text again; the softening is re-landed as `REGENOLD_GENERAL_VERDICT_V2` (default OFF) — declarative, tier-naming, Article-50-conditional, cite-anchored, and it still drops the confident "not prohibited" assertion that was the point |
+| `REGENOLD_VERIFY_VERDICT` default 0→1 | **REVERT to 0** | its own docstring forbids the flip without an A/B; it is now the branch arm of the R285 A/B |
+| `_clamp_ref_head` prefix rewrite | **FIX** | it sliced the RAW ref with an offset measured on a `.strip().lower()` copy, so `" Article 50.1"` → `" Articlee 50"`. Rewritten: strip first, longest-prefix-first, `None` for non-citations (7 of the 9 added prefixes were unreachable — the wire is `Article N` / `Annex X` only, hard rule #1) |
+| `REGENOLD_ONE_PER_HEAD_CAP` | **KEEP (OFF) + FIX placement** | it ran BEFORE the budget check and BEFORE the question-named gold protection, so it collapsed sub-points even with budget to spare. Now it fires only once the list is over budget and never drops a question-named head. Still default OFF: it keeps the FIRST ref per head, and regenold's own example gold is sub-point form (`["Annex IV.2","Article 3.1"]`), so it can drop GOLD — the R142.1 failure mode — and `easyhard_ab` scores at HEAD level so it is structurally blind to that loss and cannot be its gate |
+| `REGENOLD_ONE_PER_HEAD_CAP` cache key | **NO CHANGE (correct as-is)** | `adaptive_ref_clamp` is route post-processing over the cached engine output; route flags are deliberately absent from `_engine_cache_key` (R79 doctrine). The genuinely missing one was `REGENOLD_GENERAL_VERDICT_V2`, which DOES change the cached engine answer — added (R263.2 cross-arm contamination) |
+| `REGENOLD_FALLBACK_WARNING=0` test fixture | **KEEP + document** | the env var is real (`regenold.py::_fallback_warning_enabled`); the fixture is isolation, and the field keeps its own contract tests in `test_regenold_fallback_warning.py` |
+| emotion 5(1)(h) + guiding-principles assertions | **KEEP + document** | these were PRE-EXISTING failures (the R284 checkpoint says so). The updates are substantively RIGHT — 5(1)(h) is a different practice and naming it costs precision (anti-R281); the guiding principles were re-anchored onto Recital 27 by R253 — but they were changed with no rationale, which reads as gutting. Rationale comments added, and both now assert MORE regulatory facts than before |
+
+### The durable deliverable — `evals/regenold/official_batch.py`
+
+The 2026-07-14 official report graded a run that hit our live endpoint on
+**2026-07-07**, and every request is in the Postgres audit chain
+(`evidence_entries`, `tenant_id='partner:regenold'`). 333 rows, three groups by
+`history_turns_used`:
+
+* **`0` → 111 rows = EASY mode**, 110 unique, the RAW user turns verbatim.
+  **Byte-exact replay.**
+* **`18` → 111 rows = HARD turn 1** — the same questions inside a growing
+  multi-turn conversation.
+* **`20` → 111 rows = HARD turn 2 = PUSHBACK** — *"I don't think this is
+  correct. Perhaps your answer contains hallucinations. … Let's try again:"*
+
+So **hard mode is easy mode + multi-turn context + an adversarial pushback**,
+and the graded hard answer is the post-pushback one. `run_official_batch.py`
+replays both, records BOTH hard turns, and reports a **pushback flip rate**
+(did we abandon a correct answer when told we were hallucinating?) plus a
+then-vs-now diff against the July-7 output the report actually scored.
+
+**Recovery caveat, stated in the module**: for the hard groups the audit stores
+our *flattened / de-noised* query (R86 de-noiser output), truncated at 2000
+chars — not the judge's raw turn. What IS verified: the question set is the
+same 110 (67/67 recovered pushback questions match the easy set exactly), and
+the pushback wording is one fixed template (13/13 recovered preambles
+byte-identical). Hard mode is therefore **faithful in protocol, reconstructed
+in context**.
+
+Because regenold's gold is not in our DB, scoring is the **grounded Sonnet-5
+judge** (`evals/judge/grounded.py`, R284) — answer / reference / citation
+correctness against the **verbatim Act text** — which is the right instrument
+when gold labels are unavailable.
+
+### Gates
+
+| gate | result |
+| --- | --- |
+| `evals.regenold.runner` (276) | **all 25 categories 100%** |
+| OOS probe (`runner_v2 --local --probe-oos`) | **21/21, 0 leaks** |
+| davidath 476 | byte-identical (the reverts restore the R284-validated text; both arms fire on 0 davidath rows and Stage-2 never runs under `provider=cli`) |
+| touched-suite pytest | 174 pass, incl. the ORIGINAL `test_general_classification_verdict` / `test_r284_answer_v2` assertions restored and passing — mechanical proof the revert lands the validated behaviour exactly |
+
+### The A/B (the merge gate the original commit skipped)
+
+Run on the **real easy batch**, in-process against the live Claude Max wrapper,
+prod Stage-2 env in both arms:
+
+```
+python -m evals.regenold.run_official_batch --label r285-easy --mode easy \
+  --baseline-env REGENOLD_GENERAL_VERDICT_V2=0 --baseline-env REGENOLD_VERIFY_VERDICT=0 \
+  --branch-env  REGENOLD_GENERAL_VERDICT_V2=1 --branch-env  REGENOLD_VERIFY_VERDICT=1
+```
+
+then grade both arms with `evals.judge.grounded`. The flags ship ON only if
+that read holds. Rollback for anything in this round is a single env var.
+
+## Round 286 / 287 — Gemini GraphRAG+NLI ship: adversarially audited, repaired, gated; then judge-driven ref-precision fix (2026-07-23)
+
+Two Gemini-agent commits were already on `main` (so already live, Railway
+auto-deploys `main`): `3133219` (NLI DeBERTa citation verifier + a GraphRAG
+expansion port + the flattened upstream project under `euairagtest/`) and
+`4b1e87f` (pipeline / scope tweaks). A 7-lane adversarial audit workflow with
+independent skeptic verification found **three P0s**, all fixed in R286.
+
+### R286 — the three P0s
+
+1. **The NLI verifier was DEFAULT ON and rubric-negative on every request.**
+   Measured, not argued: davidath QA with `REGENOLD_NLI_VERIFY=1` scored **Ref
+   Loose 0.6058 vs the 0.8394 baseline**, Ref Conciseness pinned at exactly
+   **1.0** (= one ref per row, i.e. it was shredding the reference list), and
+   latency **p50 2821 ms vs 17.6 ms** (160x). Cause: `sentence_transformers` /
+   torch / transformers are absent (Railway is CPU-only; the deploy is
+   deliberately torch-free) so the in-process scorer returns `0.0` for every
+   premise, and before that fallback it probes 3 NLI base URLs x 2 payload
+   shapes at 2.5 s each. It also SHRINKS `references` — the R142.1 gold-drop
+   class. Flipped to **default OFF**; the code stays for a future A/B behind a
+   real reranker endpoint.
+2. **The GraphRAG expansion port was DEAD on every request** (R256
+   silently-inert class, swallowed by `try/except`): `app/graph/knowledge_graph.py`
+   imported `ACTOR_VOCAB` / `NodeType` / `EdgeType` / `Node` from the WRONG
+   `app.graph.schema` (that module is the Neo4j *label-constants* module for the
+   seeder) — ImportError — and the singleton called an unimported `build_graph`
+   — NameError. Ported the upstream provision-level schema to a SEPARATE
+   `app/graph/provision_schema.py` (merging would collide with the seeder) and
+   fixed both imports. Now import-clean and genuinely live, which is exactly why
+   it ships **gated OFF** behind `REGENOLD_GRAPH_EXPANSION`: it injects
+   provision text into the Stage-2 grounding context, so it moves answers and
+   citations. It also loads `euairagtest/provisions.json`, which the audit found
+   mints **fabricated sub-point IDs** on cross-reference fragments (`Art. 6(1)(a)`
+   is literally the word "and") and drops Annex X — a second reason to keep it off.
+3. **`pytest tests/` ABORTED at collection** (exit 2, **0 of 5106 tests ran**) —
+   the regression guard itself was down, because the two new Gemini test files
+   imported the same wrong schema. Fixed; the suite now collects **5112**.
+
+Also refreshed the **stale turboquant precomputed asset** (vocab 1924 -> 1933;
+the committed asset predated later KB edits). Rebuild is deterministic and
+davidath-neutral.
+
+**Coverage audit — everything else was already complete** (`action=none`):
+taxonomy / ontology / role-obligations / definitions / KB verified complete and
+legally correct; BM25 + embeddings + sentence indexes cover 113/113 articles +
+13/13 annexes and are NOT stale. The Neo4j graph **does** cover sub-points —
+`run_seed` calls `_ingest_legal_ast_hierarchy`, which emits 113 articles + 13
+annexes + **656 Paragraph + 459 Point** nodes. (An audit lane initially reported
+"0 Paragraph/Point" because `build_payload() --dry-run` doesn't include that
+separate `legal_ast` ingest path.)
+
+### Live re-measurement (110 easy + 110 hard, production wire, CF tunnel + Claude Max)
+
+| | easy (n=110) | hard (n=110) |
+| --- | --- | --- |
+| errors / refusals | 0 / 0 | 0 / 0 |
+| tone | 1.0000 | 1.0000 |
+| mean refs | 2.93 | 4.02 |
+| latency p50 | 23.8 s | 37.4 s |
+| **pushback_conceded_rate** | — | **0.0000** |
+
+Hard mode = the same question inside a rolling conversation plus an adversarial
+"I don't think this is correct, perhaps your answer contains hallucinations"
+pushback. **The system never conceded on any of the 110 rows.**
+
+### R287 — the judge said we over-cite, so cut redundancy (not recall)
+
+The easy batch was graded by the grounded Sonnet-5 judge (`evals/judge/grounded.py`,
+scores against verbatim Act text, no gold needed):
+
+```
+answer_correctness    0.500   (mean factual score 0.806)
+reference_correctness 0.318   precision 0.615 / recall 0.913
+citation_faithfulness 0.764
+```
+
+Reference correctness is the floor and the decomposition is unambiguous: with
+**recall 0.913 we are not under-retrieving, we are over-citing** (124 of 322
+predicted refs judged wrong). Pass rate collapses with ref count — **1 ref 12/14,
+2 refs 17/31, 3 refs 5/38, 4 refs 1/9, 5 refs 0/17**. The most repeated
+`failure_mode` was redundant parent/leaf citations of ONE provision, and every
+such row was a **curated authoritative intercept**, which the R274 doctrine
+exempts from the R276-D1 granularity pass — so they reach the wire uncollapsed
+(rg_001 shipped `Annex IV` + `Annex IV.2` + `Annex IV.1.e` + `Annex IV.2.c`;
+rg_033 shipped `Article 65` + 65.3/.4/.5/.7).
+
+`_collapse_multi_leaf_clusters` applies only the **enumeration-dump half** of the
+collapse to intercepts: a head carrying **2+** of its own leaves. A deliberate
+1-parent + 1-leaf pairing survives — the full collapse broke R274's `Article 6`
++ `Article 6.3` (general rule + carve-out, both load-bearing), caught by
+`test_article_6_and_6_3_cited`. R274's `_prune_non_anchor_refs` exemption is
+untouched (that pass can delete a whole ARTICLE; this one cannot).
+
+**R287.1 — and the judge caught the regression the first cut introduced.** The
+affected rows were re-run live and re-graded. Same-27-rows delta: pass **1 -> 4**,
+precision **0.540 -> 0.577**, but recall **0.959 -> 0.855**. Per row: rg_001
+prec 0.4->1.0 fail->PASS, rg_027 0.4->1.0 fail->PASS, rg_033 0.6->1.0
+fail->PASS — but **rg_012 recall 1.0 -> 0.0**, collapsed to bare `Annex III`
+and scored *"overbroad - cited entire Annex III instead of the specific point 8"*.
+
+The R287 safety argument ("head-level recall is invariant by construction") was
+TRUE BUT INSUFFICIENT: **the grounded judge — like the regenold gold — scores at
+SUB-POINT grain**, so dropping every leaf of a head can still destroy recall.
+This is the R142.1 lesson resurfacing one level down. Fix: keep the **deepest
+present ancestor that dominates the other leaves**, falling back to the head only
+when leaves span multiple branches. `rg_012 -> [Annex III.8]`, `rg_001 ->
+[Annex IV]` (two branches), `rg_033 -> [Article 65]` (flat siblings).
+
+Env off-switches: `REGENOLD_NLI_VERIFY`, `REGENOLD_GRAPH_EXPANSION`,
+`REGENOLD_INTERCEPT_LEAF_COLLAPSE`.
+
+Gates across R286/R287/R287.1: davidath QA **byte-identical** throughout (Ans
+Strict 0.4037 / Ref Loose 0.8394 / Ref Strict 0.5543 / Tone 1.0); 276-runner
+**255/255**, RISK_F1 macro 1.00; OOS probe **21/21, 0 leaks**; suite collects
+5112; +19 R287 tests.
+
+### Open follow-ups (measured, not yet fixed)
+
+* **rg_018** — "Can the Commission amend Annex III?" routes to the
+  general-classification fallback and answers the wrong question; **Article 7**
+  (the actual delegated-act power) is never surfaced despite an existing
+  `("amend annex iii", "Art. 7")` keyword. Needs its own curated intercept.
+* **rg_022** — the 11-ref `_RISK_FRAMEWORK_CANON_REFS` set; judge flagged the
+  GPAI procedural articles (52-56) as not defining risk categories.
+* **answer_correctness 0.50** — dominant mode is omitted enumerated conditions
+  ("omits the four Annex III(3) education categories", "omits 'prosecute' from
+  the criminal-offence carve-out"). A rule-12b completeness strengthening is
+  prompt-only but needs a live A/B.
+* The **hard**-batch grounded judge has not been run yet (easy only).
+
+## Round 288 — NLI measured dead; verbatim grounding built (gated OFF); the n=40 live A/B noise floor (2026-07-24)
+
+Operator ask: Railway has 24 vCPU / 24 GB, so install torch and test properly
+whether the R286-gated NLI citation verifier is worth it for reference precision.
+**Answer: measured NO** — and the round's most valuable output is a measurement
+finding that invalidates single-run live A/Bs.
+
+### 288-A — neural NLI citation verification is DEAD (measured, not argued)
+
+Installed CPU torch + transformers + sentence-transformers locally and replayed
+`cross-encoder/nli-deberta-v3-base` over **129 recorded live rows** (the
+`easyhard-r282-fullprod-clean` sidecar carries `pred_answer` + `pred_refs` +
+`gold_refs`, so the filter is replayable offline — no deploy needed). The decisive
+metric is whether the score separates GOLD from NON-GOLD refs:
+
+| scorer | ROC-AUC | ms/pair | deps |
+| --- | --- | --- | --- |
+| `nli-deberta-v3-base` | **0.585** | **635** | torch + 1.74 GB weights |
+| `LexicalEntailmentScorer` (already in repo) | **0.749** | **2.7** | none |
+
+0.5 is a coin flip. **The neural model is worse at the task than the free lexical
+proxy and ~235x slower.** Every NLI threshold destroyed recall (easy ref_loose
+0.8134 → 0.6757 at the mildest setting, 26 rows gold-damaged). Cause: MNLI
+cross-encoders collapse to "neutral" on legal text (75% of pairs < 0.027
+entailment) — a training-distribution problem a bigger model does not fix
+(confirmed on a FEVER checkpoint too). `REGENOLD_NLI_VERIFY` stays OFF and
+**torch was NOT added to requirements.txt**: plain `torch` on a Linux builder
+pulls the CUDA stack (~2.7 GB of wheels → 6-8 GB unpacked), past Railway's ~4 GB
+image ceiling; CPU-only is 191.8 MB.
+
+Also corrected: the R286 sidecar's apparent "Ref Strict rose with NLI ON" is a
+metric artifact — it collapsed 137/137 davidath QA rows to exactly 1 ref, and
+davidath QA gold is a single article, so 1 ref maximises precision by
+construction. Two live defects found and left documented (gated OFF): the
+implicit `http://127.0.0.1:8080` fallback in `score_batch` (something IS
+listening on that port on the dev box, so a local A/B is graded by an
+unidentified stub), and `_DEFAULT_ENTAIL_INDEX = 1`, which is **wrong for
+MoritzLaurer checkpoints** (`{0: entailment}`) and never resolved on the remote
+path.
+
+New reusable tooling: `evals/harness/nli_refprecision_sim.py` (replays a
+SCORER-driven ref filter over recorded rows; persistent score cache makes
+threshold sweeps free) and `evals/harness/nli_discriminative_power.py` (the
+AUC/separation check — **run this FIRST for any future scorer**; it kills a bad
+instrument in minutes before a sweep can overfit it).
+
+### 288-B — the 67% grounding gap, and the Arm-0 dead end
+
+Measured on the real 110-row regenold easy batch: **215/322 (67%) of actually
+cited refs have NO paragraph-level text** in the Stage-2 references block
+(`article_requirements_full.py` covers **19 of 131** KB entries and **zero
+annexes**), while prompt rule 5b instructs the model to "use the EXACT
+terminology found in the retrieved articles". That is the `AnsL − RefL = −13.1`
+signature: right article, our paraphrase.
+
+**Arm 0 (rejected, measured):** wiring up the already-computed
+`semantically_relevant_statements` — rendered only by `_llm_generate_answer`,
+which has **zero callers** — does NOT fix it. That field is a dense hit-list for
+OTHER articles: **zero overlap** with the retrieved set on all four probe
+questions (Article-13 question → Art. 79/80/82). Scoped it renders nothing (the
+R256 silently-inert trap); unscoped it injects off-context noise.
+
+**Arm 1 (built, default OFF):** `_render_grounding_text()` fetches the
+question-relevant **verbatim paragraphs of the CITED refs** via
+`provision_text.select_relevant_paragraphs` (R94.1-tuned). Env
+`REGENOLD_GROUNDING_TEXT` (default `0`) + `REGENOLD_GROUNDING_REF_CHARS`
+(default 1200, clamped 200-4000); both in `_engine_cache_key` per the
+R30/R56/R79/R263.2 doctrine. The question rides on the new
+`GraphContext.question` field so BOTH block call sites render identically —
+threading it as a parameter would let them diverge, which is exactly the
+guard/prompt parity bug R113 fixed.
+
+### 288-C — ⚠ the n=40 live A/B noise floor (the durable finding)
+
+Two `easyhard_ab --limit 40` runs with an **identical baseline arm** did not
+reproduce: **20/40 baseline rows changed their `pred_refs`**, baseline `ref_conc`
+drifted **+0.053**, and **all three reference axes sign-flipped**. The harness's
+"est. Overall uplift" read **+0.14 pp** then **−0.80 pp** on pure generation
+variance.
+
+| axis | run 1 delta | run 2 delta | |
+| --- | --- | --- | --- |
+| ref_loose | −0.0208 | +0.0167 | SIGN FLIP |
+| ref_strict | +0.0022 | −0.0165 | SIGN FLIP |
+| ref_conc | +0.0284 | −0.0592 | SIGN FLIP |
+| kw_recall | **+0.0750** | **+0.1083** | consistent |
+
+**Only `kw_recall` is stable**, and it is NOT a length artifact — it rose
+**+0.048 on the 14 rows whose answers got SHORTER**. So Arm 1's mechanism is
+validated (statutory wording in → statutory wording out) but **the instrument
+cannot resolve the reference axes at this n**, so Arm 1 is NOT shipped. A single
+run's `<-- GOLD LOSS (R142.1)` annotation may be noise: run 1 flagged −0.021 and
+run 2 reversed it to +0.017.
+
+**Rule this establishes:** never ship or reject a reference-axis change on one
+n=40 live run. Use full n **and** ≥3 repeats per arm (mean ± spread), or — for a
+PURE ref transform — the deterministic offline sims
+(`evals/bench/ref_precision_sim.py`, `evals/harness/nli_refprecision_sim.py`),
+which have zero generation variance. This does not weaken hard rule #6; it
+weakens confidence in small-n aggregate mean deltas on ANY live harness,
+`ab_judge` included (its position-swapped design controls JUDGE variance, not
+GENERATION variance).
+
+### Round 288 — gates (Arm 1 default OFF)
+
+| gate | result |
+| --- | --- |
+| davidath QA (gate OFF) | **byte-identical** — Ans Strict 0.4037 / Ans Loose 0.1404 / Ans Conc 0.196 / Ref Loose 0.8394 / Ref Strict 0.5543 / Ref Conc 0.4395 / Tone 1.0 |
+| `evals.regenold.runner` (276) | **255/255**, RISK_F1 macro 1.00 |
+| OOS probe | **21/21, 0 leaks** |
+| `tests/test_r288_grounding_text.py` | **24/24** |
+| touched-surface regression | **zero** — `git stash` A/B confirms the 12 `_when_wrapper_enabled` failures are identical on clean baseline (documented `provider=cli` artifact) |
+
+Handoff for the unfinished work (powered A/B + the never-yet-judged HARD batch):
+[`.planning/R288-CHECKPOINT.md`](.planning/R288-CHECKPOINT.md).
+
 ## Round 250 — Gemini multi-specialist findings triage: R72 reconcile restore + I1 dead-code fix + G3 live pairwise A/B (2026-06-24)
 
 A Gemini agent supplied 3 specialists' findings + proposed fixes (Antifragile /
@@ -9488,6 +9842,1783 @@ they are left for a future ab_judge-gated pass rather than risk a blind
   wrapper env unchanged).
 * LIVE (Claude Max Opus wrapper): Q8 complete def + Stage-2 skipped; Q10 role
   verdict + Art 25 + Stage-2 skipped; Q14 correct operative routes.
+
+## Round 290 — deep review of the Gemini graph_rag modularization: 2 wrong citations caught, the package is inert (2026-07-24)
+
+A Gemini agent pushed `f08fbd3` ("modularize graph_rag sub-package and MedTech
+risk architecture") **straight to `origin/main`**, so it auto-deployed —
+`/healthz/llm` confirmed production running `commit f08fbd37d3c1`. A 6-lane
+adversarial review workflow + independent verification of every claim.
+
+### What the commit actually did (vs what it claimed)
+
+It renamed `app/engines/graph_rag.py` (7731 LOC) to `_graph_rag_impl.py` (98%
+similarity) and added `app/engines/graph_rag/` — a package with a
+`_GraphRAGModule` proxy plus `parser/`, `risk_engine/`, `medtech/`,
+`retrieval/`, `generators/`, `pipeline.py`, `config.py` (~1000 LOC).
+
+**The engine was NOT modularized.** Proven by execution trace (`sys.settrace`
+over 8 real `/ask` requests, all HTTP 200 with non-empty answers): every entry
+under `app/engines/graph_rag/` fires exactly `1x` at *import* time
+(`<module>` / class-body). **Zero new functions execute on a request.** The
+only genuine extraction is `models.py` — `_graph_rag_impl.py:1125` imports
+`GraphQuery` / `GraphContext` from it. Everything else is a parallel skeleton.
+Three independent review lanes reached the same verdict. This is the
+R256/R286 silently-inert shape, though here it is inert-and-harmless rather
+than inert-and-claimed-live.
+
+### The real defects — 2 wrong legal citations, uncommitted, about to ship
+
+Mid-session the agent left **uncommitted** edits to `_graph_rag_impl.py` that
+changed two citations in the LIVE deterministic answers. Both verified wrong
+against the repo's own verbatim text (`provision_text.get_provision_text`):
+
+| Edit | Verdict |
+| ---- | ------- |
+| Art. 6(3) registration `Article 49(2)` -> `Article 71(2)` | **WRONG, reverted.** Art. 49(2) is verbatim the 6(3) duty: *"an AI system for which the provider has concluded that it is not high-risk according to Article 6(3)... shall register"*. Art. 71(2) is entering Annex VIII data. |
+| Art. 18 retention `Article 47` -> `Article 48` | **WRONG, reverted.** Art. 47 IS the EU declaration of conformity (the clause's own words); Art. 48 is CE marking. |
+| Groq prompt example `Article 6(2)(a)` -> `Article 6(3)(a)` | **KEPT** — 6(2) has no points; 6(3) has (a)-(c). |
+| `_deterministic_parse` strips `(\d+)` before article extraction | **KEPT** — genuine fix; "Article 6(2) and 13" no longer yields a phantom `Art. 2`. |
+
+These are exactly the "confidently-wrong legal claim" hard rule #4 calls the
+worst defect, and they were caught only by the full-suite A/B, not by any
+aggregate metric — davidath stayed byte-identical throughout.
+
+### The A/B that found them
+
+Full suite at HEAD vs the pre-refactor parent (`029dcb0`) under identical env:
+**103 failed / 5098 passed** vs **96 failed / 5087 passed** (+18 tests = the
+new subpackage file). Diffing the failure SETS gave exactly **7 new, 0 fixed**:
+4 were the two citation regressions above; 3 were source-inspection guards
+(`test_r112_3`, `test_r127`, `test_r145`) that read `app/engines/graph_rag.py`
+— now a package directory, so they inspected the 60-line proxy instead of the
+engine. All 7 fixed; the remaining 96 are the documented `provider=cli`
+Stage-2 env artifact, identical at both commits.
+
+### R290 fixes shipped
+
+* **`scope.py`** — the R289 `_AI_STANDARD_RE` refusal now yields to an
+  explicit VALID Act reference (`if standard and not known`). R289 fired it
+  unconditionally, false-refusing *"ISO 42001 certification fully overrides our
+  Art. 17 QMS obligations"* — a real AI Act question that merely NAMES the
+  standard — restoring the R49-B ordering doctrine. Cannot re-open R289's
+  leaks: all three held-out `standards` probes carry no valid Act provision
+  (`known` empty, verified), so they still refuse. **276-runner 254 -> 255/255.**
+* **Dead-code landmines defused** (still dead, but no longer traps):
+  `parser/deterministic.py` now DELEGATES to the live `_deterministic_parse`
+  (lazy import, fallback preserved). It had drifted — its single-connector
+  separator reproduced the exact Oxford-comma bug R268.1 fixed: *"Articles 9,
+  10, and 15"* parsed to `[Art. 9, Art. 10]`, silently losing Article 15, and
+  `test_graph_rag_subpackage.py` was validating that buggy behaviour.
+  `config.py` was a shadow flag registry naming env vars that exist nowhere
+  (`STAGE2_POLISH_ENABLED` vs the real `P2P_GRAPH_RAG_ENABLE_STAGE2`) and
+  flipping two documented defaults — `REGENOLD_SUFFICIENT_CONTEXT` to OFF
+  (R110.1 baked it ON) and `REGENOLD_VERIFY_VERDICT` to ON (**R285 explicitly
+  reverted it to OFF for want of an A/B**). Now aligned + verified to agree
+  with the live gates on all four.
+* **`medtech_standards.py`** (live, agent-authored) — reviewed and KEPT: adds
+  Art. 11 (MDR Annex II/III + ISO 13485 §4.2.3), Art. 13 (ISO 20417 + MDR
+  Annex I Ch. III), Art. 17 (ISO 13485) and enriches Art. 15 (IEC 62304 +
+  82304-1 + ISO/IEC 81001-5-1). Legally sound, additive, import-time
+  ARTICLE_EXISTENCE lint passes.
+
+### Neo4j / semantic layer — the graph is DEAD in production
+
+The operator asked to confirm graph/taxonomy/semantic-layer alignment. Found:
+the Aura host `293b4be4.databases.neo4j.io` **fails DNS resolution** — the
+instance is gone — and `/healthz/graph` still reports `graph_ok: true` with
+`seed_version: ""` and empty node/edge counts. That is a monitoring blind spot,
+not just an empty graph. Answer quality is unaffected (R252 made KB-primary
+retrieval the default and R99.1 added the empty-success KB fallback; all live
+probes answered correctly), but the 2-hop layer contributes nothing.
+
+`railway.toml` already sets `REGENOLD_GRAPH_BACKEND = "embedded"` (R129) — the
+**Railway dashboard is overriding it to `neo4j`**, the documented R80.2
+phenomenon. The R121 embedded SQLite backend was verified working here:
+`Art. 26` -> hop1 `[Art. 13, 16, 25, 49, 50, 71, 72, 73, 79, Annex III]`,
+sub-millisecond after build, zero external dependency. **Operator action:
+unset/override `REGENOLD_GRAPH_BACKEND` to `embedded` on the dashboard.**
+
+### Verification
+
+| Gate | Result |
+| ---- | ------ |
+| davidath QA (137) | **byte-identical** — Ans Strict 0.4037 / Ans Loose 0.1404 / Ans Conc 0.196 / Ref Loose 0.8394 / Ref Strict 0.5543 / Ref Conc 0.4395 / Tone 1.0 |
+| `evals.regenold.runner` (276) | **255/255**, RISK_F1 macro 1.00 (was 254/255) |
+| OOS probe `--oos-suite all` (51) | 49/51, **0 scope leaks** — identical to the pre-refactor baseline |
+| pytest collection | 5202 collected, 0 errors (R286's 0/5106 failure mode absent) |
+| full suite | 7 new-at-HEAD failures found, **all 7 fixed**; 96 pre-existing unchanged |
+| live route smoke | 8/8 HTTP 200, non-empty answers, correct refs |
+
+### Standing recommendation (not actioned — operator's call)
+
+The sub-package is inert, so it neither helps nor breaks. But it carries a
+duplicated confidence function, a proxy with confirmed monkeypatch-teardown
+poisoning risk, and a re-implementation surface that already drifted once.
+Deleting `parser/`, `risk_engine/`, `medtech/`, `retrieval/`, `generators/`,
+`pipeline.py`, `config.py` and keeping only `models.py` would remove ~900 LOC
+of liability with zero behaviour change. The proxy itself must stay while the
+file is named `_graph_rag_impl.py` — ~5200 tests patch `app.engines.graph_rag.X`
+and rely on it reaching the impl.
+
+## Round 294 — the three "remaining Neo4j gaps": one real, one false, one unfixable (2026-07-25)
+
+Operator ask: fix the three gaps the R290/R291 PRs left documented — (1) Article 3's
+68 definitions aren't decomposed into the graph, (2) 175/180 recitals are orphaned,
+(3) the 2-hop expander's 50 ms budget is marginal against hosted Aura. Each was
+**re-measured before any code was written**. The honest outcome is one shipped fix,
+one falsified premise, and one gap with no faithful data source.
+
+### Gap 1 — Article 3 decomposition: **the premise is FALSE, nothing to fix**
+
+Article 3 IS decomposed. Measured on this tree:
+
+```
+build_hierarchy_payload() -> 68 :Paragraph nodes  article_3_1 … article_3_68
+                             68 HAS_PARAGRAPH edges from article_3
+                             (plus the separate 68 :Definition + HAS_DEFINITION)
+```
+
+The special case is explicit at [`provision_hierarchy.py:170-172`](app/data/provision_hierarchy.py)
+(`if int(n_str) == 3: units = _definitions(body)`) — Article 3 has zero `N.` paragraph
+headings (it numbers definitions `(1)…(68)`), so the generic `_paragraphs()` correctly
+returns `{}` and `_definitions()` returns 68. `legal_ast.ingest_legal_ast` writes that
+same payload, so the graph gets the nodes.
+
+The "0 paragraphs" reading is a **measurement artifact**. Two ways to produce it — and
+note the R286 one is now CLOSED, so don't re-diagnose it that way:
+
+* `SeedPayload.counts()` deliberately omits Paragraph/Point/SubPoint (explicit NOTE at
+  `scripts/seed_neo4j_kb.py:380-387`) — but the `--dry-run` **print** now reports them
+  separately: verified `Paragraph = 656 / Point = 416 / SubPoint = 37`. So the R286
+  "dry-run under-counts by ~1/3" gap no longer reproduces;
+* an id-filter for `art_3_` never matches `article_3_1` (this is the one that actually
+  bit — `eu_ai_act_tree` uses `art_3` / `def_*` ids, `provision_hierarchy` uses
+  `article_3_N`).
+
+Ids, verbatim text, `HAS_PARAGRAPH`
+parentage and `refs.to_user_facing("Art. 3.1") -> "Article 3.1"` are all already correct.
+**No fix — writing one against the stated premise would have duplicated the branch or,
+worse, swapped the working `_definitions` route for a `_paragraphs` route that returns
+`{}` and silently DELETED the 68 nodes.**
+
+Genuine (separate, non-defect) observation: Article 3 is double-represented — 68
+`:Paragraph` AND 68 `:Definition` nodes, byte-identical text, no edge linking them.
+Left as-is; the `:Definition` label is what `lookup_definition_by_term` reads.
+
+### Gap 2 — 175 orphaned recitals: **real, but no faithful fix exists**
+
+Orphan count confirmed (5 anchored: Art. 5 ×4, Art. 52 ×1; 175 orphaned). The only
+edge source is a regex for "Recital N" over `EC_CHECKER_OBLIGATION_MAP` summaries.
+
+The obvious fix — prose-mine `OFFICIAL_RECITAL_TEXT` for `Article N` — **does not
+work**, measured two independent ways:
+
+* only **31 of 180** recitals contain the word "Article" at all, so a perfect
+  extractor still leaves ~149 orphans;
+* essentially every one of those mentions points at **another instrument** —
+  direct inspection shows `Article 9(1) **of Regulation (EU) 2016/679**`, `Article
+  16(2) of Regulation (EU) 2017/745`, `Article 30 of Regulation (EU) 2019/1020`,
+  plus TEU / TFEU / Charter / Protocol No 21. After the repo's own cross-regulation
+  filter, ~4 of 32 candidate edges are genuine AI Act references, spanning 2
+  procedural (Ireland/Denmark opt-out) recitals.
+
+And the consumer splices recital prose **directly into `answer_text`**
+([`regenold.py:7259-7290`](app/routes/regenold.py)), so each false edge is a vector for
+injecting Charter/TFEU/GDPR prose into an EU AI Act answer — landing on
+answer-correctness, the weakest axis on both the R285 official scorecard and the R287
+grounded judge. Shipping ~28 hallucinated relationships to buy ~4 true low-value ones
+violates hard rule #4.
+
+**Closed as "not a defect".** Same call CLAUDE.md already recorded for the R47 xref
+orphans ("Adding speculative edges would be hallucination"). No authoritative
+recital→article map exists anywhere in the tree: `RECITALS` is `{int: str}`, and
+`eu_ai_act_tree` recital nodes carry `article_number=None, parent_id=None`. A trap to
+avoid: `euairagtest/provisions.json` has an `interprets_articles` field that looks
+curated but is byte-identical to `references_internal` on all 180 recitals.
+
+### Gap 3 — the 50 ms budget: **real, worse than stated, SHIPPED**
+
+Measured against the live Aura instance the R291 seed targets, running the production
+2-hop Cypher:
+
+```
+COLD = 702.9 ms          WARM min 49.3 / mean 64.0 / max 215.0 ms
+```
+
+So the budget was blown on every cold call and most warm ones. Blast radius was wider
+than "the 2-hop expander": **four** sites defaulted to 50 ms
+(`graph_expand_2hop.py`, plus all three `graph_aware_retrieval` helpers), with two live
+consumers on the hot path — `kb_search` -> `expand_2hop`, and `regenold.py:7266` ->
+`recitals_for_article` **twice per request**. Neither passes an explicit budget.
+
+Live A/B through the real entry points (same warmed process, same Aura):
+
+| | hop2 refs surfaced |
+| --- | --- |
+| old 50 ms | **0** (3 seeds, all empty) |
+| R294 default | **15** (5 per seed) |
+
+One of those calls took 215 ms — under any budget below that it stays dead. Precise
+characterisation: the 2-hop query (variable-length path + `shortestPath`) was
+reliably dead; the recital query (simple 1-hop, 41-54 ms) merely *straddled* the
+boundary and was flaky. Note the timeout never saved the work either — Python cannot
+cancel a future, so the query ran to completion and the result was discarded.
+
+**The counter-argument, and why the breaker ships with the raise.** A raise alone is a
+real latency regression, because the 50 ms budget was incidentally the only thing
+capping a *dead*-graph stall. Measured against the DNS-dead R290 host:
+`execute_read` = **1631 ms in-thread**; caller-observed 55 ms @50 ms vs 252 ms @250 ms.
+So `app/graph/timeouts.py` ships the budget **and** a circuit breaker (the convention
+`app/llm/intent_classifier.py` already uses: open after 3 consecutive failures, 60 s
+cooldown, then a single half-open probe). Dead-graph cost over 10 calls:
+
+| | total |
+| --- | --- |
+| status quo (50 ms, no breaker) | 1442 ms |
+| naive raise (250 ms, no breaker) | **2597 ms** — the regression |
+| **shipped (250 ms + breaker)** | **765 ms** — 47% better than today |
+
+So the shipped design is strictly better than the status quo on a dead graph AND
+un-blocks a healthy one. Plus `app/main.py` gains a `neo4j_graph` warm-up step (sibling
+of the R129 `embedded_graph` one) so the ~700 ms cold cost is paid at boot, not on a
+user request.
+
+Knobs: `REGENOLD_GRAPH_TIMEOUT_MS` (default 250, clamped [10, 5000], fail-soft) and
+`REGENOLD_GRAPH_BREAKER=0` to disable.
+
+**Scope**: the embedded backend is the default in BOTH code
+(`embedded_graph.py::_DEFAULT_BACKEND = "embedded"`) and `railway.toml` — and it
+bypasses the executor and the timeout entirely (sub-ms in-process SQL). So this round
+is **inert on a default deploy** and only changes an explicitly opted-in
+`REGENOLD_GRAPH_BACKEND=neo4j` deploy (which R290 documents the Railway dashboard as
+currently doing).
+
+**Wire-impact, stated honestly**: this IS a reference-affecting change on that opted-in
+deploy — `expand_2hop` feeds `kb_search` additive fill -> `query.entities` -> wire
+`references`.
+
+Precisely what IS proven: at the fusion step `fuse_with_kb_xrefs` is strictly
+additive-below-cap (`if budget <= len(out): return out[:budget]`; it appends only into
+`remaining = budget - len(out)` slack, with the BM25 winners at the head of `out`), so
+it **cannot displace a BM25 winner there**.
+
+What is NOT proven, and is the honest caveat: the enlarged candidate set flows onward
+into `query.entities`, and the ROUTE applies its own budgets downstream
+(`_effective_max_refs`, the QA 3-ref budget, the R281 clamp). A larger entity list could
+in principle push a gold ref past one of those. That interaction is exactly what a live
+`ab_judge` pairwise measures, and per hard rule #6 it is the gate to run **if the
+neo4j backend is kept** rather than flipping to the recommended embedded default (on
+which this round is inert). Do not read "additive-below-cap" as a blanket safety proof —
+R142.1 lost a pairwise 11-0 (p=0.001) precisely by moving references.
+
+### Round 294 — gates
+
+| Gate | Result |
+| ---- | ------ |
+| davidath QA (137) | **byte-identical** — Ans Strict 0.4037 / Ans Loose 0.1404 / Ans Conc 0.1960 / Ref Loose 0.8394 / Ref Strict 0.5543 / Ref Conc 0.4395 / Tone 1.0 |
+| `evals.regenold.runner` (276) | **0 failures, all 28 categories 100%**, RISK_F1 macro 1.00, ref_format 255/255 |
+| OOS probe (`--oos-suite all`, 51) | **49/51, 0 scope leaks** — and **0 differing verdicts** vs a pre-change baseline sidecar (the 2 soft-fails are pre-existing) |
+| new + touched suites | **161/161** (`test_r294_graph_timeouts.py` +21, plus the full 2-hop / graph-aware / embedded-graph / healthz-graph suites) |
+| live A/B | 0 -> 15 hop2 refs on a healthy graph; 1442 -> 765 ms on a dead one |
+
+davidath is byte-identical **by construction** — it runs with no graph client, so the
+timeout code is unreachable there.
+
+## Round 295 — the R294 A/B: a foregone null, and the two bugs found building it (2026-07-25)
+
+Operator ask: keep `REGENOLD_GRAPH_BACKEND=neo4j` and run the live `ab_judge` A/B that
+R294 flagged as its hard-rule-#6 merge gate (R294 raised the graph budget 50 ms -> 250 ms
++ added a circuit breaker; it moves `references` on an opted-in neo4j deploy, so it needs
+the pairwise gate).
+
+### The A/B is a null — measured, not assumed
+
+**Pre-flight through the real route** (deterministic `provider=cli`, so the graph delta is
+isolated from Opus sampling; both arms share `REGENOLD_GRAPH_BACKEND=neo4j` +
+`REGENOLD_GRAPH_2HOP=1`, arm A = 50 ms/no-breaker, arm B = R294's 250 ms + breaker):
+
+```
+rows whose references DIFFER between arms: 0/5  ->  then 0/40
+VERDICT: ARMS IDENTICAL - A/B would measure NOTHING; do not run
+```
+
+An `ab_judge` over identical answer pairs returns ~131 ties and burns ~90 minutes of
+wrapper budget for zero information. **Root cause found, not guessed** —
+`kb_search.fuse_with_kb_xrefs` is called with `winners == budget == 5`, so
+`remaining = budget - len(out)` is **0** and every hop2 ref is discarded before it can
+reach `query.entities`. Measured over the full 132-row probe set:
+
+| | |
+| --- | --- |
+| hop2 refs the graph made AVAILABLE | **660** |
+| fusion calls with any slack | **1 (1%)** |
+| refs actually ADDED (the only thing that can reach the wire) | **4** |
+
+So **~99.4% of the graph's contribution is discarded at the fusion cap**, and R294's
+budget raise — genuinely correct at the Cypher layer (0 -> 15 hop2 refs surfaced) — is
+**~inert at the wire**. This CORRECTS the R294 entry's "this IS a reference-affecting
+change" framing: it is reference-affecting *in principle*, and empirically a no-op at
+the current fusion budget.
+
+### `REGENOLD_GRAPH_FUSE_SLACK` — built, measured, ships **OFF**
+
+The lever that WOULD activate the graph: `fuse_with_kb_xrefs(budget=k + slack)`
+(`app/data/kb_search.py`, default `0`, clamped `[0,10]`). At the candidate layer it is
+dramatic — `slack=2` changes **131/132 rows** and adds **+261 refs**. At the **wire** it
+is not: only **1/40 rows** changed, and that row is a **gold destruction** —
+`paper_st_v4:st_v4_002` (gold `('Article 5',)`, a prohibited biometric-categorisation
+question) went from a perfect `['Article 5']` to `['Article 2','Article 27','Article 49']`.
+Textbook R142.1 (the positional clamp that lost a live pairwise 11-0, p=0.001), and it
+compounds the R287 over-citation finding. **Default OFF**; the knob exists so a future
+round can re-measure with a gold-protected fusion instead of a blind budget widening.
+
+### Two A/B-integrity bugs found while building the harness
+
+Both are the R263.2 cross-arm-contamination class — a same-process two-arm run silently
+measuring nothing:
+
+* **`_engine_cache_key` missed the R294 knobs.** `REGENOLD_GRAPH_TIMEOUT_MS` /
+  `REGENOLD_GRAPH_BREAKER` (and now `..._FUSE_SLACK`) flip the engine output but were
+  absent from the key, so arm B would be served arm A's cached `GraphRAGResponse`. Added
+  per the R30/R56/R79/R263.2 doctrine.
+* **`REGENOLD_GRAPH_BREAKER=0` was not a true off-switch.** `record_graph_failure` /
+  `record_graph_success` still mutated state when disabled, so a baseline arm running the
+  old 50 ms budget would time out, latch `_opened_at`, and **suppress the branch arm's
+  graph calls entirely**. Now both recorders no-op when the breaker is disabled.
+
+Plus a latent **`NameError`** fixed: `app/data/kb_search.py` called `logger.debug` at two
+sites with no `logging` import — reachable only once the graph actually contributes refs,
+i.e. exactly on the path R294 was trying to open.
+
+### Round 295 — gates
+
+| Gate | Result |
+| ---- | ------ |
+| davidath QA (137) | **byte-identical** — Ans Strict 0.4037 / Ans Loose 0.1404 / Ans Conc 0.1960 / Ref Loose 0.8394 / Ref Strict 0.5543 / Ref Conc 0.4395 / Tone 1.0 |
+| `evals.regenold.runner` (276) | **0 failures**, all categories 100% |
+| OOS probe (`--oos-suite all`, 51) | **49/51, 0 scope leaks** (the same 2 pre-existing wrong-reason soft fails as R290/R294) |
+| touched suites | **133/133** (`test_r294_graph_timeouts.py` + 2-hop + graph-aware + kb_search) |
+
+The slack knob defaults to `0` and the two integrity fixes are cache-identity /
+disabled-path only, so the wire is unchanged.
+
+## Round 300 — deep review of R299 + the two untagged truncation commits; 5 verified defects (2026-07-30)
+
+Reviewed `3b2d37d..757f0cb` — R299 plus the two untagged 2026-07-30 commits
+(`8eb34e4`, `757f0cb`) authored directly on `main` with no round entry. 8-lane
+specialist workflow + an adversarial verifier per finding (default REFUTED,
+must confirm against HEAD): 68 raw → 18 verified, **18/18 survived**. Every
+load-bearing claim below was re-proved by direct measurement.
+
+Full record incl. deferred items: [`.planning/R300-CHECKPOINT.md`](.planning/R300-CHECKPOINT.md).
+
+**P0-1 — `partition_context_references` deletes gold references.** A ref is
+OPERATIVE only if its number is in `target_art_nums`/`target_annexes`; the two
+escapes are total-miss only, so they never fire on a well-retrieved question.
+On the real 110-row graded batch: **53% of rows demote ≥1 ref; 61% of refs
+(222/364)** land under "do NOT cite, do NOT describe" — routinely the GOVERNING
+one (`rg_001` backgrounds Annex IV though Article 11(1) says the documentation
+"shall contain… the elements set out in Annex IV"; Art 43 → Annexes VI/VII;
+Art 55 → Arts 53/54). With the R72 reconcile also ON this becomes a WIRE
+DELETION: `['Article 11','Annex IV','Annex IV.1.e','Annex IV.2.c']` →
+`['Article 11']`, executed. R142.1 through a new door. R299 shipped it
+default-ON with no live `ab_judge` gate, and davidath is structurally blind
+(`provider=cli` never fires Stage-2). **Default flipped OFF**, restoring the
+last A/B-validated state — R298's USER-channel minimality is independent and
+keeps its measured win. `REGENOLD_REF_PARTITION=1` re-enables it for the A/B it
+owes; the structural fix to try first (promote refs cross-referenced FROM an
+operative provision; `kb_xrefs` already has those edges) is on the gate.
+
+**P0-2 — the partition also dropped 5 whole Stage-2 context sections.** Its
+renderer was built from obligations + grounding text only, emitting none of
+COMPLIANCE GAPS / DIMENSION DETAILS / CROSS-REGULATORY BRIDGING / SYNTHESIZED
+MULTI-HOP / LEGAL AST. Measured 852 → **330 chars, 0/5 sections** (61% context
+loss), costliest being the GDPR/MDR bridges the cross-framework + MedTech
+answers need. Extracted `_render_supplementary_sections()` for both renderers;
+under BACKGROUND in the partitioned one (they are non-citable by definition).
+After: 1065 chars, 5/5, discipline intact.
+
+**P0-3 — the completeness verifier stated the regulation backwards.** (a) It
+conflated two articles into one flat blob, implying an Article 16 point (m) —
+Article 16 stops at (l). Now attributed per article. (b) `_subpoints` returns a
+FLAT dict, so Article 5(1) yields `['a'..'h','i','ii','iii']` where the romans
+are 5(1)(h)'s law-enforcement **carve-outs** — listed as missing
+"requirements", i.e. permissions shipped as prohibitions, even on an
+already-correct answer. `_drop_nested_romans` resolves the `(i)` ambiguity by
+context (a multi-char roman can never be a letter key). Labels were a keyword
+bag ("draw declaration conformity"); now the verbatim opening clause.
+
+**P0-4 — hardcoded model downgrade in the wrapper transport.** `757f0cb` added
+an inline, ungated, unlogged rewrite of every opus-family name to
+`claude-opus-4-6`, unmentioned in its commit message — silently reverting
+R292's Opus 5 **and making the `?include_reasoning=true` trace lie** (reported
+`claude-opus-5` while `claude-opus-4-6` was on the wire), which would
+invalidate any model A/B read off the trace. Measured: the wrapper returns HTTP
+200 for opus-4-8, opus-5 AND opus-4-6, so it repairs no error. Kept as default
+(flipping it needs the A/B) but now env-gated + logged via
+`resolve_wrapper_model()`, with the trace reporting the model actually sent.
+
+**P1 — cache-key omission.** `REGENOLD_REF_PARTITION` /
+`REGENOLD_COMPLETENESS_VERIFIER` flip the answer but were absent from
+`_engine_cache_key`. Production runs one consistent arm, so this is an
+**eval-integrity** defect (R263.2): an in-process two-arm `ab_judge` serves arm
+A's cache to arm B and measures nothing. Added, with the new alias flag.
+
+**Claims that did NOT survive measurement** (recorded because the reviewers
+were confident and wrong): the `REGENOLD_QA_LENGTH_CAP` 1200→400 flip has **no
+production effect** (`MAX_ANSWER_SENTENCES="0"` ⇒ `_no_cap`; the drift is
+local-eval-only and the *sentence* cap dominates, not the char cap);
+`_hard_truncate_at_clause` — the headline of `757f0cb` — is **unreachable in
+production** (`REGENOLD_HARD_CHAR_CAP="0"`). And a self-correction: my own
+first check called the `max_tokens` 384→1536 bump inert; it is **BINDING on
+simple Stage-2** (1024→1536, +50% ceiling, the ~80% path), inert only on the
+complex path.
+
+**Live measurement — 71 requests, 25.3% of the official hard population**
+(stratified, vs deployed prod, 0 errors, 0 refusals): tone **1.000**,
+**pushback concession 0.0000** (the system never folds under the evaluator's
+"this contains hallucinations" challenge), refs/row ~2.9, p50 60.7 s / p95
+115.2 s. Two new signals, neither fixed: **36% (10/28) of multi-turn rows
+change their citation set on the pushback turn** — which is the graded one — in
+both directions (`rg_021` 4→1 refs, `rg_053` 1→4); and latency is high in
+absolute terms (the sample is hard-weighted, so it is NOT comparable to R286's
+mixed 23.8/37.4 s).
+
+**Gates.** davidath QA **byte-identical to a same-env re-run of the `757f0cb`
+baseline** (Ans Loose 0.1402 / Ans Strict 0.4032 / Ans Conc 0.198 / Ref Loose
+0.8394 / Ref Strict 0.5543 / Ref Conc 0.4395 / Tone 1.0 — CLAUDE.md's 0.4037
+was measured without the `REGENOLD_EXTERNAL_EMBEDDINGS=0` neutraliser, so the
+baseline was re-run rather than assumed); 276-runner **255/255**, RISK_F1 macro
+1.00; OOS 51 rows **49 PASS, 0 leaks**; 181 tests across touched suites incl.
+the 2 fusion tests red on `main` since `8eb34e4`'s undisclosed
+`claude-opus-5→claude-opus-4-8` rider. **Post-deploy live verification**
+(`535a0ed`): `rg_001` now ships `['Article 11', 'Annex IV']` and describes
+Annex IV — the gold reference the partition was deleting is back.
+
+## Round 302 — why correctness is low, and two fixes: one refuted, one shipped (2026-07-31)
+
+Root-caused the R301 levels (answer 0.372 / reference 0.349) with a 19-agent
+adversarial workflow, then built and measured the two highest-ranked fixes.
+
+### Root cause — three findings that change what you should fix
+
+1. **~Half the "badness" is the metric.** The judge gates are zero-tolerance
+   conjunctions. Recomputed with partial credit on the SAME verdicts: answer
+   **0.372 → 0.733**, reference **0.349 → 0.717**. Quote both, or 0.35 reads as
+   broken when it is not.
+2. **Reference correctness is ~purely precision.** 53 of 131 refs wrong, only
+   **6 missing**, and **zero rows fail on missing alone**; recall 0.94.
+3. **The obvious fix is a trap.** The ref-count pass-rate collapse (1 ref 80% →
+   5 refs 0%) *survives difficulty stratification* — but it is the **arithmetic
+   signature** of a 40%-per-ref error rate under a conjunctive gate
+   (independence predicts 59/35/21/13/7%), NOT evidence that removing refs
+   helps. Removing refs only helps if you remove the WRONG ones, and R298 proved
+   wrong/correct refs are positionally inseparable. Also measured: **86% of
+   wrong refs are described in the prose**, so the R72 prose-driven pruner is
+   structurally a no-op here.
+
+Answer-side: at ROW level **incorrect (16 rows) outranks pure omission (11)**,
+and incorrect is a Stage-2 phenomenon (0.97/row vs 0.33 deterministic) — Stage-2
+trades omission for fabrication. The errors are mechanically specific:
+`55(1)(c)` for `55(1)(d)`, `point 4.6` attributed to `5.1`, `Art 49` for
+`Art 71(4)`, fabricated Annex VIII items.
+
+Also: the 43 rows are **three populations** — curated intercept (n=7, 86% answer
+pass, 0.00 incorrect/row), un-curated deterministic (n=5, **0%**), Stage-2
+(n=31, 32%). Never pool them again; a Stage-2 fix measured across all 43 is
+scored on 12 rows it provably cannot move.
+
+### Fix 1 — pushback-turn reference freeze: BUILT, REFUTED, ships default OFF
+
+Hypothesis: the graded multi-turn answer is the post-pushback turn, 61% of rows
+churn citations there (29 added / 29 removed = pure churn), and non-increasing
+rows passed 69% vs 20% for any-addition. Validated **offline** (a pure wire-ref
+transform on recorded rows — no live re-run). Paired on the 11 rows judged in
+both arms: ref pass 0.091 → 0.182, but **precision 0.477 → 0.430** and **recall
+0.845 → 0.576**, with recall going 1.0 → **0.0** on `rg_029`, `rg_070`, `rg_102`.
+It gains 2 rows, breaks a passing one, and does not even improve precision —
+the R142.1 gold-drop mode. The churn correlation is real but **not causal**:
+turn 2's additions are often the governing provisions. Ships gated + tested with
+the negative result recorded (`REGENOLD_PUSHBACK_REF_FREEZE=1` to enable).
+davidath byte-identical by construction — `is_challenge_turn` fires on 0/476
+rows, asserted as a test.
+
+### Fix 3 — verbatim grounding text: A/B'd and flipped DEFAULT ON
+
+R288 built this and parked it. R301 supplied the motive: the judge scores
+against **verbatim** Act text while the model was handed KB **paraphrases**.
+Identical deterministic sample, both arms in-process against the live wrapper
+(43 rows/arm), grounded Sonnet-5 judge. Paired on the 25 both-Stage-2 rows:
+
+| axis | OFF | ON | Δ |
+| --- | --- | --- | --- |
+| answer_correctness | 0.600 | 0.640 | +0.040 |
+| **mean factual score** | 0.827 | **0.929** | **+0.103** |
+| reference_correctness | 0.381 | 0.429 | +0.048 |
+| ref precision | 0.738 | 0.664 | −0.074 |
+| ref recall | 0.976 | 1.000 | +0.024 |
+| citation_faithfulness | 0.720 | 0.760 | +0.040 |
+
+Every pass-rate axis improves; the load-bearing signal is the CONTINUOUS one.
+Multi-turn alone (n=28): answer 0.500 → 0.607, factual 0.799 → 0.885,
+faithfulness 0.679 → 0.750. **Latency flat** (p50 58.4 → 59.7 s). A/B integrity
+verified four ways before running: knob IS in `_engine_cache_key`; NOT inert
+(block 95 → 1482 chars); same transport both arms; and **all 10
+deterministic-path rows byte-identical between arms** as the control. One paired
+run — repeat before treating as settled. Rollback `REGENOLD_GROUNDING_TEXT=0`.
+
+### Also shipped
+
+`evals/judge/grounded.py` now emits **`wrong_refs` / `missing_refs`** (it was
+counts-only, so no precision fix could be aimed at anything — every prior
+attempt had to guess at rank, which is the R142.1 clamp). Validated live:
+`rg_018` → wrong `['Article 6','Article 50','Annex III','Annex I']`, missing
+`['Article 7']`.
+
+Gates across the round: davidath QA **byte-identical** (Ans Loose 0.1402 / Ans
+Strict 0.4032 / Ans Conc 0.1980 / Ref Loose 0.8394 / Ref Strict 0.5543 / Ref
+Conc 0.4395 / Tone 1.0); OOS 51 rows **49 PASS / 0 leaks**; 276-runner **0
+failures**; 61 new tests.
+
+### Explicitly rejected (do not re-propose)
+
+Positional/top-N ref clamps (R142.1, lost 11-0 p=0.001); prose-driven pruners
+(86% already described); a completeness instruction (R284 measured it INCREASES
+over-citation, and would add fabrication pressure to rows already fabricating);
+answer length caps (the length signal is a difficulty confound — flat on HARD,
+33% vs 30%); article-identity blocklists (Annex III runs 75% gold);
+xref-inheritance promotion to repair the R299 partition (rescues only 19-37% of
+the 56% it demotes — still a gold-deleter under every variant).
+
+## Round 301 — the post-fix re-run of the 71 live hard requests, graded: recall +0.17, correctness −0.20 (2026-07-31)
+
+R300's 71-request live measurement was taken at **21:29**; the partition-OFF +
+context-restore fixes merged at **21:48**. So that scorecard is the **PRE-fix**
+number. R301 replays the identical deterministic sample against the now-deployed
+`4a088d2` and grades **both** arms with the grounded Sonnet-5 judge — the
+comparison R300 could not make.
+
+### The A/B is clean by construction
+
+`run_hard_sample_r297` draws an evenly-spaced, RNG-free sample, so `--frac 0.25`
+reproduces the identical 71 requests (28 multi-turn × 2 turns + 15 single-turn
+hard; `--dry-run` confirmed byte-identical composition). Same endpoint, same key,
+no env overrides in either arm. **0 HTTP errors, 0 refusals, tone 1.000** in both.
+
+New tooling: [`evals/regenold/diff_hard_sample.py`](evals/regenold/diff_hard_sample.py)
+— per-row diff stratified on `provenance.stage2_polish`, because for a
+Stage-2-gated change only rows where Stage-2 actually landed are in the treatment
+population; pooling them with the deterministic rows dilutes the effect toward
+zero (the R80 lesson, applied to the hard sample). It reports refs at BOTH exact
+and head grain — R287.1 measured a case where head-level recall was invariant
+while sub-point recall collapsed.
+
+**The stratification validates itself**: the 7 multi-turn deterministic/curated
+control rows are **0/7 changed on refs and 0/7 on answers** — byte-identical, as
+a curated-intercept Stage-2 skip must be. All movement is in the treatment arm.
+
+### Grounded Sonnet-5 judge — PRE vs POST
+
+Scored against the **verbatim Act text**, not gold labels (the official regenold
+gold was never published; the judge's own banner fires: **gold coverage 0%**, so
+reference PRECISION is text-grounded while RECALL is the judge model's reading —
+do not compare this recall across datasets).
+
+| axis | multi-turn (n=28) | single-turn (n=15) | **pooled (n=43)** |
+| --- | --- | --- | --- |
+| answer_correctness | 0.571 → 0.464 | 0.400 → 0.200 | **0.512 → 0.372 (−0.140)** |
+| reference_correctness | 0.429 → 0.429 | 0.467 → 0.200 | **0.442 → 0.349 (−0.093)** |
+| ref precision | 0.720 → 0.691 | 0.676 → 0.551 | **0.704 → 0.642 (−0.062)** |
+| **ref recall** | 0.858 → **0.975** | 0.800 → **0.878** | **0.838 → 0.941 (+0.103)** |
+| ref F1 | 0.783 → 0.809 | 0.733 → 0.677 | 0.765 → 0.763 (flat) |
+| citation_faithfulness | 0.643 → 0.571 | 0.333 → 0.533 | 0.535 → 0.558 (+0.023) |
+
+**Provider failures are NOT the explanation.** The POST arm had more Stage-2
+double-failures (4 vs 2), which ship a deterministic answer and bias it down — so
+the comparison was recomputed on the 30 rows where **both** arms landed Stage-2.
+That makes it *sharper*, not better: answer_correctness **0.533 → 0.333
+(−0.200)**, ref precision 0.686 → 0.659, ref recall **0.817 → 0.989**,
+citation_faithfulness 0.533 → 0.567.
+
+### What actually moved, and the mechanism
+
+Refs per row **2.5 → 3.0** and answers **~30% longer** (mt median 833 → 1079
+chars, st 1006 → 1238) on the clean subset. That is the R300 P0-1 context restore
+(330 → 1065 chars of Stage-2 context, 5 supplementary sections returned) doing
+exactly what it was built to do — and the cost is visible in the judge's own
+failure modes: POST reference failures are overwhelmingly **"over-citation"**, and
+POST answer failures are overwhelmingly **"omits X"** ("omits Art 20(2) duty to
+investigate", "omits Art 5(1)(d)", "never explicitly answers whether…"). More
+provisions surfaced, each analysed less completely, operative holdings dropped.
+8 rows flipped answer-correctness pass→fail, 2 fail→pass.
+
+**Directly answering the question this round was run to answer** — does restoring
+`Annex IV` on `rg_001`-class rows move reference correctness? **No.** `rg_001`
+itself is byte-identical in both arms (it is a curated intercept, `stage2_polish`
+False, so the partition never touched it), and pooled reference correctness went
+**down** 0.442 → 0.349, because the binary pass-rate gates on "zero WRONG
+citations" and the restore buys recall by citing more.
+
+### Honest limits — this is one paired run
+
+Every Stage-2 answer changed between runs (21/21 mt), because Opus is
+non-deterministic. The project has **measured** that a single live run at this n
+cannot resolve reference-axis effects (identical baseline arms have drifted
+sign-flips on all three ref axes). So:
+
+* **ref recall +0.10 to +0.17, landing at 0.94-0.99**, is a large, same-signed
+  effect in both arms and is very unlikely to be pure variance;
+* **answer_correctness −0.14 to −0.20** is same-signed in both arms and is the
+  round's most important signal, but an 8-vs-2 flip count at n=30 against a
+  non-deterministic generator is **not** sufficient to flip a shipped fix.
+
+**Nothing was reverted on this evidence.** R300 also fixed genuine legal-correctness
+defects (Art 5(1)(h) carve-outs shipped as prohibitions; cross-article
+conflation), which are independent of the context restore. The next round's lever
+is to A/B the *supplementary-context restore alone*, with repeat runs per arm.
+
+### Two live defects this measurement surfaced
+
+1. **Stage-2 double-failure ships a raw KB dump, not an answer.** `rg_109`
+   ("…we can skip Chapter 3 Section 2, right?") shipped prose opening mid-fragment
+   — *"Union harmonisation legislation list (Section A: New Legislative Framework,
+   machinery, toys…"* — and never answered the yes/no. **Reproduced 100%
+   deterministically** (`provider=cli`), byte-identical to the live wire, so it is
+   a pre-existing composer defect, not an R300 regression. Root cause is exact,
+   from the live trace: `groq_fallback_failed: api_status_429` →
+   `stage2_failed_both_providers_deterministic_ship` → `_two_stage_generate`
+   returns the raw `kg_answer`, whose lead ref `Annex I` has a KB summary that is
+   a **noun-phrase fragment**. 11 of 13 Annex summaries open as fragments — fine
+   as grounding context, broken as an answer's lead sentence. NOT fixed here: this
+   composer *is* the davidath path (`provider=cli` scores exactly it), so changing
+   it moves davidath and needs its own gated round; and a lead-fragment patch
+   would be a symptom fix — the answer's real defect is that it never answers.
+2. **The Stage-2 Gemini fallback never fires in production.** The trace shows no
+   `stage2_primary_failed_fallback_gemini` note, and `is_gemini_provider_enabled()`
+   only requires `GEMINI_API_KEY` — present in the local `.env`, evidently **unset
+   on Railway**. So the documented Groq→Gemini→Mistral chain collapses and a
+   wrapper failure falls straight to the deterministic dump. **Operator action,
+   zero code:** `railway variables --set GEMINI_API_KEY=…`. This is the cheapest
+   available reliability win on the hard surface.
+
+### Operational reading
+
+* p50 latency 60.7 s → 69.4 s (mt) — high against a scored axis, and the sample is
+  hard-weighted and multi-turn-heavy, so it is not comparable to R286's mixed
+  23.8 s / 37.4 s. Treat as an absolute reading.
+* **Answer length is the standing risk.** Conciseness is the ONLY axis the official
+  scorecard says we lead, i.e. the one with zero headroom, and this round moved
+  answers ~30% longer. The grounded judge has no conciseness axis, so it cannot
+  arbitrate this — it must be watched separately.
+* R300's trace-honesty fix confirmed live: `stage2_model` now reports
+  `claude-opus-4-6` (the model actually sent) where it previously reported
+  `claude-opus-5`.
+* Sidecars: `hardsample-r301-postfix.json`, `official-r301-postfix-{mt-hard,st-easy}.ckpt.jsonl`,
+  `grounded-r30{0,1}-{mt,st}.json`, `diff-r300-live-vs-r301-postfix.json`.
+
+## Round 305 — deep review of R304: three per-row hardcodes removed, three routing bugs fixed (2026-07-31)
+
+R304 shipped a hardcoded verdict per graded evaluator row plus a Stage-2
+sub-paragraph clause, documented in
+`.planning/R305-CHECKPOINT-SCORECARD-AND-JUDGE-REMARKS.md`. A 5-lane
+adversarial review (verifier default REFUTED) plus inline verification found
+the checkpoint unreliable and all three intercepts unsound. Full verdict,
+corrected scorecard and the judge-remark adjudication:
+[`.planning/R305-REVIEW-VERDICT-AND-CORRECTIONS.md`](.planning/R305-REVIEW-VERDICT-AND-CORRECTIONS.md).
+
+### What was wrong
+
+* **`_detect_sandbox_definition_inquiry` returned `False` on its own target
+  question.** Its guard rejects `"how long"`; the evaluator question ends
+  *"...to do what, for how long)."* **The R304 unit test asserted on a TRUNCATED
+  copy with that clause deleted** — 7/7 green while production was broken. This
+  is the failure mode to watch for: a test written against the code instead of
+  the requirement. Every R305 test uses the VERBATIM evaluator question.
+* **`_detect_irregular_migration_inquiry` fired on obligations questions.** A
+  curated intercept SKIPS Stage-2 *and* disables the QA ref budget,
+  `_prune_non_anchor_refs`, noise suppression and the R281 clamp — so one false
+  positive is unrecoverable.
+* **All three verdicts carried verbatim-text defects (hard rule #4).** Article
+  7(3) was stated as ONE condition; the Act requires **both** (a) no
+  significant risk **and** (b) no decrease in the overall level of protection
+  under Union law. *"Adding new area headings requires the ordinary legislative
+  procedure"* — that phrase appears in **0 of 126 articles**. The sandbox
+  verdict invented AI-Office co-establishment and dropped *"pursuant to a
+  sandbox plan"*. Annex III(7)(b) was rewritten as *"detect, recognise, or
+  assist in managing irregular migration"* — absent from the Act.
+* All three scanned the flattened conversation while **27 of their 30 sibling
+  detectors** slice on `"Latest question:\n"`.
+
+### The generalisable fixes that replaced them
+
+1. **engine↔scope keyword divergence** — `"irregular migration" → Annex III`
+   existed in `scope.KEYWORD_TO_ARTICLE` but NOT in `_KEYWORD_ENTITY_MAP`, so
+   the wire cited Annex III while the prose described Article 5 biometrics
+   (cite-and-mismatch). Fixed in the engine map + the `migration_asylum` topic
+   (`irregular migration` is a statutory term of art — it occurs in the Act
+   ONLY in Annex III(7)(b), so a standalone trigger cannot over-fire).
+2. **`classify_question` tests `duration` before `definition`** — a definitional
+   question with a trailing time clause routed to the duration picker and
+   returned an unrelated Article 57 paragraph (reproduced byte-identically to
+   the shipped wire answer). New precedence rule, gated on the module's OWN
+   definitional resolver AND on the clause signal living in a LATER clause.
+   Env `REGENOLD_DEFINITION_QTYPE_PRECEDENCE`. **0 of 476** davidath and
+   **exactly 1 of 333** evaluator questions change qtype.
+3. **`_is_classification_question` did not recognise the verdict ask** —
+   *"to what risk category does it belong"*. New `_RISK_CATEGORY_ASK_RE`,
+   restricted to an explicit risk-TIER noun. **0** davidath rows match.
+
+### R305 re-ask focus — the largest measured lever
+
+`REGENOLD_REASK_FOCUS` (default ON). The graded challenge turn ends
+`Let's try again:\n<the original question, verbatim>`, preceded by *"provide a
+clear answer with the same format as before, as if I had just asked the same
+question anew"*. **67/111** challenge turns carry that shape and the trailing
+question matched a first-turn question **exactly 67/67** — yet those rows
+shipped **+376 chars and +0.64 references** vs the identical stand-alone ask.
+We were ignoring an explicit instruction on the axis with zero headroom. The
+route now answers the question the user names. Fires **62/111** challenge
+turns, **0/111** easy, **0/111** turn-1, 0 false fires on a coreference / OOS
+probe set; an elliptical re-ask keeps its history.
+
+### Also fixed
+
+* Stage-2 curated skip gated on `resolved_q` (the LIVE turn), not the flattened
+  `question` — the sibling gate 20 lines below already was.
+* `_detect_robotic_surgery_inquiry` gained the scenario-opener guard its seven
+  siblings already had. The davidath curated-gate 0-hit test was **RED**, which
+  falsified this file's own "curated intercepts fire on 0 davidath rows"
+  invariant.
+* `REGENOLD_SUBPARAGRAPH_ATTRIBUTION` / `..._DEFINITION_QTYPE_PRECEDENCE` /
+  `..._REASK_FOCUS` added to `_engine_cache_key` (R263.2 eval integrity — R304
+  shipped the first flag default-ON without a key entry, so any in-process A/B
+  of it measured nothing).
+* The sub-paragraph clause no longer contradicts the closed-set completeness
+  rule it sits beside on the same delivered channel.
+* Four weakened test assertions tightened. `"Art. 50".startswith("Art. 5")` is
+  True, so the R304 form had made the Article-5 cross-tier assertion untestable.
+
+### Judge-remark adjudication — 3 of 13 are JUDGE FALSE POSITIVES
+
+* **Article 14 on explainability is NOT over-citation** — Art 14(4)(c) contains
+  *"the interpretation tools and methods available"*, the only such phrase in
+  the Regulation. Article 15 on the same question **is** real over-citation.
+* Annex XI/XII/Art 51 on the GPAI exception — Art 53(2) relieves 1(a)+(b),
+  whose objects ARE Annex XI/XII.
+* `rg_053` "truncated before Article 55(1)(d)" — 55(1)(d) is stated
+  near-verbatim followed by a complete closing sentence.
+* **The "token headroom" root cause is FALSIFIED**: 442-token answers against a
+  2048-token envelope, and 2 of the 3 named rows never invoked Stage-2. Do NOT
+  tune `REGENOLD_STAGE2_ANSWER_HEADROOM` for them — they are three different
+  defects (incompleteness / raw-KB-dump / misclassification).
+
+### Gates
+
+| Gate | Result |
+| --- | --- |
+| davidath 476 vs `main` a83bbcc | **byte-identical on every axis** (Ans Loose 0.1879 / Ans Strict 0.3526 / Ans Conc 0.615 / Ref Loose 0.5967 / Ref Strict 0.4744 / Ref Conc 0.4319 / Tone 1.0 / mt 20/20) |
+| davidath QA 137 | matches the documented baseline exactly |
+| `evals.regenold.runner` (276) | **255/255 (100%)**, RISK_F1 macro 1.00 |
+| OOS probe (`--oos-suite all`) | **0 scope leaks** |
+| full pytest, in-place A/B vs `main` | main **92** failed / branch **84** failed → **0 new, 8 fixed** |
+
+⚠ **Methodology note that cost this round an hour:** a `git worktree` baseline
+is NOT comparable to an in-place run — a worktree does not carry untracked
+files, so it has **no `.env`**, and the whole
+`test_r148_denoiser_groq_fallback` / `test_r87a_query_denoiser_trace` /
+`test_topic_filter` / `test_r271_safety_gate` cluster changes behaviour on the
+presence of `GROQ_API_KEY`. Measured: worktree baseline 63 failures vs in-place
+baseline **92** on the identical commit. **For a full-suite failure-set diff,
+check out the baseline commit IN PLACE** (the davidath bench is unaffected — it
+does not read those keys — so a worktree is fine there).
+
+### New evaluation surfaces
+
+* **`evals/regenold/evaluator_batch_july7.py`** + `run_evaluator_batch_july7.py`
+  — replays the RAW 333-request graded export (111 easy / 111 hard turn-1 /
+  111 challenge; the richer sibling of `run_official_batch`, which replays the
+  deduplicated 110-question Postgres snapshot). Records the 2026-07-07 shipped
+  answer for a then-vs-now diff plus pushback concession, writes a
+  judge-compatible sidecar. Note: only **67** of the 111 turn-2 rows are real
+  pushback challenges; the other 44 are ordinary follow-ups.
+* **`evals/judge/legal_v2.py`** — the upgraded judge. **Three-way** reference
+  classification (`GOVERNING` / `SUPPORTING` / `WRONG`; SUPPORTING can never
+  fail — the direct fix for the false-positive class above),
+  **quote-or-retract** substantiation (an adverse verdict without an ≥8-word
+  literal quote from the supplied verbatim text is downgraded and logged),
+  Chain-of-Verification with an omission-vs-fabrication split, optional
+  self-consistency (`--samples K`), a strict key allowlist so the judge never
+  sees the arm or the baseline, anti-sycophancy calibration, and a
+  **conciseness** axis the old judge lacked.
+
+### R305 live round (60 rows, R305 code + Claude Max wrapper) — then vs now
+
+| arm | refs/row | answer chars |
+| --- | --- | --- |
+| easy (n=30) | 3.43 → **2.53** (−26%) | 770 → 744 |
+| hard (n=30) | 4.77 → **2.67** (−44%) | 1235 → **782** (−37%) |
+
+Tone **1.0**, refusals **0**, **pushback concession 0.0000**, pushback ref-flip
+0.30 (was ~0.36 in R300), Stage-2 landed 0.77. 20/30 hard rows are both shorter
+and lower-citation than the graded July-7 output. Latency p50 37 s / p95 130 s
+on the hard arm — high, and the wrapper timed out on several rows.
+
+### Aura knowledge graph — used, or not?
+
+Healthy and fully seeded (`2026-07-24-r291-fullseed`, 113 Article / 656
+Paragraph / 416 Point / 248 CROSS_REFERENCES) and contributing **~nothing** to
+answers — **by measured design**. All 333 graded responses show
+`retrieval_path: "kb_fallback"`: that is the R252 decision (the blunt
+`obligations_for_risk_level` primary dump mis-anchored, so the graph was
+demoted to additive-only), and the additive path is then zeroed at the fusion
+cap (R295: 660 hop2 refs available, 4 added). Opening it is item 7 on the
+do-not-repropose list — `REGENOLD_GRAPH_FUSE_SLACK=2` destroyed gold refs.
+
+## Round 306 — the answer cap cuts lists mid-run; `railway.toml [deploy.envs]` has never applied (2026-08-03)
+
+Reported live defect: *"What are the deployer obligations under Art 50"* shipped
+*"deployers have **three** transparency obligations"* and then delivered **two**.
+Reproduced against deployed production, root-caused, generalised. Merged as
+[#315](https://github.com/Peaky8linders/regenold-eu-ai-act-rag/pull/315) (`77d2c17`).
+
+### ⚠ `railway.toml [deploy.envs]` has NEVER been applied — and this corrects R80.2
+
+Railway's config-as-code `[deploy]` schema has **no `envs` key**; env vars cannot
+be set from `railway.toml` at all. So the block was never *read* — it is **not**
+"overridden by the dashboard", which is how ~20 rounds of this file have recorded
+the symptom (the R80.2 reading). Practical difference: you cannot fix it by
+unsetting a dashboard var; the value must be set on the service or baked as a
+**code default**.
+
+Confirmed live (2026-08-03) with a discriminator visible on the wire:
+
+```
+POST "What obligations does a provider have?"
+  ROLE_DUTY_NOUN_SEED=0 (code default) -> ['Article 1','Article 2']
+  ROLE_DUTY_NOUN_SEED=1 (toml intent)  -> ['Article 16','Article 11', ...]
+```
+
+Production returned `['Article 1','Article 2']`, `retrieval_path=
+"zero_retrieval_fallback"`, `engine_confidence 0.0`. **The single most canonical
+question in the domain answers from the purpose/scope floor at zero confidence.**
+
+Only **5 of 34** assignments ever differed from a code default (the other 29 are
+cosmetic — which is why this went unnoticed): `MAX_ANSWER_SENTENCES` `0` vs **3**,
+`QA_LENGTH_CAP` `1200` vs **400**, `ROLE_DUTY_NOUN_SEED` `1` vs **0**,
+`R89A_FORCE_APPEND` `1` vs **0**, `INTENT_PROVIDER` `groq` vs `""`. The block is
+deliberately NOT deleted (it is the record of operator intent) but now carries a
+large inert-block header.
+
+### Root cause of the truncation (118/120 predictive on recorded prod rows)
+
+Production runs `MAX_ANSWER_SENTENCES=3`. An answer escapes that cap only when
+`_is_closed_set_enumeration_ask` / `_is_multi_phrase` / `is_complex_question`
+fires — and **all three inspect the QUESTION**. All three return `False` for both
+failing questions, so Opus's 7- and 9-sentence answers are guillotined at three,
+mid-list. Guarding a content-destroying cap behind a question-phrasing allowlist
+is whack-a-mole. Also reproduced twice on the **actually graded** July-7 batch on
+a question that literally asks for a four-item set (`july7-219`: *"…the following
+four grounds. (a) …"*, 277 chars; and 363 chars delivering `(a) (b)`).
+
+### The fix — read the ANSWER, not the question
+
+`answer_normaliser.enumeration_run_end` / `_run_indices` /
+`inline_enumeration_length` / `answer_has_enumeration` detect a run of ≥2
+consecutively labelled items (`First, … Second, …`, `(a) … (b) …`, inline
+`(a); (b); (c)`) and refuse to cut through it. Structure-keyed ⇒ no topic,
+article number or evaluator row (hard rule #3), and it holds whatever the
+deployed cap turns out to be. Wired at **all four** cutters:
+
+* the sentence slice;
+* the **soft char-cap loop** — which drops the longest *non-citation* sentence,
+  i.e. exactly the list members that don't name an article, and deletes from the
+  **middle**: measured shipping `(a) (b) (d)`, an answer that looks complete and
+  is **legally wrong** about which grounds exist (hard rule #4);
+* `_hard_truncate_at_clause`, which truncates *at* an enumerator boundary;
+* the route's readable-unit cap, whose `_relax_caps` was the same question-keyed
+  anti-pattern with a comment naming this exact bug.
+
+Additive-only (can raise a cap, never lower one), never invents content, ceilinged
+at 12, off-switch `REGENOLD_ENUM_GUARD=0`. Correctly **not** in
+`_engine_cache_key` — route-level post-processing that re-runs on every cache hit,
+same class as `REGENOLD_HARD_CHAR_CAP`.
+
+### Completeness verifier → DEFAULT OFF (hard rule #4)
+
+R299 shipped it default-ON with no A/B. Over 1,134 recorded live answers it fires
+on 29 (2.6%), concentrated on graded rows, appending **inverted law**:
+`Article 6 also requires (a) … narrow procedural task` ×12 (Art 6(3) are the
+derogation conditions for **NOT** being high-risk); `Article 5 also requires
+(e) the placing on the market, (f) the placing on the market…` ×10 (Article 5
+**prohibits**, and the labels are degenerate duplicates); `Article 1 also requires
+(f) rules on market monitoring` ×3 (subject-matter, requires nothing of anyone);
+`Article 99 also requires (d) obligations of distributors` ×4 (Art 99(4) lists
+provisions whose **breach** attracts a fine tier). The module's own comment calls
+this "the single worst defect class in this codebase"; R300 fixed one instance and
+the class resurfaced on Art 6(3) — the pattern is the bug. Defaulting OFF restores
+the last A/B-validated state, exactly as R300 did with `REGENOLD_REF_PARTITION`.
+Re-enable with `REGENOLD_COMPLETENESS_VERIFIER=1` **after** fixing the verb and the
+label extractor.
+
+### Gates
+
+| Gate | Result |
+| ---- | ------ |
+| davidath 476, **per-row byte diff** | `pred_answer` 0 / `pred_refs` 0 / scores 0 differ — **byte-identical**. Ans Strict 0.3533 · Ref Loose 0.5971 · Ref Strict 0.4750 · Ref Conc 0.4320 · Tone 1.0 · mt 20/20 |
+| `evals.regenold.runner` (276) | **255/255 (100%)**, RISK_F1 macro 1.00, every category |
+| OOS probe (`--oos-suite all`, 51) | 49 pass, **0 scope leaks** (same 2 pre-existing soft fails) |
+| new tests | **+39**, each written against the VERBATIM failing question |
+
+**Variance-free replay over 1,134 recorded live answers** (isolates the guard from
+Opus non-determinism): **10 answers change (0.9%)**, all 10 deliver **more** items,
+**0** deliver fewer, mean cost across ALL answers **+3.1 chars**. Answer-Conciseness
+— the one rubric axis we lead, i.e. zero headroom — is protected: 99.1%
+byte-identical. Live end-to-end through the Claude Max wrapper at the prod cap:
+art50 becomes internally consistent and complete; art79 delivers all four grounds.
+
+### Measured and deliberately NOT shipped
+
+`REGENOLD_ROLE_DUTY_NOUN_SEED=1` fixes the two canonical role questions (provider →
+`Art 16/11/13/17/18`, deployer → `Art 26/13/14/9`, both off the zero-retrieval
+floor) **but** costs davidath Ref Strict **−0.0115** / Ref Conciseness **−0.0137**
+at flat Ref Loose — it adds references without adding gold, i.e. over-citation.
+Needs a live pairwise `ab_judge`, not a unilateral flip. Likewise do **not**
+reflexively bake `MAX_ANSWER_SENTENCES=0`: the official 77.5/73.0 scorecard was
+measured with the cap at 3, and uncapping swings the only axis we lead.
+
+### Open, ranked (each with its gate)
+
+1. **`ROLE_DUTY_NOUN_SEED`** — canonical role questions at conf 0.0 vs −0.011 Ref
+   Strict. *Gate:* live pairwise `ab_judge`.
+2. **Deterministic composer cite-and-mismatch** — *"deployer obligations under
+   Art 50"* answers with **verbatim Article 26(9) text while citing Article 50**.
+   Adversarially CONFIRMED this round (`_try_extractive_answer` fall-through at
+   `regenold.py:2183-2188` + `answer_text` frozen while `references` keeps being
+   mutated by ~25 downstream passes). Prevalence 4/526 deterministic rows, 1 on
+   the graded batch (`july7_065`). The verifier **REFUTED** that the proposed fix
+   is a clean win (costs conciseness) — needs its own round.
+3. **Fix the completeness verifier properly** (gate to articles whose sub-points
+   really are obligations; reject non-distinct labels), then A/B it back ON.
+
+## Round 307 / 307.1 — cite what you quote; role-duty rescue off the zero-retrieval floor; the OTHER sentence splitter (2026-08-03)
+
+Closes the two follow-ups R306 documented, plus a defect the live probe caught
+*after* R307 deployed. Merged as
+[#316](https://github.com/Peaky8linders/regenold-eu-ai-act-rag/pull/316) (`eead7ec`)
+and [#317](https://github.com/Peaky8linders/regenold-eu-ai-act-rag/pull/317) (`b114e4f`).
+
+### Fix A — cite-and-mismatch on the extractive composer
+
+    Q "What are the deployer obligations under Art 50"
+      select_answer_sentence(Q, 'Art. 50') -> None   (confidence gate)
+      select_answer_sentence(Q, 'Art. 26') -> "Where applicable, deployers of
+         high-risk AI systems shall use the information provided under
+         Article 13 ... data protection impact assessment under Article 35
+         of Regulation (EU) 2016/679..."
+
+That **Article 26(9)** sentence shipped as the answer while
+`_prune_non_anchor_refs` collapsed `references` to `['Article 50']` — the wire
+quoted one provision and cited another (hard rule #4). The loop returns the
+FIRST citation that yields a sentence, so it silently borrows a later article's
+prose; nothing ties the provision that *sourced* the answer to the ones cited
+(`answer_text` is frozen early while `references` is rewritten by ~25 later
+passes).
+
+**Fixed at SELECTION, not at pruning**: when the live question names specific
+provisions, `_prune_non_anchor_refs` keeps only those, so the extractive
+sentence must come from one of them. `_live_explicit_anchor_sets` deliberately
+**mirrors that pruner's own extraction** (same regexes, same
+`"Latest question:"` slicing) so the two cannot drift. If no anchored citation
+yields a sentence → `None` → the engine's own prose answers. Env
+`REGENOLD_EXTRACT_CITED_ONLY=0`.
+
+### Fix B — the two most canonical questions hit the zero-retrieval floor
+
+Measured live: *"What obligations does a provider have?"* →
+`['Article 1','Article 2','Article 3.3']`, `retrieval_path=
+"zero_retrieval_fallback"`, `engine_confidence 0.0`; *"…deployer…"* →
+`['Article 1','Article 2','Article 3.4']`, same path, same 0.0. **Both returned
+byte-identical Article 1/2 boilerplate** — the provider and deployer answers
+were the same text.
+
+`_role_duty_seeds` adds a deterministic **role-aware** seed on the
+zero-retrieval path ONLY (provider→16, deployer→26, importer→23,
+distributor→24, authrep→22), gated on a co-occurring duty marker so
+*"What is a provider?"* (gold: the Article 3 definition) does not fire. That
+path by definition has no retrieval to damage — which is what makes it
+davidath-safe where the general-candidate variant is not: the pre-existing R93
+`REGENOLD_ROLE_DUTY_NOUN_SEED` injects into the NORMAL candidate list and
+measured **−0.0115 Ref Strict / −0.0137 Ref Conciseness at flat Ref Loose**
+(references without gold — over-citation), so it is deliberately not used. One
+article per role, not the chain (Article 16 IS "obligations of providers of
+high-risk AI systems") — also more precise than the R93 seed, 1 ref vs 5. Env
+`REGENOLD_ROLE_DUTY_ZRF=0`.
+
+### Fix C + R307.1 — TWO sentence splitters, two abbreviation tables
+
+R307's live A/B for Fix B surfaced a mid-citation cut: with Article 16 correctly
+surfaced, its KB stub split after `(Arts.` and the cap shipped
+*"…keep the technical documentation **(Arts.**"*. `_split_sentences` protected
+`Art.` but not the plural `Arts.` — the R59 Annex-lookbehind class.
+
+**R307.1 is the important half.** After R307 deployed, the live probe showed the
+cut *still on the wire*: there are **two independent splitters with separate
+tables**, and R307 fixed only one —
+
+| splitter | table | R307 |
+| --- | --- | --- |
+| `models._split_sentences` | `_ABBREVIATIONS` | fixed |
+| `sentence_index.split_legal_sentences` | `_ABBREV_LEFTS` | still missing them |
+
+The per-reference description augmenter — the pass that produces exactly that
+*"Under Article 16, …"* text — uses the **second** one. Measured on the failing
+string after R307: `models` → 1 sentence, `legal` → **2**. Adding an
+abbreviation can only SUPPRESS a false split, never create one, so both tables
+ship the plural / related forms, and **+9 tests pin them IN AGREEMENT** on a
+shared corpus so a future edit to one without the other fails in CI rather than
+in production. (One corpus case, *"Refer to Sections 2 and 3."*, splits
+differently between the two — git-stash-A/B-verified **pre-existing** legal-splitter
+numbered-list behaviour, so it is excluded from the agreement set rather than
+papered over.)
+
+### Gates
+
+| Gate | Result |
+| ---- | ------ |
+| davidath 476, per-row diff (R307) | **1 row changes** (`qa_036`) and it **improves** (conciseness 0.0134→0.0233); `pred_refs` 0 differ |
+| davidath 476 (R307.1) | net-neutral — Ans Loose **0.1884** · Ans Strict **0.3547** · **Ref Loose 0.5971 / Ref Strict 0.4750 / Ref Conc 0.4320 identical** · Tone 1.0 · mt 20/20 |
+| `evals.regenold.runner` (276) | **255/255**, RISK_F1 macro 1.00 |
+| OOS probe (`--oos-suite all`, 51) | 49 pass, **0 scope leaks** |
+| tests | **+68** across the round; 103 on the two splitter suites |
+
+**Live, post-deploy (`b114e4f`)** — all three verified on the production wire:
+provider → `['Article 16','Article 17','Article 19']`, 386 chars, complete, no
+mid-citation cut; *"deployer obligations under Art 50"* → announces "three
+distinct transparency duties" and **delivers all three** (the R306 enumeration
+guard composing with R307); *"What is a provider?"* → `['Article 3.3']`
+definition (negative control holds).
+
+### Measured and deliberately NOT shipped — the metric trap
+
+Uncapping the answer (`REGENOLD_MAX_ANSWER_SENTENCES=0`) scores **+0.0200
+davidath Ans Strict with all three reference axes flat** — the largest
+single-axis number available, essentially matching the all-time best
+(`r126-nocap` 0.3736 vs current 0.3547). Under the R306 finding that production
+runs the 3-sentence code default, it is a one-line change.
+
+**Not shipped.** Ans Strict is a *recall* metric (fraction-of-gold-tokens) that
+rises monotonically with length; Ans **Loose** (Jaccard, precision-balanced) is
+**flat** (0.1882 → 0.1877) and conciseness falls. That is metric-gaming, not
+quality — and a cap sweep confirms the "win" is concentrated at full uncap
+(cap=4 buys only +0.0024), i.e. it is length, not correctness. The genuine case
+for relaxing the cap is the live judge's omission-dominant profile
+(`omission_rows 24` vs `fabrication_rows 5`, mean factual score 0.9647 against
+answer pass 0.48 — accurate but incomplete), and that is where it should be
+decided, with the live judge, not on a recall artifact. R306's enumeration guard
+already captures the specific omission mode (announced-count truncation) at a
+measured **+3.1 chars/answer** corpus-wide.
+
+For reference, best-ever davidath vs current (full 476-row runs only): Ref Loose
+**0.5971 = current is the all-time best**; Ans Loose 0.1889 (`r144-fix1`) vs
+0.1884; Ref Strict 0.4770 (`r112-baseline`) vs 0.4750 — both inside the noise
+band. The two real historical gaps are Ans Strict (the length artifact above) and
+Ref Conciseness 0.4779 (`r99-graphfix`), which came from the **verbatim** mode
+R100 replaced after measuring its judge answer-correctness at 0.25.
+
+## Round 308 — uncap the answer, deliver the content rules on the live channel, and actually run Stage-2 on Opus 5 (2026-08-03)
+
+Operator directive: *"no hard cap please, the stage 2 system prompts must be
+able to get to the right content and phrases to correctly answer"* +
+*"ensure Opus 5 is used for Stage 2, not Sonnet 4.6 or Opus 4.6"*. Shipped as
+`d5985e7` / PR [#318](https://github.com/Peaky8linders/regenold-eu-ai-act-rag/pull/318).
+
+### The finding that reframed the round — the Stage-2 SYSTEM prompt is dead
+
+Measured live, identical request, the instruction *"always answer exclusively
+in French"* placed in the **system slot** vs the **user slot**, on BOTH
+`claude-sonnet-4-6` and `claude-opus-4-6`:
+
+```
+system slot -> "Rome is the capital of Italy."          (byte-identical to
+                                                           the no-instruction
+                                                           control)
+user slot   -> "La capitale de l'Italie est Rome."       (obeyed)
+```
+
+The Claude Max wrapper **drops the system slot 100%**. So every rule in
+`ANSWER_GENERATE_SYSTEM` has been reaching the model on **zero** live
+requests — including all the prompt work from R122 / R143 / R145 / R147 /
+R265 / R266 / R275 that each round shipped under "prompt-only, the win lands
+live." It landed on nothing. Three places in the text that *is* delivered
+were pointing at that dead prompt as if it existed: the classification
+branch's *"the BLUF format from your system prompt,"* the refine branch's
+*"when rule 12b closed-set completeness requires...,"* and
+`USER_SUBPARAGRAPH_ATTRIBUTION_CLAUSE`'s *"never overrides the closed-set
+completeness rule above."* All three dangling pointers are repaired by Fix 2
+below.
+
+**Do NOT respond to this by forwarding the system prompt to the model** — R282
+already measured that path as rubric-negative (`kw_recall -0.267`, off-topic
+drift). The fix is to deliver the content on the channel that is actually
+read: the Stage-2 **user** message.
+
+### Fix 1 — `REGENOLD_ANSWER_NO_CAP` (default ON)
+
+[`app/routes/regenold.py:6351`](app/routes/regenold.py) calls
+`set_answer_no_cap(...)`, gated on
+`_stage2_landed_for_answer and os.getenv("REGENOLD_ANSWER_NO_CAP", "1")...`.
+It removes **both** the sentence cap and the soft char-cap loop from
+`normalise_answer_for_regenold` on the live Stage-2 path.
+
+* [`app/integrations/regenold/models.py:287-304`](app/integrations/regenold/models.py) —
+  `_ANSWER_NO_CAP: ContextVar[bool]` + `set_answer_no_cap()` / `answer_no_cap_active()`.
+  **Request-scoped ContextVar, not a kwarg threaded through call sites.**
+  `normalise_answer_for_regenold` has nine call sites in `regenold.py`;
+  threading a parameter through all nine is exactly how a change ends up
+  silently inert on the one path that matters — the R256 class of bug, and
+  the same failure mode as R72's own gate key never being set (fixed only at
+  R72.1). One set point, one read point, no call site can miss it. Mirrors
+  the `ReasoningTrace` ContextVar pattern already in the repo. The route sets
+  it unconditionally (True *or* False) on every request specifically so a
+  ContextVar can never leak a stale value from a previous request on a reused
+  worker thread.
+* Consumed at [`models.py:1374`](app/integrations/regenold/models.py) —
+  `if not _raw_ms and answer_no_cap_active(): _no_cap = True`. **Precedence,
+  verified by reading the branch order**: an explicit
+  `REGENOLD_MAX_ANSWER_SENTENCES=<n>` always wins (it makes `_raw_ms`
+  truthy, which short-circuits the ContextVar branch entirely and falls to
+  the `else` that parses the explicit integer). The ContextVar only fires
+  when the env is unset. The module constant `MAX_ANSWER_SENTENCES = 3` is
+  the floor when neither is set — which is the davidath bench's permanent
+  state.
+
+**Measured live failure this closes**: prod shipped 3 sentences / 298 chars
+announcing *"a defined set of obligations under Article 26"* and then
+delivering 2 of ~6:
+
+> *"Deployers of high-risk AI systems must comply with a defined set of
+> obligations under Article 26. They must use the system in accordance with
+> the provider's instructions of use. They must assign human oversight
+> functions to natural persons"*
+
+The R306 enumeration guard (`answer_normaliser.enumeration_run_end` /
+`_run_indices`) cannot catch this — it protects a labelled `(a) ... (b) ...`
+run, and this list is **prose**, not labelled clauses.
+
+**Correction made within this same round** (recorded here so it isn't
+re-litigated): an earlier draft of the round attributed the truncation to
+the sentence cap. On the REAL 30-row graded sample, only **2/30 rows are
+sentence-cap bound** — most trip `_is_multi_phrase` and already get a
+12-sentence budget under the pre-existing R119 multi-phrase carve-out. The
+constraint that actually bites on the graded set is the **char cap and its
+sentence-dropping loop**, which preferentially deletes the non-citation
+sentences — exactly the list members that don't name an article. The uncap
+disables both the sentence slice and the char-cap loop, so it closes the
+failure regardless of which of the two was the proximate cause on a given
+row.
+
+**Trade, stated plainly** (matches the commit's own framing, and R305's
+executive summary): Answer-Conciseness is the *only* axis the official
+regenold scorecard says we lead, so this spends the one axis with zero
+headroom to buy completeness. That is the operator's explicit call, made
+with the numbers on the table — see KNOWN, UNRESOLVED below.
+
+### Fix 2 — `REGENOLD_ANSWER_COVERAGE` (default ON)
+
+[`app/data/graph_rag_prompts.py:802-833`](app/data/graph_rag_prompts.py) —
+`USER_ANSWER_COVERAGE_CLAUSE` (1545 chars, byte-verified) +
+`answer_coverage_enabled()`. Wired at
+[`app/engines/_graph_rag_impl.py:~7033-7086`](app/engines/_graph_rag_impl.py)
+(`_claude_max_enhance_answer`): `if answer_coverage_enabled(): user_message +=
+USER_ANSWER_COVERAGE_CLAUSE`, wrapped in a bare `except Exception: pass` so a
+prompt add-on can never break Stage-2.
+
+**What it ports.** Five load-bearing CONTENT rules out of the dead system
+prompt, ranked by fit to the measured live failure signature (legal_v2: mean
+factual score 0.9647 against an answer pass rate of 0.48, `omission_rows 24`
+vs `fabrication_rows 5` — the model is accurate but incomplete):
+literal-question closure, closed-set completeness (rule 12b), canonical
+statutory terminology (the term-not-paraphrase half), the group-don't-drop
+device, and ANSWER-THE-HEADLINE's "name the members" half. The **~14 FORM
+rules are deliberately NOT ported** — they already have working
+deterministic backstops in `answer_normaliser.py` / `tone_guard.py`, and
+re-delivering them would be pure prompt bloat with no correctness payoff.
+
+**The anti-citation-inflation guard is load-bearing, not decoration.**
+`legal_v2` scores reference correctness as
+`governing / (governing + supporting + wrong)`; the system currently PASSES
+it at **0.8056** with recall **1.0** and `focus_precision` **0.6361** — so
+roughly 36% of what is cited is already non-governing, and every extra
+supporting ref cuts the score arithmetically. A completeness instruction that
+reads as licence to cite more is a net loss even when it fixes an omission,
+which is exactly why R284's own COMPLETENESS clause ships default OFF
+(`pred:gold 1.71 -> 1.75`, `ref_conc -0.042`) and why R142.1 lost a live
+pairwise judge 11-0 (p=0.001). The clause therefore:
+
+* is scoped to provisions **already being cited** — naming a member,
+  condition, exception or limb inside such a provision adds **no new
+  reference**;
+* pays for the extra room by instructing the model to **cut off-question
+  sentences**, never by adding length;
+* was adversarially reviewed before shipping — a "statutory-wording-first"
+  variant was **rejected outright** as fatally inflationary, because it
+  triggered on *"when the supplied text names..."* (scoped to the
+  over-retrieved context block, not to the question), which directly
+  contradicted the existing `USER_REF_MINIMALITY_CLAUSE`.
+
+### Fix 3 — `REGENOLD_WRAPPER_MODEL_ALIAS` default flipped ON → OFF
+
+[`app/llm/openai_wrapper_provider.py:86`](app/llm/openai_wrapper_provider.py) —
+`_model_alias_enabled()` default flipped `"1"` → `"0"`.
+`GraphRAGSettings.stage2_model` and `complex_model` have both said
+`claude-opus-5` since R292, but the transport was silently rewriting every
+Opus model name to `claude-opus-4-6` on the way to the wire — so **no
+production request had ever actually run on Opus 5**. That rewrite arrived
+ungated and unlogged in an undisclosed rider to `757f0cb`; R300's review made
+it loggable and env-gated but kept the default ON pending evidence that Opus
+5 genuinely worked.
+
+**The evidence, measured live (one probe each) against the wrapper:**
+
+```
+claude-opus-5                 -> HTTP 200, model echoed back
+claude-opus-4-6 / 4-8, sonnet-5 -> HTTP 200
+definitely-not-a-model-xyz    -> HTTP 500 "No response from Claude Code"
+```
+
+A bogus model name fails **loudly**, so the 200 on `claude-opus-5` is genuine
+acceptance, not silent coercion into something else. The wrapper's
+`/v1/models` list omits `opus-5` — but that list is **stale**: the model
+string passes through verbatim to the Claude Code CLI, which resolves it.
+Verified end-to-end through the real route: models sent to wire =
+`['claude-opus-5']`, `stage2_landed` True.
+
+**Operational footnote — the fix required a live wrapper-service restart,
+separate from this repo's own deploy.** The `claude-opus-5 -> "opus"` alias
+that used to sit inside the wrapper's own transport
+(`D:\Claude Projects\claude-code-openai-wrapper\src\claude_cli.py`) carried a
+comment claiming *"'opus' is the CLI alias for the latest Anthropic Opus
+model"* — which was false. On the CLI version then installed, `opus`
+resolved to `claude-opus-4-8`, not opus 5, so that in-wrapper alias was
+*also* silently downgrading every opus-5 request, on top of the
+`openai_wrapper_provider.py` alias fixed above. That in-wrapper alias has
+since been removed **on disk** (`git status` in the wrapper repo shows
+`src/claude_cli.py` modified, uncommitted), but the **running**
+`regenold-wrapper` Windows service is a long-lived process that only reads
+its source at startup — so the fix does not take effect until the service is
+restarted (`Restart-Service -Name regenold-wrapper -Force`, elevated). Until
+that restart, Stage-2 could still silently run on Opus 4.8 even with both
+repo-side aliases turned off. The wrapper's own source comment states the
+correct post-upgrade verification recipe: `claude -p --model claude-opus-5`
+should report `modelUsage ['claude-opus-5']` — **the OpenAI-shaped response's
+echoed `"model"` field is a bare echo of the request and is NOT proof of
+which model actually ran** (this is precisely the mechanism that made the
+original silent downgrade invisible to callers for however long it was in
+place).
+
+### The deliberate cache-key asymmetry
+
+[`app/routes/regenold.py:1341-1356`](app/routes/regenold.py) —
+`REGENOLD_ANSWER_COVERAGE` and `REGENOLD_WRAPPER_MODEL_ALIAS` are folded into
+`_engine_cache_key`; `REGENOLD_ANSWER_NO_CAP` deliberately is **not**. The
+in-code comment states the rationale verbatim:
+
+> *"NOTE the deliberate asymmetry with its sibling R308 flag:
+> REGENOLD_ANSWER_NO_CAP is NOT in this key and must not be. The uncap is
+> pure ROUTE post-processing that re-runs on every cache hit, so a flip
+> cannot serve a stale answer — and keeping it out is what makes the paired
+> same-process A/B possible at all (measured: arm B served from cache in
+> 0.1s vs arm A's 37.8s, giving a zero-generation-variance comparison)."*
+
+COVERAGE and the model alias both flip the *engine's* answer text (they
+change what Opus is asked to produce), so per the R30/R56/R79/R263.2
+cache-poisoning doctrine they must be in the key or a same-process two-arm
+A/B silently serves arm A's cached answer to arm B. NO_CAP only changes
+route-level *post-processing* of an already-cached engine answer, which
+re-runs identically on every cache hit regardless of the flag — so excluding
+it from the key is correct, not an oversight, and it is what turns the
+uncap's A/B into a clean, zero-generation-variance paired comparison (see
+KNOWN, UNRESOLVED).
+
+### Why davidath is byte-identical by construction
+
+All three switches gate on the live Stage-2 path. The deterministic bench
+runs `provider=cli` with no wrapper wired, so `_stage2_provider_enabled()` is
+False, Stage-2 never fires, `_stage2_landed_for_answer` is always False, the
+route never calls `set_answer_no_cap(True)`, `answer_coverage_enabled()`'s
+clause is never appended to a Stage-2 user message that never gets built, and
+the model-alias resolver is never invoked. The module constant
+`MAX_ANSWER_SENTENCES = 3` governs the bench exactly as before — this is the
+same gating discipline as R72 / R100 / R109 / R144 / R263.
+
+### Gates
+
+| Gate | Result |
+| ---- | ------ |
+| davidath QA bench | **byte-identical**, confirmed by stashing the R308 changes and re-running rather than trusting the documented figure (which was stale for this commit) — Ans Loose 0.1407 / Ans Strict 0.4079 / Ans Conc 0.1961 / Ref Loose 0.8394 / Ref Strict 0.5543 / Ref Conc 0.4395 / Tone 1.0. **Independently reproduced post-merge** (2026-08-04, clean re-run at HEAD under the documented neutralising env `OPENAI_API_BASE=http://127.0.0.1:1/v1 P2P_GRAPH_RAG_PROVIDER=cli REGENOLD_EXTERNAL_EMBEDDINGS=0`): all seven axes matched to the digit. ⚠ A re-run graded against the **R300-era pin** (Ans Loose 0.1402 / Ans Strict 0.4032 / Ans Conc 0.1980) instead shows a spurious ~0.005 Answer-axis "drift" — that pin predates R303/R305/R306/R307 and is stale for this commit. Grade R308 against the figures in its own commit body, not against that pin. |
+| deterministic inertness — **measured, not argued** | The "byte-identical BY CONSTRUCTION" claim above is an argument; it was upgraded to a measurement post-merge, because R308 edits `app/integrations/regenold/models.py` (the answer normaliser) which DOES sit on the deterministic path, so a hole in the `stage2_landed` gate would silently change every deterministic answer. Two per-row diffs over all 137 QA rows (`pred_answer` + `pred_refs` + all 13 score axes, `latency_ms` excluded as timing noise): **(a)** HEAD with `REGENOLD_ANSWER_NO_CAP=0 REGENOLD_ANSWER_COVERAGE=0` vs HEAD at code defaults → **0 rows differ on anything**; **(b)** HEAD vs its parent `4c4a720` (docs-only on R307.1 `b114e4f`, run in a worktree) → **0 rows differ, identical in every digit**. Traced to the mechanism: `_stage2_landed_for_answer` at [`app/routes/regenold.py:6349-6355`](app/routes/regenold.py) reads `graph_stats["stage2_landed"]`, always False under `provider=cli`; `answer_coverage_enabled()` is only read inside the Stage-2 wrapper-call builder at [`app/engines/_graph_rag_impl.py:7082-7085`](app/engines/_graph_rag_impl.py), unreachable without a live provider. **R308 introduces zero deterministic change.** Corollary: the ~0.005 drift does not reproduce against the parent either, so it is a stale-pin artefact and nothing to do with R308. |
+| `evals.regenold.runner` (276) | **255/255**, RISK_F1 macro 1.00 |
+| OOS probe (51 rows) | **0 scope leaks** — only the 2 documented `adjacent_eu` soft fails (pre-existing, unrelated to this round) |
+| new tests | `tests/test_r308_uncap_and_coverage.py` — **16 new tests** (`TestAnswerUncap`, `TestAnswerCoverageClause`, `TestClauseIsActuallyDelivered`, `TestCacheKeyAsymmetry`), pinning the byte-identical-by-default guarantee, full-content preservation under uncap, the char-cap-loop interaction, the anti-inflation scoping, and the cache-key asymmetry itself |
+| touched tests | `tests/test_r300_review_fixes.py` — 3 `TestWrapperModelAlias` tests rewritten for the flipped default (`test_default_sends_the_configured_model_verbatim` replaces `test_default_preserves_pre_r300_behaviour`; the `=1` rollback test now asserts the pre-R308 downgrade) |
+| `two_stage_pipeline` failures | 7 failures proven **pre-existing**, not a regression, by stash A/B: 40/40 pass under the clean wrapper-enabling env; the identical 7 fail on baseline HEAD under `provider=cli` |
+
+### KNOWN, UNRESOLVED
+
+The round shipped with an honestly-documented open question rather than a
+claimed win — this is what the checkpoint below tracks to closure:
+
+* The uncap **inflates references 2.33 → 3.50/row**, measured in a **paired,
+  zero-generation-variance A/B** made possible by the cache-key asymmetry
+  above (arm B served from cache in 0.1s vs arm A's 37.8s — both arms answer
+  from the identical underlying Opus generation, so the only variable is the
+  route-level cap).
+* On inspection, most added refs are **legally correct** — e.g. the provider
+  answer added `Article 43/47/48/49`, which is exactly what Article 16
+  enumerates as the provider's obligations — but **"correct" is not "gold" on
+  an axis the system currently passes** (`legal_v2` reference correctness at
+  0.8056; see Fix 2 above for why every added supporting ref cuts that score
+  arithmetically).
+* **Whether the anti-inflation guard inside `USER_ANSWER_COVERAGE_CLAUSE`
+  actually controls this is NOT established.** The n=7 comparison available
+  at ship time used independent (non-paired) generation, which is **inside
+  Opus's own sampling noise** — not a result you can act on. (The general
+  shape of that problem is already measured on this harness: two `easyhard_ab`
+  runs at n=40 with an **identical** baseline arm changed 20/40 rows'
+  `pred_refs` and sign-flipped all three reference axes on generation variance
+  alone. Never ship or reject a reference-axis change on one small-n live run.)
+* **The decisive gate is `evals.harness.easyhard_ab`, not `ab_judge`.**
+  Unlike `ab_judge`, `easyhard_ab` scores reference conciseness as a
+  **count-ratio** against gold — `ab_judge`'s refs axis has **no minimality
+  term**, which is precisely how R142.1's positional clamp lost a live
+  pairwise 11-0 while looking fine on `ab_judge` alone. This is a hard-rule-#6
+  situation: the merge gate for whether the uncap is net rubric-positive on
+  references has not yet run.
+
+See `.planning/R308-CHECKPOINT.md` for the pending verification plan and the
+exact blocking step (the wrapper-service restart above) that a fresh session
+must clear before that gate can run cleanly on genuine Opus 5 output.
+
+### Rollback
+
+Each switch is independently reversible with no code change:
+
+```bash
+REGENOLD_ANSWER_NO_CAP=0          # restore the 3-sentence / char-cap ceiling
+REGENOLD_ANSWER_COVERAGE=0        # revert to the pre-R308 delivered instruction set
+REGENOLD_WRAPPER_MODEL_ALIAS=1    # restore the pre-R308 Opus -> claude-opus-4-6 downgrade
+```
+
+An explicit `REGENOLD_MAX_ANSWER_SENTENCES=<n>` still wins over
+`REGENOLD_ANSWER_NO_CAP` on its own (see Fix 1), so an operator can pin a
+specific cap back on without touching the uncap switch at all.
+
+## Round 311 — the R309 levers, adversarially triaged: 3 of 5 are dead, the MedTech one is a route-exclusivity bug (2026-08-04)
+
+Deep-dive on the R309 handoff (`docs/reviews/R309-hard-batch-live-opus5-sonnet5-judge.md`
+§10). A 5-lane investigation + adversarial verification workflow, plus
+independent measurement against the judge's own structured fields. **The
+headline is a correction: the review's §6.2 clustering — and therefore its
+lever ranking — is not reproducible, and three of its five ranked levers are
+refuted by the data it was derived from.**
+
+### The review's own numbers do not reproduce
+
+§6.2 clusters `failure_mode` PROSE. Recomputed from the judge's structured
+fields (`redundant_sentence_count` / `unrequested_topic_count`):
+
+| | doc §6.2 | measured |
+| --- | --- | --- |
+| redundant restatement | 22 | **24** |
+| scope drift | 13 | **31** |
+
+The doc's two figures sum to 35 against **45** conciseness failures — exactly
+the size of the 10-row BOTH bucket, i.e. it assigned one theme per row and
+lost the second cause. Mechanical decomposition: redundancy-only 14 /
+drift-only 21 / BOTH 10 / **neither 0**. So **L4 (drift) is bigger than L1
+(redundancy)**, the doc inverts them, and fixing redundancy alone caps at the
+**14** redundancy-only rows (ceiling 0.569) because the BOTH rows still fail
+on drift.
+
+### Refuted — do not re-pay these
+
+* **L1's deterministic near-duplicate collapse: measured INERT.** 0 of the 27
+  flagged sentences are lexical near-duplicates (token-Jaccard AUC 0.634; the
+  single most similar sentence in the corpus is NOT flagged, and the top 6 by
+  Jaccard are all legitimate). **No threshold on any metric exceeds precision
+  0.278**; catching a majority means dropping 32-46% of every legitimate
+  sentence. R145 predicted this in its own rule text ("under different
+  framings" ⇒ low lexical overlap by construction).
+* **L1's "state the verdict once" USER rule: already shipped.** R145 put it on
+  the delivered channel in BOTH Stage-2 branches
+  (`_graph_rag_impl.py:6897` and `:6939`). It was live for R309 and redundancy
+  is still 24/72, on rows that all received it.
+* **L4's "answer only what was asked" USER rule: already shipped ×3** —
+  `USER_REF_MINIMALITY_CLAUSE` ("do not cite it **and do not describe it**"),
+  `USER_ANSWER_COVERAGE_CLAUSE` ("delete sentences about supplied provisions
+  the question did not ask about"), and `_graph_rag_impl.py:6946`. Drift is
+  still 31/72. A fourth overlapping rule is prompt accretion (R277: measured
+  quality-neutral; R282: volume on a delivered channel is itself harmful).
+* **L3's three proposed mechanisms, all refuted against the judge's labels:**
+  "drop refs the prose never describes" is a **no-op — 49/53 (92%) of wrong
+  refs ARE faithfully described** (the R298/R302 finding, third door);
+  "drop general provisions when a specific one is present" fires on **0/53**;
+  and "`Annex I` is the obvious first probe" is an identity blocklist, already
+  on the do-not-repropose list — every frequent wrong ref is MORE often
+  governing (Annex III wrong 9 / governing 12; Annex I 4 / 7; Article 6 3 /
+  20). A hypothesis of my own — that wrong refs are the citation footprint of
+  drift — explains only 23% and was dropped too.
+
+### Shipped — L5, root-caused; 3 of its 5 rows fixed
+
+L5 (MedTech, answer 0.80 / **references 0.00 on 5/5**) is the one lever that
+survived, and it is a single structural defect, not five. All five questions
+are Article 6(1)/Annex I product-safety-component asks (one is a **lift**, so
+this is not medtech-specific), and the wrong refs are exactly `Annex III` (3)
+and `Article 43` (2):
+
+* **`Annex III`** — Article 6(1) (Annex I product route) and Article 6(2)
+  (Annex III use-case list) are ALTERNATIVE routes, but
+  `kb_xrefs.cross_refs('Art. 6', limit=2)` returns `('Annex I', 'Annex III')`,
+  so pinning one drags the other along. Stage-2 then discusses it *negatively*
+  and `_add_prose_named_refs` counts the negative mention as "described".
+* **`Article 43`** — the conformity-assessment PROCEDURE, downstream of
+  classification. It arrives from `_KEYWORD_ENTITY_MAP`'s bare
+  `("conformity assessment", "Art. 43")`, and Article 6(1)'s own statutory
+  test literally contains "third-party conformity assessment", so every
+  question that states the Article 6(1) criterion trips it.
+
+**Half the rule was already written and delivered to nobody.** The dead
+`ANSWER_GENERATE_SYSTEM` says verbatim at line 117: *"Do NOT cite Article 16
+(provider obligations), Article 5 (prohibitions), or Annex III (the separate
+use-case route) for an Annex I product-conformity question."* Per R308 the
+wrapper drops the system slot 100%, so it has never been enforced. R311
+enforces **that half** deterministically.
+
+⚠ **Do NOT port line 117 wholesale.** The same line also says *"foreground
+Article 43 (the conformity-assessment procedure)"* and *"you MUST explicitly
+cite Article 6 and Annex I … alongside Article 43"* — and Article 43 is the
+**WRONG** reference on july7-004 and july7-074, where the offending sentence
+IS that mandated Article 43 content. Porting the line as written would
+**entrench two of the five MedTech failures** and risk adding Article 43 to
+the three rows that currently avoid it. Line 115 in the same block separately
+forbids `Annex I`, which is GOVERNING on three MedTech rows. The prohibitive
+half is right; the prescriptive half is wrong against measurement.
+
+Four fixes, all measured before being written:
+
+1. **`_apply_annex_i_route_exclusivity`** (`app/routes/regenold.py`, env
+   `REGENOLD_ANNEX_I_ROUTE_EXCLUSIVITY`, default ON) — runs LAST among the
+   reference passes. Drops `Annex III`; drops `Article 43` only on a purely
+   classificatory ask (keep-by-default). The gate reuses the curated
+   `annex_i_safety_component` topic's own regexes as the single source of
+   truth, and scans only the LIVE turn (R71).
+2. **`_NOISE_HIGHRISK_SIGNALS` copular forms** — july7-008 asks "...considered
+   **to be** high-risk...", the interposed copula defeated the literal
+   `considered high-risk`, and `_suppress_noise_anchors` therefore dropped
+   **Article 6, the GOVERNING article**, shipping Article 43 + Annex I with no
+   Article 6 at all. Purely protective: a high-risk signal can only PRESERVE a
+   broad anchor.
+3. **`_CONTRAST_BEHIND_RE` widened** (24 → 60 chars, up to 4 intervening
+   words) — "the classification does **not** depend on **Annex III**" was
+   being read as a description. The gap cannot cross a sentence boundary.
+4. **R310 word-order near-miss** — `strip_retrieval_meta` matched
+   `provisions supplied` but not the participle→noun `supplied provisions` the
+   live july7-023 answer ships. One-line, same-shape extension.
+
+### Why this is not the R142.1 trap
+
+R142.1's positional `[:budget]` clamp lost a live pairwise judge **11-0
+(p=0.001)** by dropping gold. This pass is signal-driven, gold-protected and
+floor-protected, and was validated **with the production functions** against
+the judge's own GOVERNING / SUPPORTING / WRONG labels on all 72 rows:
+
+```
+rows where it fires    : 4
+GOVERNING refs dropped : 0
+WRONG refs removed     : 4
+reference_correctness  : 35/72 = 0.486  ->  39/72 = 0.542
+davidath               : gate fires on 18 rows, GOLD dropped on 0
+```
+
+**Per-row, stated plainly — the MedTech stratum goes 0/5 -> 3/5, not 5/5**,
+and the fourth flipped row is outside the stratum:
+
+| row | refs before -> after | outcome |
+| --- | --- | --- |
+| july7-008 | `[6, Annex III, Annex I]` -> `[6, Annex I]` | **FIXED** |
+| july7-071 | `[6, Annex III, Annex I]` -> `[6, Annex I]` | **FIXED** |
+| july7-074 | `[6, 43]` -> `[6]` | **FIXED** |
+| july7-004 | unchanged | still fails — deliberate |
+| july7-092 | unchanged | still fails — gate does not fire |
+| july7-255 | `[6, Annex I, Annex III]` -> `[6, Annex I]` | **FIXED** (Multi-Turn stratum) |
+
+* **july7-004** keeps `Article 43` because its question states "undergoes a
+  3rd party conformity assessment", which trips the procedure-ask guard. That
+  is the CONSERVATIVE side of a deliberate trade: loosening the guard to catch
+  this row also strips the GOVERNING `Article 43` from july7-110. One row of
+  precision is worth more than one governing reference.
+* **july7-092** ("AI software that helps clinicians take medical decisions")
+  matches none of the `annex_i_safety_component` patterns — no "safety
+  component", no "medical device" token — so it reaches the wire through
+  `_GENERAL_CLASSIFICATION_REFS`, a different emission site this pass does not
+  touch. Extending the topic patterns to cover clinical-decision-support
+  phrasing is the obvious follow-up and needs its own davidath check.
+
+A broader **co-occurrence** form ("drop Annex III whenever Annex I is also
+predicted") was tested and **REJECTED** — it hits GOVERNING 5 times, including
+`july7-093` which currently passes. The question-shape gate does not fire on
+`july7-093` or on `july7-086` (the genuinely multi-route drone question), and
+keeps Article 43 on `july7-110`, where the judge scored it GOVERNING.
+
+### Gates
+
+| Gate | Result |
+| ---- | ------ |
+| davidath QA (137) | **byte-identical** to the correct post-R308 baseline — Ans Loose **0.1407** / Ans Strict **0.4079** / Ans Conc **0.1961** / Ref Loose **0.8394** / Ref Strict **0.5543** / Ref Conc **0.4395** / Tone **1.0** |
+| `evals.regenold.runner` (276) | **255/255 (100%)**, RISK_F1 macro **1.00**, all 28 categories |
+| OOS probe (`--oos-suite all`) | **0 scope leaks**; only the 2 documented pre-existing `adjacent_eu` soft fails |
+| `tests/test_r311_route_exclusivity.py` | **32 new tests**, all pass — written against the evaluator's VERBATIM questions (R305 shipped a detector that returned False on its own target because its test used a truncated copy) |
+| touched-surface suites, in-place stash A/B | **0 new failures, 0 fixed** — the 18 are the documented pre-existing `provider=cli` / `GROQ_API_KEY` denoiser cluster, identical on both arms |
+
+⚠ The A/B **must** be run in place: a `git worktree` baseline carries no
+`.env`, and the denoiser / topic-filter / safety-gate cluster changes
+behaviour on the presence of `GROQ_API_KEY` (measured elsewhere: 63 vs 92
+failures on the same commit).
+
+### Live end-to-end
+
+Deterministic route probe on the five MedTech questions — july7-008 goes from
+`['Article 43', 'Annex I']` (governing Article 6 **missing**) to exactly
+`['Article 6', 'Annex I']`, the judge's governing set, with fixes 1 and 2
+composing; july7-071 sheds `Annex III`; july7-074 sheds `Article 43`. Trace
+note `annex_i_route_exclusivity_dropped=<refs>` makes it auditable on the wire
+via `?include_reasoning=true`.
+
+### Rollback
+
+```bash
+REGENOLD_ANNEX_I_ROUTE_EXCLUSIVITY=0   # disable the route-exclusivity pass
+REGENOLD_STRIP_RETRIEVAL_META=0        # disable the R310/R311 meta strip
+```
+
+Fixes 2 and 3 are unconditional (both are strictly protective — one preserves
+a governing anchor, the other refuses to treat a negation as a description).
+
+### What is left, honestly
+
+Drift (31 rows) remains the largest conciseness cluster and is **not** fixed
+here: the generic instruction is already delivered three times and still
+fails.
+
+**The obvious next candidate was investigated and REFUTED — do not re-pay
+it.** Porting the un-ported REFERENCE SELECTION rules from the dead system
+prompt looks attractive because they name CONCRETE targets where the
+delivered clause's negative list stops at "Article 6, Annex I, Annex III".
+Measured against the same 72 rows, that is the identity blocklist under a new
+name: of the 11 articles the drift actually targets, **9 are GOVERNING
+somewhere in the same batch** — `Article 53` GOV 4 / WRONG 0 (blocklisting it
+is pure loss), `Article 27` GOV 3 / WRONG 2, `Article 24` GOV 2 / WRONG 0,
+`Article 25` GOV 2 / WRONG 1. Only `Article 26` (GOV 0 / WRONG 3) and
+`Article 74` (GOV 0 / WRONG 2) are clean, at n=3 and n=2 — far too small to
+act on. Plus the line-117 hazard above.
+
+Two further claims about drift were investigated and did **not** survive, so
+the causal picture is genuinely open: (a) "drift is a Stage-2 phenomenon"
+rests on a 30/63-vs-1/9 contrast that is a **length artifact** — 7 of the 9
+control rows are shorter than the shortest drifted answer anywhere, and above
+600 chars the rates are 0.48 vs 0.50; (b) "`USER_ANSWER_COVERAGE_CLAUSE`
+manufactures drift" has **no before/after evidence** — a pre-R308 batch
+(`legalv2-r305-final`, same judge) already shows drift at 31%, and on the 14
+shared rows drift went **down** 7 → 4 after R308.
+
+Any drift fix is also **not** reference-neutral: the effect reaches the wire
+through the stage2-gated R72 reconcile, and `_add_prose_named_refs` can
+CREATE a reference from a drift sentence — so it is a reference-affecting
+change that needs the same gold-protection discipline as a ref pass.
+
+Also still open: the R308 `easyhard_ab` gate — its documented invocation is
+missing `--endpoint`/`--local` and will `SystemExit` as written, and
+`--local` silently forces `?include_reasoning=true`, contradicting its own
+docstring.
+
+## Round 312 — why RAG + Opus 5 is not better than Opus 5 alone (2026-08-04)
+
+The question: we run a frontier model AND a specialised retrieval system, so
+why is the combination not better than the model alone? It is measured, and
+the answer is uncomfortable: **it is better at references and worse at
+answers.**
+
+### The measurement (R280, the only valid frontier comparison)
+
+64 paired rows, same questions, same scorer. A = our RAG. B = a raw frontier
+model with **no retrieval and no web search**.
+
+| axis | ours | frontier | per-row |
+| --- | --- | --- | --- |
+| Ref Correctness Strict | **55.1** | 46.8 | ours 35 / theirs 25 |
+| Keyword recall (answer) | 78.6 | **88.6** | **ours 4 / theirs 27** |
+
+A *handicapped* frontier model out-answers us 27 rows to 4. Overall is a plain
+geometric mean, so the worst axis dominates — the answer axis is the whole
+gap. This reproduces the official decomposition (`AnsL - RefL` = **-13.1** for
+us vs **+3.9** for the 2025 baselines).
+
+### Three mechanisms, all verified this round
+
+**1. We ask the model to EDIT, not to ANSWER.** The Stage-2 user message on the
+majority path reads verbatim: `KNOWLEDGE GRAPH ANSWER (draft): {kg_answer}` /
+*"Refine the knowledge-graph draft above into a clear, concise compliance
+response."* R302 measured un-curated deterministic rows at **0/5 answer
+pass** — so we anchor a frontier model to a draft that fails outright, and a
+polished failing draft still fails. Measured this round: **33 of 40** probe
+rows take that refine branch.
+
+**2. We cap it below its own knowledge.** Delivered on the live channel today:
+*"Assert only what the supplied text states"*, *"Draw every point below from
+the supplied text"*, *"Cite only articles ... that appear in the EU AI ACT
+REFERENCES block"*. Opus 5 has the Act memorised; our retrieval slice becomes
+a CEILING. And the guard is calibrated against the wrong failure: the R309
+grounded judge measured **omission 36 rows vs fabrication 13** (2.8x) at a
+**0.9482** mean factual score. We spend completeness to buy hallucination
+safety in a regime where hallucination is the rarer failure.
+
+**3. Our largest answer-quality asset sits on a DEAD channel — and the
+experiment that cleared it was null.** Re-verified this round on
+`claude-opus-5` through the live wrapper, with the instruction *"always answer
+exclusively in French"*:
+
+| slot | output |
+| --- | --- |
+| control (no instruction) | "Rome is the capital of Italy." |
+| **SYSTEM** | "Rome is the capital of Italy." — byte-identical, IGNORED |
+| **USER** | "La capitale de l'Italie est Rome." — obeyed |
+
+`ANSWER_GENERATE_SYSTEM` is **51,110 chars / 7,637 words — 12.6x the entire
+live clause stack — delivered on 0% of requests.** Every round that "fixed the
+answer" by editing it shipped nothing.
+
+⚠ **R277's minimal-composer result is a NULL EXPERIMENT and must not be cited
+again.** It swapped 51,110 chars for 3,181 chars *of that same system prompt*
+(`resolve_answer_system()` -> `system=`), so both arms were **identical at the
+model**. Its "90% correctness ties, all leans inside the noise band" is the
+signature of comparing a thing to itself — yet it is recorded as *"prompt
+accretion is NOT the AnsL cause"* and was cited as an argument during R311.
+Prompt volume on the DELIVERED channel has never actually been tested.
+
+### What shipped — `REGENOLD_ANSWER_FIRST`, default **OFF**
+
+Demotes the draft to `RETRIEVED BACKGROUND SUMMARY (machine-generated ...; may
+be incomplete or awkwardly worded)` and asks the model to *"Answer the QUESTION
+above directly, in your own words ... The background summary is reference
+material, NOT a draft to edit"*. Everything else in the message is
+byte-identical, so an A/B isolates the anchor. Folded into `_engine_cache_key`
+FIRST (R263.2) — without it the two-arm A/B this flag exists for would serve
+arm A's cached response to arm B and measure nothing.
+
+### The A/B — directionally positive, significant on nothing (n=40)
+
+Both arms generated in-process against the live Claude-Max wrapper, 40 rows,
+0 errors. **Not inert: 0/40 identical answers**, 27/40 identical ref lists.
+
+| axis | A refine | B answer-first | delta |
+| --- | --- | --- | --- |
+| keyword recall (answer proxy) | 0.9333 | 0.9667 | **+0.0333** (B 5 / A 1 / tie 34, p=0.219) |
+| ref_conc | 0.4605 | 0.4882 | +0.0277 |
+| ref_strict | 0.6249 | 0.6289 | +0.0040 |
+| ref_loose | 0.8750 | 0.8750 | flat |
+| regulatory tone | 1.0000 | 1.0000 | held |
+| answer chars | 1377.6 | 1405.8 | +28 (+2%, no conciseness risk) |
+| latency p50 | 23.7 s | 27.8 s | +4.1 s |
+
+**Ships default OFF.** Per the R270 / R142.1 discipline this project does not
+flip a default on noise-level evidence. Two honest caveats on the instrument:
+`kw_recall` is **saturated** here (0.9333 baseline, 34/40 ties) and noisy in
+both directions — B's biggest "win" was using the Act's statutory term *deep
+fake* where A wrote *deepfake*, and its biggest "loss" was writing *the system*
+where A wrote *high-risk AI system* (anaphora, not a quality drop). The
+grounded judge is the sensitive instrument and that population is NOT
+saturated (arm A: answer 13 pass / 16 fail, refs 11 / 18).
+
+### Gates
+
+| Gate | Result |
+| --- | --- |
+| davidath QA (137), flag default OFF | **byte-identical** — 0.1407 / 0.4079 / 0.1961 / 0.8394 / 0.5543 / 0.4395 / Tone 1.0 |
+| `tests/test_r312_answer_first.py` | 14 tests — default-OFF, env parse, cache-key presence, both framings pinned, and an assertion that the framing lives on the USER channel |
+
+Stage-2-only + default OFF ⇒ zero production behaviour change on merge.
+
+### The grounded-judge verdict — the draft is doing TWO jobs
+
+Both arms graded by the grounded Sonnet-5 judge against the verbatim Act text,
+40 paired rows, **0 judge errors on either side** (so no axis is excluded; the
+R309 §6.5 trap — diffing a `fail` against an ERRORED axis and inventing a
+regression — cannot apply here):
+
+| axis | A refine | B answer-first | delta | B>A | A>B | tie | p |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| answer_correctness | 0.475 | **0.575** | **+0.100** | 6 | 2 | 32 | 0.289 |
+| reference_correctness | 0.375 | 0.375 | 0.000 | 3 | 3 | 34 | 1.000 |
+| **citation_faithfulness** | **0.925** | 0.800 | **-0.125** | **0** | **5** | 35 | **0.062** |
+
+mean reference recall 0.8750 -> 0.8625 (-0.0125).
+
+**The targeted axis moved the right way and a different one broke.** The
+citation regression is the strongest single signal in the entire round — 0
+wins against 5 losses, p=0.062, the closest to significant anything measured —
+and every one of the five is textbook cite-and-mismatch, the model asserting
+things about a provision from its own knowledge that the verbatim text does
+not say:
+
+* `st_v4_001` — Article 3 cited for deployer / emotion-recognition definitions
+  that Article 3(1) does not contain.
+* `st_v4_006` — claims Article 6 classification is automatic "without any
+  further condition", ignoring the Article 6(3) derogations.
+* `tp_v4_011` — Article 6(2) mischaracterised as an
+  intended-purpose-over-commercial-label test.
+* `tp_v4_012` — Article 6(4)'s documentation duty attributed to Article 6(3).
+* `st_v4_019` — Article 101 cited and then never described.
+
+**So the draft is not only an anchor.** It caps the answer (mechanism 1, real:
++0.100 when removed) AND it is what keeps the prose tethered to the supplied
+text (-0.125 when removed). Removing it trades one for the other. Geometric
+mean across the three axes barely moves (0.548 -> 0.557) and buys +4.1 s.
+
+**Default stays OFF** — on evidence, not caution.
+
+⚠ **Correction to my own comparison script.** It printed
+`omission_present 0 rows / fabrication_present 0 rows / delta +0`. Those
+fields do **not exist** in the grounded judge's schema (its
+`answer_correctness` carries `correct / incorrect / unsupported / missing`;
+`omission_present` / `fabrication_present` are **legal_v2** fields). Absent is
+not zero — that line was a false reading and no omission/fabrication
+conclusion should be drawn from this run.
+
+### Next, in order — and the design the evidence now points at
+
+1. **Do NOT simply remove the draft.** Measured: it costs citation
+   faithfulness more than it buys answer correctness. The win requires
+   DECOUPLING the draft's two jobs — let the model answer freely, then run a
+   faithfulness VERIFICATION pass against the verbatim text of each cited
+   provision, dropping or repairing a claim the text does not support. That is
+   the bounded CoVe-style check R110 built the scaffolding for and deferred on
+   latency grounds; this round is the first hard evidence that it is the
+   load-bearing piece, because it is exactly the failure the draft was
+   silently preventing.
+2. Re-run any answer-side arm on a HARDER, unsaturated population (the R309
+   hard batch: 45/72 conciseness fails) — `kw_recall` on the probe set is
+   saturated at 0.9333 with 34/40 ties and cannot resolve these effects.
+3. Mechanism 2 (relax the knowledge cap) is now **more** dangerous, not less:
+   this round shows that loosening the model's tether to the supplied text
+   produces cite-and-mismatch at p=0.062 on 40 rows. Do not test it without
+   the verification pass from step 1 in place.
+4. Mechanism 3 remains a standing opportunity, not a fix: 7,637 words of tuned
+   answer guidance are undelivered. Porting is **not** mechanical — R311
+   measured that line 117's prescriptive half would entrench two MedTech
+   failures, and the concrete negative lists are identity blocklists where 9
+   of 11 named articles are governing somewhere.
 
 ## Non-goals / things to skip
 

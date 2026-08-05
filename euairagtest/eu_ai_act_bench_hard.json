@@ -1,0 +1,1819 @@
+{
+  "metadata": {
+    "name": "EU AI Act GraphRAG Citation Benchmark",
+    "regulation": "Regulation (EU) 2024/1689 (EU AI Act)",
+    "celex": "32024R1689",
+    "citation_granularity": "article / paragraph / point / sub-point + annex point + recital",
+    "provision_id_scheme": "Akoma Ntoso eId style, e.g. art_6__para_2__point_a, annex_III__point_5, recital_27",
+    "methodology": "arXiv:2603.09435 risk-tier + task-category construction, extended with subpoint citation sets, negative controls, and hallucination traps for the GraphRAG eval harness (see eu-ai-act-graphrag-plan.md, section 8).",
+    "task_types": [
+      "article_retrieval",
+      "obligation_generation",
+      "qa",
+      "risk_classification"
+    ],
+    "strata": [
+      "prohibited",
+      "high_risk_classification",
+      "high_risk_requirements",
+      "transparency",
+      "gpai",
+      "governance"
+    ],
+    "split": "hard",
+    "difficulty_definition": "multi-hop cross-reference resolution and obligation aggregation, ambiguous-tier classification, negative controls (out-of-scope -> cite nothing), and hallucination traps; exhaustive necessary-and-sufficient citation sets.",
+    "stats": {
+      "count": 42,
+      "by_stratum": {
+        "governance": 7,
+        "gpai": 7,
+        "high_risk_classification": 7,
+        "high_risk_requirements": 7,
+        "prohibited": 7,
+        "transparency": 7
+      },
+      "by_task_type": {
+        "qa": 9,
+        "obligation_generation": 13,
+        "risk_classification": 17,
+        "article_retrieval": 3
+      },
+      "by_risk_level": {
+        "high": 13,
+        "not_applicable": 13,
+        "prohibited": 6,
+        "limited": 5,
+        "minimal": 5
+      },
+      "negative_controls": 6,
+      "hallucination_traps": 8,
+      "negative_control_and_trap": 1,
+      "multi_hop": 36,
+      "medium_confidence": 1,
+      "distinct_provisions": 109
+    }
+  },
+  "items": [
+    {
+      "id": "hard_gov_001",
+      "difficulty": "hard",
+      "task_type": "qa",
+      "stratum": "governance",
+      "question": "A company placed a high-risk AI system classified under Annex III on the EU market on 1 March 2026. As of 1 March 2026, which EU AI Act obligations were already in force and which were not yet applicable?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "high-risk AI system under Annex III",
+        "intended_use": "biometric identification in a commercial context",
+        "input_data": "biometric data",
+        "domain": "commercial"
+      },
+      "gold_answer": "As of 1 March 2026, the general application date of 2 August 2026 had not yet arrived. Therefore, the main body of high-risk obligations (Chapters III, IV, etc.) was not yet in force. However, as of 1 March 2026: (1) The Chapter II prohibitions (Art. 5) had been in force since 2 February 2025; (2) The GPAI rules (Chapter V), governance provisions (Chapter VII), and penalties chapter (Chapter XII) had been in force since 2 August 2025. The provider's Annex III high-risk obligations under Chapter III were NOT yet applicable — those apply from 2 August 2026.",
+      "risk_level": "high",
+      "gold_citations": [
+        {
+          "citation": "Art. 113",
+          "provision_id": "art_113",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 6(2)",
+          "provision_id": "art_6__para_2",
+          "role": "supporting"
+        }
+      ],
+      "reasoning_hops": 3,
+      "multi_hop": true,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Multi-hop temporal reasoning: (1) identify Annex III classification via Art. 6(2); (2) determine placement date vs. phase-in dates in Art. 113; (3) identify which chapters were/were not yet in force on 1 March 2026. The date is deliberately between 2 Aug 2025 and 2 Aug 2026 to force reasoning across multiple phase-in windows."
+    },
+    {
+      "id": "hard_gov_002",
+      "difficulty": "hard",
+      "task_type": "obligation_generation",
+      "stratum": "governance",
+      "question": "A provider of a high-risk AI system fails to register the system in the EU database as required. A national authority initiates an investigation. The provider, during the investigation, knowingly provides incomplete information to the authority. Which penalty tiers apply and under which provisions?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "high-risk AI system",
+        "intended_use": "credit scoring for consumers",
+        "input_data": "financial and personal data",
+        "domain": "finance"
+      },
+      "gold_answer": "Two separate penalty tiers apply. First, the failure to register falls under Article 99(4) (up to EUR 15,000,000 or 3% of total worldwide annual turnover, whichever is higher), as non-compliance with provider obligations. Second, knowingly providing incomplete information to the authority falls under Article 99(5) (up to EUR 7,500,000 or 1% of total worldwide annual turnover, whichever is higher).",
+      "risk_level": "high",
+      "gold_citations": [
+        {
+          "citation": "Art. 99(4)",
+          "provision_id": "art_99__para_4",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 99(5)",
+          "provision_id": "art_99__para_5",
+          "role": "primary"
+        }
+      ],
+      "reasoning_hops": 2,
+      "multi_hop": true,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Multi-hop penalty-tier matching. Two distinct infringement types trigger two different tiers: Art. 99(4) for the substantive operator obligation breach and Art. 99(5) for the misleading-information infringement. Requires distinguishing the tiers without conflating them."
+    },
+    {
+      "id": "hard_gov_003",
+      "difficulty": "hard",
+      "task_type": "risk_classification",
+      "stratum": "governance",
+      "question": "A research institute develops an AI system solely for a publicly funded academic research project studying algorithmic fairness. The system is never placed on the market or put into service. Does the EU AI Act impose obligations on the institute?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "AI fairness research tool",
+        "intended_use": "internal scientific research only, never deployed or marketed",
+        "input_data": "synthetic datasets",
+        "domain": "academic research"
+      },
+      "gold_answer": "No. The EU AI Act does not apply to AI systems or AI models specifically developed and put into service for the sole purpose of scientific research and development. Additionally, research, testing, or development activity prior to market placement or putting into service is excluded. The institute has no obligations under the Regulation for this activity.",
+      "risk_level": "not_applicable",
+      "gold_citations": [
+        {
+          "citation": "Art. 2(6)",
+          "provision_id": "art_2__para_6",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 2(8)",
+          "provision_id": "art_2__para_8",
+          "role": "supporting"
+        }
+      ],
+      "reasoning_hops": 2,
+      "multi_hop": true,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Two overlapping exclusions apply: Art. 2(6) for R&D-only AI systems and Art. 2(8) for pre-market R&D activity. Both must be cited because the scenario fits both. Not a negative_control because citations are non-empty."
+    },
+    {
+      "id": "hard_gov_004",
+      "difficulty": "hard",
+      "task_type": "risk_classification",
+      "stratum": "governance",
+      "question": "A person uses a consumer AI writing assistant on their personal laptop to draft private letters and manage their household budget, with no commercial or professional purpose. Does the EU AI Act impose deployer obligations on this person?",
+      "scenario": {
+        "role": "deployer",
+        "system_type": "consumer AI writing and productivity assistant",
+        "intended_use": "personal letter drafting and household budgeting",
+        "input_data": "personal text inputs",
+        "domain": "personal / private use"
+      },
+      "gold_answer": "No. The EU AI Act explicitly excludes obligations of deployers who are natural persons using AI systems in the course of a purely personal non-professional activity. This person has no deployer obligations under the Regulation.",
+      "risk_level": "not_applicable",
+      "gold_citations": [
+        {
+          "citation": "Art. 2(10)",
+          "provision_id": "art_2__para_10",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 3(4)",
+          "provision_id": "art_3__para_4",
+          "role": "definition"
+        }
+      ],
+      "reasoning_hops": 2,
+      "multi_hop": true,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Two-hop: first check whether the person qualifies as a deployer (Art. 3(4) carves out personal non-professional use from the definition itself), then confirm the scope exclusion in Art. 2(10). Both are needed for an exhaustive answer."
+    },
+    {
+      "id": "hard_gov_005",
+      "difficulty": "hard",
+      "task_type": "qa",
+      "stratum": "governance",
+      "question": "Does the EU AI Act require a data protection impact assessment (DPIA) for deployers of high-risk AI systems, and which article mandates this?",
+      "scenario": null,
+      "gold_answer": "The EU AI Act does not impose a DPIA requirement. DPIAs are a GDPR instrument (Article 35 GDPR). The EU AI Act imposes its own deployer obligations (e.g., Art. 27 fundamental rights impact assessment for certain deployers), but a DPIA as such is not found in the EU AI Act.",
+      "risk_level": "not_applicable",
+      "gold_citations": [],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": true,
+      "hallucination_trap": true,
+      "trap_note": "Tempting wrong citation: 'Art. 35 GDPR' (belongs to a different regulation entirely) or a fabricated 'Art. 29 EU AI Act DPIA requirement'. The EU AI Act does not contain a provision mandating DPIAs by that name. Citing Art. 35 GDPR as an EU AI Act provision would be a hallucination; citing a non-existent AI Act article would also be fabricated.",
+      "confidence": "high",
+      "annotator_notes": "True negative control AND hallucination trap. DPIA is a GDPR concept that a system trained on legal text may incorrectly import into the AI Act. The correct answer is that no EU AI Act article mandates a DPIA; gold_citations is empty because the AI Act contains no such requirement. Art. 27 of the AI Act covers a fundamental rights impact assessment for certain public-body deployers, but that is not a DPIA."
+    },
+    {
+      "id": "hard_gov_006",
+      "difficulty": "hard",
+      "task_type": "obligation_generation",
+      "stratum": "governance",
+      "question": "A provider deploys a real-time remote biometric identification system in a public space in violation of the Article 5 prohibition. The provider's total worldwide annual turnover in the preceding financial year was EUR 200,000,000. What is the maximum fine it can face, and which provision sets that cap?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "real-time remote biometric identification system",
+        "intended_use": "mass surveillance in public spaces — prohibited use",
+        "input_data": "biometric and facial recognition data",
+        "domain": "public safety / prohibited"
+      },
+      "gold_answer": "The maximum fine is EUR 35,000,000 or 7% of total worldwide annual turnover, whichever is higher. With a turnover of EUR 200,000,000, 7% equals EUR 14,000,000 — which is lower than EUR 35,000,000. Therefore the cap is EUR 35,000,000. This is set by Article 99(3), which covers violations of the Article 5 prohibitions.",
+      "risk_level": "prohibited",
+      "gold_citations": [
+        {
+          "citation": "Art. 99(3)",
+          "provision_id": "art_99__para_3",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 5",
+          "provision_id": "art_5",
+          "role": "supporting"
+        }
+      ],
+      "reasoning_hops": 2,
+      "multi_hop": true,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Multi-hop: (1) classify the conduct as an Art. 5 prohibited practice; (2) apply Art. 99(3) penalty tier; (3) arithmetic to determine which figure is higher. Tests whether the model knows the 'whichever is higher' logic. The scenario deliberately makes the percentage lower than the flat cap to require the computation."
+    },
+    {
+      "id": "hard_gov_007",
+      "difficulty": "hard",
+      "task_type": "qa",
+      "stratum": "governance",
+      "question": "Under the EU AI Act, what is the maximum fine for a provider who breaches obligations relating to a high-risk AI system under Article 16, and is this the same as the fine for breaching the GDPR's general data protection principles under Article 5 GDPR?",
+      "scenario": null,
+      "gold_answer": "For breaching Article 16 obligations (high-risk AI system provider obligations), the EU AI Act cap is EUR 15,000,000 or 3% of total worldwide annual turnover under Article 99(4), whichever is higher. The GDPR Article 83(5) cap for breaching Article 5 GDPR principles is EUR 20,000,000 or 4% of turnover — a different instrument with different amounts. These are not the same; the AI Act cap for this infringement type is lower.",
+      "risk_level": "not_applicable",
+      "gold_citations": [
+        {
+          "citation": "Art. 99(4)",
+          "provision_id": "art_99__para_4",
+          "role": "primary"
+        }
+      ],
+      "reasoning_hops": 2,
+      "multi_hop": true,
+      "negative_control": false,
+      "hallucination_trap": true,
+      "trap_note": "Hallucination trap: the question invites conflation of GDPR Art. 83(5) (EUR 20M / 4%) with the EU AI Act penalty tier. A model may cite 'EUR 20,000,000 or 4%' — which is the GDPR figure, not the AI Act figure. The correct AI Act answer for this infringement is Art. 99(4): EUR 15,000,000 or 3%. Citing EUR 20M/4% as an AI Act provision would be a hallucination.",
+      "confidence": "high",
+      "annotator_notes": "Hallucination trap testing whether the model imports the well-known GDPR EUR 20M/4% cap into the AI Act incorrectly. The AI Act penalty tier for non-prohibited-practice infringements by operators is Art. 99(4) at EUR 15M/3%, not the GDPR figure. The question explicitly surfaces the comparison to elicit the confusion."
+    },
+    {
+      "id": "hard_gpai_001",
+      "difficulty": "hard",
+      "task_type": "obligation_generation",
+      "stratum": "gpai",
+      "question": "A US-based company has released a large language model whose cumulative training compute was 5 × 10^25 FLOP. It now wishes to make this model available to European businesses. List every obligation under the EU AI Act that this provider must satisfy, organised by the article that imposes each duty.",
+      "scenario": {
+        "role": "provider",
+        "system_type": "large language model with systemic risk",
+        "intended_use": "downstream integration by EU businesses",
+        "input_data": "large-scale text",
+        "domain": "general"
+      },
+      "gold_answer": "The model exceeds the 10^25 FLOP threshold (Art. 51(2)), so it is presumed to be a GPAI model with systemic risk.\n\nArt. 52 — Notification: notify the Commission within two weeks and provide supporting documentation (Art. 52(1)); optionally submit rebuttal arguments (Art. 52(2)).\n\nArt. 53 — Base GPAI obligations: (a) draw up and maintain technical documentation per Annex XI; (b) provide downstream-provider information per Annex XII; (c) implement a copyright-compliance policy; (d) publish a training-content summary.\n\nArt. 54(1) — Authorised representative: appoint an EU-established representative (third-country provider; open-source exemption of Art. 54(6) does not apply here because the model has systemic risk).\n\nArt. 55 — Systemic-risk obligations: (a) adversarial testing and model evaluation; (b) assess and mitigate Union-level systemic risks; (c) track, document, and report serious incidents to the AI Office; (d) ensure adequate cybersecurity for the model and infrastructure.",
+      "risk_level": "not_applicable",
+      "gold_citations": [
+        {
+          "citation": "Art. 51(2)",
+          "provision_id": "art_51__para_2",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 51(1)(a)",
+          "provision_id": "art_51__para_1__point_a",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 52(1)",
+          "provision_id": "art_52__para_1",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 53(1)(a)",
+          "provision_id": "art_53__para_1__point_a",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 53(1)(b)",
+          "provision_id": "art_53__para_1__point_b",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 53(1)(c)",
+          "provision_id": "art_53__para_1__point_c",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 53(1)(d)",
+          "provision_id": "art_53__para_1__point_d",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 54(1)",
+          "provision_id": "art_54__para_1",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 54(6)",
+          "provision_id": "art_54__para_6",
+          "role": "interpretive"
+        },
+        {
+          "citation": "Art. 55(1)(a)",
+          "provision_id": "art_55__para_1__point_a",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 55(1)(b)",
+          "provision_id": "art_55__para_1__point_b",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 55(1)(c)",
+          "provision_id": "art_55__para_1__point_c",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 55(1)(d)",
+          "provision_id": "art_55__para_1__point_d",
+          "role": "primary"
+        },
+        {
+          "citation": "Annex XI",
+          "provision_id": "annex_XI",
+          "role": "definition"
+        },
+        {
+          "citation": "Annex XII",
+          "provision_id": "annex_XII",
+          "role": "definition"
+        }
+      ],
+      "reasoning_hops": 4,
+      "multi_hop": true,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Multi-hop aggregation: hop 1 = compute threshold → systemic-risk presumption (Art. 51(2)); hop 2 = systemic-risk status → notification obligation (Art. 52(1)); hop 3 = all GPAI providers → Art. 53 base duties; hop 4 = systemic risk + third-country provider → Art. 55 additional duties + Art. 54(1) representative requirement. Exhaustive citation set by design."
+    },
+    {
+      "id": "hard_gpai_002",
+      "difficulty": "hard",
+      "task_type": "qa",
+      "stratum": "gpai",
+      "question": "A company open-sources a general-purpose AI model by publishing all weights and architecture under a permissive licence. Is this company fully exempt from all obligations under Articles 53 and 54 of the EU AI Act? Explain the conditions.",
+      "scenario": {
+        "role": "provider",
+        "system_type": "open-source general-purpose AI model",
+        "intended_use": "public release, downstream use by third parties",
+        "input_data": "text",
+        "domain": "general"
+      },
+      "gold_answer": "No — not a full exemption. Art. 53(2) exempts open-source GPAI model providers from the technical-documentation obligation (Art. 53(1)(a)) and the downstream-information obligation (Art. 53(1)(b)), provided the model is released under a free and open-source licence with parameters publicly available. However, the exemption does NOT cover Art. 53(1)(c) (copyright policy) or Art. 53(1)(d) (training-content summary) — those duties remain. Furthermore, the Art. 53(2) exemption is entirely disapplied if the model is classified as presenting systemic risk (Art. 51), in which case the full Art. 53 obligations as well as Art. 55 obligations apply. Similarly, Art. 54(6) exempts open-source-licence providers from the authorised-representative requirement — again unless the model presents systemic risk.",
+      "risk_level": "not_applicable",
+      "gold_citations": [
+        {
+          "citation": "Art. 53(2)",
+          "provision_id": "art_53__para_2",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 53(1)(a)",
+          "provision_id": "art_53__para_1__point_a",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 53(1)(b)",
+          "provision_id": "art_53__para_1__point_b",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 53(1)(c)",
+          "provision_id": "art_53__para_1__point_c",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 53(1)(d)",
+          "provision_id": "art_53__para_1__point_d",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 54(6)",
+          "provision_id": "art_54__para_6",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 51(1)",
+          "provision_id": "art_51__para_1",
+          "role": "interpretive"
+        }
+      ],
+      "reasoning_hops": 3,
+      "multi_hop": true,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Tests knowledge of the partial open-source exemption in Art. 53(2) and its systemic-risk carve-out. Common error: assuming open-source = full exemption. Three hops: (1) open-source triggers Art. 53(2) partial exemption; (2) Art. 53(2) carve-out for systemic risk references Art. 51; (3) Art. 54(6) parallel exemption + same carve-out."
+    },
+    {
+      "id": "hard_gpai_003",
+      "difficulty": "hard",
+      "task_type": "risk_classification",
+      "stratum": "gpai",
+      "question": "A company builds and deploys an AI system that uses a third-party GPAI model as its backbone and is specifically designed for CV-screening in recruitment. The AI system itself is listed in Annex III of the EU AI Act. Does the GPAI model provider bear high-risk AI system obligations under Chapter III of the Act? Does the downstream deployer?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "GPAI model integrated into a recruitment CV-screening AI system",
+        "intended_use": "employment recruitment screening",
+        "input_data": "CVs and candidate profiles",
+        "domain": "employment"
+      },
+      "gold_answer": "The GPAI model provider is governed exclusively by the GPAI obligations in Arts. 53-55 (and Art. 51-52 if systemic risk applies). The GPAI model itself is not subject to the Chapter III high-risk obligations, even if downstream systems built on it are high-risk. The downstream company that deploys the CV-screening AI system — listed in Annex III — is the provider of a high-risk AI system and bears the Chapter III obligations (including conformity assessment, registration, technical documentation, etc.) under Arts. 6, 16, and related provisions. Art. 3(63) defines the GPAI model as the trained artefact; Art. 3(66) defines the GPAI system (which may be classified high-risk); these are legally distinct. The GPAI model provider's obligations are set by Art. 53(1)(b) — they must supply sufficient information to enable the downstream provider to comply with their high-risk obligations.",
+      "risk_level": "high",
+      "gold_citations": [
+        {
+          "citation": "Art. 3(63)",
+          "provision_id": "art_3__para_63",
+          "role": "definition"
+        },
+        {
+          "citation": "Art. 3(66)",
+          "provision_id": "art_3__para_66",
+          "role": "definition"
+        },
+        {
+          "citation": "Art. 6(2)",
+          "provision_id": "art_6__para_2",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 53(1)(b)",
+          "provision_id": "art_53__para_1__point_b",
+          "role": "supporting"
+        },
+        {
+          "citation": "Annex XII",
+          "provision_id": "annex_XII",
+          "role": "definition"
+        }
+      ],
+      "reasoning_hops": 3,
+      "multi_hop": true,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Tests the GPAI model vs GPAI system vs high-risk AI system distinction — a classic confusion point. Three hops: (1) identify the system as Annex III listed → Art. 6(2) high-risk for the downstream provider; (2) distinguish the GPAI model (Art. 3(63)) from the GPAI system (Art. 3(66)); (3) Art. 53(1)(b) links GPAI provider duties to downstream compliance enablement."
+    },
+    {
+      "id": "hard_gpai_004",
+      "difficulty": "hard",
+      "task_type": "risk_classification",
+      "stratum": "gpai",
+      "question": "A company has developed an AI model trained on 10^24 floating-point operations. The model is designed exclusively to predict equipment maintenance schedules for a single industrial client. Does the EU AI Act classify this as a GPAI model subject to Articles 51-55?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "narrow predictive maintenance model",
+        "intended_use": "predicting equipment failure for a single industrial client",
+        "input_data": "sensor and maintenance logs",
+        "domain": "industrial"
+      },
+      "gold_answer": "No. This model is not a GPAI model and Articles 51-55 do not apply. Under Art. 3(63), a GPAI model must display 'significant generality' and be 'capable of competently performing a wide range of distinct tasks'. A model trained solely to predict equipment maintenance schedules for a single client is narrow and task-specific — it does not meet the generality requirement. Additionally, its compute (10^24 FLOP) is below the 10^25 FLOP systemic-risk presumption threshold in Art. 51(2), though that threshold is irrelevant here because the model fails the GPAI definition threshold first. The applicable framework would be Art. 6 and Annex III if the system falls within a listed high-risk category, but Arts. 51-55 are not triggered.",
+      "risk_level": "not_applicable",
+      "gold_citations": [],
+      "reasoning_hops": 2,
+      "multi_hop": true,
+      "negative_control": true,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Negative control: the model is not a GPAI model, so Arts. 51-55 produce no obligations. Gold citations are empty because no GPAI provision applies. Two hops: (1) check Art. 3(63) generality requirement — fails; (2) confirm the compute figure (10^24 FLOP) is also below the Art. 51(2) threshold, but this is moot given the definitional failure. Tests whether the system avoids over-applying the GPAI framework."
+    },
+    {
+      "id": "hard_gpai_005",
+      "difficulty": "hard",
+      "task_type": "qa",
+      "stratum": "gpai",
+      "question": "What is the exact computational threshold, including unit specification, at which the EU AI Act presumes a GPAI model to have high-impact capabilities under Article 51? What is the legal effect of that presumption, and can a provider rebut it?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "large-scale AI model near the systemic-risk threshold",
+        "intended_use": "general-purpose text and multimodal generation",
+        "input_data": "large-scale text and multimodal data",
+        "domain": "general"
+      },
+      "gold_answer": "Art. 51(2) sets the threshold at cumulative training compute greater than 10^25 floating-point operations (FLOP). The legal effect is a rebuttable presumption: the model is presumed to have high-impact capabilities within the meaning of Art. 51(1)(a), triggering classification as a GPAI model with systemic risk. The presumption is rebuttable: under Art. 52(2), the provider may submit 'sufficiently substantiated arguments' demonstrating that, despite meeting the compute threshold, the model does not present systemic risks due to its specific characteristics. The Commission may accept those arguments; if it rejects them under Art. 52(3), the model is designated as a systemic-risk model. Additionally, the Commission may revise the threshold via delegated acts under Art. 51(3).",
+      "risk_level": "not_applicable",
+      "gold_citations": [
+        {
+          "citation": "Art. 51(2)",
+          "provision_id": "art_51__para_2",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 51(1)(a)",
+          "provision_id": "art_51__para_1__point_a",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 52(2)",
+          "provision_id": "art_52__para_2",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 52(3)",
+          "provision_id": "art_52__para_3",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 51(3)",
+          "provision_id": "art_51__para_3",
+          "role": "interpretive"
+        }
+      ],
+      "reasoning_hops": 2,
+      "multi_hop": true,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Tests precise threshold knowledge and the rebuttal mechanism. Two hops: (1) Art. 51(2) for the threshold and its presumptive effect; (2) Art. 52(2)-(3) for the rebuttal procedure. Art. 51(3) included as interpretive because it addresses threshold revisability — relevant to completeness. Common trap avoided: do NOT cite 10^24 FLOP (incorrect)."
+    },
+    {
+      "id": "hard_gpai_006",
+      "difficulty": "hard",
+      "task_type": "obligation_generation",
+      "stratum": "gpai",
+      "question": "Does the EU AI Act require providers of general-purpose AI models to submit to the Art. 43 conformity assessment procedure applicable to high-risk AI systems?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "general-purpose AI model",
+        "intended_use": "general-purpose, possibly integrated into high-risk downstream systems",
+        "input_data": "various",
+        "domain": "general"
+      },
+      "gold_answer": "No. Article 43 conformity assessment procedures apply to providers of high-risk AI systems as defined under Art. 6 and Annex III. GPAI model providers are not required to conduct Art. 43 conformity assessments. Their obligations are governed exclusively by Arts. 53-55 (and Arts. 51-52 for systemic-risk classification). The Annexes relevant to GPAI model providers are Annex XI (technical documentation), Annex XII (downstream information), and Annex XIII (systemic-risk classification criteria) — not Annex VI, VII, or the conformity assessment procedure under Art. 43. If a GPAI system built on a GPAI model is itself classified as a high-risk AI system, it is the provider of that downstream system — not the GPAI model provider — who must comply with Art. 43.",
+      "risk_level": "not_applicable",
+      "gold_citations": [
+        {
+          "citation": "Art. 53(1)",
+          "provision_id": "art_53__para_1",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 55(1)",
+          "provision_id": "art_55__para_1",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 3(63)",
+          "provision_id": "art_3__para_63",
+          "role": "definition"
+        }
+      ],
+      "reasoning_hops": 2,
+      "multi_hop": true,
+      "negative_control": false,
+      "hallucination_trap": true,
+      "trap_note": "Tempting wrong citation: Art. 43 (conformity assessment for high-risk AI systems). A retrieval system that conflates GPAI model obligations with high-risk AI system obligations may incorrectly cite Art. 43 as applying to GPAI model providers. Art. 43 does not apply to GPAI model providers; their obligations are in Arts. 53-55.",
+      "confidence": "high",
+      "annotator_notes": "Hallucination trap: designed to catch systems that wrongly apply Art. 43 conformity assessment to GPAI model providers. The correct answer is a definitive 'no', with the correct obligation framework (Arts. 53-55) as gold citations. The trap makes Art. 43 tempting because GPAI models may feed into high-risk AI systems."
+    },
+    {
+      "id": "hard_gpai_007",
+      "difficulty": "hard",
+      "task_type": "article_retrieval",
+      "stratum": "gpai",
+      "question": "A GPAI model with systemic risk causes a serious incident affecting multiple EU users. Which specific provision of the EU AI Act requires the provider to track, document, and report this incident, and to whom must the report be made?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "GPAI model with systemic risk",
+        "intended_use": "large-scale deployment",
+        "input_data": "various",
+        "domain": "general"
+      },
+      "gold_answer": "Art. 55(1)(c) requires providers of GPAI models with systemic risk to 'keep track of, document, and report, without undue delay, to the AI Office and, as appropriate, to national competent authorities, relevant information about serious incidents and possible corrective measures to address them.' The report must be made to the AI Office as the primary recipient, and to national competent authorities as appropriate. Note: this duty arises under Art. 55, which applies only to systemic-risk GPAI models; it does not apply to all GPAI model providers.",
+      "risk_level": "not_applicable",
+      "gold_citations": [
+        {
+          "citation": "Art. 55(1)(c)",
+          "provision_id": "art_55__para_1__point_c",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 51(1)",
+          "provision_id": "art_51__para_1",
+          "role": "interpretive"
+        }
+      ],
+      "reasoning_hops": 2,
+      "multi_hop": true,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Two hops: (1) systemic-risk classification is a prerequisite for Art. 55 duties, so Art. 51(1) is interpretive context; (2) Art. 55(1)(c) is the specific incident-reporting provision. Common confusion: conflating this with Art. 73 (market surveillance) or the high-risk AI system serious incident reporting under Art. 73 — those do not apply to GPAI model providers as such."
+    },
+    {
+      "id": "hard_hrclass_001",
+      "difficulty": "hard",
+      "task_type": "risk_classification",
+      "stratum": "high_risk_classification",
+      "question": "A manufacturer integrates an AI module into a Class IIb implantable cardiac monitor (a medical device regulated under Regulation (EU) 2017/745). The AI module functions as the safety component that detects life-threatening arrhythmias and triggers automated alerts. The device requires third-party conformity assessment under MDR 2017/745. Is the AI module high-risk under the EU AI Act, and through which classification route?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "AI-powered arrhythmia detection module in an implantable cardiac monitor",
+        "intended_use": "Safety-critical detection of life-threatening cardiac events; triggers automated alerts",
+        "input_data": "Continuous cardiac electrical signals from implanted sensor",
+        "domain": "Healthcare / Medical devices"
+      },
+      "gold_answer": "The AI module is high-risk via the Art. 6(1) route, not Art. 6(2)/Annex III. It qualifies because: (1) the implantable cardiac monitor is a product covered by Regulation (EU) 2017/745 (medical devices), which is listed in Annex I Section A point 11; (2) the AI module is a safety component of that product; and (3) the product undergoes mandatory third-party conformity assessment under MDR. All three conditions of Art. 6(1) are met. Recital 51 clarifies that classification as high-risk under the AI Act does not affect the product's risk classification under MDR itself.",
+      "risk_level": "high",
+      "gold_citations": [
+        {
+          "citation": "Art. 6(1)",
+          "provision_id": "art_6__para_1",
+          "role": "primary"
+        },
+        {
+          "citation": "Annex I",
+          "provision_id": "annex_I",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 3(14)",
+          "provision_id": "art_3__para_14",
+          "role": "definition"
+        },
+        {
+          "citation": "Recital (47)",
+          "provision_id": "recital_47",
+          "role": "interpretive"
+        },
+        {
+          "citation": "Recital (51)",
+          "provision_id": "recital_51",
+          "role": "interpretive"
+        }
+      ],
+      "reasoning_hops": 3,
+      "multi_hop": true,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Three-hop chain: (1) Art. 6(1) sets the safety-component / Annex I product / third-party conformity assessment test; (2) Annex I Section A point 11 lists Regulation (EU) 2017/745 (MDR), confirming the product is covered; (3) Art. 3(14) defines safety component. Recital 47 provides interpretive context for AI in safety-critical health applications. Recital 51 clarifies the interaction between AI Act high-risk classification and MDR risk class. Note: the AI Act's Annex III point area 5 covers access to health benefits, not diagnostic AI in medical devices — the correct route here is Art. 6(1), not Art. 6(2). A system evaluating this item must retrieve both Art. 6 paragraphs and correctly distinguish the routes."
+    },
+    {
+      "id": "hard_hrclass_002",
+      "difficulty": "hard",
+      "task_type": "risk_classification",
+      "stratum": "high_risk_classification",
+      "question": "A legal-tech startup builds an AI tool that ingests a judge's prior rulings, detects statistical patterns in the judge's sentencing behaviour, and flags potential anomalies for court administrators to investigate. The tool has no ability to modify, influence, or feed directly into any ongoing case proceedings. Is this system high-risk under the EU AI Act, and does the Art. 6(3) derogation apply?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "Judicial pattern anomaly detection tool",
+        "intended_use": "Detecting statistical anomalies in a judge's past sentencing patterns for administrative oversight; output goes to court administrators only",
+        "input_data": "Historical court judgments and sentencing records",
+        "domain": "Administration of justice"
+      },
+      "gold_answer": "The system falls within Annex III point 8(a) (AI systems assisting judicial authorities in researching and applying law to facts), so it is presumptively high-risk under Art. 6(2). However, the Art. 6(3)(c) derogation may apply: the system detects decision-making patterns or deviations without replacing or influencing human assessment — it only flags anomalies for human administrators. Critically, the derogation does not apply if the system involves profiling of natural persons (the profiling override in Art. 6(3) in fine). Analysing a judge's sentencing behaviour likely constitutes profiling under GDPR Art. 4(4) (automated processing to evaluate personal characteristics), triggering the profiling carve-out and removing the derogation. The system therefore remains high-risk despite Art. 6(3)(c) prima facie fitting.",
+      "risk_level": "high",
+      "gold_citations": [
+        {
+          "citation": "Art. 6(2)",
+          "provision_id": "art_6__para_2",
+          "role": "primary"
+        },
+        {
+          "citation": "Annex III point 8(a)",
+          "provision_id": "annex_III__point_8__point_a",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 6(3)",
+          "provision_id": "art_6__para_3",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 6(3)(c)",
+          "provision_id": "art_6__para_3__point_c",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 3(52)",
+          "provision_id": "art_3__para_52",
+          "role": "definition"
+        },
+        {
+          "citation": "Recital (53)",
+          "provision_id": "recital_53",
+          "role": "interpretive"
+        }
+      ],
+      "reasoning_hops": 4,
+      "multi_hop": true,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Four-hop chain: (1) Annex III point 8(a) triggers high-risk presumption via Art. 6(2); (2) Art. 6(3)(c) conditions appear met (pattern detection without influencing decisions); (3) profiling override in Art. 6(3) final sentence: if the system profiles natural persons, the derogation is categorically unavailable; (4) Art. 3(52) cross-references GDPR Art. 4(4) definition of profiling — evaluating a judge's behavioural patterns from their decisions is profiling. Recital 53 expressly describes this scenario (checking ex post whether a teacher deviated from a grading pattern) as an example of Art. 6(3)(c) — but also confirms the profiling override applies regardless. The interesting tension is that the recital's exact example (teacher grading) is factually identical to this scenario with a judge; the profiling analysis is the deciding factor."
+    },
+    {
+      "id": "hard_hrclass_003",
+      "difficulty": "hard",
+      "task_type": "risk_classification",
+      "stratum": "high_risk_classification",
+      "question": "An HR software vendor provides an AI system to large employers. The system ingests incoming job applications, extracts structured data from CVs (name, education, work history) into a standardised database format, and presents the structured records to human HR staff who then conduct all screening and evaluation manually. The vendor argues the system performs only a narrow preparatory/document-processing task and therefore is not high-risk under Art. 6(3). Is the vendor's position correct?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "CV data extraction and structuring tool",
+        "intended_use": "Converting unstructured CV documents into structured database records for human HR review; no scoring, ranking, or filtering of candidates",
+        "input_data": "CV documents (PDF/Word), application forms",
+        "domain": "Employment / HR"
+      },
+      "gold_answer": "The vendor's position is likely correct. The system falls within Annex III point 4(a) (recruitment) in scope, so Art. 6(2) creates a presumption of high-risk. However, Art. 6(3)(a) (narrow procedural task — transforming unstructured data into structured data) and Art. 6(3)(d) (preparatory task to an assessment) both plausibly apply, as the system does not score, rank, or filter candidates and all decision-making is reserved to humans. Provided the system does not perform profiling of natural persons, the Art. 6(3) derogation removes the high-risk classification. Recital 53 explicitly uses 'transforming unstructured data into structured data' as its paradigm example of Art. 6(3)(a). The provider must document this assessment before placing the system on the market.",
+      "risk_level": "limited",
+      "gold_citations": [
+        {
+          "citation": "Art. 6(2)",
+          "provision_id": "art_6__para_2",
+          "role": "primary"
+        },
+        {
+          "citation": "Annex III point 4(a)",
+          "provision_id": "annex_III__point_4__point_a",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 6(3)",
+          "provision_id": "art_6__para_3",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 6(3)(a)",
+          "provision_id": "art_6__para_3__point_a",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 6(3)(d)",
+          "provision_id": "art_6__para_3__point_d",
+          "role": "supporting"
+        },
+        {
+          "citation": "Recital (53)",
+          "provision_id": "recital_53",
+          "role": "interpretive"
+        }
+      ],
+      "reasoning_hops": 3,
+      "multi_hop": true,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Three-hop chain: (1) Annex III point 4(a) / Art. 6(2) creates the high-risk presumption; (2) Art. 6(3)(a) and (d) both provide candidate derogation grounds; (3) profiling override check — a pure data extraction system that does not score or categorise persons based on behavioural/personal characteristics is not profiling, so the override does not apply. Recital 53 explicitly enumerates 'AI system that transforms unstructured data into structured data' as the paradigm narrow-procedural-task case, conferring high confidence. The risk_level is set to 'limited' reflecting the outcome after derogation (system is presumptively high-risk under 6(2) but excluded by 6(3)). Evaluators should award full marks only if they correctly identify both the presumption and the derogation grounds."
+    },
+    {
+      "id": "hard_hrclass_004",
+      "difficulty": "hard",
+      "task_type": "risk_classification",
+      "stratum": "high_risk_classification",
+      "question": "A company deploys an AI-powered spam filter on its corporate email server. The system analyses incoming email metadata and content to classify messages as spam or legitimate and routes them accordingly. No human decisions about employees or external persons are influenced — the system only affects message routing. What is the risk level under the EU AI Act?",
+      "scenario": {
+        "role": "deployer",
+        "system_type": "Corporate email spam filter",
+        "intended_use": "Classifying and routing incoming email as spam or legitimate",
+        "input_data": "Email metadata, subject lines, message content, sender addresses",
+        "domain": "IT / Cybersecurity"
+      },
+      "gold_answer": "Minimal risk. A spam filter does not fall within any of the eight Annex III areas, and is not a safety component of a product covered by Annex I harmonisation legislation. Art. 6(1) and Art. 6(2) are therefore both inapplicable. The system is not prohibited under Art. 5. It is a minimal-risk AI system with no specific obligations under Title III.",
+      "risk_level": "minimal",
+      "gold_citations": [],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": true,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Negative control item. The system processes email content but does not evaluate, score, or make decisions about natural persons in any of the Annex III domains (biometrics, critical infrastructure, education, employment, essential services, law enforcement, migration, administration of justice). It is not a safety component of an Annex I product. No high-risk or prohibited route applies. The correct answer is empty gold_citations and minimal risk. A retrieval system that hallucinates an Annex III match (e.g. data processing / cybersecurity) should be penalised."
+    },
+    {
+      "id": "hard_hrclass_005",
+      "difficulty": "hard",
+      "task_type": "risk_classification",
+      "stratum": "high_risk_classification",
+      "question": "A company builds and markets an AI system designed to influence how voters choose candidates in national elections by generating personalised political messaging. What is the risk classification of this system, and which provisions apply?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "AI-powered personalised political campaign messaging tool",
+        "intended_use": "Generating targeted messages intended to influence voter behaviour in national elections",
+        "input_data": "Voter profile data, political preferences, demographic data",
+        "domain": "Democratic processes / Political campaigns"
+      },
+      "gold_answer": "High-risk. Annex III point 8(b) specifically lists AI systems intended to influence the outcome of an election or referendum or the voting behaviour of natural persons. Art. 6(2) therefore classifies this system as high-risk. The Annex III point 8(b) exclusion for back-office campaign logistics tools does not apply here because the system is directly exposed to natural persons (voters) and is intended to influence their voting behaviour.",
+      "risk_level": "high",
+      "gold_citations": [
+        {
+          "citation": "Art. 6(2)",
+          "provision_id": "art_6__para_2",
+          "role": "primary"
+        },
+        {
+          "citation": "Annex III point 8(b)",
+          "provision_id": "annex_III__point_8__point_b",
+          "role": "supporting"
+        }
+      ],
+      "reasoning_hops": 2,
+      "multi_hop": true,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Two-hop chain: (1) Art. 6(2) / Annex III point 8(b) identifies the high-risk classification; (2) the intra-point exclusion for tools not directly exposed to natural persons ('AI systems to the output of which natural persons are not directly exposed, such as tools used to organise, optimise or structure political campaigns from an administrative or logistical point of view') must be evaluated and found inapplicable — this system targets voters directly. The scenario also intentionally excludes the Art. 6(3) derogation because the system's output directly influences persons and materially affects decision-making. This item tests correct sub-point granularity and the ability to navigate an intra-point exclusion."
+    },
+    {
+      "id": "hard_hrclass_006",
+      "difficulty": "hard",
+      "task_type": "risk_classification",
+      "stratum": "high_risk_classification",
+      "question": "A company provides a video-game NPC (non-player character) AI system that adapts its dialogue and behaviour in response to player actions in a fantasy role-playing game. There is no real-world consequential decision-making, no biometric data processing, and no connection to any regulated domain. Is this AI system high-risk under the EU AI Act?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "Adaptive NPC AI for a fantasy role-playing video game",
+        "intended_use": "Dynamic in-game character dialogue and behaviour adaptation",
+        "input_data": "Player in-game actions and choices",
+        "domain": "Entertainment / Video games"
+      },
+      "gold_answer": "Not high-risk. The system is not listed in Annex III, does not fall within any of the eight high-risk use-case areas, and is not a safety component of a product subject to Annex I harmonisation legislation. It is a minimal-risk AI system. Neither Art. 6(1) nor Art. 6(2) applies.",
+      "risk_level": "minimal",
+      "gold_citations": [],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": true,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Second negative control. A game NPC has no nexus to any Annex III domain and is not a safety component of any Annex I product. The system operates entirely within a fictional entertainment context with no real-world consequential outputs. A retrieval system must return empty gold_citations and minimal risk. Items that assign any Annex III point (e.g. misidentifying in-game emotion recognition as Annex III point 1(c) emotion recognition) should receive no credit — Annex III point 1(c) requires use on natural persons for the purpose of identifying/inferring real emotions, not fictional game mechanics."
+    },
+    {
+      "id": "hard_hrclass_007",
+      "difficulty": "hard",
+      "task_type": "risk_classification",
+      "stratum": "high_risk_classification",
+      "question": "A healthcare technology vendor claims its AI system — which generates personalised treatment recommendations for oncology patients — is automatically high-risk under the EU AI Act simply because it operates in the healthcare domain. The vendor believes all AI used in healthcare is per se high-risk. Is this claim correct, and which provisions determine the actual classification?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "AI oncology treatment recommendation system",
+        "intended_use": "Generating personalised cancer treatment recommendations for clinician review",
+        "input_data": "Patient medical records, genomic data, clinical trial data",
+        "domain": "Healthcare / Oncology"
+      },
+      "gold_answer": "The vendor's blanket claim is incorrect — there is no provision making all healthcare AI automatically high-risk. The correct analysis requires applying Art. 6(1) or Art. 6(2). If the system is a safety component of a medical device under Regulation (EU) 2017/745 (Annex I point 11) requiring third-party conformity assessment, Art. 6(1) applies. If the system assists in determining access to healthcare benefits or services under Annex III point 5(a), Art. 6(2) applies. A standalone clinical decision-support tool that provides recommendations for clinician review (and is not itself a medical device or its safety component) does not automatically qualify as high-risk. The correct route depends on whether the system constitutes a medical device or safety component under MDR, not on the sector alone.",
+      "risk_level": "not_applicable",
+      "gold_citations": [
+        {
+          "citation": "Art. 6(1)",
+          "provision_id": "art_6__para_1",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 6(2)",
+          "provision_id": "art_6__para_2",
+          "role": "primary"
+        },
+        {
+          "citation": "Annex I",
+          "provision_id": "annex_I",
+          "role": "supporting"
+        },
+        {
+          "citation": "Annex III point 5(a)",
+          "provision_id": "annex_III__point_5__point_a",
+          "role": "supporting"
+        },
+        {
+          "citation": "Recital (47)",
+          "provision_id": "recital_47",
+          "role": "interpretive"
+        }
+      ],
+      "reasoning_hops": 3,
+      "multi_hop": true,
+      "negative_control": false,
+      "hallucination_trap": true,
+      "trap_note": "The hallucination trap is the tempting but false claim that 'all AI in healthcare is automatically high-risk' or that there exists an 'Annex III point 9 (healthcare)' or a blanket healthcare provision in the Act. No such provision exists. The Act has no sector-based automatic classification — classification always requires satisfying specific conditions in Art. 6(1) or matching a specific Annex III sub-point via Art. 6(2). Systems that cite a non-existent 'Annex III healthcare' entry or assert a sector-based rule without Art. 6 analysis should be flagged.",
+      "confidence": "high",
+      "annotator_notes": "This item explicitly tests the hallucination trap of a non-existent blanket healthcare classification. The risk_level is 'not_applicable' because the question asks about the vendor's claim (which is incorrect), not about a definitive classification of the system itself — the answer requires explaining the two possible routes (Art. 6(1) if MDR safety component, or Art. 6(2)/Annex III point 5(a) if healthcare benefit eligibility) without asserting a definitive classification for a scenario whose MDR status is deliberately left open. Evaluators must confirm: (1) no blanket healthcare provision exists; (2) Art. 6(1) route explained with Annex I reference; (3) Art. 6(2)/Annex III route explained with point 5(a) as the possible applicable sub-point; (4) no invented provisions cited."
+    },
+    {
+      "id": "hard_hrreq_001",
+      "difficulty": "hard",
+      "task_type": "obligation_generation",
+      "stratum": "high_risk_requirements",
+      "question": "A startup is developing a high-risk AI system (Annex III, point 4 — employment and worker management) and intends to place it on the EU market. List the complete set of legal obligations that apply to the startup as a provider under the EU AI Act, citing every applicable article.",
+      "scenario": {
+        "role": "provider",
+        "system_type": "High-risk AI system — Annex III point 4 (employment, workers management and access to self-employment)",
+        "intended_use": "Automated screening of job applicants",
+        "input_data": "CVs, application forms, behavioural data",
+        "domain": "Human resources / employment"
+      },
+      "gold_answer": "As a provider of a high-risk AI system, the startup must: (1) ensure the system complies with the Section 2 requirements (Arts. 9-15) — risk management system (Art. 9), data governance (Art. 10), technical documentation (Art. 11), logging (Art. 12), transparency to deployers (Art. 13), human oversight (Art. 14), accuracy/robustness/cybersecurity (Art. 15) — all mandated by Art. 8 and enumerated in Art. 16(a); (2) establish a quality management system (Art. 17), cross-referenced by Art. 16(c); (3) maintain documentation (Art. 18), per Art. 16(d); (4) retain automatically generated logs when the provider controls the system (Art. 19), per Art. 16(e); (5) carry out a conformity assessment (Art. 43), per Art. 16(f) — for Annex III points 2-8 this is internal control per Annex VI without notified body involvement; (6) draw up an EU declaration of conformity (Art. 47), per Art. 16(g); (7) affix the CE marking (Art. 48), per Art. 16(h); (8) register the system in the EU database (Art. 49(1)), per Art. 16(i); (9) take corrective actions and inform authorities of non-conforming or risky systems (Art. 20), per Art. 16(j).",
+      "risk_level": "high",
+      "gold_citations": [
+        {
+          "citation": "Art. 8",
+          "provision_id": "art_8",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 9",
+          "provision_id": "art_9",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 10",
+          "provision_id": "art_10",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 11",
+          "provision_id": "art_11",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 12",
+          "provision_id": "art_12",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 13",
+          "provision_id": "art_13",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 14",
+          "provision_id": "art_14",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 15",
+          "provision_id": "art_15",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 16",
+          "provision_id": "art_16",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 17",
+          "provision_id": "art_17",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 18",
+          "provision_id": "art_18",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 19",
+          "provision_id": "art_19",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 20",
+          "provision_id": "art_20",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 43",
+          "provision_id": "art_43",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 47",
+          "provision_id": "art_47",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 48",
+          "provision_id": "art_48",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 49(1)",
+          "provision_id": "art_49__para_1",
+          "role": "supporting"
+        }
+      ],
+      "reasoning_hops": 4,
+      "multi_hop": true,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Multi-hop chain: question asks for full provider obligation set -> Art. 16 is the enumeration norm -> Art. 16 points (a)-(j) each cross-reference Arts. 8-15, 17, 18, 19, 20, 43, 47, 48, 49. Four hops: (1) identify provider role, (2) read Art. 16 enumeration, (3) follow cross-references to Section 2 requirements, (4) follow cross-references to procedural/administrative obligations. For Annex III points 2-8, conformity assessment is internal control only (Art. 43(2)) — no notified body required."
+    },
+    {
+      "id": "hard_hrreq_002",
+      "difficulty": "hard",
+      "task_type": "obligation_generation",
+      "stratum": "high_risk_requirements",
+      "question": "A public hospital in an EU Member State is deploying a high-risk AI system (Annex III, point 4 — employment and workers management) to assist HR decisions. As a deployer, what obligations does the hospital have under the EU AI Act, and which of those obligations also require conducting a fundamental rights impact assessment?",
+      "scenario": {
+        "role": "deployer",
+        "system_type": "High-risk AI system — Annex III (employment management)",
+        "intended_use": "Assisting HR decisions on employment and worker management within the hospital",
+        "input_data": "Employee records and performance data",
+        "domain": "Healthcare / public sector HR"
+      },
+      "gold_answer": "As a deployer of a high-risk AI system, the hospital must comply with Art. 26 deployer obligations: use the system according to instructions for use; assign human oversight to competent persons with necessary resources; ensure input data quality; monitor operation and report serious incidents; maintain automatically generated logs for at least 6 months; inform workers and representatives before deploying workplace AI; where applicable, verify prior registration in the EU database; use provider information for data protection impact assessments; and inform affected individuals subject to the system. Additionally, because the hospital is a body governed by public law (a public body), it must carry out a fundamental rights impact assessment (FRIA) under Art. 27 before deployment. The FRIA must describe the intended process, affected categories of persons, identified risks of harm, human oversight measures, and complaint mechanisms. The Art. 27 FRIA is a separate obligation that sits on top of Art. 26 and applies specifically because the deployer is a public entity.",
+      "risk_level": "high",
+      "gold_citations": [
+        {
+          "citation": "Art. 26",
+          "provision_id": "art_26",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 26(1)",
+          "provision_id": "art_26__para_1",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 26(2)",
+          "provision_id": "art_26__para_2",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 26(5)",
+          "provision_id": "art_26__para_5",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 26(6)",
+          "provision_id": "art_26__para_6",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 27",
+          "provision_id": "art_27",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 27(1)",
+          "provision_id": "art_27__para_1",
+          "role": "primary"
+        }
+      ],
+      "reasoning_hops": 3,
+      "multi_hop": true,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Multi-hop: (1) identify deployer role, (2) read Art. 26 for deployer obligations, (3) identify that the hospital is a public body triggering Art. 27 FRIA obligation. The FRIA applies to deployers that are public bodies or private entities providing public services. Key distinction tested: provider obligations (Arts. 9-15, 16) do NOT apply to a deployer unless the deployer also acts as a provider."
+    },
+    {
+      "id": "hard_hrreq_003",
+      "difficulty": "hard",
+      "task_type": "qa",
+      "stratum": "high_risk_requirements",
+      "question": "Under Art. 14 of the EU AI Act, for high-risk AI systems that make individual recommendations (e.g., credit scoring), what specific obligation applies to enable the overseer to address automation bias, and does Art. 14 impose a two-person verification rule on all high-risk systems?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "High-risk AI system — credit scoring or similar recommendation system",
+        "intended_use": "Automated recommendations influencing human decisions",
+        "input_data": "Individual personal and financial data",
+        "domain": "Financial services"
+      },
+      "gold_answer": "Article 14(4)(b) requires that the system enable overseers to be aware of the possible tendency to over-rely on or automatically follow the output produced by the high-risk AI system (automation bias), particularly for systems that provide recommendations for decisions to be taken by natural persons. The two-person independent verification requirement (Art. 14(5)) applies only to high-risk AI systems referred to in Annex III, point 1(a) — remote biometric identification systems — and is NOT a general requirement for all high-risk AI systems. A credit scoring system is not subject to Art. 14(5).",
+      "risk_level": "high",
+      "gold_citations": [
+        {
+          "citation": "Art. 14(4)",
+          "provision_id": "art_14__para_4",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 14(5)",
+          "provision_id": "art_14__para_5",
+          "role": "interpretive"
+        }
+      ],
+      "reasoning_hops": 2,
+      "multi_hop": true,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Two-hop: (1) read Art. 14(4) for automation bias obligation, (2) read Art. 14(5) to confirm the two-person rule is scoped only to Annex III point 1(a) biometric identification systems, not general high-risk systems. Tests whether the model correctly scopes the more restrictive obligation."
+    },
+    {
+      "id": "hard_hrreq_004",
+      "difficulty": "hard",
+      "task_type": "qa",
+      "stratum": "high_risk_requirements",
+      "question": "Under the EU AI Act, does Article 10 mandate a minimum dataset size (e.g., at least 10,000 training samples) or a specific train/validation/test split ratio for high-risk AI systems?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "High-risk AI system using ML training",
+        "intended_use": "Training a model on structured tabular data",
+        "input_data": "Training datasets of varying sizes",
+        "domain": "General machine learning / compliance"
+      },
+      "gold_answer": "No. Article 10 does not mandate any minimum dataset size, specific number of training samples, or specific train/validation/test split ratio. Article 10(3) requires that datasets be 'relevant, sufficiently representative, and to the best extent possible, free of errors and complete' with appropriate statistical properties, but these are qualitative standards — the Regulation does not prescribe a numeric threshold for dataset size or any particular split ratio. Any claim that the EU AI Act specifies a minimum dataset size (e.g. 10,000 samples) or a mandated split ratio is incorrect.",
+      "risk_level": "high",
+      "gold_citations": [
+        {
+          "citation": "Art. 10(3)",
+          "provision_id": "art_10__para_3",
+          "role": "primary"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": true,
+      "trap_note": "Tempting wrong citation: a system might hallucinate 'Art. 10(3) requires at least 10,000 training samples' or 'a mandated 70/15/15 split'. The actual text of Art. 10(3) only requires that datasets be 'relevant, sufficiently representative, and to the best extent possible, free of errors and complete' — purely qualitative. No numeric threshold exists anywhere in Regulation (EU) 2024/1689.",
+      "confidence": "high",
+      "annotator_notes": "Hallucination trap. The question is designed to elicit a fabricated quantitative rule. The correct answer is the absence of such a rule. Art. 10(3) is the controlling provision and it uses qualitative language only. The trap tests whether a RAG system invents plausible-sounding but non-existent numeric requirements."
+    },
+    {
+      "id": "hard_hrreq_005",
+      "difficulty": "hard",
+      "task_type": "risk_classification",
+      "stratum": "high_risk_requirements",
+      "question": "A private company deploys a general-purpose AI assistant (not listed in Annex III and not classified as high-risk) internally for document drafting and email summarisation. An employee claims the deployer must comply with the high-risk deployer obligations in Article 26 and must conduct a fundamental rights impact assessment under Article 27. Is this claim correct?",
+      "scenario": {
+        "role": "deployer",
+        "system_type": "General-purpose AI assistant (not high-risk, not Annex III)",
+        "intended_use": "Internal document drafting and email summarisation",
+        "input_data": "Internal documents and emails",
+        "domain": "Office productivity / enterprise software"
+      },
+      "gold_answer": "The claim is incorrect. Article 26 obligations apply only to deployers of high-risk AI systems as defined in Chapter III, Section 1 (Annex II or Annex III classification, or designated by the Commission). A general-purpose AI assistant used for document drafting and email summarisation that is not classified as a high-risk system is not subject to Art. 26. Similarly, Article 27 FRIA obligations apply only to deployers of high-risk AI systems that are public bodies or private entities providing public services. Since the system is not high-risk, neither Art. 26 nor Art. 27 applies. The applicable regime for this system would be the limited transparency obligations for certain AI systems under Art. 50, if applicable.",
+      "risk_level": "minimal",
+      "gold_citations": [],
+      "reasoning_hops": 2,
+      "multi_hop": true,
+      "negative_control": true,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Negative control item. The correct answer is that Articles 26 and 27 do NOT apply because the system is not high-risk. The gold_citations array is deliberately empty — there is no applicable provision from the high_risk_requirements stratum. The reasoning hop is: (1) determine system classification (not high-risk), (2) confirm Art. 26 scope is limited to deployers of high-risk AI systems. Tests whether a system incorrectly applies high-risk obligations to non-high-risk deployments."
+    },
+    {
+      "id": "hard_hrreq_006",
+      "difficulty": "hard",
+      "task_type": "obligation_generation",
+      "stratum": "high_risk_requirements",
+      "question": "Under the EU AI Act, does Article 10 allow providers to process special categories of personal data (such as racial or ethnic origin, health data) when developing training datasets for high-risk AI systems, and if so under what conditions and in which provision?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "High-risk AI system using biometric or health data during training",
+        "intended_use": "Bias detection and correction in training data",
+        "input_data": "Special categories of personal data (Art. 9 GDPR categories)",
+        "domain": "Healthcare / bias mitigation"
+      },
+      "gold_answer": "Yes, but only exceptionally and under strict conditions set out in Article 10(5). The processing is permitted only when it is strictly necessary for detecting and correcting biases in the high-risk AI system and when the effectiveness of bias detection cannot be achieved by processing other non-special category data. The conditions include: subject to appropriate safeguards; technical limitations on use and access; access restricted to authorised persons; no transmission to third parties; deletion of the data after bias correction or the retention period expires; documentation records of the necessity and basis for the processing. This exception operates alongside, and does not replace, the applicable conditions for processing special categories of data under GDPR (Art. 9 GDPR).",
+      "risk_level": "high",
+      "gold_citations": [
+        {
+          "citation": "Art. 10(5)",
+          "provision_id": "art_10__para_5",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 10(2)",
+          "provision_id": "art_10__para_2",
+          "role": "supporting"
+        }
+      ],
+      "reasoning_hops": 2,
+      "multi_hop": true,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Two-hop: (1) read Art. 10 generally for data governance obligations, (2) identify the exceptional permission in Art. 10(5) for processing special categories of personal data. Key nuance: this is an EU AI Act provision enabling processing, but it operates alongside GDPR requirements — it does not override them. Tests whether a system can locate the narrow carve-out within Art. 10 and correctly state all its conditions."
+    },
+    {
+      "id": "hard_hrreq_007",
+      "difficulty": "hard",
+      "task_type": "qa",
+      "stratum": "high_risk_requirements",
+      "question": "Does the EU AI Act contain a provision called 'Article 15(5)' that requires providers to certify accuracy metrics to a supervisory authority before market placement, and does Art. 15 impose any obligation regarding the declaration of accuracy levels in instructions for use?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "High-risk AI system",
+        "intended_use": "Market placement compliance",
+        "input_data": "Accuracy measurement and certification data",
+        "domain": "General compliance / cybersecurity"
+      },
+      "gold_answer": "There is no provision in Article 15 that requires providers to certify accuracy metrics to a supervisory authority before market placement. Article 15(5) exists but it concerns resilience against attempts by unauthorised third parties to alter the system's use, outputs, or performance — it is the cybersecurity provision addressing data poisoning, model poisoning, adversarial examples, confidentiality attacks, and model flaws. Article 15(3) does require that the levels of accuracy and the relevant accuracy metrics be declared in the accompanying instructions for use, but this is a transparency/information obligation to deployers, not a pre-market certification to a supervisory authority.",
+      "risk_level": "high",
+      "gold_citations": [
+        {
+          "citation": "Art. 15(3)",
+          "provision_id": "art_15__para_3",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 15(5)",
+          "provision_id": "art_15__para_5",
+          "role": "interpretive"
+        }
+      ],
+      "reasoning_hops": 2,
+      "multi_hop": true,
+      "negative_control": false,
+      "hallucination_trap": true,
+      "trap_note": "Tempting wrong claim: that 'Art. 15(5)' requires pre-market accuracy certification to a supervisory authority. In reality Art. 15(5) is the cybersecurity/resilience provision. The accuracy-declaration obligation is in Art. 15(3) and goes into instructions for use (for deployers), not to a supervisory authority. A system might confuse Art. 15(3) scope (instructions for use) with a certification-to-authority regime, or misconstrue Art. 15(5)'s content entirely.",
+      "confidence": "high",
+      "annotator_notes": "Hallucination trap combined with multi-hop. Tests two things: (1) whether the system correctly identifies what Art. 15(5) actually says (cybersecurity, not certification), and (2) whether it correctly locates and scopes Art. 15(3) as the accuracy-declaration obligation directed at deployers via instructions for use, not a supervisory certification requirement."
+    },
+    {
+      "id": "hard_prohibited_001",
+      "difficulty": "hard",
+      "task_type": "obligation_generation",
+      "stratum": "prohibited",
+      "question": "A Member State's counter-terrorism unit wishes to use a real-time remote biometric identification system in a busy train station to identify a known suspect of an imminent terrorist attack. There is no time to obtain prior judicial authorisation. What are the full legal conditions and procedural obligations that must be satisfied under the EU AI Act for this deployment to be lawful?",
+      "scenario": {
+        "role": "deployer",
+        "system_type": "Real-time remote biometric identification system in a publicly accessible space",
+        "intended_use": "Identifying a named terrorism suspect to prevent an imminent attack",
+        "input_data": "Live biometric data of persons in a train station",
+        "domain": "Law enforcement / counter-terrorism"
+      },
+      "gold_answer": "The deployment may be lawful under the Art. 5(1)(h)(ii) exception (preventing a specific, substantial, and imminent threat to life or physical safety or a genuine terrorist attack), subject to all of the following conditions under Art. 5(2)-(5): (1) The use must be strictly necessary and proportionate — limited in geographic scope, duration, and personal scope to the specific threat. (2) A fundamental rights impact assessment must have been completed and the system registered in the EU database (Art. 5(2)). (3) Because prior judicial or independent administrative authorisation (Art. 5(3)) could not be obtained due to urgency, the unit may begin use but must request authorisation at the latest within 24 hours; if authorisation is refused, use must cease immediately and all data discarded. (4) Each use must be notified to the relevant market surveillance authority and the national data protection authority (Art. 5(4)). (5) The Member State must have adopted national law authorising this use and notified the Commission (Art. 5(5)). No adverse legal decision may be based solely on the system's output.",
+      "risk_level": "prohibited",
+      "gold_citations": [
+        {
+          "citation": "Art. 5(1)(h)",
+          "provision_id": "art_5__para_1__point_h",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 5(1)(h)(ii)",
+          "provision_id": "art_5__para_1__point_h__sub_ii",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 5(2)",
+          "provision_id": "art_5__para_2",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 5(3)",
+          "provision_id": "art_5__para_3",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 5(4)",
+          "provision_id": "art_5__para_4",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 5(5)",
+          "provision_id": "art_5__para_5",
+          "role": "supporting"
+        },
+        {
+          "citation": "Recital (33)",
+          "provision_id": "recital_33",
+          "role": "interpretive"
+        },
+        {
+          "citation": "Recital (35)",
+          "provision_id": "recital_35",
+          "role": "interpretive"
+        },
+        {
+          "citation": "Art. 3(42)",
+          "provision_id": "art_3__para_42",
+          "role": "definition"
+        },
+        {
+          "citation": "Art. 3(44)",
+          "provision_id": "art_3__para_44",
+          "role": "definition"
+        }
+      ],
+      "reasoning_hops": 5,
+      "multi_hop": true,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "This is the canonical multi-hop RBI item: hop 1 = is the system in scope as an RBI system in a publicly accessible space (Art. 3(41)/(42) + Art. 3(44)); hop 2 = does 5(1)(h)(ii) cover imminent terrorist attacks (yes, explicitly); hop 3 = what is the urgency authorisation procedure under Art. 5(3) including the 24-hour rule and immediate-deletion obligation if refused; hop 4 = what are the parallel notification obligations under Art. 5(4); hop 5 = what is the Member State law prerequisite under Art. 5(5). Recital (33) confirms terrorist attacks fall under the second exception. Recital (35) supplies the prior-authorisation and urgency-exception detail. All cited provisions are real and verified."
+    },
+    {
+      "id": "hard_prohibited_002",
+      "difficulty": "hard",
+      "task_type": "risk_classification",
+      "stratum": "prohibited",
+      "question": "A law enforcement agency in a Member State is investigating a suspected kidnapping network. The agency wants to deploy a real-time remote biometric identification (RBI) system at multiple transport hubs to locate possible trafficking victims. The agency has obtained prior judicial authorisation for each deployment. The Member State has enacted the enabling national legislation required by the EU AI Act. Which sub-point of Art. 5(1)(h) provides the exception, what additional procedural requirements apply, and does the system also need to be registered before deployment?",
+      "scenario": {
+        "role": "deployer",
+        "system_type": "Real-time remote biometric identification system at transport hubs",
+        "intended_use": "Locating victims of human trafficking networks",
+        "input_data": "Live biometric data of persons at transport hubs",
+        "domain": "Law enforcement / anti-trafficking"
+      },
+      "gold_answer": "Art. 5(1)(h)(i) provides the applicable exception: locating specific victims of abduction, trafficking, or sexual exploitation, as well as missing persons. The deployment is conditionally lawful because: prior judicial authorisation has been obtained (Art. 5(3)); the Member State has enacted enabling legislation notified to the Commission (Art. 5(5)). Additional requirements that still apply: a fundamental rights impact assessment must have been completed and the system registered in the EU database before deployment (Art. 5(2)); each use must be notified to the market surveillance authority and national data protection authority (Art. 5(4)); use must be limited to the strictly necessary geographic scope, duration and personal scope; and no adverse legal decision may be based solely on system output (Art. 5(3)).",
+      "risk_level": "prohibited",
+      "gold_citations": [
+        {
+          "citation": "Art. 5(1)(h)(i)",
+          "provision_id": "art_5__para_1__point_h__sub_i",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 5(2)",
+          "provision_id": "art_5__para_2",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 5(3)",
+          "provision_id": "art_5__para_3",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 5(4)",
+          "provision_id": "art_5__para_4",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 5(5)",
+          "provision_id": "art_5__para_5",
+          "role": "supporting"
+        },
+        {
+          "citation": "Recital (33)",
+          "provision_id": "recital_33",
+          "role": "interpretive"
+        }
+      ],
+      "reasoning_hops": 4,
+      "multi_hop": true,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Requires correctly identifying sub-point (i) vs (ii) or (iii) — the distinguishing fact is that the operation targets victims of trafficking/abduction, not terrorism prevention or perpetrator identification. Then multi-hop across Art. 5(2) (FRIA + registration), Art. 5(3) (prior authorisation — already obtained here), Art. 5(4) (per-use notification), and Art. 5(5) (national law prerequisite). Recital (33) confirms trafficking victims fall under (i). The question also tests whether registration under Art. 5(2) is a prerequisite even when authorisation exists — it is."
+    },
+    {
+      "id": "hard_prohibited_003",
+      "difficulty": "hard",
+      "task_type": "qa",
+      "stratum": "prohibited",
+      "question": "Art. 5(1)(h)(iii) permits real-time RBI for localising or identifying suspects of certain criminal offences. What specific threshold determines which offences qualify, and where is the exhaustive list of qualifying offences set out in the EU AI Act?",
+      "scenario": null,
+      "gold_answer": "Under Art. 5(1)(h)(iii), the qualifying offences are those punishable by a custodial sentence or detention order with a maximum period of at least four years in the Member State concerned, AND the offence must appear in the exhaustive list set out in Annex II of the EU AI Act. Recital (33) explains that this list is based on the 32 criminal offences in Council Framework Decision 2002/584/JHA on the European Arrest Warrant, and that the four-year threshold ensures sufficient seriousness. Neither threshold alone is sufficient — both must be satisfied.",
+      "risk_level": "prohibited",
+      "gold_citations": [
+        {
+          "citation": "Art. 5(1)(h)(iii)",
+          "provision_id": "art_5__para_1__point_h__sub_iii",
+          "role": "primary"
+        },
+        {
+          "citation": "Annex II",
+          "provision_id": "annex_II",
+          "role": "supporting"
+        },
+        {
+          "citation": "Recital (33)",
+          "provision_id": "recital_33",
+          "role": "interpretive"
+        }
+      ],
+      "reasoning_hops": 2,
+      "multi_hop": true,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Hop 1: identify Art. 5(1)(h)(iii) and its dual threshold (4-year maximum + Annex II list). Hop 2: resolve the cross-reference to Annex II. Recital (33) interprets the rationale for the dual threshold and identifies the Framework Decision lineage. A common system error is to cite only the four-year threshold without Annex II, or to miss that both conditions must be jointly satisfied."
+    },
+    {
+      "id": "hard_prohibited_004",
+      "difficulty": "hard",
+      "task_type": "risk_classification",
+      "stratum": "prohibited",
+      "question": "A hospital deploys an AI system that analyses nurses' facial expressions and voice tone during patient interactions to detect signs of burnout, compassion fatigue, or emotional overload. When the system detects distress above a threshold it automatically flags the nurse to occupational health for a welfare check. The hospital's stated purpose is to prevent medical errors caused by staff fatigue and to protect patient safety. Is this system prohibited under Art. 5(1)(f) of the EU AI Act?",
+      "scenario": {
+        "role": "deployer",
+        "system_type": "Emotion-detection system monitoring clinical staff for burnout/fatigue indicators",
+        "intended_use": "Patient safety and staff welfare — automatic referral to occupational health when distress is detected",
+        "input_data": "Facial expressions, vocal tone of nurses during patient interactions",
+        "domain": "Healthcare"
+      },
+      "gold_answer": "No. This system falls within the explicit medical and safety carve-out in Art. 5(1)(f). The prohibition on workplace emotion recognition does not apply to AI systems placed on the market or put into service strictly for medical or safety reasons. The system's purpose is to prevent patient-safety incidents caused by clinical staff fatigue — a genuine safety application. Recital (44) confirms that 'systems intended for therapeutical use' and systems placed on the market 'strictly for medical or safety reasons' are exempt. A system aimed at preventing medical errors by monitoring staff wellbeing in a clinical environment satisfies this carve-out.",
+      "risk_level": "not_applicable",
+      "gold_citations": [
+        {
+          "citation": "Art. 5(1)(f)",
+          "provision_id": "art_5__para_1__point_f",
+          "role": "primary"
+        },
+        {
+          "citation": "Recital (44)",
+          "provision_id": "recital_44",
+          "role": "interpretive"
+        }
+      ],
+      "reasoning_hops": 2,
+      "multi_hop": true,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "BOUNDARY / EXCEPTION CASE (not a cite-nothing negative control: the exempting provision must still be cited). This is the canonical 5(1)(f) carve-out scenario. The system is deployed in a workplace (a hospital) and infers emotions — superficially it matches the prohibition. The resolution requires reading the exception text: 'except for AI systems placed on the market or put into service for medical or safety reasons'. Patient-safety-driven clinical staff monitoring for burnout qualifies. The system is not prohibited; it may however still face other regulatory requirements (e.g. GDPR, high-risk classification under Annex III if it affects employment decisions). This item requires multi-hop: (1) identify 5(1)(f) as the prima facie applicable provision; (2) identify the medical/safety exception and determine whether the scenario falls within it. Gold_citations are the two provisions needed to fully answer — not an empty set — because the correct answer is 'Art. 5(1)(f) applies but the carve-out exempts this system'."
+    },
+    {
+      "id": "hard_prohibited_005",
+      "difficulty": "hard",
+      "task_type": "risk_classification",
+      "stratum": "prohibited",
+      "question": "A social-media platform uses an AI system to analyse aggregated user engagement signals (watch time, share rates, click patterns) — with no biometric data — to infer population-level political sentiment trends and sell this data to political campaigns. A regulator argues this violates Art. 5(1)(g) because it indirectly deduces political opinions. Is the regulator correct?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "Aggregate engagement-signal political sentiment analysis system",
+        "intended_use": "Inferring population-level political sentiment from engagement metrics for sale to campaigns",
+        "input_data": "Aggregated watch time, share rates, click patterns — no biometric data",
+        "domain": "Social media / political advertising"
+      },
+      "gold_answer": "The regulator's argument is incorrect under Art. 5(1)(g). That provision prohibits biometric categorisation systems that use biometric data to deduce or infer protected attributes including political opinions. Art. 3(40) defines a biometric categorisation system as one that assigns individuals to categories using biometric data. This system does not process biometric data — it uses behavioural engagement signals. Art. 5(1)(g) is therefore not triggered. Other legal frameworks (GDPR, Digital Services Act, political advertising regulations) may apply, but the EU AI Act's Art. 5(1)(g) prohibition does not.",
+      "risk_level": "not_applicable",
+      "gold_citations": [
+        {
+          "citation": "Art. 5(1)(g)",
+          "provision_id": "art_5__para_1__point_g",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 3(40)",
+          "provision_id": "art_3__para_40",
+          "role": "definition"
+        }
+      ],
+      "reasoning_hops": 2,
+      "multi_hop": true,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "BOUNDARY / EXCEPTION CASE (not a cite-nothing negative control: the definitional gate must still be cited). The temptation is to say Art. 5(1)(g) applies because political opinions are among the listed sensitive attributes. The resolution requires checking Art. 3(40): a biometric categorisation system must use biometric data. Engagement signals (click patterns, watch time) are not biometric data within the meaning of Art. 3(40) — they are behavioural signals not derived from physical/physiological/behavioural characteristics used for identification/categorisation at individual biometric level. The gold_citations set is the necessary pair to correctly reason: the provision and its definitional gate. System is not prohibited under Art. 5 — negative control confirmed."
+    },
+    {
+      "id": "hard_prohibited_006",
+      "difficulty": "hard",
+      "task_type": "obligation_generation",
+      "stratum": "prohibited",
+      "question": "A system integrator claims that an AI tool they market to employers is not an 'emotion recognition system' prohibited under Art. 5(1)(f) because it infers 'cognitive load' and 'engagement level' rather than emotions, using eye-tracking and keyboard dynamics. Analyse whether this claim is valid under the EU AI Act's definition of emotion recognition, and identify the complete citation chain needed to resolve the question.",
+      "scenario": {
+        "role": "provider",
+        "system_type": "Workplace AI system inferring cognitive load and engagement using eye-tracking and keyboard dynamics",
+        "intended_use": "Employer workforce productivity monitoring",
+        "input_data": "Eye-tracking data, keyboard dynamics (biometric behavioural data)",
+        "domain": "Workplace technology"
+      },
+      "gold_answer": "The claim is likely invalid. Art. 3(39) defines an emotion recognition system as one that identifies or infers 'emotions or intentions' of natural persons on the basis of their biometric data. 'Cognitive load' and 'engagement level' fall within the concept of inferred 'intentions' or mental/psychological states, and eye-tracking and keyboard dynamics constitute biometric data (physiological/behavioural characteristics). The system therefore likely meets the Art. 3(39) definition. Art. 5(1)(f) then prohibits its use in the workplace unless deployed strictly for medical or safety reasons, which is not the case here. Relabelling inferred mental states as 'cognitive load' rather than 'emotions' does not remove the system from the prohibition's scope if the underlying inference concerns the mental/psychological state of workers via their biometric data.",
+      "risk_level": "prohibited",
+      "gold_citations": [
+        {
+          "citation": "Art. 5(1)(f)",
+          "provision_id": "art_5__para_1__point_f",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 3(39)",
+          "provision_id": "art_3__para_39",
+          "role": "definition"
+        },
+        {
+          "citation": "Recital (44)",
+          "provision_id": "recital_44",
+          "role": "interpretive"
+        }
+      ],
+      "reasoning_hops": 3,
+      "multi_hop": true,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "medium",
+      "annotator_notes": "Medium confidence on the definitional boundary: the Act's Art. 3(39) text says 'emotions or intentions' — whether 'intentions' covers 'cognitive load' as a mental state is a legal interpretation question the Act does not resolve with total clarity. The hop chain is: (1) check Art. 3(39) definition scope ('emotions or intentions', biometric data requirement); (2) determine whether eye-tracking/keyboard dynamics qualify as biometric data (behavioural biometric characteristics — likely yes under GDPR Art. 4(14) which is the standard reference, but the AI Act does not define biometric data separately so this is medium confidence); (3) apply Art. 5(1)(f) + check the medical/safety carve-out via Recital (44). The conclusion is 'likely prohibited' but the medium confidence flag reflects definitional ambiguity on 'intentions' vs 'cognitive load'."
+    },
+    {
+      "id": "hard_prohibited_007",
+      "difficulty": "hard",
+      "task_type": "article_retrieval",
+      "stratum": "prohibited",
+      "question": "A system provides automated analysis of arrest photos to predict an individual's likelihood of recidivism by correlating facial geometry with prior conviction records, claiming the output is not based 'solely on profiling' because it incorporates historical criminal records. Does Art. 5(1)(d) still apply? Also, does Art. 5(1)(g) independently apply, and is there a citation that is sometimes falsely attributed here — namely a non-existent 'Art. 5(1)(i)' — that a system should not produce?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "Facial-geometry and conviction-record recidivism prediction system",
+        "intended_use": "Predicting individual recidivism likelihood from arrest photos and prior convictions",
+        "input_data": "Facial geometry (biometric), prior conviction records",
+        "domain": "Criminal justice"
+      },
+      "gold_answer": "Art. 5(1)(d) applies: while the system claims it incorporates criminal records, it still uses facial geometry (a personality/physical characteristic) as a core input to predict future criminal behaviour — this is based on profiling within the meaning of Art. 5(1)(d). The statutory carve-out only exempts human assessment based on objective, verifiable facts 'directly linked to criminal activity'; using facial geometry as a predictive feature does not satisfy this standard. Art. 5(1)(g) also independently applies: the system uses biometric data (facial geometry) to infer or deduce attributes linked to criminal propensity, which in practice encodes protected characteristics such as race. There is no 'Art. 5(1)(i)' in the EU AI Act — Art. 5(1) ends at point (h). Citing 'Art. 5(1)(i)' is a hallucination.",
+      "risk_level": "prohibited",
+      "gold_citations": [
+        {
+          "citation": "Art. 5(1)(d)",
+          "provision_id": "art_5__para_1__point_d",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 5(1)(g)",
+          "provision_id": "art_5__para_1__point_g",
+          "role": "primary"
+        },
+        {
+          "citation": "Recital (42)",
+          "provision_id": "recital_42",
+          "role": "interpretive"
+        },
+        {
+          "citation": "Recital (30)",
+          "provision_id": "recital_30",
+          "role": "interpretive"
+        }
+      ],
+      "reasoning_hops": 3,
+      "multi_hop": true,
+      "negative_control": false,
+      "hallucination_trap": true,
+      "trap_note": "'Art. 5(1)(i)' does not exist. Art. 5(1) contains exactly eight points (a) through (h). A retrieval system that produces 'Art. 5(1)(i)' as a citation for a ninth prohibited practice has hallucinated. This is the canonical trap for this stratum. Additionally, citing only Art. 5(1)(g) while missing 5(1)(d) — or vice versa — is an incomplete citation error. Some systems also hallucinate 'Art. 5(2)(c)' as a direct prohibition subpoint rather than a safeguard paragraph — this is also wrong.",
+      "confidence": "high",
+      "annotator_notes": "HALLUCINATION TRAP. The item explicitly asks the system to identify a non-existent provision ('Art. 5(1)(i)') that is sometimes cited by AI systems that pattern-match 'there should be a ninth point'. Art. 5(1) ends at (h) — verified. The dual applicability of both (d) and (g) tests exhaustive citation. Recital (42) supports the 5(1)(d) analysis; Recital (30) supports the 5(1)(g) analysis. The 'not solely on profiling' defence raised in the scenario is addressed by the carve-out text in Art. 5(1)(d) itself, which requires facts 'directly linked to criminal activity' — facial geometry is not directly linked to any specific criminal act."
+    },
+    {
+      "id": "hard_transp_001",
+      "difficulty": "hard",
+      "task_type": "risk_classification",
+      "stratum": "transparency",
+      "question": "A company markets a voice assistant that responds to questions in natural language. The system has no safety-critical function, is not used for biometric identification, does not generate deep fakes, and is deployed only in consumer smart-speaker devices. A compliance officer argues the system is 'high-risk' because it 'involves AI interacting with people'. Is this correct? What risk tier applies, and which provision governs?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "Consumer voice assistant / conversational AI",
+        "intended_use": "General question-answering and smart-home control via voice interaction",
+        "input_data": "Spoken natural-language commands",
+        "domain": "Consumer electronics"
+      },
+      "gold_answer": "The compliance officer is incorrect. A system subject only to Art. 50(1) transparency obligations (AI-interaction disclosure) is NOT thereby high-risk. The system falls in the limited/transparency-risk tier. High-risk classification requires listing in Annex III or being a safety component under Annex I (Art. 6). Art. 50(1) imposes a disclosure obligation on the provider but does not elevate the system to high-risk.",
+      "risk_level": "limited",
+      "gold_citations": [
+        {
+          "citation": "Art. 50(1)",
+          "provision_id": "art_50__para_1",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 50(6)",
+          "provision_id": "art_50__para_6",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 6",
+          "provision_id": "art_6",
+          "role": "supporting"
+        }
+      ],
+      "reasoning_hops": 2,
+      "multi_hop": true,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Encodes the canonical limited-vs-high-risk confusion. Art. 50(6) confirms that paragraphs 1-4 do not affect Chapter III (high-risk) requirements — the two regimes are independent. Art. 6 defines high-risk classification criteria. A retrieval system that misclassifies Art. 50 systems as high-risk will fail this item."
+    },
+    {
+      "id": "hard_transp_002",
+      "difficulty": "hard",
+      "task_type": "obligation_generation",
+      "stratum": "transparency",
+      "question": "A public broadcaster deploys an AI system to generate a satirical comedy sketch that uses synthesised video of a recognisable living politician. The video will be broadcast on primetime TV. What transparency obligations apply, and does the artistic-work carve-out eliminate them?",
+      "scenario": {
+        "role": "deployer",
+        "system_type": "AI video-synthesis system generating deepfake video of a real person",
+        "intended_use": "Production of satirical comedy content for primetime broadcast",
+        "input_data": "Video footage and images of a living politician",
+        "domain": "Broadcasting / entertainment"
+      },
+      "gold_answer": "Art. 50(4) applies: the content constitutes a deep fake (per Art. 3(60)) and the deployer must disclose its artificial origin. The artistic/satirical carve-out does NOT eliminate the obligation — it narrows it. Where content is part of an evidently artistic, creative, satirical, fictional or analogous work, the obligation is limited to disclosing the existence of such generated or manipulated content in an appropriate manner that does not hamper the display or enjoyment of the work. The deployer must therefore include an appropriate disclosure (e.g. a caption or end-credit notice) without disrupting the broadcast.",
+      "risk_level": "limited",
+      "gold_citations": [
+        {
+          "citation": "Art. 50(4)",
+          "provision_id": "art_50__para_4",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 3(60)",
+          "provision_id": "art_3__para_60",
+          "role": "definition"
+        },
+        {
+          "citation": "Recital (134)",
+          "provision_id": "recital_134",
+          "role": "interpretive"
+        }
+      ],
+      "reasoning_hops": 2,
+      "multi_hop": true,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Tests the artistic-work carve-out in Art. 50(4). The critical insight is that the carve-out narrows (does not eliminate) the disclosure duty. Recital 134 confirms this: disclosure is limited to 'an appropriate manner that does not hamper the display or enjoyment of the work'. Two hops: (1) Art. 3(60) to confirm deep-fake status; (2) Art. 50(4) carve-out clause."
+    },
+    {
+      "id": "hard_transp_003",
+      "difficulty": "hard",
+      "task_type": "obligation_generation",
+      "stratum": "transparency",
+      "question": "A national police force uses an AI system to generate synthetic audio that mimics a suspect's voice, used exclusively in an authorised covert investigation to detect and prevent serious organised crime. Is the Art. 50(4) deepfake disclosure obligation triggered? Must the police disclose the synthetic nature of the audio to subjects of the investigation?",
+      "scenario": {
+        "role": "deployer",
+        "system_type": "AI audio-synthesis system generating voice deep fake",
+        "intended_use": "Covert generation of synthetic voice audio in authorised law-enforcement investigation",
+        "input_data": "Voice samples of a suspect",
+        "domain": "Law enforcement / covert operations"
+      },
+      "gold_answer": "No. Art. 50(4) expressly exempts use that is authorised by law to detect, prevent, investigate or prosecute criminal offences. The law-enforcement carve-out fully suspends the deepfake disclosure obligation where the use is so authorised. The police are therefore not required to disclose the synthetic nature of the audio to the investigation subjects.",
+      "risk_level": "limited",
+      "gold_citations": [
+        {
+          "citation": "Art. 50(4)",
+          "provision_id": "art_50__para_4",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 3(60)",
+          "provision_id": "art_3__para_60",
+          "role": "definition"
+        }
+      ],
+      "reasoning_hops": 2,
+      "multi_hop": true,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Tests the law-enforcement carve-out in Art. 50(4), first sentence: 'This obligation shall not apply where the use is authorised by law to detect, prevent, investigate or prosecute criminal offences.' This is a full exemption (unlike the artistic-work carve-out, which merely narrows). Two hops: definition of deep fake + carve-out clause."
+    },
+    {
+      "id": "hard_transp_004",
+      "difficulty": "hard",
+      "task_type": "obligation_generation",
+      "stratum": "transparency",
+      "question": "An HR-tech provider builds an AI recruitment tool that ranks job applicants and infers their emotional suitability during video interviews. The deployer (a large employer) uses it across all hiring. Enumerate all transparency AND high-risk obligations that stack on both the provider and the deployer.",
+      "scenario": {
+        "role": "provider",
+        "system_type": "AI recruitment ranking + emotion-recognition system used in employment decisions",
+        "intended_use": "Automated applicant ranking and emotional-suitability inference during video job interviews",
+        "input_data": "Video recordings and biometric data of job applicants",
+        "domain": "Human resources / employment"
+      },
+      "gold_answer": "The system is BOTH high-risk (Annex III, category 4 — employment/worker management: recruitment and candidate evaluation) AND subject to Art. 50(3) transparency obligations (emotion recognition). Obligations stack: (1) Provider: high-risk obligations under Chapter III (conformity assessment, technical documentation, registration in EU database, etc.); (2) Deployer: Art. 50(3) — must inform exposed natural persons of the emotion-recognition operation; (3) Art. 50(6) confirms Art. 50 does not affect Chapter III requirements — both regimes apply independently.",
+      "risk_level": "high",
+      "gold_citations": [
+        {
+          "citation": "Art. 50(3)",
+          "provision_id": "art_50__para_3",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 50(6)",
+          "provision_id": "art_50__para_6",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 6",
+          "provision_id": "art_6",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 3(39)",
+          "provision_id": "art_3__para_39",
+          "role": "definition"
+        }
+      ],
+      "reasoning_hops": 3,
+      "multi_hop": true,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Multi-hop stacking item. Hop 1: Art. 3(39) identifies the system as an emotion-recognition system triggering Art. 50(3). Hop 2: Annex III category 4 + Art. 6(2) makes it high-risk. Hop 3: Art. 50(6) confirms the two regimes are additive, not alternative. Tests whether the retrieval system understands obligation stacking."
+    },
+    {
+      "id": "hard_transp_005",
+      "difficulty": "hard",
+      "task_type": "risk_classification",
+      "stratum": "transparency",
+      "question": "A company operates an internal AI tool used solely by its own employees to summarise internal meeting notes. The tool has no external-facing interface, does not interact with the public, generates no synthetic media for publication, and processes no biometric data. Does the EU AI Act's Art. 50 impose any transparency obligation on the company?",
+      "scenario": {
+        "role": "deployer",
+        "system_type": "Internal text-summarisation AI tool",
+        "intended_use": "Summarising internal meeting notes for employees",
+        "input_data": "Internal meeting transcripts",
+        "domain": "Enterprise productivity / internal operations"
+      },
+      "gold_answer": "No. Art. 50 imposes no transparency obligation in this scenario. Art. 50(1) requires disclosure when the system interacts directly with natural persons who need to know they are interacting with an AI — employees using an internal summarisation tool are aware of the tool's nature (obvious from context). Art. 50(2) does not apply because the summaries are not published to inform the public on matters of public interest. Art. 50(3) and (4) do not apply because the system performs neither emotion recognition/biometric categorisation nor deep-fake generation. Gold citations are empty because no Art. 50 obligation is triggered.",
+      "risk_level": "minimal",
+      "gold_citations": [],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": true,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Negative control: a genuinely out-of-scope scenario where no Art. 50 provision fires. A retrieval system with a strong prior toward transparency obligations may hallucinate a citation. The correct answer is no obligation — empty citation set. The 'obvious from context' exception in Art. 50(1) is the key analytical step for the interaction dimension."
+    },
+    {
+      "id": "hard_transp_006",
+      "difficulty": "hard",
+      "task_type": "article_retrieval",
+      "stratum": "transparency",
+      "question": "Does Art. 50 of the EU AI Act require providers or deployers of AI systems subject to transparency obligations to undergo a conformity assessment or to affix CE marking?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "AI system subject only to Art. 50 transparency obligations (limited-risk)",
+        "intended_use": "Understanding compliance pathway for a limited-risk AI system",
+        "input_data": "N/A",
+        "domain": "Regulatory compliance"
+      },
+      "gold_answer": "No. Article 50 imposes transparency and disclosure obligations only. It does not require a conformity assessment or CE marking. Those requirements apply to high-risk AI systems under Chapter III (Arts. 16-27, 43-49). Art. 50(6) expressly states that paragraphs 1-4 'shall not affect the requirements and obligations set out in Chapter III' — meaning Art. 50 is a separate, lighter regime. A system that only triggers Art. 50 is not required to carry a CE mark or conduct a formal conformity assessment.",
+      "risk_level": "limited",
+      "gold_citations": [
+        {
+          "citation": "Art. 50(6)",
+          "provision_id": "art_50__para_6",
+          "role": "primary"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": true,
+      "trap_note": "Tempting wrong citation: Art. 43 (conformity assessment for high-risk AI systems). A model that confuses limited-risk with high-risk will incorrectly cite Art. 43 as applicable. Art. 43 applies only to high-risk systems under Chapter III, not to systems subject only to Art. 50. Also tempting: inventing a non-existent 'Art. 50(5)' requiring registration — Art. 50(5) actually concerns timing of information delivery, not registration.",
+      "confidence": "high",
+      "annotator_notes": "Hallucination trap targeting the most common confusion: conflating Art. 50 transparency duties with the high-risk conformity-assessment regime. Art. 50(6) is the key provision that clarifies the two regimes are separate. Tests whether the retrieval system avoids hallucinating Art. 43 or fabricating an 'Art. 50(5) registration' obligation."
+    },
+    {
+      "id": "hard_transp_007",
+      "difficulty": "hard",
+      "task_type": "obligation_generation",
+      "stratum": "transparency",
+      "question": "A provider builds an AI image editor marketed to professional photographers. The tool performs standard retouching — adjusting brightness, removing blemishes, correcting colour — but does not generate new synthetic content or create deep fakes. Does Art. 50(2) machine-readable marking obligation apply to this provider?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "AI-assisted standard photo-editing tool",
+        "intended_use": "Standard image retouching and editing assistance for professional photographers",
+        "input_data": "Photographs submitted by professional photographers for retouching",
+        "domain": "Creative tools / photography"
+      },
+      "gold_answer": "No, or at most marginally. Art. 50(2) contains an explicit carve-out: the obligation 'shall not apply to the extent the AI systems perform an assistive function for standard editing or do not substantially alter the input data provided by the deployer or the semantics thereof.' A standard photo-retouching tool that adjusts brightness, removes blemishes, or corrects colour falls squarely within the 'assistive function for standard editing' exception and does not substantially alter the semantics of the image. The provider is therefore not required to apply machine-readable marking under Art. 50(2).",
+      "risk_level": "minimal",
+      "gold_citations": [
+        {
+          "citation": "Art. 50(2)",
+          "provision_id": "art_50__para_2",
+          "role": "primary"
+        }
+      ],
+      "reasoning_hops": 2,
+      "multi_hop": true,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Tests the standard-editing carve-out within Art. 50(2). Two hops: (1) identify that Art. 50(2) is the candidate provision; (2) apply the assistive/standard-editing exception to reach the correct negative conclusion. The provision itself is cited because it contains both the obligation and the carve-out — the answer hinges on which clause applies."
+    }
+  ]
+}

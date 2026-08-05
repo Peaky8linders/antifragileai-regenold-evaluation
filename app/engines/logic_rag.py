@@ -90,7 +90,7 @@ def _call_llm(
 
     prov = get_openai_wrapper_provider()
     # Use a faster reasoning model to minimize latency.
-    model = os.getenv("REGENOLD_LOGIC_RAG_MODEL", "claude-sonnet-4-6")
+    model = os.getenv("REGENOLD_LOGIC_RAG_MODEL", "claude-opus-4-8")
     # R117 — bound LogicRAG latency. The previous 120s timeout could hang a
     # request for two minutes; the route budget is sub-20s. Configurable via
     # REGENOLD_LOGIC_RAG_TIMEOUT (default 15s). On timeout the call fails soft
@@ -381,6 +381,15 @@ def execute_logic_rag(
 
     rolling_memory = ""
     accumulated_context = GraphContext()
+    # R288.1 — the accumulated context is a BARE GraphContext, and
+    # ``_merge_contexts`` carries payload fields only, so ``question`` never
+    # arrived here. This object is what ``execute_logic_rag`` returns, i.e. the
+    # context Stage-2 and the R113 guard render — so with REGENOLD_LOGIC_RAG=1
+    # the R288 verbatim selection silently degraded from "question-relevant
+    # paragraphs" to ``select_relevant_paragraphs``' leading-paragraph fallback
+    # for every answer. Latent today (the flag is off by default), wrong the
+    # moment it is turned on.
+    accumulated_context.question = safe_query
 
     # Graph Pruning: Subqueries at the same rank are processed together
     for rank_idx, rank_nodes in enumerate(ranks):

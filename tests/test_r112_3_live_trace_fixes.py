@@ -100,7 +100,12 @@ class TestStage2TraceNotes:
         are the contract the post-hoc analysis keys on)."""
         import inspect
 
-        import app.engines.graph_rag as gr
+        # R290 — read the IMPLEMENTATION module, not the package facade.
+        # ``app.engines.graph_rag`` is a package whose ``__init__`` is a
+        # ~60-line proxy shim; ``inspect.getsource`` on it returns that shim,
+        # so this guard silently passed over the wrong file after the
+        # modularization rename. The engine source lives in _graph_rag_impl.
+        import app.engines._graph_rag_impl as gr
 
         src = inspect.getsource(gr)
         assert "stage2_failed_both_providers_deterministic_ship" in src

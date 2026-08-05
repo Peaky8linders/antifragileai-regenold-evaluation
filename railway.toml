@@ -7,6 +7,53 @@ restartPolicyMaxRetries = 3
 
 # Defaults applied at deploy time — operators can override any of these
 # from the Railway dashboard or via ``railway variables --set KEY=VALUE``.
+# ============================================================================
+# R306 — ⚠ THIS ENTIRE BLOCK IS INERT. IT HAS NEVER BEEN APPLIED.
+# ============================================================================
+#
+# Railway's config-as-code `[deploy]` schema has NO `envs` key (it accepts
+# startCommand, preDeployCommand, multiRegionConfig, healthcheckPath,
+# healthcheckTimeout, restartPolicyType, restartPolicyMaxRetries,
+# cronSchedule, overlapSeconds, drainingSeconds). Environment variables
+# cannot be set from railway.toml at all; they must be set on the service.
+# So this block is not "overridden by the dashboard" (the R80.2 reading
+# recorded elsewhere in this file) — it was never read.
+#
+# CONFIRMED LIVE 2026-08-03 against the deployed endpoint. Discriminator:
+#   POST "What obligations does a provider have?"
+#     REGENOLD_ROLE_DUTY_NOUN_SEED=0 (code default) -> ['Article 1','Article 2']
+#     REGENOLD_ROLE_DUTY_NOUN_SEED=1 (toml intent)  -> ['Article 16','Article 11', ...]
+#   Production returned ['Article 1','Article 2'], retrieval_path
+#   "zero_retrieval_fallback", engine_confidence 0.0. The toml value is dead.
+#
+# Of the 34 assignments below, 29 are cosmetic (toml value == code default).
+# Only these FIVE ever differed, and none of them is in effect:
+#
+#   var                              toml     code default   reader
+#   REGENOLD_MAX_ANSWER_SENTENCES    "0"      unset -> 3     models.py
+#   REGENOLD_QA_LENGTH_CAP           "1200"   400            models.py
+#   REGENOLD_ROLE_DUTY_NOUN_SEED     "1"      0              routes/regenold.py
+#   REGENOLD_R89A_FORCE_APPEND       "1"      0              grounded_prose.py
+#   REGENOLD_INTENT_PROVIDER         "groq"   ""             openai_wrapper_provider.py
+#
+# The first of those is the root cause of the R306 truncation defect:
+# production runs the 3-sentence code default, so any answer whose
+# question does not trip a cap-escape gate is cut at three sentences —
+# mid-enumeration when the model wrote a list. R306 fixes the DAMAGE
+# structurally (`REGENOLD_ENUM_GUARD`, an answer-keyed floor that no cap
+# may cut through) rather than by chasing the env var, so the wire is
+# correct whatever the deployed cap turns out to be.
+#
+# Deliberately NOT deleted: it is the written record of operator intent,
+# and each entry's comment carries the round + measurement that motivated
+# it. To ACTUALLY apply any of the five, set it on the Railway service:
+#   railway variables --set REGENOLD_MAX_ANSWER_SENTENCES=0
+# Do not do that for MAX_ANSWER_SENTENCES without measuring first —
+# uncapping every answer swings Answer-Conciseness, the one rubric axis
+# this system leads (official scorecard), and the 77.5/73.0 scorecard was
+# measured with the cap at 3.
+# ============================================================================
+
 [deploy.envs]
 # Enable the Round-31.1 GraphRAG 2-hop expand path by default.
 # Lifts Ref Correctness Loose +0.087 / Strict +0.039 on the davidath
@@ -32,6 +79,29 @@ REGENOLD_GRAPH_2HOP_FULL_CAP = "1"
 #   * Stage-1 parse + Stage-2 polish + reasoning -> Claude Max via the
 #     openai_wrapper (the Cloudflare named tunnel -> NSSM wrapper -> Claude Max).
 #     OPENAI_API_BASE (tunnel URL) + OPENAI_API_KEY are dashboard secrets.
+#
+# R277 — CLOUDFLARE ACCESS SERVICE TOKEN (required while an Access application
+# fronts the wrapper hostname). A Zero Trust Access app was attached to
+# wrapper.antifragile-ai.net between 2026-07-03 and 2026-07-16; unauthenticated
+# calls (including Railway's) get an HTML login page + HTTP 401, the engine
+# reads that as api_status_401, and production silently serves NO Claude Max —
+# deterministic answers only. Keeping Access is correct (the wrapper has no auth
+# of its own, so an open hostname lets anyone burn the Max quota); the fix is to
+# let the backend through with a service token:
+#   1. Cloudflare Zero Trust -> Access -> Service Auth -> create a service token.
+#   2. Edit the policy on the wrapper.antifragile-ai.net application to Include
+#      that service token (Include -> Service Auth -> <token name>).
+#   3. railway variables --set CF_ACCESS_CLIENT_ID=<client id>
+#      railway variables --set CF_ACCESS_CLIENT_SECRET=<client secret>
+# Both are dashboard SECRETS — never commit them here. The provider attaches
+# CF-Access-Client-Id / CF-Access-Client-Secret ONLY to the Access-protected
+# host (see _resolve_cf_access_headers) so the secret is never transmitted to
+# Groq / Gemini / Mistral, which share the same provider class. With the two
+# vars unset the behaviour is byte-identical to pre-R277.
+# Optional: CF_ACCESS_HOSTNAME pins which host is Access-protected; it defaults
+# to the host of OPENAI_API_BASE.
+# Verify after deploy: curl https://<app>.up.railway.app/healthz/llm
+#   -> expect llm_ok=true (401 in `detail` means the token is missing/not in the policy).
 #
 # The earlier provider="groq" was a split-brain: the Groq Stage-2 routing was
 # added then silently reverted (commit 9dba937), so Stage-2 routed to the
@@ -347,6 +417,23 @@ REGENOLD_CHAIN_COLLAPSE = "1"
 # and keeps Neo4j as the additive 2-hop layer only. davidath byte-identical (the
 # bench has no Neo4j → the gate branch is never reached locally); the win lands LIVE.
 REGENOLD_KB_PRIMARY_RETRIEVAL = "1"
+
+# R281: gold-protected adaptive reference clamp. Over-citation is the round's
+# biggest scored lever (live pred:gold 2.24x hard / 2.23x easy; precision ~29%/37%;
+# Ref Conciseness a weak axis at 28-44 vs official 79). Re-applies the per-question
+# ref budget as the LAST ref pass, but RESCUES question-named heads past the budget
+# and exempts curated intercepts / scenarios — the three fixes R142.1's positional
+# clamp lacked (it lost a pairwise 11-0 by dropping gold). Gate = the gold-bearing
+# evals.harness.easyhard_ab (ab_judge's refs axis has no minimality term, so it
+# CANNOT reward a precision fix). Live hard-split A/B (n=37, clamp OFF vs ON, shared
+# engine cache so the SAME Stage-2 answer feeds both arms): Ref Strict (F1) +0.032,
+# Ref Conciseness +0.067, Ref Loose (recall) -0.0135 (1/37 rows), est. Overall
+# +1.17pp; easy offline shipped-fn sim +1.9pp. Stage-2-gated -> davidath / 276 / OOS
+# byte-identical (provider=cli has no wrapper => stage2_landed False => inert).
+# Baked as a CODE default (app/config-adjacent gate _adaptive_clamp_enabled) per the
+# R80.2 lesson (dashboard vars override this block); pinned here for visibility.
+# Instant rollback: railway variables --set REGENOLD_ADAPTIVE_REF_CLAMP=0
+REGENOLD_ADAPTIVE_REF_CLAMP = "1"
 
 # 2026-07-04 operator directive — Opus 4.8 "fast mode" answers BOTH Stage-2
 # tiers, thinking-free on simple / with extended reasoning on complex.

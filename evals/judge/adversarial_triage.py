@@ -41,6 +41,7 @@ from typing import Any
 
 from evals.judge.runner import (  # noqa: PLC0415 — same-package reuse
     _call_judge_anthropic,
+    _call_judge_gemini,
     _call_judge_groq,
     _call_judge_sonnet,
     _call_judge_with_retry,
@@ -58,6 +59,8 @@ def _resolve_caller(provider: str, timeout_s: float):
         return lambda p: _call_judge_anthropic(p, timeout_s=timeout_s)
     if provider == "groq":
         return lambda p: _call_judge_groq(p, timeout_s=timeout_s)
+    if provider == "gemini":
+        return lambda p: _call_judge_gemini(p, timeout_s=timeout_s)
     return lambda p: _call_judge_sonnet(p, timeout_s=timeout_s)
 
 _TRIAGE_SYSTEM = (
@@ -134,8 +137,18 @@ def run(
 ) -> dict[str, Any]:
     set_judge_model(model)
     caller = _resolve_caller(provider, timeout_s)
-    payload = json.loads(sidecar.read_text(encoding="utf-8"))
-    rows: list[dict[str, Any]] = payload.get("rows") or []
+    text = sidecar.read_text(encoding="utf-8")
+    if sidecar.suffix == ".jsonl":
+        rows = [json.loads(ln) for ln in text.splitlines() if ln.strip()]
+    else:
+        payload = json.loads(text)
+        rows = payload.get("rows") or []
+    # Normalise field names for ckpt sidecars (pred_answer → predicted_answer)
+    for r in rows:
+        if "predicted_answer" not in r and "pred_answer" in r:
+            r["predicted_answer"] = r["pred_answer"]
+        if "pred_refs" not in r and "predicted_refs" in r:
+            r["pred_refs"] = r["predicted_refs"]
     if rows_limit:
         rows = rows[:rows_limit]
 
@@ -243,7 +256,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--label", required=True)
     parser.add_argument("--rows-limit", type=int, default=None)
     parser.add_argument("--concurrency", type=int, default=2)
-    parser.add_argument("--provider", choices=("wrapper", "anthropic", "groq"), default="wrapper")
+    parser.add_argument("--provider", choices=("wrapper", "anthropic", "groq", "gemini"), default="wrapper")
     parser.add_argument("--model", default="claude-sonnet-5")
     parser.add_argument("--timeout", type=float, default=90.0)
     parser.add_argument("--verbose", action="store_true")

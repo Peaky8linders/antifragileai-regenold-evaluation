@@ -211,8 +211,8 @@ def test_denoiser_returns_rewritten_text_on_happy_path(monkeypatch) -> None:
     assert out == "deployer transparency obligations Art. 26"
 
 
-def test_denoiser_uses_one_second_timeout(monkeypatch) -> None:
-    """R86 brief — timeout MUST be 1.0s, not 2.0s (fail-fast)."""
+def test_denoiser_uses_three_second_timeout(monkeypatch) -> None:
+    """Timeout MUST be 3.0s — openai/gpt-oss-120b needs headroom for system overhead."""
     monkeypatch.setenv("REGENOLD_QUERY_DENOISER", "1")
     monkeypatch.setenv("OPENAI_API_BASE", "http://127.0.0.1:8000/v1")
     monkeypatch.setenv("OPENAI_API_KEY", "dummy")
@@ -234,9 +234,10 @@ def test_denoiser_uses_one_second_timeout(monkeypatch) -> None:
         )
     # The request object passed to provider.complete carries timeout_seconds
     sent_req = fake_provider.complete.call_args.args[0]
-    assert sent_req.timeout_seconds == 1.0, (
-        "R86 timeout must be 1.0s — anything longer adds latency tail "
-        "to multi-turn requests without measurable rewrite-quality gain."
+    assert sent_req.timeout_seconds == 3.0, (
+        "Denoiser timeout must be 3.0s — Groq model system "
+        "overhead routinely exceeds 1.0s; 3.0s gives headroom while still "
+        "being negligible against the ~28s multi-turn p50."
     )
 
 

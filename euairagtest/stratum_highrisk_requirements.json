@@ -1,0 +1,619 @@
+{
+  "stratum": "high_risk_requirements",
+  "items": [
+    {
+      "id": "easy_hrreq_001",
+      "difficulty": "easy",
+      "task_type": "article_retrieval",
+      "stratum": "high_risk_requirements",
+      "question": "Which article of the EU AI Act requires providers of high-risk AI systems to establish, implement, document, and maintain a risk management system throughout the system's lifecycle?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "high-risk AI system (Annex III)",
+        "intended_use": "General high-risk AI deployment",
+        "input_data": "Various",
+        "domain": "General compliance"
+      },
+      "gold_answer": "Article 9 requires providers of high-risk AI systems to establish, implement, document and maintain a risk management system. This must be a continuous iterative process covering identification and analysis of known/foreseeable risks, estimation and evaluation of risks arising from intended use and reasonably foreseeable misuse, and adoption of appropriate risk management measures.",
+      "risk_level": "high",
+      "gold_citations": [
+        {
+          "citation": "Art. 9",
+          "provision_id": "art_9",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 9(1)",
+          "provision_id": "art_9__para_1",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 9(2)",
+          "provision_id": "art_9__para_2",
+          "role": "supporting"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Direct single-hop retrieval. Art. 9(1) imposes the obligation; Art. 9(2) defines the four steps of the continuous iterative process. No ambiguity — the text of Art. 9 unambiguously names the risk management system."
+    },
+    {
+      "id": "easy_hrreq_002",
+      "difficulty": "easy",
+      "task_type": "article_retrieval",
+      "stratum": "high_risk_requirements",
+      "question": "Under the EU AI Act, which article governs the data and data governance requirements for high-risk AI systems that use techniques involving the training of AI models with data?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "high-risk AI system using ML training",
+        "intended_use": "Supervised machine learning application",
+        "input_data": "Training, validation, and testing datasets",
+        "domain": "General compliance"
+      },
+      "gold_answer": "Article 10 governs data and data governance requirements. It requires that training, validation, and testing datasets meet quality criteria including appropriate governance and management practices, relevance, sufficiency, representativeness, and to the best extent possible freedom from errors. It also addresses examination for possible biases and includes rules for the exceptional use of special categories of personal data for bias detection.",
+      "risk_level": "high",
+      "gold_citations": [
+        {
+          "citation": "Art. 10",
+          "provision_id": "art_10",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 10(1)",
+          "provision_id": "art_10__para_1",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 10(2)",
+          "provision_id": "art_10__para_2",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 10(3)",
+          "provision_id": "art_10__para_3",
+          "role": "supporting"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Direct single-hop retrieval. Art. 10(1) establishes the scope; Art. 10(2) lists governance practices; Art. 10(3) sets the quality standard. Art. 10(6) extends paragraphs 2-5 to testing datasets for non-training-based systems."
+    },
+    {
+      "id": "easy_hrreq_003",
+      "difficulty": "easy",
+      "task_type": "article_retrieval",
+      "stratum": "high_risk_requirements",
+      "question": "Which article of the EU AI Act requires providers of high-risk AI systems to draw up technical documentation before placing the system on the market, with minimum content specified in Annex IV?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "high-risk AI system",
+        "intended_use": "Pre-market documentation compliance",
+        "input_data": "System design and specification information",
+        "domain": "General compliance"
+      },
+      "gold_answer": "Article 11 requires that technical documentation for a high-risk AI system be drawn up before the system is placed on the market or put into service and be kept up to date. The minimum information to be included is set out in Annex IV.",
+      "risk_level": "high",
+      "gold_citations": [
+        {
+          "citation": "Art. 11",
+          "provision_id": "art_11",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 11(1)",
+          "provision_id": "art_11__para_1",
+          "role": "primary"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Direct single-hop retrieval. Art. 11(1) is unambiguous. Annex IV is the referenced content but is not a separately citable 'article' for the citation question asked."
+    },
+    {
+      "id": "easy_hrreq_004",
+      "difficulty": "easy",
+      "task_type": "article_retrieval",
+      "stratum": "high_risk_requirements",
+      "question": "Which article of the EU AI Act requires high-risk AI systems to technically enable the automatic recording of events (logs) over the lifetime of the system?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "high-risk AI system",
+        "intended_use": "Post-market monitoring and accountability",
+        "input_data": "Operational event data",
+        "domain": "General compliance"
+      },
+      "gold_answer": "Article 12 requires high-risk AI systems to technically allow for the automatic recording of events (logs) over the lifetime of the system. The logging capability must capture events relevant to identifying situations where the system might present a risk, enabling post-market monitoring, and monitoring operational performance.",
+      "risk_level": "high",
+      "gold_citations": [
+        {
+          "citation": "Art. 12",
+          "provision_id": "art_12",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 12(1)",
+          "provision_id": "art_12__para_1",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 12(2)",
+          "provision_id": "art_12__para_2",
+          "role": "supporting"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Direct single-hop retrieval. Art. 12(1) imposes the obligation; Art. 12(2) specifies what events must be captured. Art. 12(3) adds further requirements specifically for biometric identification systems."
+    },
+    {
+      "id": "easy_hrreq_005",
+      "difficulty": "easy",
+      "task_type": "article_retrieval",
+      "stratum": "high_risk_requirements",
+      "question": "Under the EU AI Act, which article requires that high-risk AI systems be designed and developed so that they can be effectively overseen by natural persons during use, including by enabling them to override or stop the system?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "high-risk AI system",
+        "intended_use": "Operational deployment with human oversight capability",
+        "input_data": "System outputs and recommendations",
+        "domain": "General compliance"
+      },
+      "gold_answer": "Article 14 requires human oversight. High-risk AI systems must be designed and developed with appropriate human-machine interface tools so they can be effectively overseen by natural persons during use. Oversight measures must enable natural persons to understand the system's capacities and limitations, recognise automation bias risks, interpret outputs, and choose not to use the system or override or stop its operation.",
+      "risk_level": "high",
+      "gold_citations": [
+        {
+          "citation": "Art. 14",
+          "provision_id": "art_14",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 14(1)",
+          "provision_id": "art_14__para_1",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 14(4)",
+          "provision_id": "art_14__para_4",
+          "role": "supporting"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Direct single-hop retrieval. Art. 14(1) states the general obligation; Art. 14(4) lists the specific capabilities the system must give to overseers including stopping/overriding the system."
+    },
+    {
+      "id": "easy_hrreq_006",
+      "difficulty": "easy",
+      "task_type": "article_retrieval",
+      "stratum": "high_risk_requirements",
+      "question": "Which article of the EU AI Act requires high-risk AI systems to achieve an appropriate level of accuracy, robustness, and cybersecurity, and to be resilient against attempts by unauthorised third parties to alter their use, outputs, or performance?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "high-risk AI system",
+        "intended_use": "Secure and reliable AI deployment",
+        "input_data": "Operational data and model inputs",
+        "domain": "General compliance / cybersecurity"
+      },
+      "gold_answer": "Article 15 requires that high-risk AI systems achieve an appropriate level of accuracy, robustness, and cybersecurity. Article 15(5) specifically requires resilience against attempts by unauthorised third parties to alter the system's use, outputs, or performance, including against data poisoning, model poisoning, adversarial examples, confidentiality attacks, and model flaws.",
+      "risk_level": "high",
+      "gold_citations": [
+        {
+          "citation": "Art. 15",
+          "provision_id": "art_15",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 15(1)",
+          "provision_id": "art_15__para_1",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 15(5)",
+          "provision_id": "art_15__para_5",
+          "role": "supporting"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Direct single-hop retrieval. Art. 15(1) states the general obligation; Art. 15(5) is the specific cybersecurity provision addressing adversarial manipulation. Art. 15(4) addresses resilience to errors and faults."
+    },
+    {
+      "id": "easy_hrreq_007",
+      "difficulty": "easy",
+      "task_type": "article_retrieval",
+      "stratum": "high_risk_requirements",
+      "question": "Which article of the EU AI Act requires high-risk AI systems to be designed with sufficient transparency so that deployers can interpret the system's output and use it appropriately, and requires instructions for use to be provided?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "high-risk AI system",
+        "intended_use": "Deployment by a downstream deployer organisation",
+        "input_data": "System outputs presented to deployers",
+        "domain": "General compliance / transparency"
+      },
+      "gold_answer": "Article 13 requires transparency and provision of information to deployers. High-risk AI systems must be designed and developed in such a way that their operation is sufficiently transparent to enable deployers to interpret the system's output and use it appropriately. Providers must supply instructions for use in digital or other appropriate formats containing concise, complete, correct, and clear information.",
+      "risk_level": "high",
+      "gold_citations": [
+        {
+          "citation": "Art. 13",
+          "provision_id": "art_13",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 13(1)",
+          "provision_id": "art_13__para_1",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 13(2)",
+          "provision_id": "art_13__para_2",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 13(3)",
+          "provision_id": "art_13__para_3",
+          "role": "supporting"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Direct single-hop retrieval. Art. 13(1) states the transparency obligation; Art. 13(2) mandates instructions for use; Art. 13(3) enumerates the content that instructions must cover (including accuracy metrics, human oversight measures referencing Art. 14, and logging mechanisms referencing Art. 12)."
+    },
+    {
+      "id": "hard_hrreq_001",
+      "difficulty": "hard",
+      "task_type": "obligation_generation",
+      "stratum": "high_risk_requirements",
+      "question": "A startup is developing a high-risk AI system (Annex III, point 4 — employment and worker management) and intends to place it on the EU market. List the complete set of legal obligations that apply to the startup as a provider under the EU AI Act, citing every applicable article.",
+      "scenario": {
+        "role": "provider",
+        "system_type": "High-risk AI system — Annex III point 4 (employment, workers management and access to self-employment)",
+        "intended_use": "Automated screening of job applicants",
+        "input_data": "CVs, application forms, behavioural data",
+        "domain": "Human resources / employment"
+      },
+      "gold_answer": "As a provider of a high-risk AI system, the startup must: (1) ensure the system complies with the Section 2 requirements (Arts. 9-15) — risk management system (Art. 9), data governance (Art. 10), technical documentation (Art. 11), logging (Art. 12), transparency to deployers (Art. 13), human oversight (Art. 14), accuracy/robustness/cybersecurity (Art. 15) — all mandated by Art. 8 and enumerated in Art. 16(a); (2) establish a quality management system (Art. 17), cross-referenced by Art. 16(c); (3) maintain documentation (Art. 18), per Art. 16(d); (4) retain automatically generated logs when the provider controls the system (Art. 19), per Art. 16(e); (5) carry out a conformity assessment (Art. 43), per Art. 16(f) — for Annex III points 2-8 this is internal control per Annex VI without notified body involvement; (6) draw up an EU declaration of conformity (Art. 47), per Art. 16(g); (7) affix the CE marking (Art. 48), per Art. 16(h); (8) register the system in the EU database (Art. 49(1)), per Art. 16(i); (9) take corrective actions and inform authorities of non-conforming or risky systems (Art. 20), per Art. 16(j).",
+      "risk_level": "high",
+      "gold_citations": [
+        {
+          "citation": "Art. 8",
+          "provision_id": "art_8",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 9",
+          "provision_id": "art_9",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 10",
+          "provision_id": "art_10",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 11",
+          "provision_id": "art_11",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 12",
+          "provision_id": "art_12",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 13",
+          "provision_id": "art_13",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 14",
+          "provision_id": "art_14",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 15",
+          "provision_id": "art_15",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 16",
+          "provision_id": "art_16",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 17",
+          "provision_id": "art_17",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 18",
+          "provision_id": "art_18",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 19",
+          "provision_id": "art_19",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 20",
+          "provision_id": "art_20",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 43",
+          "provision_id": "art_43",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 47",
+          "provision_id": "art_47",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 48",
+          "provision_id": "art_48",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 49(1)",
+          "provision_id": "art_49__para_1",
+          "role": "supporting"
+        }
+      ],
+      "reasoning_hops": 4,
+      "multi_hop": true,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Multi-hop chain: question asks for full provider obligation set -> Art. 16 is the enumeration norm -> Art. 16 points (a)-(j) each cross-reference Arts. 8-15, 17, 18, 19, 20, 43, 47, 48, 49. Four hops: (1) identify provider role, (2) read Art. 16 enumeration, (3) follow cross-references to Section 2 requirements, (4) follow cross-references to procedural/administrative obligations. For Annex III points 2-8, conformity assessment is internal control only (Art. 43(2)) — no notified body required."
+    },
+    {
+      "id": "hard_hrreq_002",
+      "difficulty": "hard",
+      "task_type": "obligation_generation",
+      "stratum": "high_risk_requirements",
+      "question": "A public hospital in an EU Member State is deploying a high-risk AI system (Annex III, point 4 — employment and workers management) to assist HR decisions. As a deployer, what obligations does the hospital have under the EU AI Act, and which of those obligations also require conducting a fundamental rights impact assessment?",
+      "scenario": {
+        "role": "deployer",
+        "system_type": "High-risk AI system — Annex III (employment management)",
+        "intended_use": "Assisting HR decisions on employment and worker management within the hospital",
+        "input_data": "Employee records and performance data",
+        "domain": "Healthcare / public sector HR"
+      },
+      "gold_answer": "As a deployer of a high-risk AI system, the hospital must comply with Art. 26 deployer obligations: use the system according to instructions for use; assign human oversight to competent persons with necessary resources; ensure input data quality; monitor operation and report serious incidents; maintain automatically generated logs for at least 6 months; inform workers and representatives before deploying workplace AI; where applicable, verify prior registration in the EU database; use provider information for data protection impact assessments; and inform affected individuals subject to the system. Additionally, because the hospital is a body governed by public law (a public body), it must carry out a fundamental rights impact assessment (FRIA) under Art. 27 before deployment. The FRIA must describe the intended process, affected categories of persons, identified risks of harm, human oversight measures, and complaint mechanisms. The Art. 27 FRIA is a separate obligation that sits on top of Art. 26 and applies specifically because the deployer is a public entity.",
+      "risk_level": "high",
+      "gold_citations": [
+        {
+          "citation": "Art. 26",
+          "provision_id": "art_26",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 26(1)",
+          "provision_id": "art_26__para_1",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 26(2)",
+          "provision_id": "art_26__para_2",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 26(5)",
+          "provision_id": "art_26__para_5",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 26(6)",
+          "provision_id": "art_26__para_6",
+          "role": "supporting"
+        },
+        {
+          "citation": "Art. 27",
+          "provision_id": "art_27",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 27(1)",
+          "provision_id": "art_27__para_1",
+          "role": "primary"
+        }
+      ],
+      "reasoning_hops": 3,
+      "multi_hop": true,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Multi-hop: (1) identify deployer role, (2) read Art. 26 for deployer obligations, (3) identify that the hospital is a public body triggering Art. 27 FRIA obligation. The FRIA applies to deployers that are public bodies or private entities providing public services. Key distinction tested: provider obligations (Arts. 9-15, 16) do NOT apply to a deployer unless the deployer also acts as a provider."
+    },
+    {
+      "id": "hard_hrreq_003",
+      "difficulty": "hard",
+      "task_type": "qa",
+      "stratum": "high_risk_requirements",
+      "question": "Under Art. 14 of the EU AI Act, for high-risk AI systems that make individual recommendations (e.g., credit scoring), what specific obligation applies to enable the overseer to address automation bias, and does Art. 14 impose a two-person verification rule on all high-risk systems?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "High-risk AI system — credit scoring or similar recommendation system",
+        "intended_use": "Automated recommendations influencing human decisions",
+        "input_data": "Individual personal and financial data",
+        "domain": "Financial services"
+      },
+      "gold_answer": "Article 14(4)(b) requires that the system enable overseers to be aware of the possible tendency to over-rely on or automatically follow the output produced by the high-risk AI system (automation bias), particularly for systems that provide recommendations for decisions to be taken by natural persons. The two-person independent verification requirement (Art. 14(5)) applies only to high-risk AI systems referred to in Annex III, point 1(a) — remote biometric identification systems — and is NOT a general requirement for all high-risk AI systems. A credit scoring system is not subject to Art. 14(5).",
+      "risk_level": "high",
+      "gold_citations": [
+        {
+          "citation": "Art. 14(4)",
+          "provision_id": "art_14__para_4",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 14(5)",
+          "provision_id": "art_14__para_5",
+          "role": "interpretive"
+        }
+      ],
+      "reasoning_hops": 2,
+      "multi_hop": true,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Two-hop: (1) read Art. 14(4) for automation bias obligation, (2) read Art. 14(5) to confirm the two-person rule is scoped only to Annex III point 1(a) biometric identification systems, not general high-risk systems. Tests whether the model correctly scopes the more restrictive obligation."
+    },
+    {
+      "id": "hard_hrreq_004",
+      "difficulty": "hard",
+      "task_type": "qa",
+      "stratum": "high_risk_requirements",
+      "question": "Under the EU AI Act, does Article 10 mandate a minimum dataset size (e.g., at least 10,000 training samples) or a specific train/validation/test split ratio for high-risk AI systems?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "High-risk AI system using ML training",
+        "intended_use": "Training a model on structured tabular data",
+        "input_data": "Training datasets of varying sizes",
+        "domain": "General machine learning / compliance"
+      },
+      "gold_answer": "No. Article 10 does not mandate any minimum dataset size, specific number of training samples, or specific train/validation/test split ratio. Article 10(3) requires that datasets be 'relevant, sufficiently representative, and to the best extent possible, free of errors and complete' with appropriate statistical properties, but these are qualitative standards — the Regulation does not prescribe a numeric threshold for dataset size or any particular split ratio. Any claim that the EU AI Act specifies a minimum dataset size (e.g. 10,000 samples) or a mandated split ratio is incorrect.",
+      "risk_level": "high",
+      "gold_citations": [
+        {
+          "citation": "Art. 10(3)",
+          "provision_id": "art_10__para_3",
+          "role": "primary"
+        }
+      ],
+      "reasoning_hops": 1,
+      "multi_hop": false,
+      "negative_control": false,
+      "hallucination_trap": true,
+      "trap_note": "Tempting wrong citation: a system might hallucinate 'Art. 10(3) requires at least 10,000 training samples' or 'a mandated 70/15/15 split'. The actual text of Art. 10(3) only requires that datasets be 'relevant, sufficiently representative, and to the best extent possible, free of errors and complete' — purely qualitative. No numeric threshold exists anywhere in Regulation (EU) 2024/1689.",
+      "confidence": "high",
+      "annotator_notes": "Hallucination trap. The question is designed to elicit a fabricated quantitative rule. The correct answer is the absence of such a rule. Art. 10(3) is the controlling provision and it uses qualitative language only. The trap tests whether a RAG system invents plausible-sounding but non-existent numeric requirements."
+    },
+    {
+      "id": "hard_hrreq_005",
+      "difficulty": "hard",
+      "task_type": "risk_classification",
+      "stratum": "high_risk_requirements",
+      "question": "A private company deploys a general-purpose AI assistant (not listed in Annex III and not classified as high-risk) internally for document drafting and email summarisation. An employee claims the deployer must comply with the high-risk deployer obligations in Article 26 and must conduct a fundamental rights impact assessment under Article 27. Is this claim correct?",
+      "scenario": {
+        "role": "deployer",
+        "system_type": "General-purpose AI assistant (not high-risk, not Annex III)",
+        "intended_use": "Internal document drafting and email summarisation",
+        "input_data": "Internal documents and emails",
+        "domain": "Office productivity / enterprise software"
+      },
+      "gold_answer": "The claim is incorrect. Article 26 obligations apply only to deployers of high-risk AI systems as defined in Chapter III, Section 1 (Annex II or Annex III classification, or designated by the Commission). A general-purpose AI assistant used for document drafting and email summarisation that is not classified as a high-risk system is not subject to Art. 26. Similarly, Article 27 FRIA obligations apply only to deployers of high-risk AI systems that are public bodies or private entities providing public services. Since the system is not high-risk, neither Art. 26 nor Art. 27 applies. The applicable regime for this system would be the limited transparency obligations for certain AI systems under Art. 50, if applicable.",
+      "risk_level": "minimal",
+      "gold_citations": [],
+      "reasoning_hops": 2,
+      "multi_hop": true,
+      "negative_control": true,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Negative control item. The correct answer is that Articles 26 and 27 do NOT apply because the system is not high-risk. The gold_citations array is deliberately empty — there is no applicable provision from the high_risk_requirements stratum. The reasoning hop is: (1) determine system classification (not high-risk), (2) confirm Art. 26 scope is limited to deployers of high-risk AI systems. Tests whether a system incorrectly applies high-risk obligations to non-high-risk deployments."
+    },
+    {
+      "id": "hard_hrreq_006",
+      "difficulty": "hard",
+      "task_type": "obligation_generation",
+      "stratum": "high_risk_requirements",
+      "question": "Under the EU AI Act, does Article 10 allow providers to process special categories of personal data (such as racial or ethnic origin, health data) when developing training datasets for high-risk AI systems, and if so under what conditions and in which provision?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "High-risk AI system using biometric or health data during training",
+        "intended_use": "Bias detection and correction in training data",
+        "input_data": "Special categories of personal data (Art. 9 GDPR categories)",
+        "domain": "Healthcare / bias mitigation"
+      },
+      "gold_answer": "Yes, but only exceptionally and under strict conditions set out in Article 10(5). The processing is permitted only when it is strictly necessary for detecting and correcting biases in the high-risk AI system and when the effectiveness of bias detection cannot be achieved by processing other non-special category data. The conditions include: subject to appropriate safeguards; technical limitations on use and access; access restricted to authorised persons; no transmission to third parties; deletion of the data after bias correction or the retention period expires; documentation records of the necessity and basis for the processing. This exception operates alongside, and does not replace, the applicable conditions for processing special categories of data under GDPR (Art. 9 GDPR).",
+      "risk_level": "high",
+      "gold_citations": [
+        {
+          "citation": "Art. 10(5)",
+          "provision_id": "art_10__para_5",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 10(2)",
+          "provision_id": "art_10__para_2",
+          "role": "supporting"
+        }
+      ],
+      "reasoning_hops": 2,
+      "multi_hop": true,
+      "negative_control": false,
+      "hallucination_trap": false,
+      "trap_note": "",
+      "confidence": "high",
+      "annotator_notes": "Two-hop: (1) read Art. 10 generally for data governance obligations, (2) identify the exceptional permission in Art. 10(5) for processing special categories of personal data. Key nuance: this is an EU AI Act provision enabling processing, but it operates alongside GDPR requirements — it does not override them. Tests whether a system can locate the narrow carve-out within Art. 10 and correctly state all its conditions."
+    },
+    {
+      "id": "hard_hrreq_007",
+      "difficulty": "hard",
+      "task_type": "qa",
+      "stratum": "high_risk_requirements",
+      "question": "Does the EU AI Act contain a provision called 'Article 15(5)' that requires providers to certify accuracy metrics to a supervisory authority before market placement, and does Art. 15 impose any obligation regarding the declaration of accuracy levels in instructions for use?",
+      "scenario": {
+        "role": "provider",
+        "system_type": "High-risk AI system",
+        "intended_use": "Market placement compliance",
+        "input_data": "Accuracy measurement and certification data",
+        "domain": "General compliance / cybersecurity"
+      },
+      "gold_answer": "There is no provision in Article 15 that requires providers to certify accuracy metrics to a supervisory authority before market placement. Article 15(5) exists but it concerns resilience against attempts by unauthorised third parties to alter the system's use, outputs, or performance — it is the cybersecurity provision addressing data poisoning, model poisoning, adversarial examples, confidentiality attacks, and model flaws. Article 15(3) does require that the levels of accuracy and the relevant accuracy metrics be declared in the accompanying instructions for use, but this is a transparency/information obligation to deployers, not a pre-market certification to a supervisory authority.",
+      "risk_level": "high",
+      "gold_citations": [
+        {
+          "citation": "Art. 15(3)",
+          "provision_id": "art_15__para_3",
+          "role": "primary"
+        },
+        {
+          "citation": "Art. 15(5)",
+          "provision_id": "art_15__para_5",
+          "role": "interpretive"
+        }
+      ],
+      "reasoning_hops": 2,
+      "multi_hop": true,
+      "negative_control": false,
+      "hallucination_trap": true,
+      "trap_note": "Tempting wrong claim: that 'Art. 15(5)' requires pre-market accuracy certification to a supervisory authority. In reality Art. 15(5) is the cybersecurity/resilience provision. The accuracy-declaration obligation is in Art. 15(3) and goes into instructions for use (for deployers), not to a supervisory authority. A system might confuse Art. 15(3) scope (instructions for use) with a certification-to-authority regime, or misconstrue Art. 15(5)'s content entirely.",
+      "confidence": "high",
+      "annotator_notes": "Hallucination trap combined with multi-hop. Tests two things: (1) whether the system correctly identifies what Art. 15(5) actually says (cybersecurity, not certification), and (2) whether it correctly locates and scopes Art. 15(3) as the accuracy-declaration obligation directed at deployers via instructions for use, not a supervisory certification requirement."
+    }
+  ]
+}
