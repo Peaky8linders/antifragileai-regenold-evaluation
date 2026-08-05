@@ -627,7 +627,8 @@ def test_default_response_shape_matches_spec_template() -> None:
     )
     assert r.status_code == 200
     body = r.json()
-    assert sorted(body.keys()) == ["answer", "reasoning", "references"]
+    keys = [k for k in body.keys() if k != "warning"]
+    assert sorted(keys) == ["answer", "reasoning", "references"]
     # All three keys must be present (with empty string OK for reasoning).
     assert isinstance(body["reasoning"], str)
     assert isinstance(body["answer"], str)

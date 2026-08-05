@@ -7284,6 +7284,17 @@ def _claude_max_enhance_answer(
             pass
 
         try:
+            from app.data.graph_rag_prompts import (  # noqa: PLC0415
+                USER_ANSWER_COVERAGE_CLAUSE,
+                answer_coverage_enabled,
+            )
+
+            if answer_coverage_enabled():
+                user_message += USER_ANSWER_COVERAGE_CLAUSE
+        except Exception:  # noqa: BLE001 — a prompt add-on must never break Stage-2
+            pass
+
+        try:
             max_tokens = settings.graph_rag.max_tokens
         except Exception:  # noqa: BLE001
             max_tokens = 2048
