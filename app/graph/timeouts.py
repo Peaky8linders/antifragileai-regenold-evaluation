@@ -101,7 +101,7 @@ GRAPH_TIMEOUT_ENV_VAR = "REGENOLD_GRAPH_TIMEOUT_MS"
 
 #: Default wall-clock budget for a single graph query (milliseconds).
 #: See the module docstring for the measurement this is derived from.
-DEFAULT_GRAPH_TIMEOUT_MS = 250
+DEFAULT_GRAPH_TIMEOUT_MS = 500
 
 #: Clamp bounds. The floor keeps a typo (``0`` / ``-1``) from disabling
 #: the graph outright; the ceiling keeps one from parking a request on a

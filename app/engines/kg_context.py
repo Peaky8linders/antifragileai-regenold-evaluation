@@ -80,10 +80,10 @@ __all__ = [
     "render_kg_context",
 ]
 
-_DEFAULT_MAX_REFS = 4
-_DEFAULT_MAX_UNITS = 8
-_DEFAULT_UNIT_CHARS = 320
-_DEFAULT_MAX_RECITALS = 3
+_DEFAULT_MAX_REFS = 8
+_DEFAULT_MAX_UNITS = 24
+_DEFAULT_UNIT_CHARS = 900
+_DEFAULT_MAX_RECITALS = 5
 
 
 def kg_context_enabled() -> bool:

@@ -1331,6 +1331,13 @@ def _engine_cache_key(
             "REGENOLD_ANSWER_VERIFY",
             "REGENOLD_VERIFY_MAX_REFS",
             "REGENOLD_VERIFY_REF_CHARS",
+            # R315 — BM25 fallback k & Knowledge Graph context caps.
+            "REGENOLD_BM25_FALLBACK_K",
+            "REGENOLD_KG_CONTEXT",
+            "REGENOLD_KG_MAX_REFS",
+            "REGENOLD_KG_MAX_UNITS",
+            "REGENOLD_KG_UNIT_CHARS",
+            "REGENOLD_KG_MAX_RECITALS",
             # R313 — grounding BREADTH (how many cited provisions get verbatim
             # text). Defaults to the pre-R313 constant so the wire is unchanged,
             # but it is in the key so the R288 breadth sweep is actually
@@ -1809,7 +1816,7 @@ _RATE_KEY_PREFIX_ANON = "regenold-anon:"
 # 8 covers a full 4-turn scenario (4 user + 4 assistant).
 # The truncation logic at _build_question_from_history drops the oldest
 # turns first when the budget overflows, so bumping this is safe.
-_HISTORY_TURNS_TO_INCLUDE = 8
+_HISTORY_TURNS_TO_INCLUDE = 40
 
 
 def _max_question_chars() -> int:

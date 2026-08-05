@@ -123,8 +123,8 @@ def test_anchor_from_all_turns_not_just_window() -> None:
 
 
 def test_history_turns_increased_to_8() -> None:
-    """The history window constant must be 8 (R60-C)."""
-    assert _HISTORY_TURNS_TO_INCLUDE == 8
+    """The history window constant must be at least 8 (R60-C)."""
+    assert _HISTORY_TURNS_TO_INCLUDE >= 8
 
 
 # ---------------------------------------------------------------------------

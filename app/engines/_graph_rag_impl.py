@@ -1761,6 +1761,20 @@ def _multi_article_entities_enabled() -> bool:
     ).strip().lower() not in {"0", "false", "no", "off"}
 
 
+_BM25_FALLBACK_K = 8
+
+
+def _bm25_fallback_k() -> int:
+    """How many BM25 hits to fetch during deterministic parse fallback.
+
+    R315 — env knob allowing A/B sweeps over BM25 fallback k.
+    """
+    try:
+        return max(1, min(12, int(os.getenv("REGENOLD_BM25_FALLBACK_K", ""))))
+    except (TypeError, ValueError):
+        return _BM25_FALLBACK_K
+
+
 def _deterministic_parse(question: str) -> GraphQuery:
     """Parse question using keyword matching when LLM is unavailable."""
     # R79 — normalise Unicode dashes / non-breaking spaces before the
@@ -2183,7 +2197,7 @@ def _deterministic_parse(question: str) -> GraphQuery:
                 # full-corpus BM25 as a safety net.
                 if not bm25_hits:
                     bm25_hits = top_articles_by_relevance(
-                        question, k=3, min_score=1.0
+                        question, k=_bm25_fallback_k(), min_score=1.0
                     )
             else:
                 # Issue #54 — drop the absolute floor to 1.0. The
@@ -2191,7 +2205,7 @@ def _deterministic_parse(question: str) -> GraphQuery:
                 # relative-to-best cutoff too, so a 1-2 token query
                 # whose top raw score sits below 2.5 still surfaces a
                 # clear winner instead of returning empty.
-                bm25_hits = top_articles_by_relevance(question, k=3, min_score=1.0)
+                bm25_hits = top_articles_by_relevance(question, k=_bm25_fallback_k(), min_score=1.0)
             for ref in bm25_hits:
                 if ref not in entities:
                     entities.append(ref)
@@ -5872,7 +5886,7 @@ def _grounding_text_enabled() -> bool:
     )
 
 
-_GROUNDING_MAX_REFS = 3
+_GROUNDING_MAX_REFS = 8
 _GROUNDING_MAX_ANNEX_RECITALS = 4
 _GROUNDING_MAX_CHARS = 400
 _GROUNDING_REF_CHARS = 1200
