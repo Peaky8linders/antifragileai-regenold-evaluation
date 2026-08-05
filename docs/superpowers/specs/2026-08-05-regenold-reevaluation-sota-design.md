@@ -83,6 +83,22 @@ corrupted text — `_detect_classification_topic`, `_detect_role_obligation_quer
 scorer. This is exactly the failure the comment at `app/routes/regenold.py` was written to
 prevent.
 
+**It is our flatten, not the audit store.** `evals/regenold/official_batch.py` (on `main`)
+describes the Postgres-recovered snapshot as "2000-char-truncated", which invites the reading
+that this is a storage artefact. It is not, and the two are separable by *which end* is cut:
+a column limit truncates the **tail**; `_build_question_from_history` truncates the **head**.
+Measured over the 64 rows sitting at the cap:
+
+| signature | count |
+| --- | --- |
+| head chopped (starts mid-token, not a clean opener) | **59 / 64** |
+| tail chopped (ends mid-word, no terminal punctuation) | **0 / 64** |
+| retains a complete trailing live question | **64 / 64** |
+
+Zero tail cuts and a complete live question on every row is the exact signature of the
+route's marker-preserving left-truncation. The engine input was corrupted before it was
+persisted.
+
 **Resolution (already landed in this branch):** `_MAX_QUESTION_CHARS = 64_000` in
 `app/models.py`, resolved at the route by `_max_question_chars()` with the
 `REGENOLD_MAX_QUESTION_CHARS` override (set it to `2000` to reproduce pre-R314 behaviour for an
