@@ -553,15 +553,26 @@ class TestTwoStageGenerateAnthropic:
         )
 
         from app.engines import graph_rag as gr
+        from app.engines import _graph_rag_impl as gri
         monkeypatch.setattr(
             gr, "_anthropic_complete_for_graph_rag",
+            lambda **kw: None,  # simulated failure
+        )
+        monkeypatch.setattr(
+            gri, "_anthropic_complete_for_graph_rag",
             lambda **kw: None,  # simulated failure
         )
         monkeypatch.setattr(
             gr, "_needs_stage2_enhancement", lambda *a, **kw: True
         )
         monkeypatch.setattr(
+            gri, "_needs_stage2_enhancement", lambda *a, **kw: True
+        )
+        monkeypatch.setattr(
             gr, "_detect_classification_topic", lambda q: None
+        )
+        monkeypatch.setattr(
+            gri, "_detect_classification_topic", lambda q: None
         )
 
         from app.engines.graph_rag import (

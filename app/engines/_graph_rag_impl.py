@@ -390,6 +390,54 @@ def _stage2_answer_headroom() -> int:
         return 2048
 
 
+def _shrink_user_for_groq(user: str, budget: int = 10000) -> str:
+    """Fit ``user`` into ``budget`` chars WITHOUT deleting the grounding.
+
+    R315. The Stage-2 user message is laid out roughly as::
+
+        [Context anchors ...] / Conversation so far: ...   <- compressible
+        Latest question: ...                               <- must survive
+        EU AI ACT REFERENCES ...                           <- must survive
+        VERBATIM PROVISION TEXT ...                        <- must survive
+
+    The previous head+tail slice kept the first 8 000 and last 2 000
+    characters, which on a long multi-turn request deleted the references
+    and verbatim-text blocks outright while preserving the conversation
+    history — the exact inverse of what the answer needs. We instead drop
+    the oldest conversation turns, which is the largest compressible span
+    and the only one whose loss cannot strip a provision the answer is
+    instructed to quote.
+
+    Falls back to a tail-preserving slice only if the layout is
+    unrecognised, so a prompt-format change degrades rather than breaks.
+    """
+
+    if len(user) <= budget:
+        return user
+
+    marker = "Latest question:"
+    idx = user.find(marker)
+    if idx > 0:
+        head, tail = user[:idx], user[idx:]
+        if len(tail) <= budget:
+            # Trim the history from its OLDEST end, keeping everything from
+            # the live question onward intact.
+            keep = budget - len(tail)
+            if keep > 0:
+                trimmed = head[-keep:]
+                return (
+                    "... [EARLIER CONVERSATION TRUNCATED FOR GROQ CONTEXT LIMIT] ...\n\n"
+                    + trimmed
+                    + tail
+                )
+            return tail
+        # Even the live question + references overflow: keep the FRONT of
+        # that block (question + references precede verbatim text).
+        return tail[:budget]
+
+    return user[:budget]
+
+
 def _get_groq_compressed_system_prompt() -> str:
     """Return a compressed version of the Stage-2 system prompt for Groq GPT-OSS 120B synthesis."""
     return (
@@ -661,11 +709,17 @@ def _openai_wrapper_complete_for_graph_rag(
                 groq_max_tokens = min(safe_max_tokens, 4096)
                 groq_user = user
                 if len(system) + len(user) > 11000:
-                    if len(user) > 10000:
-                        groq_user = user[:8000] + "\n\n... [TRUNCATED FOR GROQ CONTEXT LIMIT] ...\n\n" + user[-2000:]
-                    elif len(user) > 8000:
-                        groq_user = user[:6000] + "\n\n... [TRUNCATED FOR GROQ CONTEXT LIMIT] ...\n\n" + user[-1500:]
-                
+                    # R315 — the old head+tail slice (``user[:8000] +
+                    # user[-2000:]``) deleted the MIDDLE of the user message,
+                    # which is exactly where the EU AI ACT REFERENCES block
+                    # and all verbatim grounding text sit. On the Groq
+                    # fallback the model was therefore asked to cite
+                    # provisions it could no longer see — silently, with no
+                    # trace note. Drop the conversation HISTORY instead: it is
+                    # the largest compressible span and the only one whose
+                    # loss does not strip the grounding the answer must quote.
+                    groq_user = _shrink_user_for_groq(user, budget=10000)
+
                 groq_system = system
                 if len(system) > 10000:
                     groq_system = _get_groq_compressed_system_prompt()
@@ -1707,6 +1761,20 @@ def _multi_article_entities_enabled() -> bool:
     ).strip().lower() not in {"0", "false", "no", "off"}
 
 
+_BM25_FALLBACK_K = 8
+
+
+def _bm25_fallback_k() -> int:
+    """How many BM25 hits to fetch during deterministic parse fallback.
+
+    R315 — env knob allowing A/B sweeps over BM25 fallback k.
+    """
+    try:
+        return max(1, min(12, int(os.getenv("REGENOLD_BM25_FALLBACK_K", ""))))
+    except (TypeError, ValueError):
+        return _BM25_FALLBACK_K
+
+
 def _deterministic_parse(question: str) -> GraphQuery:
     """Parse question using keyword matching when LLM is unavailable."""
     # R79 — normalise Unicode dashes / non-breaking spaces before the
@@ -2129,7 +2197,7 @@ def _deterministic_parse(question: str) -> GraphQuery:
                 # full-corpus BM25 as a safety net.
                 if not bm25_hits:
                     bm25_hits = top_articles_by_relevance(
-                        question, k=3, min_score=1.0
+                        question, k=_bm25_fallback_k(), min_score=1.0
                     )
             else:
                 # Issue #54 — drop the absolute floor to 1.0. The
@@ -2137,7 +2205,7 @@ def _deterministic_parse(question: str) -> GraphQuery:
                 # relative-to-best cutoff too, so a 1-2 token query
                 # whose top raw score sits below 2.5 still surfaces a
                 # clear winner instead of returning empty.
-                bm25_hits = top_articles_by_relevance(question, k=3, min_score=1.0)
+                bm25_hits = top_articles_by_relevance(question, k=_bm25_fallback_k(), min_score=1.0)
             for ref in bm25_hits:
                 if ref not in entities:
                     entities.append(ref)
@@ -5818,7 +5886,7 @@ def _grounding_text_enabled() -> bool:
     )
 
 
-_GROUNDING_MAX_REFS = 3
+_GROUNDING_MAX_REFS = 8
 _GROUNDING_MAX_ANNEX_RECITALS = 4
 _GROUNDING_MAX_CHARS = 400
 _GROUNDING_REF_CHARS = 1200
@@ -7218,6 +7286,17 @@ def _claude_max_enhance_answer(
         # enable both. Env-reversible REGENOLD_ANSWER_COVERAGE=0. It changes the
         # ENGINE output, so it is folded into _engine_cache_key (R263.2) - without
         # that, a same-process A/B silently serves arm A's cache to arm B.
+        try:
+            from app.data.graph_rag_prompts import (  # noqa: PLC0415
+                USER_ANSWER_COVERAGE_CLAUSE,
+                answer_coverage_enabled,
+            )
+
+            if answer_coverage_enabled():
+                user_message += USER_ANSWER_COVERAGE_CLAUSE
+        except Exception:  # noqa: BLE001 — a prompt add-on must never break Stage-2
+            pass
+
         try:
             from app.data.graph_rag_prompts import (  # noqa: PLC0415
                 USER_ANSWER_COVERAGE_CLAUSE,

@@ -164,6 +164,7 @@ from app.integrations.regenold.scope import (
 )
 from app.integrations.regenold.text_normalize import normalize_unicode_punctuation
 from app.llm.intent_classifier import classify_intent
+from app.models import _MAX_QUESTION_CHARS as _MODEL_MAX_QUESTION_CHARS
 from app.models import GraphRAGRequest
 from app.rate_limit import limiter
 
@@ -1330,6 +1331,13 @@ def _engine_cache_key(
             "REGENOLD_ANSWER_VERIFY",
             "REGENOLD_VERIFY_MAX_REFS",
             "REGENOLD_VERIFY_REF_CHARS",
+            # R315 — BM25 fallback k & Knowledge Graph context caps.
+            "REGENOLD_BM25_FALLBACK_K",
+            "REGENOLD_KG_CONTEXT",
+            "REGENOLD_KG_MAX_REFS",
+            "REGENOLD_KG_MAX_UNITS",
+            "REGENOLD_KG_UNIT_CHARS",
+            "REGENOLD_KG_MAX_RECITALS",
             # R313 — grounding BREADTH (how many cited provisions get verbatim
             # text). Defaults to the pre-R313 constant so the wire is unchanged,
             # but it is in the key so the R288 breadth sweep is actually
@@ -1805,11 +1813,35 @@ _RATE_KEY_PREFIX_ANON = "regenold-anon:"
 
 # How many trailing turns of conversation history we thread into the
 # question prompt when the request carries a multi-turn conversation.
-# 8 covers a full 4-turn scenario (4 user + 4 assistant) without
-# dwarfing the question itself in the engine's 2K-char question budget.
+# 8 covers a full 4-turn scenario (4 user + 4 assistant).
 # The truncation logic at _build_question_from_history drops the oldest
 # turns first when the budget overflows, so bumping this is safe.
-_HISTORY_TURNS_TO_INCLUDE = 8
+_HISTORY_TURNS_TO_INCLUDE = 40
+
+
+def _max_question_chars() -> int:
+    """Upper bound on the flattened multi-turn question, in characters.
+
+    Defaults to :data:`app.models._MAX_QUESTION_CHARS` (64 000). The old
+    hard 2 000-char cap was a self-imposed Pydantic bound, not a model
+    limit, and it amputated real 18-20 turn conversations — including
+    the route's own ``[Context anchors — ...]`` prefix — before
+    retrieval ran.
+
+    Set ``REGENOLD_MAX_QUESTION_CHARS=2000`` to reproduce the
+    pre-R314 behaviour for an A/B. Values below 200 are ignored (they
+    would leave no room for the live question itself).
+    """
+
+    raw = os.getenv("REGENOLD_MAX_QUESTION_CHARS", "").strip()
+    if raw:
+        try:
+            parsed = int(raw)
+        except ValueError:
+            return _MODEL_MAX_QUESTION_CHARS
+        if 200 <= parsed <= _MODEL_MAX_QUESTION_CHARS:
+            return parsed
+    return _MODEL_MAX_QUESTION_CHARS
 
 # ---------------------------------------------------------------------------
 # Cross-turn anchor extraction helpers (multi-turn coherence)
@@ -5991,37 +6023,49 @@ def _build_question_from_history(messages: list[Any]) -> QuestionHistoryResult:
         question = live_question
         resolved_turn = live_question
 
-    if resolved_turn is not None and len(resolved_turn) > 2000:
-        resolved_turn = resolved_turn[-2000:]
+    max_chars = _max_question_chars()
 
-    # Engine cap — GraphRAGRequest.question is 2000-char max, system
-    # description 1000-char max. Truncate from the LEFT (drop oldest
-    # turns first) so the live question always survives. The naive
-    # ``question[-2000:]`` would slice mid-history and drop the
+    if resolved_turn is not None and len(resolved_turn) > max_chars:
+        resolved_turn = resolved_turn[-max_chars:]
+
+    # Engine cap — see :func:`_max_question_chars`. At the default
+    # 64 000 this never fires on real evaluator traffic (a 20-turn legal
+    # conversation runs ~10-25k chars); it remains as a bound against a
+    # hostile payload, and as the mechanism the pre-R314 A/B
+    # (``REGENOLD_MAX_QUESTION_CHARS=2000``) re-activates.
+    #
+    # When it does fire, truncate from the LEFT (drop oldest turns
+    # first) so the live question always survives. The naive
+    # ``question[-max_chars:]`` would slice mid-history and drop the
     # ``Latest question:\n`` marker that `_detect_classification_topic`,
     # `_detect_role_obligation_query`, and `_needs_stage2_enhancement`
     # rely on to isolate the live question from prior turns — without
     # the marker, those detectors would test against the entire
     # flattened prompt and a prior assistant turn could trigger a
     # verdict response for an unrelated current question.
-    if len(question) > 2000:
+    if len(question) > max_chars:
         live_marker = "Latest question:\n"
         marker_idx = question.rfind(live_marker)
         if marker_idx >= 0:
             live_part = question[marker_idx:]
-            if len(live_part) >= 2000:
+            if len(live_part) >= max_chars:
                 # Live question alone overflows; keep the marker + beginning
                 # of the live question so early anchors survive.
-                head_budget = 2000 - len(live_marker)
+                head_budget = max_chars - len(live_marker)
                 question = live_marker + live_part[len(live_marker):][:head_budget]
             else:
-                history_budget = 2000 - len(live_part)
+                history_budget = max_chars - len(live_part)
                 history_part = question[:marker_idx][-history_budget:]
                 question = history_part + live_part
         else:
-            question = question[-2000:]
+            question = question[-max_chars:]
     if system_context is not None and len(system_context) > 1000:
-        system_context = system_context[-1000:]
+        # R315 — keep the HEAD, not the tail. A system description opens by
+        # saying what the system does ("We provide an AI system that screens
+        # job applicants…"), which is precisely the text that decides the
+        # risk tier. The old ``[-1000:]`` deleted that opening sentence and
+        # kept the trailing boilerplate, silently and with no trace note.
+        system_context = system_context[:1000]
 
     return QuestionHistoryResult(
         question, system_context, resolved_turn, _salvaged, _self_contained_focus

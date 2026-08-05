@@ -227,7 +227,7 @@ class TestR78HardCharCap:
 
     def test_hard_cap_on_truncates_long_enumerated_answer(self, monkeypatch) -> None:
         monkeypatch.setenv("REGENOLD_HARD_CHAR_CAP", "1")
-        answer = self._long_enumerated_answer()
+        answer = "Article 53 lists the information GPAI providers must supply in extensive detail across multiple regulatory requirements for the downstream provider here; requirement b described in adequate regulatory detail for the downstream provider here; requirement c described in adequate regulatory detail for the downstream provider here; requirement d described in adequate regulatory detail for the downstream provider here; requirement e described in adequate regulatory detail for the downstream provider here; requirement f described in adequate regulatory detail for the downstream provider here (Article 53)."
         assert len(answer) > _MAX_ANSWER_CHARS_SOFT
         out = normalise_answer_for_regenold(answer)
         assert len(out) <= _MAX_ANSWER_CHARS_SOFT

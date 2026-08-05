@@ -416,6 +416,3 @@ def _r94_pin_verbatim_off(request, monkeypatch):
     if any(name.endswith(m) for m in _R94_VERBATIM_OFF_MODULES):
         monkeypatch.setenv("REGENOLD_VERBATIM_ANSWER", "0")
     yield
-
-
-

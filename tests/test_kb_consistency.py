@@ -544,3 +544,112 @@ class TestR138LegalTripleLint:
                 if "Art. 27" in obligations_for(role, risk):
                     assert role is ActorRole.DEPLOYER
                     assert risk is RiskClass.HIGH_RISK_ANNEX_III
+
+
+# ---------------------------------------------------------------------------
+# R315 — role_obligations Art. 3 / Art. 25 / Art. 51 citation lint
+# ---------------------------------------------------------------------------
+
+
+class TestR315RoleCitationLint:
+    """Every regulation citation in ``role_obligations.py`` round-trips.
+
+    The May-2026 ontology audit found seven false statements about the
+    regulation in this file — the operator-role numbering was off by one
+    (importer cited to Art. 3(7), distributor to Art. 3(8), which is the
+    definition of *operator*), product manufacturer was cited to Art. 25(1)
+    whose text reads "any distributor, importer, deployer or other
+    third-party", GPAI systemic designation was attributed to the AI Office
+    rather than the Commission, and three deployer sub-points were wrong.
+
+    ``scripts/seed_neo4j_kb.py`` copies ``art_3_definition`` onto every
+    Neo4j ``:OperatorRole`` node, so the wrong strings reached the graph
+    store. These assertions pin the corrected anchors against the
+    SHA-pinned EUR-Lex text so the drift cannot silently recur.
+
+    Import/test-time only — zero request-path effect.
+    """
+
+    # (role id, field, expected article ref, a term the provision must define
+    #  or contain verbatim)
+    _CASES = (
+        ("importer", "art_3_definition", "Article 3(6)", "importer"),
+        ("distributor", "art_3_definition", "Article 3(7)", "distributor"),
+        ("provider", "art_3_definition", "Article 3(3)", "provider"),
+        ("deployer", "art_3_definition", "Article 3(4)", "deployer"),
+        ("product_manufacturer", "art_3_definition", "Article 25(3)",
+         "product manufacturer"),
+        ("gpai_provider", "art_3_definition", "Article 3(63)",
+         "general-purpose AI model"),
+    )
+
+    def test_cited_provision_defines_the_role(self) -> None:
+        from app.data.provision_text import get_provision_text
+        from app.data.role_obligations import ROLE_OBLIGATIONS
+
+        by_id = {r["id"]: r for r in ROLE_OBLIGATIONS}
+        for role_id, field, ref, must_contain in self._CASES:
+            row = by_id.get(role_id)
+            assert row is not None, f"role {role_id!r} missing"
+            value = row.get(field, "")
+            # The row must cite the ref we expect...
+            internal = ref.replace("Article ", "Art. ")
+            assert internal in value, (
+                f"{role_id}.{field} should cite {internal!r}, got {value!r}"
+            )
+            # ...and that provision must actually be about this role.
+            text = " ".join((get_provision_text(ref) or "").split())
+            assert text, f"{ref} did not resolve in provision_text"
+            assert must_contain.lower() in text.lower(), (
+                f"{role_id} cites {ref} but that provision does not mention "
+                f"{must_contain!r}. Verbatim: {text[:160]!r}"
+            )
+
+    def test_art_3_8_is_operator_not_distributor(self) -> None:
+        """The specific off-by-one that shipped into Neo4j."""
+        from app.data.provision_text import get_provision_text
+
+        text = " ".join((get_provision_text("Article 3(8)") or "").split())
+        assert "operator" in text.lower()
+        # Guard the regression directly: no role row may cite 3(8).
+        from app.data.role_obligations import ROLE_OBLIGATIONS
+
+        for row in ROLE_OBLIGATIONS:
+            assert "Art. 3(8)" not in row.get("art_3_definition", ""), (
+                f"{row['id']} cites Art. 3(8), which defines 'operator' — "
+                "the umbrella term, not any single role"
+            )
+
+    def test_gpai_systemic_designation_is_the_commission(self) -> None:
+        """Art. 51(1)(b) gives the designation power to the Commission."""
+        from app.data.provision_text import get_provision_text
+        from app.data.role_obligations import ROLE_OBLIGATIONS
+
+        text = " ".join((get_provision_text("Article 51(1)") or "").split())
+        assert "commission" in text.lower()
+        assert "ai office" not in text.lower()
+
+        by_id = {r["id"]: r for r in ROLE_OBLIGATIONS}
+        row = by_id["gpai_systemic_provider"]
+        assert "AI Office" not in row["art_3_definition"], (
+            "GPAI systemic-risk designation is the Commission's under "
+            "Art. 51(1)(b), not the AI Office's"
+        )
+
+    def test_deployer_subpoints_resolve(self) -> None:
+        """26(2) oversight, 26(4) input data, 26(6) logs."""
+        from app.data.provision_text import get_provision_text
+        from app.data.role_obligations import ROLE_OBLIGATIONS
+
+        for ref, term in (
+            ("Article 26(2)", "human oversight"),
+            ("Article 26(4)", "input data"),
+            ("Article 26(6)", "logs"),
+        ):
+            text = " ".join((get_provision_text(ref) or "").split())
+            assert term.lower() in text.lower(), f"{ref} lacks {term!r}"
+
+        by_id = {r["id"]: r for r in ROLE_OBLIGATIONS}
+        summary = by_id["deployer"]["summary"]
+        for wrong in ("Art. 26(11) human oversight", "Art. 26(7) input data"):
+            assert wrong not in summary, f"stale anchor re-introduced: {wrong}"
