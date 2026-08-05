@@ -1,2 +1,0 @@
-"""Regenold partner integration package."""
-
