@@ -58,3 +58,12 @@ _aireg_*.parquet
 _audit/
 node_modules/
 .gstack/
+
+# Evaluation markdown files, batch reports, and evaluation outputs
+*_EVALUATOR_*.md
+*_EVAL_*.md
+*eval_*.md
+*evaluation*.md
+regenold_questions_and_live_answers.md
+HANDOFF_SOTA_EVAL_DATASET.md
+
