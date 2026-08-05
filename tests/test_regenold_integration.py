@@ -828,10 +828,37 @@ def test_build_question_from_history_single_turn_no_preamble() -> None:
     assert "Conversation so far:" not in question
 
 
-def test_build_question_truncates_left_to_engine_cap() -> None:
-    """Multi-turn that overflows 2K chars truncates from the LEFT.
+def test_build_question_truncates_left_to_engine_cap(monkeypatch) -> None:
+    """When the cap DOES bite, truncation runs from the LEFT.
 
     The live user question MUST survive — drop oldest turns first.
+
+    R314 raised the default cap 2 000 → 64 000 chars, so this pins the
+    left-truncation invariant via the env override (which is also the
+    pre-R314 A/B arm).
+    """
+    from app.integrations.regenold.models import RegenoldChatMessage
+    from app.routes.regenold import _build_question_from_history
+
+    monkeypatch.setenv("REGENOLD_MAX_QUESTION_CHARS", "2000")
+    msgs = [
+        RegenoldChatMessage(role="user", content="A" * 1500),
+        RegenoldChatMessage(role="assistant", content="B" * 1500),
+        RegenoldChatMessage(role="user", content="LIVE QUESTION HERE"),
+    ]
+    question, _ = _build_question_from_history(msgs)
+    assert len(question) <= 2000
+    # Live question must survive truncation (left-truncate keeps the tail).
+    assert "LIVE QUESTION HERE" in question
+
+
+def test_build_question_does_not_truncate_at_default_cap() -> None:
+    """R314 — a 3 000-char conversation survives intact by default.
+
+    Under the pre-R314 2 000-char cap this history was amputated and the
+    ``Conversation so far:`` marker was chopped off the head, which is
+    what corrupted 49 of the 222 multi-turn rows in the 7 July 2026
+    evaluator batch.
     """
     from app.integrations.regenold.models import RegenoldChatMessage
     from app.routes.regenold import _build_question_from_history
@@ -842,9 +869,13 @@ def test_build_question_truncates_left_to_engine_cap() -> None:
         RegenoldChatMessage(role="user", content="LIVE QUESTION HERE"),
     ]
     question, _ = _build_question_from_history(msgs)
-    assert len(question) <= 2000
-    # Live question must survive truncation (left-truncate keeps the tail).
+
+    assert len(question) > 2000, "fixture must exceed the old cap"
     assert "LIVE QUESTION HERE" in question
+    # Nothing amputated: the marker and both prior turns survive whole.
+    assert question.startswith("Conversation so far:")
+    assert "A" * 1500 in question
+    assert "B" * 1500 in question
 
 
 # ── Annex multi-segment fix (was a real bug) ──
