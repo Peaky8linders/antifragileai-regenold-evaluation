@@ -390,6 +390,54 @@ def _stage2_answer_headroom() -> int:
         return 2048
 
 
+def _shrink_user_for_groq(user: str, budget: int = 10000) -> str:
+    """Fit ``user`` into ``budget`` chars WITHOUT deleting the grounding.
+
+    R315. The Stage-2 user message is laid out roughly as::
+
+        [Context anchors ...] / Conversation so far: ...   <- compressible
+        Latest question: ...                               <- must survive
+        EU AI ACT REFERENCES ...                           <- must survive
+        VERBATIM PROVISION TEXT ...                        <- must survive
+
+    The previous head+tail slice kept the first 8 000 and last 2 000
+    characters, which on a long multi-turn request deleted the references
+    and verbatim-text blocks outright while preserving the conversation
+    history — the exact inverse of what the answer needs. We instead drop
+    the oldest conversation turns, which is the largest compressible span
+    and the only one whose loss cannot strip a provision the answer is
+    instructed to quote.
+
+    Falls back to a tail-preserving slice only if the layout is
+    unrecognised, so a prompt-format change degrades rather than breaks.
+    """
+
+    if len(user) <= budget:
+        return user
+
+    marker = "Latest question:"
+    idx = user.find(marker)
+    if idx > 0:
+        head, tail = user[:idx], user[idx:]
+        if len(tail) <= budget:
+            # Trim the history from its OLDEST end, keeping everything from
+            # the live question onward intact.
+            keep = budget - len(tail)
+            if keep > 0:
+                trimmed = head[-keep:]
+                return (
+                    "... [EARLIER CONVERSATION TRUNCATED FOR GROQ CONTEXT LIMIT] ...\n\n"
+                    + trimmed
+                    + tail
+                )
+            return tail
+        # Even the live question + references overflow: keep the FRONT of
+        # that block (question + references precede verbatim text).
+        return tail[:budget]
+
+    return user[:budget]
+
+
 def _get_groq_compressed_system_prompt() -> str:
     """Return a compressed version of the Stage-2 system prompt for Groq GPT-OSS 120B synthesis."""
     return (
@@ -661,11 +709,17 @@ def _openai_wrapper_complete_for_graph_rag(
                 groq_max_tokens = min(safe_max_tokens, 4096)
                 groq_user = user
                 if len(system) + len(user) > 11000:
-                    if len(user) > 10000:
-                        groq_user = user[:8000] + "\n\n... [TRUNCATED FOR GROQ CONTEXT LIMIT] ...\n\n" + user[-2000:]
-                    elif len(user) > 8000:
-                        groq_user = user[:6000] + "\n\n... [TRUNCATED FOR GROQ CONTEXT LIMIT] ...\n\n" + user[-1500:]
-                
+                    # R315 — the old head+tail slice (``user[:8000] +
+                    # user[-2000:]``) deleted the MIDDLE of the user message,
+                    # which is exactly where the EU AI ACT REFERENCES block
+                    # and all verbatim grounding text sit. On the Groq
+                    # fallback the model was therefore asked to cite
+                    # provisions it could no longer see — silently, with no
+                    # trace note. Drop the conversation HISTORY instead: it is
+                    # the largest compressible span and the only one whose
+                    # loss does not strip the grounding the answer must quote.
+                    groq_user = _shrink_user_for_groq(user, budget=10000)
+
                 groq_system = system
                 if len(system) > 10000:
                     groq_system = _get_groq_compressed_system_prompt()

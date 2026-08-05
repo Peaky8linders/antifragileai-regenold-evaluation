@@ -6053,7 +6053,12 @@ def _build_question_from_history(messages: list[Any]) -> QuestionHistoryResult:
         else:
             question = question[-max_chars:]
     if system_context is not None and len(system_context) > 1000:
-        system_context = system_context[-1000:]
+        # R315 — keep the HEAD, not the tail. A system description opens by
+        # saying what the system does ("We provide an AI system that screens
+        # job applicants…"), which is precisely the text that decides the
+        # risk tier. The old ``[-1000:]`` deleted that opening sentence and
+        # kept the trailing boilerplate, silently and with no trace note.
+        system_context = system_context[:1000]
 
     return QuestionHistoryResult(
         question, system_context, resolved_turn, _salvaged, _self_contained_focus
