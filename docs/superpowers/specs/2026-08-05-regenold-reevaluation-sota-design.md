@@ -167,17 +167,62 @@ the graph is additive-only by design, so this is not on the critical path for th
 Five levers in dependency order. Lever 0 is already-banked evidence; lever 1 is the largest
 unfixed defect; levers 2–4 are correctness-floor repairs.
 
-### Lever 0 — cherry-pick the validated stack
+### Lever 0 — rebase onto `main` *(done)*
 
-Cherry-pick R281, R298, R302, R305, R306, R310, R311 onto the graded branch (decision: targeted
-cherry-pick, not a full rebase, to keep the blast radius attributable).
+**The cherry-pick this section originally specified was not viable, and the reason is
+structural.** `origin/main` has no `app/engines/graph_rag.py` at all — commit `f08fbd3`
+modularized it into `app/engines/_graph_rag_impl.py` plus the `app/engines/graph_rag/`
+package, while the branch still carried the 368 KB monolith. R298, R302-fix3 and R305 all
+target the modularized file. Measured: **1 of 14 commits passed `git apply --check`** (R310).
+Cherry-picking the rest would either fail outright or create an orphan module nothing imports —
+shipping the change silently inert.
 
-Blocking sub-task: **fix the three scope misclassifications before the topic filter goes ON.**
-The graded run had `REGENOLD_TOPIC_FILTER` off, so three misclassified rows were answered anyway:
-`#285` (a legitimate GPAI proportionality question flagged `PROMPT_INJECTION`), `#2` and `#98`
-(flagged `CONVERSATIONAL`). `PROMPT_INJECTION` and `CONVERSATIONAL` refuse regardless of the
-toggle, so shipping as-is converts three answerable graded rows into branded refusals. Decision
-taken: repair the classifier, keep the filter ON, keep the OOS probe at 21/21 with 0 leaks.
+Worse, the branch was not merely behind. It carried **half-landed rounds that read as applied**:
+
+| Round | Prompt / config side | Engine wiring on the branch |
+| --- | --- | --- |
+| R298 | `USER_REF_MINIMALITY_CLAUSE` ×2 in `graph_rag_prompts.py` | **0 occurrences in `graph_rag.py`** |
+| R298 | `USER_CHALLENGE_BREVITY_CLAUSE` present | **0 occurrences** |
+| R305 | `REGENOLD_REASK_FOCUS` | **1 hit total — in `_engine_cache_key` only** |
+| R305 | `REGENOLD_DEFINITION_QTYPE_PRECEDENCE` | **1 hit total — cache key only** |
+
+So R298's reference-minimality and challenge-brevity clauses existed as text that was **never
+sent to the model**, and two R305 flags were cache-key strings pointing at nothing.
+
+**Resolution: rebase.** Branch `r315-onto-main` off `origin/main`, R314 replayed (backup at
+`backup/july7-pre-rebase-20260805`). R303 and R308 were dropped from the replay — `main` already
+has them (`546ebc0`, `d5985e7`); the branch copies were monolith-layout adaptations. The two
+branch-plumbing commits were likewise unnecessary on the new base.
+
+Post-rebase verification (`grep` over `app/`):
+
+| Feature | branch | rebased |
+| --- | --- | --- |
+| `REGENOLD_GROUNDING_TEXT` + `_grounding_text_enabled` | 0 | 3 hits + def |
+| R298 `USER_REF_MINIMALITY_CLAUSE` in engine | 0 | 2 |
+| R298 `USER_CHALLENGE_BREVITY` in engine | 0 | 2 |
+| R305 `_extract_reask_tail` | 0 | 3 |
+| R306 `answer_has_enumeration` | absent | def |
+| R310 `strip_retrieval_meta` | absent | def |
+| R311 `_apply_annex_i_route_exclusivity` | absent | 3 |
+| gates: `easyhard_ab`, `grounded`, `legal_v2` | absent | present |
+
+davidath A/B on the new base, R314 arm vs `REGENOLD_MAX_QUESTION_CHARS=2000`: **476 rows
+compared, 0 differ** on `pred_answer` or `pred_refs`; every rubric axis identical to 4 decimals;
+only latency moves.
+
+**Correction to an earlier claim in this document:** the topic filter was *already* ON on the
+branch (`REGENOLD_TOPIC_FILTER` default `"1"`, `app/routes/regenold.py`), and none of the seven
+rounds touches it. What kept `#2`, `#98` and `#285` answerable was the R271 safety gate rescuing
+them at runtime — which also makes them **latent refusals**: with Groq and the wrapper both down,
+`classify_safety_intent` returns `""`, the regex verdict stands, and those rows refuse.
+
+`#285`'s `PROMPT_INJECTION` verdict is self-inflicted and worth its own note. Our own answer to
+`#284` ended *"…does not by itself create or **avoid any obligation** under the Act"*, which
+matches the R34 anti-evasion regex (`avoid` … `obligation`). Replayed as history on the next
+turn, it flagged the conversation as an injection attempt. Across all 333 rows, **0 questions**
+match an injection pattern and exactly **1 answer** does. The regulator voice trips our own
+jailbreak guard.
 
 ### Lever 1 — multi-turn reference isolation
 
@@ -249,12 +294,76 @@ shown to fire on **0/137 davidath QA and 0/339 scenarios** before shipping — n
 curated intercepts keyed to evaluator questions. R305 had to remove three such hardcodes, one of
 which returned `False` on its own target question while its test passed against a truncated copy.
 
+### Lever 5 — ontology fact corrections *(done)* + the real ontology gaps
+
+Audit of `trustgraph-integration/ontology/codexai-compliance.ttl` (1129 lines, 27 classes,
+699 triples, valid Turtle).
+
+**Correct? No — 12 factual errors, and several are mirrored FROM live Python.** `codexai-compliance.ttl`
+states its own provenance: *"full definitions in app/data/role_obligations.py"*. Editing the
+`.ttl` alone would fix an artefact nobody loads while leaving the errors in the file that IS
+loaded and seeded into Neo4j. Each verified against `provision_text.get_provision_text()`
+(SHA-pinned EUR-Lex), then fixed in `app/data/role_obligations.py`:
+
+| Fact | Was | Correct |
+| --- | --- | --- |
+| importer | Art. 3(7) | **3(6)** |
+| distributor | Art. 3(8) — *the definition of "operator"* | **3(7)** |
+| product manufacturer | Art. 25(1) — reads *"any distributor, importer, deployer or other third-party"* | **25(3)** |
+| GPAI systemic designation | "the AI Office" | **the Commission**, Art. 51(1)(b) |
+| deployer human oversight | 26(11) | **26(2)** |
+| deployer input data | 26(7) | **26(4)** |
+| deployer logs | 26(12) | **26(6)** |
+
+`scripts/seed_neo4j_kb.py` copies `art_3_definition` onto every Neo4j `:OperatorRole` node, so
+the wrong numbers were in the graph store. Neither `art_3_definition` nor `summary` is read by
+any live engine (`clara_logic` and `scenario_classifier` read only `primary_articles` /
+`secondary_articles`), so the fix is davidath-neutral by construction and had no wire exposure —
+but it would have propagated the moment graph text entered a prompt, which is this round's goal.
+
+TTL-only defects left for the freeze pass: five wrong `articleParagraph` anchors including a
+clean swap (LF_C_9_6 ↔ LF_C_9_7) and `11(3)` where the retention rule is **18(1)** (the node's
+own prose admits it while the machine-readable field disagrees); Art. 14(5)'s two-person rule
+stated without its law-enforcement carve-out; `airo:RiskAssessment` and `airo:hasControl` coined
+inside a namespace the file does not own.
+
+**Complete? No — it is a vocabulary with almost no facts in it.** 0 `Article` individuals, 20 of
+27 classes empty, **56 of 59 properties used zero times**. Article 5's prohibited practices are
+absent entirely while Arts. 9/10/11/13/14/15 are decomposed exhaustively. Risk tiers, Annex III
+categories, penalty ceilings and applicability dates are all absent — and dates are
+*inexpressible*, because `Deadline` has no supersession property and so could not represent the
+Digital Omnibus deferral even if populated (contrast `ontology.py::PHASE_REGISTRY`, which carries
+`superseded_by`). There is no `Paragraph` or `Point` class; controls bind to articles by string
+literal. Neo4j already holds **656 Paragraph + 416 Point** nodes, so for a benchmark graded at
+sub-point grain the TTL is strictly weaker than what is seeded. 42% of the file anchors to seven
+`article_*_controls.py` / `atlas_techniques.py` modules that do not exist here.
+
+**Leveraged? No — and that costs nothing today.** Nothing loads it; no `rdflib`/`pyshacl` in
+requirements. Wiring it would import defects rather than capability: `provision_text` returns
+839 characters of pinned EUR-Lex for Art. 15(4) against the TTL's 106-character paraphrase, and
+under hard rule #4 a paraphrase is worse grounding than text we already ship.
+
+**Decision: fix the facts in Python (done), freeze the TTL as a non-normative export — neither
+wire nor delete it — and spend the budget on the ontology gaps that are actually in the request
+path.** Those gaps, ranked:
+
+1. `app/graph/ontology_ingest.py` is **dead** — its only importers are tests, and
+   `scripts/seed_neo4j_kb.py` never calls it. Consequence: `:Practice`, `:ExemptionContext`,
+   `:Phase`, `:ActorRole`, `:RiskClass` are absent from Aura, i.e. **the 8 Art. 5 prohibited
+   practices and the 4 applicability phases are not in the graph at all.**
+2. `ontology.validate_legal_triple()` is CI-only; `semantic_validator.py` re-implements a
+   narrower check by hand as `_CORE_HRAIS_OBLIGATIONS`. The typed role × risk matrix never
+   reaches the answer surface — only the flat `articles_for_role()` list does.
+3. Four incompatible role vocabularies and three risk-tier vocabularies coexist (TTL 9 roles /
+   `role_obligations` 9 / `ontology.ActorRole` 8 / seeder 5; `risk_prohibited` vs `prohibited`
+   vs `unacceptable`).
+
 ---
 
 ## 4. Explicitly out of scope
 
-Two things are deliberately **not** proposed: any new retrieval layer, and any general
-"write more" / "write less" instruction.
+Three things are deliberately **not** proposed: any new retrieval layer, any general
+"write more" / "write less" instruction, and wiring an RDF runtime.
 
 ### Stays rejected
 

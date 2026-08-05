@@ -147,8 +147,8 @@ ROLE_OBLIGATIONS: list[RoleObligation] = [
             "of use in accordance with instructions, Art. 27 FRIA where high-risk "
             "public-sector + selected private-sector contexts apply, Art. 50 "
             "downstream transparency to affected persons, Art. 26(9) DPIA "
-            "input/output coordination, Art. 26(11) human oversight, Art. 26(7) "
-            "input data appropriateness, Art. 26(12) decision-record preservation."
+            "input/output coordination, Art. 26(2) human oversight, Art. 26(4) "
+            "input data appropriateness, Art. 26(6) log retention."
         ),
         "source": "Art. 3(4) + Art. 26 + Art. 27",
         "paper_lines": "1010-1014, 1738-1744",
@@ -175,13 +175,13 @@ ROLE_OBLIGATIONS: list[RoleObligation] = [
     {
         "id": ROLE_IMPORTER,
         "label": "Importer",
-        "art_3_definition": "Art. 3(7) — places on the EU market an AI system bearing the name or trademark of a non-EU provider.",
+        "art_3_definition": "Art. 3(6) — places on the EU market an AI system bearing the name or trademark of a non-EU provider.",
         "summary": (
             "Verifies provider conformity-assessment carried out, technical "
             "documentation exists, CE marking affixed, EU declaration of "
             "conformity drawn up; cooperates with market surveillance authorities."
         ),
-        "source": "Art. 3(7) + Art. 23",
+        "source": "Art. 3(6) + Art. 23",
         "paper_lines": "1010-1014",
         "primary_articles": ["Art. 23"],
         "secondary_articles": ["Art. 25", "Art. 47", "Art. 48"],
@@ -194,12 +194,12 @@ ROLE_OBLIGATIONS: list[RoleObligation] = [
     {
         "id": ROLE_DISTRIBUTOR,
         "label": "Distributor",
-        "art_3_definition": "Art. 3(8) — makes an AI system available on the EU market without affecting its properties (and is neither importer nor provider).",
+        "art_3_definition": "Art. 3(7) — in the supply chain, other than the provider or the importer, makes an AI system available on the Union market.",
         "summary": (
             "Verifies CE marking + required documentation accompanies the system "
             "and storage/transport conditions don't compromise compliance."
         ),
-        "source": "Art. 3(8) + Art. 24",
+        "source": "Art. 3(7) + Art. 24",
         "paper_lines": "1010-1014",
         "primary_articles": ["Art. 24"],
         "secondary_articles": ["Art. 25"],
@@ -212,7 +212,7 @@ ROLE_OBLIGATIONS: list[RoleObligation] = [
     {
         "id": ROLE_PRODUCT_MANUFACTURER,
         "label": "Product Manufacturer",
-        "art_3_definition": "Art. 25(1) — integrates an AI system into a product placed on the market under the manufacturer's name or trademark; treated as provider.",
+        "art_3_definition": "Art. 25(3) — product manufacturer placing a high-risk AI system on the market together with its product under its own name or trademark; treated as provider.",
         "summary": (
             "Inherits the full provider obligation set when integrating a "
             "high-risk AI system into a product."
@@ -295,7 +295,7 @@ ROLE_OBLIGATIONS: list[RoleObligation] = [
     {
         "id": ROLE_GPAI_SYSTEMIC_PROVIDER,
         "label": "GPAI Provider with Systemic Risk",
-        "art_3_definition": "Art. 51(2) — GPAI model meeting the quantitative criterion (or designated by the AI Office) carrying systemic risk.",
+        "art_3_definition": "Art. 51(1) — GPAI model with systemic risk: high-impact capabilities (Art. 51(1)(a), presumed at the Art. 51(2) 10^25 FLOP threshold) or a Commission decision under Art. 51(1)(b).",
         "summary": (
             "Additional obligations on top of Art. 53: model evaluation, "
             "adversarial testing, incident reporting to the AI Office, adequate "
