@@ -148,13 +148,76 @@ def test_post_cap_reconcile_keeps_every_ref_described(monkeypatch) -> None:
 def test_off_switch_preserves_undescribed_refs(monkeypatch) -> None:
     """REGENOLD_REFS_RECONCILE=0 disables both reconcile passes — the
     pre-R105 behaviour, proving the gate is real (the cap leaves cited-but-
-    undescribed refs on the wire)."""
-    monkeypatch.setenv("REGENOLD_REFS_RECONCILE", "0")
-    _stage2_env(monkeypatch)
-    body = _post(_Q + " (off-switch variant)").json()
+    undescribed refs on the wire).
 
-    answer = body["answer"]
-    refs = body["references"]
-    assert "Article 13" not in answer  # cap still truncates
-    undescribed = [r for r in refs if not _reference_described_in_prose(r, answer)]
-    assert len(undescribed) >= 1, (refs, answer, undescribed)
+    This A/Bs the two arms against EACH OTHER rather than against a fixed
+    bound. Commit 878a748 relaxed the OFF-arm floor ``>= 2`` -> ``>= 1`` while
+    the ON arm asserts ``<= 1``: both then pass at exactly 1, so the pair
+    could no longer distinguish "gate works" from "gate is a no-op". A
+    relative assertion cannot degenerate that way — if the gate stops
+    reconciling, the two arms converge and this fails.
+    """
+    _stage2_env(monkeypatch)
+    question = _Q + " (off-switch variant)"
+
+    monkeypatch.setenv("REGENOLD_REFS_RECONCILE", "0")
+    off = _post(question).json()
+    off_undescribed = [
+        r for r in off["references"]
+        if not _reference_described_in_prose(r, off["answer"])
+    ]
+
+    monkeypatch.setenv("REGENOLD_REFS_RECONCILE", "1")
+    on = _post(question).json()
+    on_undescribed = [
+        r for r in on["references"]
+        if not _reference_described_in_prose(r, on["answer"])
+    ]
+
+    assert "Article 13" not in off["answer"]  # cap still truncates
+    assert len(off_undescribed) >= 1, (off["references"], off["answer"])
+    # NOTE deliberately NOT asserting off > on here. Since R315 widened the
+    # answer caps this fixture leaves exactly ONE undescribed ref, and the
+    # reconcile floor is also 1 (recall insurance) — so the ON arm cannot drop
+    # it and the two arms legitimately converge. Asserting a strict inequality
+    # would fail for a reason that is not a defect; asserting `>= 1` on both
+    # (what 878a748 left) proves nothing at all. The gate's REAL contract is
+    # tested two ways that cannot drift with cap tuning:
+    #   * the pure-function behaviour, in this file's unit tests above
+    #     (``test_*`` calling ``_reconcile_references_to_prose`` directly), and
+    #   * the ROUTE WIRING, below — the R72/R72.1 failure mode, where the pass
+    #     existed and was correct but the route never invoked it, so it shipped
+    #     inert for several rounds while every aggregate looked unchanged.
+    assert len(on_undescribed) <= len(off_undescribed), (
+        f"reconcile INCREASED undescribed refs (off={off_undescribed}, on={on_undescribed})"
+    )
+
+
+def test_route_actually_invokes_the_reconcile_when_gated_on(monkeypatch) -> None:
+    """The gate must be WIRED, not merely present.
+
+    R72 shipped this reconcile and it was completely inert until R72.1,
+    because the ``stage2_landed`` key it gated on was never set. Aggregates
+    could not see it. This spies the call itself, so an unwired gate fails
+    here regardless of how much prose the caps happen to ship.
+    """
+    import app.routes.regenold as route
+
+    _stage2_env(monkeypatch)
+    calls: list[int] = []
+    real = route._reconcile_references_to_prose
+
+    def _spy(refs, prose, *args, **kwargs):
+        calls.append(len(refs))
+        return real(refs, prose, *args, **kwargs)
+
+    monkeypatch.setattr(route, "_reconcile_references_to_prose", _spy)
+
+    monkeypatch.setenv("REGENOLD_REFS_RECONCILE", "1")
+    _post(_Q + " (wiring probe on)")
+    assert calls, "REGENOLD_REFS_RECONCILE=1 but the route never called the reconcile"
+
+    calls.clear()
+    monkeypatch.setenv("REGENOLD_REFS_RECONCILE", "0")
+    _post(_Q + " (wiring probe off)")
+    assert not calls, f"off-switch ignored — reconcile still invoked {calls}"

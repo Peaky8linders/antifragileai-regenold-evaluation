@@ -97,6 +97,19 @@ def kg_context_enabled() -> bool:
     )
 
 
+def _provenance_in_prompt_enabled() -> bool:
+    """``REGENOLD_PROVENANCE_IN_PROMPT`` — DEFAULT OFF.
+
+    Whether to append the CELEX / ELI provenance block to the Stage-2
+    grounding context. Off by default: it is un-A/B'd prompt budget on the
+    one rubric axis we lead, and the wire may only cite ``Article N`` /
+    ``Annex X`` (hard rule #1). Fresh env read per call (R263.2).
+    """
+    return os.getenv("REGENOLD_PROVENANCE_IN_PROMPT", "0").strip().lower() in (
+        "1", "true", "yes", "on",
+    )
+
+
 def _int_env(name: str, default: int, lo: int, hi: int) -> int:
     try:
         return max(lo, min(hi, int(os.getenv(name, ""))))
@@ -281,14 +294,42 @@ def render_kg_context(refs: list[str]) -> list[str]:
             + "\n".join(rec_lines)
         )
 
-    # Official Lawstronaut CELEX / ELI Legal Provenance Anchor
-    parts.append(
-        "\nOFFICIAL LEGAL PROVENANCE & CELEX CITATION:\n"
-        "- Primary Legal Instrument: Regulation (EU) 2024/1689 of the European Parliament and of the Council (Artificial Intelligence Act)\n"
-        "- CELEX ID: 02024R1689-20260727\n"
-        "- ELI URI: http://data.europa.eu/eli/reg/2024/1689/2026-07-27\n"
-        "- Official Source: https://eur-lex.europa.eu/legal-content/EN/ALL/?uri=CELEX:02024R1689-20260727\n"
-    )
+    # ── Legal provenance (env-gated, default OFF) ────────────────────────
+    #
+    # The first cut of this block shipped default-ON, unconditionally, and
+    # asserted CELEX 02024R1689-20260727 — the POST-Digital-Omnibus
+    # consolidation (69 EUR-Lex M1 markers pointing at CELEX 32026R1744,
+    # "Digital Omnibus on AI"). Our corpus is the PRE-Omnibus original,
+    # CELEX 32024R1689, so that block asserted a provenance the shipped text
+    # does not have — hard rule #4.
+    #
+    # It is now (a) corrected from the pinned provenance module, (b) gated
+    # OFF by default and (c) appended only when there is other graph context.
+    # Default OFF because it is un-A/B'd prompt budget on the ONE rubric axis
+    # we lead (Answer-Conciseness, zero headroom), and because the wire may
+    # only ever cite "Article N" / "Annex X" (hard rule #1) — a CELEX in the
+    # model's context is a citation shape it must never emit. Provenance
+    # belongs on the graph nodes and in the audit trail, not in the answer
+    # prompt. Set REGENOLD_PROVENANCE_IN_PROMPT=1 to A/B it back on.
+    if parts and _provenance_in_prompt_enabled():
+        try:
+            from app.data.lawstronaut_provenance import (  # noqa: PLC0415
+                OFFICIAL_CELEX,
+                OFFICIAL_ELI,
+                OFFICIAL_LEGAL_LINK,
+                OFFICIAL_PROVENANCE_LINE,
+            )
+
+            parts.append(
+                "\nOFFICIAL LEGAL PROVENANCE (context only — NEVER cite a CELEX "
+                "or ELI on the wire; citations are 'Article N' / 'Annex X' only):\n"
+                f"- Instrument: {OFFICIAL_PROVENANCE_LINE}\n"
+                f"- CELEX: {OFFICIAL_CELEX}\n"
+                f"- ELI: {OFFICIAL_ELI}\n"
+                f"- Source: {OFFICIAL_LEGAL_LINK}\n"
+            )
+        except Exception:  # noqa: BLE001
+            pass
 
     if parts:
         try:

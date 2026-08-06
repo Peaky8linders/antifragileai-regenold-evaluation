@@ -58,6 +58,15 @@ from app.data.official_eu_ai_act import (
     OFFICIAL_ANNEX_TITLES,
     OFFICIAL_RECITAL_TEXT,
 )
+from app.data.lawstronaut_provenance import (
+    OFFICIAL_CELEX as _OFFICIAL_CELEX,
+    OFFICIAL_EFFECTIVE_DATE as _OFFICIAL_EFFECTIVE_DATE,
+    OFFICIAL_ELI as _OFFICIAL_ELI,
+    OFFICIAL_GUIDELINES as _OFFICIAL_GUIDELINES,
+    OFFICIAL_LEGAL_LINK as _OFFICIAL_LEGAL_LINK,
+    OFFICIAL_PORTAL as _OFFICIAL_PORTAL,
+    OFFICIAL_TITLE as _OFFICIAL_TITLE,
+)
 from app.data.provision_text import article_body as _article_body
 from app.data.provision_text import get_provision_text as _get_provision_text
 from app.data.provision_hierarchy import (
@@ -372,6 +381,8 @@ class SeedPayload:
             "Question": len(self.question_nodes),
             "Practice": len(self.practice_nodes),
             "LifecyclePhase": len(self.phase_nodes),
+            "LegalInstrument": len(self.legal_instrument_nodes),
+            "Guideline": len(self.guideline_nodes),
             "KBMetadata": 1,
             "HAS_OBLIGATION": len(self.has_obligation_edges),
             "HAS_DEFINITION": len(self.has_definition_edges),
@@ -384,6 +395,8 @@ class SeedPayload:
             "PROHIBITED_UNDER": len(self.prohibited_under_edges),
             "APPLIES_TO": len(self.applies_to_phase_edges),
             "HAS_OBLIGATION_ARTICLE": len(self.has_obligation_article_edges),
+            "HAS_PROVENANCE": len(self.has_provenance_edges),
+            "INTERPRETS": len(self.interprets_edges),
         }
         # NOTE: the Paragraph/Point/SubPoint hierarchy is intentionally NOT in
         # ``counts()`` — that dict is the per-label write ledger ``seed_graph``
@@ -436,9 +449,9 @@ def build_payload() -> SeedPayload:
                 "vector_chunk_ids": [],
                 "legal_type": "Article",
                 "strict_citation": _ref_to_user_facing(f"Art. {num}"),
-                "celex_id": "02024R1689-20260727",
-                "eli_uri": "http://data.europa.eu/eli/reg/2024/1689/2026-07-27",
-                "legal_link": "https://eur-lex.europa.eu/legal-content/EN/ALL/?uri=CELEX:02024R1689-20260727",
+                "celex_id": _OFFICIAL_CELEX,
+                "eli_uri": _OFFICIAL_ELI,
+                "legal_link": _OFFICIAL_LEGAL_LINK,
             }
         )
 
@@ -460,9 +473,9 @@ def build_payload() -> SeedPayload:
                 "description": full_text,
                 "legal_type": "Annex",
                 "strict_citation": _ref_to_user_facing(f"Annex {roman}"),
-                "celex_id": "02024R1689-20260727",
-                "eli_uri": "http://data.europa.eu/eli/reg/2024/1689/2026-07-27",
-                "legal_link": "https://eur-lex.europa.eu/legal-content/EN/ALL/?uri=CELEX:02024R1689-20260727",
+                "celex_id": _OFFICIAL_CELEX,
+                "eli_uri": _OFFICIAL_ELI,
+                "legal_link": _OFFICIAL_LEGAL_LINK,
             }
         )
 
@@ -770,54 +783,59 @@ def build_payload() -> SeedPayload:
                     {"source_id": role_node, "target_id": target, "tier": tier}
                 )
 
-    # ── Lawstronaut Legal Provenance & Official Guidelines ────────────
+    # ── Legal provenance & official guidance (Lawstronaut, pinned) ────
+    #
+    # Every value below comes from ``app.data.lawstronaut_provenance``, which
+    # ``scripts/fetch_lawstronaut_provenance.py`` live-fetches and pins. The
+    # first cut hardcoded CELEX 02024R1689-20260727 — the POST-Digital-Omnibus
+    # consolidation — onto all 126 Article/Annex nodes while the seeded TEXT is
+    # the pre-Omnibus original. Sourcing from the pin makes the stamp match the
+    # text and makes a future version bump a single re-fetch.
     legal_instrument_nodes = [
         {
             "id": "legal_instrument_eu_ai_act",
-            "celex_id": "02024R1689-20260727",
-            "eli_uri": "http://data.europa.eu/eli/reg/2024/1689/2026-07-27",
-            "title": "Regulation (EU) 2024/1689 of the European Parliament and of the Council (Artificial Intelligence Act)",
-            "portal_name": "Euro Lex Europa",
-            "consolidated_date": "2026-07-27",
-            "legal_link": "https://eur-lex.europa.eu/legal-content/EN/ALL/?uri=CELEX:02024R1689-20260727",
+            "celex_id": _OFFICIAL_CELEX,
+            "eli_uri": _OFFICIAL_ELI,
+            "title": _OFFICIAL_TITLE,
+            "portal_name": _OFFICIAL_PORTAL,
+            "effective_date": _OFFICIAL_EFFECTIVE_DATE,
+            "legal_link": _OFFICIAL_LEGAL_LINK,
         }
     ]
 
+    # A Commission guideline is soft law interpreting the act — NOT the act.
+    # It therefore carries its own identity plus the CELEX of what it
+    # interprets, never the act's CELEX as its own identifier.
     guideline_nodes = [
         {
-            "id": "guideline_prohibited_practices",
-            "title": "Guidelines on prohibited artificial intelligence (AI) practices, as defined by the AI Act",
-            "issuing_authority": "European Commission",
-            "doc_id": 47041422,
-            "celex_id": "02024R1689-20260727",
-            "legal_link": "https://ec.europa.eu/newsroom/dae/redirection/document/112367",
-        },
-        {
-            "id": "guideline_gpai_obligations",
-            "title": "Guidelines on the scope of obligations for providers of general-purpose AI models under the AI Act",
-            "issuing_authority": "European Commission",
-            "doc_id": 47037650,
-            "celex_id": "02024R1689-20260727",
-            "legal_link": "https://ec.europa.eu/newsroom/dae/redirection/document/127097",
-        },
+            "id": str(g["id"]),
+            "title": str(g["title"]),
+            "issuing_authority": str(g["issuing_authority"]),
+            "doc_id": int(g["doc_id"]),
+            "legal_link": str(g["legal_link"]),
+            "interprets_celex": _OFFICIAL_CELEX,
+        }
+        for g in _OFFICIAL_GUIDELINES
     ]
 
     has_provenance_edges = [
-        {"source_id": a["id"], "target_id": "legal_instrument_eu_ai_act"}
-        for a in article_nodes
-    ] + [
-        {"source_id": a["id"], "target_id": "legal_instrument_eu_ai_act"}
-        for a in annex_nodes
+        {"source_id": node["id"], "target_id": "legal_instrument_eu_ai_act"}
+        for node in (*article_nodes, *annex_nodes)
     ]
 
-    interprets_edges = [
-        {"source_id": "guideline_prohibited_practices", "target_id": "article_5"},
-        {"source_id": "guideline_gpai_obligations", "target_id": "article_51"},
-        {"source_id": "guideline_gpai_obligations", "target_id": "article_52"},
-        {"source_id": "guideline_gpai_obligations", "target_id": "article_53"},
-        {"source_id": "guideline_gpai_obligations", "target_id": "article_54"},
-        {"source_id": "guideline_gpai_obligations", "target_id": "article_55"},
-    ]
+    # Guideline → Article edges, derived from the pinned registry rather than
+    # hand-listed, and existence-gated so a stale doc registry cannot seed an
+    # edge into a provision that does not exist.
+    _article_ids = {node["id"] for node in article_nodes}
+    interprets_edges = []
+    for g in _OFFICIAL_GUIDELINES:
+        for ref in g["interprets"]:
+            num = str(ref).replace("Art.", "").strip()
+            target = f"article_{num}"
+            if target in _article_ids:
+                interprets_edges.append(
+                    {"source_id": str(g["id"]), "target_id": target}
+                )
 
     # ── Provision hierarchy (Article/Annex → Paragraph → Point → SubPoint) ─
     # Folded into the payload so ``--dry-run`` accounts for the FULL graph
@@ -1063,14 +1081,19 @@ SET ph.label = $label,
     ph.superseded_by = $superseded_by
 """
 
+# ``REMOVE`` clears properties written by the superseded first cut. MERGE+SET
+# only overwrites the keys it names, so a renamed or dropped property would
+# otherwise survive re-seeding and leave the POST-Omnibus consolidation date /
+# CELEX sitting on a node whose text is pre-Omnibus.
 _CYPHER_LEGAL_INSTRUMENT = """
 MERGE (l:LegalInstrument {id: $id})
 SET l.celex_id = $celex_id,
     l.eli_uri = $eli_uri,
     l.title = $title,
     l.portal_name = $portal_name,
-    l.consolidated_date = $consolidated_date,
+    l.effective_date = $effective_date,
     l.legal_link = $legal_link
+REMOVE l.consolidated_date
 """
 
 _CYPHER_GUIDELINE = """
@@ -1078,19 +1101,32 @@ MERGE (g:Guideline {id: $id})
 SET g.title = $title,
     g.issuing_authority = $issuing_authority,
     g.doc_id = $doc_id,
-    g.celex_id = $celex_id,
+    g.interprets_celex = $interprets_celex,
     g.legal_link = $legal_link
+REMOVE g.celex_id
 """
 
-_CYPHER_HAS_PROVENANCE = """
-MATCH (a {id: $source_id})
+# NOTE both statements label BOTH endpoints. A label-free ``MATCH (a {id: ...})``
+# is an AllNodesScan over a graph that also holds 656 Paragraph / 416 Point /
+# 37 SubPoint / 180 Recital nodes — measured at ~3,500 dbHits per row against 4
+# with the label — and it would happily bind a non-Article node that happened to
+# share an id. Articles and Annexes are separate labels, so provenance is
+# written as two label-scoped passes.
+_CYPHER_HAS_PROVENANCE_ARTICLE = """
+MATCH (a:Article {id: $source_id})
+MATCH (l:LegalInstrument {id: $target_id})
+MERGE (a)-[:HAS_PROVENANCE]->(l)
+"""
+
+_CYPHER_HAS_PROVENANCE_ANNEX = """
+MATCH (a:Annex {id: $source_id})
 MATCH (l:LegalInstrument {id: $target_id})
 MERGE (a)-[:HAS_PROVENANCE]->(l)
 """
 
 _CYPHER_INTERPRETS = """
 MATCH (g:Guideline {id: $source_id})
-MATCH (t {id: $target_id})
+MATCH (t:Article {id: $target_id})
 MERGE (g)-[:INTERPRETS]->(t)
 """
 
@@ -1272,9 +1308,16 @@ def seed_graph(
         client, _CYPHER_HAS_OBLIGATION_ARTICLE, payload.has_obligation_article_edges,
         batch_size=batch_size, label="HAS_OBLIGATION_ARTICLE", verbose=verbose,
     )
+    # Provenance is written per source label (see the Cypher note above).
+    _article_ids = {row["id"] for row in payload.article_nodes}
     counts["HAS_PROVENANCE"] = _write_rows(
-        client, _CYPHER_HAS_PROVENANCE, payload.has_provenance_edges,
-        batch_size=batch_size, label="HAS_PROVENANCE", verbose=verbose,
+        client, _CYPHER_HAS_PROVENANCE_ARTICLE,
+        [e for e in payload.has_provenance_edges if e["source_id"] in _article_ids],
+        batch_size=batch_size, label="HAS_PROVENANCE(Article)", verbose=verbose,
+    ) + _write_rows(
+        client, _CYPHER_HAS_PROVENANCE_ANNEX,
+        [e for e in payload.has_provenance_edges if e["source_id"] not in _article_ids],
+        batch_size=batch_size, label="HAS_PROVENANCE(Annex)", verbose=verbose,
     )
     counts["INTERPRETS"] = _write_rows(
         client, _CYPHER_INTERPRETS, payload.interprets_edges,
@@ -1305,6 +1348,8 @@ def validate_payload(payload: SeedPayload) -> list[str]:
         payload.question_nodes,
         payload.practice_nodes,
         payload.phase_nodes,
+        payload.legal_instrument_nodes,
+        payload.guideline_nodes,
     ):
         for row in bucket:
             node_ids.add(row["id"])
@@ -1323,6 +1368,8 @@ def validate_payload(payload: SeedPayload) -> list[str]:
         ("PROHIBITED_UNDER", payload.prohibited_under_edges),
         ("APPLIES_TO", payload.applies_to_phase_edges),
         ("HAS_OBLIGATION_ARTICLE", payload.has_obligation_article_edges),
+        ("HAS_PROVENANCE", payload.has_provenance_edges),
+        ("INTERPRETS", payload.interprets_edges),
     )
     for name, edges in edge_buckets:
         for row in edges:
