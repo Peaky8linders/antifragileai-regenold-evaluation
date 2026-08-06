@@ -11620,6 +11620,149 @@ conclusion should be drawn from this run.
    failures, and the concrete negative lists are identity blocklists where 9
    of 11 named articles are governing somewhere.
 
+## Round 316 — the Lawstronaut integration shipped the WRONG legal version; wired it live and correctly (2026-08-06)
+
+Commit `f4fdf6a` ("integrate Lawstronaut CELEX/ELI legal provenance") stamped
+CELEX **`02024R1689-20260727`** onto every Stage-2 prompt, the ontology
+defaults and all 126 Article/Annex nodes — including, verified by query, the
+**LIVE production Aura graph**. That CELEX is the **POST-Digital-Omnibus
+consolidation**, over a corpus that is the pre-Omnibus original. Hard rule #4.
+
+### How the version was proven, not assumed
+
+Fetched both documents from the live Lawstronaut API and diffed them:
+
+| marker | `02024R1689-20260727` | `32024R1689` |
+| --- | --- | --- |
+| EUR-Lex `▼M1` amendment markers | **69** (→ CELEX `32026R1744`) | 0 |
+| Article 113(c) | 2 Dec 2027 / 2 Aug 2028 | 2 Aug 2026 / **2 Aug 2027** |
+| Art. 3(14a) SME / (14b) small mid-cap | present | absent |
+
+`32026R1744`'s own title settles it: *"…amending Regulations (EU) 2024/1689 …
+**(Digital Omnibus on AI)**"*, 8 July 2026. ⚠ **"2 August 2028" is NOT an
+Omnibus marker** — it occurs 4× in the ORIGINAL Article 112 review clauses.
+The discriminators are `2 December 2027`, `small mid-cap`, `32026R1744`.
+
+### The API contract the first cut got wrong
+
+Auth is **`POST https://filerskeepersapi.co/auth/login`** (email+password →
+bearer, **`expires_in` 1800**, refresh at `/auth/refresh-token`); data is
+**`https://api.lawstronaut.com/v2/...`**. The shipped client had no login and
+no refresh, `import requests` (absent from `requirements.txt` — the project is
+httpx-only), and returned its fallback dict **by reference**. It also had
+**zero importers**: every CELEX string was a hardcoded literal, so nothing
+Lawstronaut was ever involved (R256 silently-inert class). A 1800s token is
+structurally unserviceable at runtime, so the integration is now **build-time**.
+
+### What shipped
+
+* **`scripts/fetch_lawstronaut_provenance.py`** (new, stdlib-only, house
+  fetch-and-pin pattern) — logs in, pulls the pre-Omnibus original
+  (`document_id=5466154`) + 4 Commission guidelines, **refuses to pin if the
+  "original" carries Omnibus markers**, and validates the repo corpus against
+  Lawstronaut's copy of the same act. → `app/data/lawstronaut_provenance.py`
+  + `_lawstronaut_pin.json`.
+* **Corpus validated against the live official source: 126/126 provisions,
+  median similarity 1.0000, mean 0.9985, none below 0.90.** Our text IS the
+  official pre-Omnibus act. (Two apparent divergences were artefacts: a
+  `SECTION` heading bleeding into Article 87 — my parser — and Article 113's
+  OJ signature block; the R94 patch already handles 113.)
+* `kg_context.py` — the provenance block was appended **before** the
+  `if parts:` guard, so `render_kg_context([])` became non-empty and destroyed
+  the zero-retrieval sentinel. Now corrected, conditional, and **env-gated OFF**
+  (`REGENOLD_PROVENANCE_IN_PROMPT`): 367 un-A/B'd chars on every request, on
+  the one rubric axis we lead, for a citation shape hard rule #1 forbids.
+* `ontology.py` / `seed_neo4j_kb.py` — provenance sourced from the pin;
+  `EdgeType` gained the two relationship types `schema.py` already had;
+  guidelines carry `interprets_celex`, never the act's CELEX as their own;
+  label-free `MATCH (a {id})` (AllNodesScan, ~3.5k dbHits/row) split into
+  label-scoped Article/Annex passes; `REMOVE` clears the superseded
+  post-Omnibus properties that MERGE+SET would otherwise leave behind.
+* **`SeedPayload.counts()` omitted all four new buckets → `tests/test_neo4j_seed.py`
+  was RED at HEAD.** Fixed; `validate_payload()` now lints the new edges too.
+* `turboquant_index.py` — the precomputed asset keys documents by **BM25
+  position**, trusted with no validation: a KB edit silently repoints every
+  dense vector at a different article. Added a fail-soft staleness guard
+  (mutation-tested: the test fails without it).
+* The unusable runtime client + its self-referential test (which pinned the
+  wrong CELEX by asserting the fallback constant against itself) were removed
+  in favour of `tests/test_lawstronaut_provenance.py` (17 tests asserting
+  against the KB text, not against a constant).
+
+### Live production graph, re-seeded
+
+`celex_id` on all 113 Articles + 13 Annexes: `02024R1689-20260727` →
+**`32024R1689`**; `LegalInstrument` stale `consolidated_date` removed,
+`effective_date=2024-08-01`; Guidelines 2 → 4 with `celex_id` removed;
+`INTERPRETS` 6 → 8; `HAS_PROVENANCE` 126.
+
+### Gates
+
+| Gate | Result |
+| --- | --- |
+| davidath QA vs pre-change baseline worktree | **byte-identical, per-row**: 137/137 rows, 0 diffs on `pred_answer`, `pred_refs` and all 13 score axes |
+| `evals.regenold.runner` (276) | **255/255 (100%)**, RISK_F1 macro 1.00 |
+| OOS probe (`--oos-suite all`, 51) | **0 scope leaks** (only the 2 documented `adjacent_eu` soft fails) |
+| `tests/test_two_stage_pipeline.py` | 4 failed / 36 passed — **identical set on branch and baseline** (pre-existing) |
+| semantic layer | turboquant **byte-identical on rebuild**; embeddings manifest SHAs all match, 919 sentences = exactly what the corpus yields → **both current** |
+
+⚠ davidath reads **AnsS 0.4072 / RefS 0.5536 / RefC 0.4390**, not the
+CLAUDE.md R308 figures. A three-point bisect attributes the −0.0007 to the
+R314/R315/eval-merge batch (`3ddbfd5` 0.4079 → `81373cd` 0.4072 → HEAD
+0.4072) — it **predates the Lawstronaut commit** and is not caused by this
+round. Grade future runs against 0.4072.
+
+### Live hard batch (26 requests, Claude Max Opus 5 via the Cloudflare tunnel)
+
+Stratified R297 sample of the real evaluator's HARD population (multi-turn +
+verbatim adversarial pushback). 0 errors, 0 refusals, **tone 1.0000**,
+Stage-2 landed 100% on `claude-opus-5`, **pushback-concession rate 0.0000**.
+
+Grounded Sonnet-5 judge (scored against the **verbatim Act text**, since the
+regenold gold is unpublished):
+
+| axis | multi-turn n=17 | single-turn n=9 | pooled n=26 |
+| --- | --- | --- | --- |
+| answer_correctness | **0.588** | **0.778** | **0.654** |
+| mean factual score | 0.842 | 0.866 | — |
+| reference_correctness | 0.529 | 0.333 | 0.480 |
+| ref precision / recall | 0.743 / **0.898** | 0.781 / **0.958** | — |
+| citation_faithfulness | **0.824** | 0.667 | 0.769 |
+
+The multi-turn stratum sits comfortably above the historical hard readings
+(R301 multi-turn: answer 0.464-0.571, refs 0.429; R284 easy: refs 0.318).
+**This is a current-state measurement, NOT an A/B** — one run, small n,
+non-deterministic generation, and this round's changes are
+provenance-correctness, not answer-quality. Do not read a causal lift into it.
+
+Both strata tell one story: **recall is near-solved (0.90 / 0.96), precision
+is the whole constraint (0.74 / 0.78)** — i.e. over-citation, exactly the
+R287/R291/R302 finding. Every judge failure line is an "over-citation of
+<tangential provision>". Per R142.1 no positional trim ships for it without a
+gold-bearing `easyhard_ab`; the promising direction is the R311 route-exclusivity
+shape (signal-driven, gold-protected, floor-protected), not a top-N cut.
+
+### Also fixed / flagged
+
+* `878a748` weakened `test_r105_post_cap_reconcile` from `>= 2` to `>= 1`
+  while its companion asserts `<= 1` — both then pass at exactly 1, so the
+  pair could no longer tell "gate works" from "gate is a no-op". Rewritten to
+  test the **wiring** (spy the call) — the R72/R72.1 failure mode, immune to
+  cap tuning. It immediately showed the gate leaves 1 undescribed ref in both
+  arms, which the floor (=1) explains and the relative assertion would have
+  falsely blamed on the gate.
+* `scripts/build_embeddings_index.py` — `np.save` failed with a bare
+  `[Errno 22] Invalid argument` that reads like a bad path. Real cause:
+  `embeddings_index.py` holds the asset `mmap_mode="r"` for the life of any
+  process that answered a query, and Windows refuses a truncating open on a
+  mapped file. Now names the cause and the fix.
+* `.gitignore` — `regenold-eu-ai-act-rag-main/` (7.7 MB, 144 files, a sqlite
+  ledger, zero `.py`; import-inert but one `git add -A` from being committed).
+* NOT changed: `PHASE_REGISTRY` has no Omnibus deferral phases on this branch,
+  though R70/R98 document adding them. That is **consistent** with the
+  pre-Omnibus pin, so it was left alone rather than "fixed" into a
+  contradiction — flag for a deliberate decision.
+
 ## Non-goals / things to skip
 
 - ~~Vector embeddings / dense retrieval~~ → **Round 31 added a

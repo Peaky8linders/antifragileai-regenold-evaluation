@@ -1,0 +1,19 @@
+{
+  "celex": "32024R1689",
+  "eli": "http://data.europa.eu/eli/reg/2024/1689/oj",
+  "doc_id": 5466154,
+  "fetch_date": "2026-08-06",
+  "sha256": "eaa1070553ba91293a208ff97b8a20370c6f505f7f24ae1ac22f6a6e35338606",
+  "pre_omnibus": true,
+  "omnibus_amending_act": "32026R1744",
+  "guideline_count": 4,
+  "validation": {
+    "provisions_compared": 126,
+    "missing_in_live": [],
+    "missing_in_repo": [],
+    "mean_similarity": 0.9985,
+    "median_similarity": 1.0,
+    "below_0_90": [],
+    "min_similarity": 0.9076
+  }
+}

@@ -20,7 +20,9 @@ from pydantic import BaseModel, Field
 from app.graph.schema import (
     REL_HAS_DEFINITION,
     REL_HAS_OBLIGATION,
+    REL_HAS_PROVENANCE,
     REL_HAS_RECITAL_ANCHOR,
+    REL_INTERPRETS,
     REL_TRIGGERS_HIGH_RISK_UNDER,
 )
 
@@ -58,6 +60,19 @@ class NodeType(str, Enum):
     campaign = "Campaign"
 
 
+#: Legal provenance of the act this graph actually contains, live-fetched from
+#: Lawstronaut and pinned by ``scripts/fetch_lawstronaut_provenance.py``.
+#: This is the PRE-Digital-Omnibus original (CELEX 32024R1689). The first cut
+#: hardcoded the POST-Omnibus consolidation, which stamped a provenance the
+#: seeded text does not have.
+from app.data.lawstronaut_provenance import (  # noqa: E402
+    OFFICIAL_CELEX as _OFFICIAL_CELEX,
+    OFFICIAL_EFFECTIVE_DATE as _OFFICIAL_EFFECTIVE_DATE,
+    OFFICIAL_ELI as _OFFICIAL_ELI,
+    OFFICIAL_LEGAL_LINK as _OFFICIAL_LEGAL_LINK,
+)
+
+
 class ArticleNode(BaseModel):
     """EU AI Act article."""
     node_type: str = NodeType.article
@@ -66,9 +81,9 @@ class ArticleNode(BaseModel):
     title: str
     description: str
     chapter: str = ""
-    celex_id: str = "02024R1689-20260727"
-    eli_uri: str = "http://data.europa.eu/eli/reg/2024/1689/2026-07-27"
-    legal_link: str = "https://eur-lex.europa.eu/legal-content/EN/ALL/?uri=CELEX:02024R1689-20260727"
+    celex_id: str = _OFFICIAL_CELEX
+    eli_uri: str = _OFFICIAL_ELI
+    legal_link: str = _OFFICIAL_LEGAL_LINK
 
 
 class LegalInstrumentNode(BaseModel):
@@ -79,19 +94,29 @@ class LegalInstrumentNode(BaseModel):
     eli_uri: str
     title: str
     portal_name: str = "Euro Lex Europa"
-    consolidated_date: str = "2026-07-27"
+    #: Date the pinned act took effect. NOT a consolidation date — the pinned
+    #: instrument is the original OJ publication, not a consolidated version.
+    effective_date: str = _OFFICIAL_EFFECTIVE_DATE
     legal_link: str = ""
 
 
 class GuidelineNode(BaseModel):
-    """Official Commission / EDPB guidance document node."""
+    """Official Commission / EDPB guidance document node.
+
+    A guideline is NOT the Regulation. It carries its own identity and must
+    never be stamped with the Regulation's CELEX (the first cut did, which
+    conflates a soft-law interpretive document with the binding act) and must
+    never be emitted as a wire citation (hard rule #1).
+    """
     node_type: str = NodeType.guideline
     id: str
     title: str
     issuing_authority: str
     doc_id: int
-    celex_id: str = ""
     legal_link: str = ""
+    #: CELEX of the act this guideline INTERPRETS — provenance of the target,
+    #: never an identifier of the guideline itself.
+    interprets_celex: str = _OFFICIAL_CELEX
 
 
 class ObligationNode(BaseModel):
@@ -347,6 +372,13 @@ class EdgeType(str, Enum):
     archetype_carries = "ARCHETYPE_CARRIES"     # AgentArchetype → CompoundRiskType
     applies_to_role = "APPLIES_TO_ROLE"         # Article → OperatorRole
     flips_provider_under = "FLIPS_PROVIDER_UNDER"  # OperatorRole → Article (the flip trigger)
+    # ─── Legal provenance / official guidance layer ───────────────────────
+    # NodeType gained ``legal_instrument`` / ``guideline`` in the same commit
+    # that added these relationships to ``app.graph.schema`` but NOT here —
+    # an asymmetry that let the seeder write edge types the ontology did not
+    # know about. Sourced from the schema single source of truth.
+    has_provenance = REL_HAS_PROVENANCE     # Article/Annex → LegalInstrument
+    interprets = REL_INTERPRETS             # Guideline → Article/Practice
     # ─── Layer 2 (tenant overlay → Layer 1) ───────────────────────────────
     # Every edge where the source is a Layer 2 node MUST have the source
     # node already scoped to the caller's tenant via tenant_scope.scoped_read.

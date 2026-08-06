@@ -229,6 +229,37 @@ class _DenseIndex:
                     self._v_t = data["v_t"].astype(np.float32)
                     self._bm25_idx_map = list(data["bm25_idx_map"].astype(int))
                     doc_vecs = data["doc_vecs_dense"].astype(np.float32)
+
+                    # ── Staleness guard ──────────────────────────────────
+                    # ``bm25_idx_map`` stores POSITIONS in the BM25 corpus,
+                    # not stable ids. If the KB gains, loses or reorders a
+                    # document, every stored position silently addresses a
+                    # DIFFERENT article: dense retrieval then returns
+                    # confidently wrong article refs with no error anywhere.
+                    # Verify the map still describes the live corpus, and
+                    # fall through to the on-the-fly build if it does not —
+                    # slower, but correct.
+                    from app.data.kb_search import _build_index  # noqa: PLC0415
+
+                    _bm25 = _build_index()
+                    _live_keep = [
+                        i for i in range(len(_bm25.docs))
+                        if _bm25.sources[i] != "definition"
+                    ]
+                    if list(self._bm25_idx_map) != _live_keep:
+                        raise RuntimeError(
+                            "precomputed bm25_idx_map is stale: asset maps "
+                            f"{len(self._bm25_idx_map)} docs, live corpus has "
+                            f"{len(_live_keep)} non-definition docs "
+                            f"(corpus size {len(_bm25.docs)}). "
+                            "Re-run scripts/build_turboquant_precomputed.py."
+                        )
+                    if doc_vecs.shape[0] != len(self._bm25_idx_map):
+                        raise RuntimeError(
+                            f"precomputed asset inconsistent: {doc_vecs.shape[0]} "
+                            f"vectors vs {len(self._bm25_idx_map)} mapped docs"
+                        )
+
                     self._doc_vecs_dense = doc_vecs
                     self._num_docs = len(self._bm25_idx_map)
                     loaded_precomputed = True
