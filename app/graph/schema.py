@@ -55,6 +55,9 @@ NODE_LIFECYCLE_PHASE: Final = "LifecyclePhase"
 # Parent-CodexAI assessment schema (seeded but unused by the Regenold wire).
 NODE_DIMENSION: Final = "Dimension"
 NODE_QUESTION: Final = "Question"
+# Lawstronaut official legal provenance and guidelines layer
+NODE_LEGAL_INSTRUMENT: Final = "LegalInstrument"
+NODE_GUIDELINE: Final = "Guideline"
 
 #: Every node label the seeder writes. The single source of truth.
 SEEDED_NODE_LABELS: Final[frozenset[str]] = frozenset(
@@ -75,6 +78,8 @@ SEEDED_NODE_LABELS: Final[frozenset[str]] = frozenset(
         NODE_LIFECYCLE_PHASE,
         NODE_DIMENSION,
         NODE_QUESTION,
+        NODE_LEGAL_INSTRUMENT,
+        NODE_GUIDELINE,
     }
 )
 
@@ -99,6 +104,9 @@ REL_HAS_OBLIGATION_ARTICLE: Final = "HAS_OBLIGATION_ARTICLE"  # OperatorRole →
 # Parent-CodexAI assessment schema (seeded but unused by the Regenold wire).
 REL_BELONGS_TO: Final = "BELONGS_TO"  # Question → Dimension
 REL_ASSESSES: Final = "ASSESSES"  # Question → Obligation
+# Lawstronaut provenance & official guidance edges
+REL_HAS_PROVENANCE: Final = "HAS_PROVENANCE"  # Article/Annex → LegalInstrument
+REL_INTERPRETS: Final = "INTERPRETS"  # Guideline → Practice/Article
 
 #: Every relationship type the seeder writes. The single source of truth.
 #: NOTE: ``REQUIRES`` is deliberately ABSENT — the seeder never creates it
@@ -120,6 +128,8 @@ SEEDED_REL_TYPES: Final[frozenset[str]] = frozenset(
         REL_HAS_OBLIGATION_ARTICLE,
         REL_BELONGS_TO,
         REL_ASSESSES,
+        REL_HAS_PROVENANCE,
+        REL_INTERPRETS,
     }
 )
 

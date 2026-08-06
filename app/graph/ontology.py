@@ -39,6 +39,8 @@ class NodeType(str, Enum):
     nist_subcategory = "NISTSubcategory"
     iso_clause = "ISOClause"
     harmonized_standard = "HarmonizedStandard"
+    legal_instrument = "LegalInstrument"
+    guideline = "Guideline"
     # ─── Layer 1 — Agentic-AI compound-risk taxonomy (paper §10.4) ───────
     compound_risk_type = "CompoundRiskType"
     threat_category = "ThreatCategory"
@@ -64,6 +66,32 @@ class ArticleNode(BaseModel):
     title: str
     description: str
     chapter: str = ""
+    celex_id: str = "02024R1689-20260727"
+    eli_uri: str = "http://data.europa.eu/eli/reg/2024/1689/2026-07-27"
+    legal_link: str = "https://eur-lex.europa.eu/legal-content/EN/ALL/?uri=CELEX:02024R1689-20260727"
+
+
+class LegalInstrumentNode(BaseModel):
+    """Top-level EU regulatory instrument node (Lawstronaut CELEX/ELI aligned)."""
+    node_type: str = NodeType.legal_instrument
+    id: str
+    celex_id: str
+    eli_uri: str
+    title: str
+    portal_name: str = "Euro Lex Europa"
+    consolidated_date: str = "2026-07-27"
+    legal_link: str = ""
+
+
+class GuidelineNode(BaseModel):
+    """Official Commission / EDPB guidance document node."""
+    node_type: str = NodeType.guideline
+    id: str
+    title: str
+    issuing_authority: str
+    doc_id: int
+    celex_id: str = ""
+    legal_link: str = ""
 
 
 class ObligationNode(BaseModel):

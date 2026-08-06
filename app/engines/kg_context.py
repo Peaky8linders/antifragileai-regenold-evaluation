@@ -281,6 +281,15 @@ def render_kg_context(refs: list[str]) -> list[str]:
             + "\n".join(rec_lines)
         )
 
+    # Official Lawstronaut CELEX / ELI Legal Provenance Anchor
+    parts.append(
+        "\nOFFICIAL LEGAL PROVENANCE & CELEX CITATION:\n"
+        "- Primary Legal Instrument: Regulation (EU) 2024/1689 of the European Parliament and of the Council (Artificial Intelligence Act)\n"
+        "- CELEX ID: 02024R1689-20260727\n"
+        "- ELI URI: http://data.europa.eu/eli/reg/2024/1689/2026-07-27\n"
+        "- Official Source: https://eur-lex.europa.eu/legal-content/EN/ALL/?uri=CELEX:02024R1689-20260727\n"
+    )
+
     if parts:
         try:
             from app.integrations.regenold.reasoning_trace import (  # noqa: PLC0415

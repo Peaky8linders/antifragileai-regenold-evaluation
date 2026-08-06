@@ -299,9 +299,13 @@ class SeedPayload:
     # so pre-R291 direct SeedPayload() constructors keep working.
     practice_nodes: list[dict] = dataclasses.field(default_factory=list)
     phase_nodes: list[dict] = dataclasses.field(default_factory=list)
+    legal_instrument_nodes: list[dict] = dataclasses.field(default_factory=list)
+    guideline_nodes: list[dict] = dataclasses.field(default_factory=list)
     prohibited_under_edges: list[dict] = dataclasses.field(default_factory=list)
     applies_to_phase_edges: list[dict] = dataclasses.field(default_factory=list)
     has_obligation_article_edges: list[dict] = dataclasses.field(default_factory=list)
+    has_provenance_edges: list[dict] = dataclasses.field(default_factory=list)
+    interprets_edges: list[dict] = dataclasses.field(default_factory=list)
     hierarchy: "HierarchyPayload | None" = None
 
     def _hier_counts(self) -> dict[str, int]:
@@ -328,6 +332,8 @@ class SeedPayload:
             + len(self.question_nodes)
             + len(self.practice_nodes)
             + len(self.phase_nodes)
+            + len(self.legal_instrument_nodes)
+            + len(self.guideline_nodes)
             + h["Paragraph"] + h["Point"] + h["SubPoint"]
             + 1  # metadata
         )
@@ -347,6 +353,8 @@ class SeedPayload:
             + len(self.prohibited_under_edges)
             + len(self.applies_to_phase_edges)
             + len(self.has_obligation_article_edges)
+            + len(self.has_provenance_edges)
+            + len(self.interprets_edges)
             + h["HAS_PARAGRAPH"] + h["HAS_POINT"] + h["HAS_SUBPOINT"]
         )
 
@@ -428,6 +436,9 @@ def build_payload() -> SeedPayload:
                 "vector_chunk_ids": [],
                 "legal_type": "Article",
                 "strict_citation": _ref_to_user_facing(f"Art. {num}"),
+                "celex_id": "02024R1689-20260727",
+                "eli_uri": "http://data.europa.eu/eli/reg/2024/1689/2026-07-27",
+                "legal_link": "https://eur-lex.europa.eu/legal-content/EN/ALL/?uri=CELEX:02024R1689-20260727",
             }
         )
 
@@ -449,6 +460,9 @@ def build_payload() -> SeedPayload:
                 "description": full_text,
                 "legal_type": "Annex",
                 "strict_citation": _ref_to_user_facing(f"Annex {roman}"),
+                "celex_id": "02024R1689-20260727",
+                "eli_uri": "http://data.europa.eu/eli/reg/2024/1689/2026-07-27",
+                "legal_link": "https://eur-lex.europa.eu/legal-content/EN/ALL/?uri=CELEX:02024R1689-20260727",
             }
         )
 
@@ -756,6 +770,55 @@ def build_payload() -> SeedPayload:
                     {"source_id": role_node, "target_id": target, "tier": tier}
                 )
 
+    # ── Lawstronaut Legal Provenance & Official Guidelines ────────────
+    legal_instrument_nodes = [
+        {
+            "id": "legal_instrument_eu_ai_act",
+            "celex_id": "02024R1689-20260727",
+            "eli_uri": "http://data.europa.eu/eli/reg/2024/1689/2026-07-27",
+            "title": "Regulation (EU) 2024/1689 of the European Parliament and of the Council (Artificial Intelligence Act)",
+            "portal_name": "Euro Lex Europa",
+            "consolidated_date": "2026-07-27",
+            "legal_link": "https://eur-lex.europa.eu/legal-content/EN/ALL/?uri=CELEX:02024R1689-20260727",
+        }
+    ]
+
+    guideline_nodes = [
+        {
+            "id": "guideline_prohibited_practices",
+            "title": "Guidelines on prohibited artificial intelligence (AI) practices, as defined by the AI Act",
+            "issuing_authority": "European Commission",
+            "doc_id": 47041422,
+            "celex_id": "02024R1689-20260727",
+            "legal_link": "https://ec.europa.eu/newsroom/dae/redirection/document/112367",
+        },
+        {
+            "id": "guideline_gpai_obligations",
+            "title": "Guidelines on the scope of obligations for providers of general-purpose AI models under the AI Act",
+            "issuing_authority": "European Commission",
+            "doc_id": 47037650,
+            "celex_id": "02024R1689-20260727",
+            "legal_link": "https://ec.europa.eu/newsroom/dae/redirection/document/127097",
+        },
+    ]
+
+    has_provenance_edges = [
+        {"source_id": a["id"], "target_id": "legal_instrument_eu_ai_act"}
+        for a in article_nodes
+    ] + [
+        {"source_id": a["id"], "target_id": "legal_instrument_eu_ai_act"}
+        for a in annex_nodes
+    ]
+
+    interprets_edges = [
+        {"source_id": "guideline_prohibited_practices", "target_id": "article_5"},
+        {"source_id": "guideline_gpai_obligations", "target_id": "article_51"},
+        {"source_id": "guideline_gpai_obligations", "target_id": "article_52"},
+        {"source_id": "guideline_gpai_obligations", "target_id": "article_53"},
+        {"source_id": "guideline_gpai_obligations", "target_id": "article_54"},
+        {"source_id": "guideline_gpai_obligations", "target_id": "article_55"},
+    ]
+
     # ── Provision hierarchy (Article/Annex → Paragraph → Point → SubPoint) ─
     # Folded into the payload so ``--dry-run`` accounts for the FULL graph
     # (the R290 audit's G4 gap: the hierarchy previously wrote ~⅓ of the
@@ -787,6 +850,8 @@ def build_payload() -> SeedPayload:
         question_nodes=question_nodes,
         practice_nodes=practice_nodes,
         phase_nodes=phase_nodes,
+        legal_instrument_nodes=legal_instrument_nodes,
+        guideline_nodes=guideline_nodes,
         metadata_node=metadata_node,
         has_obligation_edges=has_obligation_edges,
         has_definition_edges=has_definition_edges,
@@ -797,6 +862,8 @@ def build_payload() -> SeedPayload:
         belongs_to_edges=belongs_to_edges,
         assesses_edges=assesses_edges,
         prohibited_under_edges=prohibited_under_edges,
+        has_provenance_edges=has_provenance_edges,
+        interprets_edges=interprets_edges,
         applies_to_phase_edges=applies_to_phase_edges,
         has_obligation_article_edges=has_obligation_article_edges,
         hierarchy=hierarchy,
@@ -824,7 +891,10 @@ SET a.number = $number,
     a.chapter = $chapter,
     a.vector_chunk_ids = $vector_chunk_ids,
     a.legal_type = $legal_type,
-    a.strict_citation = $strict_citation
+    a.strict_citation = $strict_citation,
+    a.celex_id = $celex_id,
+    a.eli_uri = $eli_uri,
+    a.legal_link = $legal_link
 """
 
 _CYPHER_ANNEX = """
@@ -834,7 +904,10 @@ SET a.number = $number,
     a.text = $text,
     a.description = $description,
     a.legal_type = $legal_type,
-    a.strict_citation = $strict_citation
+    a.strict_citation = $strict_citation,
+    a.celex_id = $celex_id,
+    a.eli_uri = $eli_uri,
+    a.legal_link = $legal_link
 """
 
 _CYPHER_RECITAL = """
@@ -990,6 +1063,37 @@ SET ph.label = $label,
     ph.superseded_by = $superseded_by
 """
 
+_CYPHER_LEGAL_INSTRUMENT = """
+MERGE (l:LegalInstrument {id: $id})
+SET l.celex_id = $celex_id,
+    l.eli_uri = $eli_uri,
+    l.title = $title,
+    l.portal_name = $portal_name,
+    l.consolidated_date = $consolidated_date,
+    l.legal_link = $legal_link
+"""
+
+_CYPHER_GUIDELINE = """
+MERGE (g:Guideline {id: $id})
+SET g.title = $title,
+    g.issuing_authority = $issuing_authority,
+    g.doc_id = $doc_id,
+    g.celex_id = $celex_id,
+    g.legal_link = $legal_link
+"""
+
+_CYPHER_HAS_PROVENANCE = """
+MATCH (a {id: $source_id})
+MATCH (l:LegalInstrument {id: $target_id})
+MERGE (a)-[:HAS_PROVENANCE]->(l)
+"""
+
+_CYPHER_INTERPRETS = """
+MATCH (g:Guideline {id: $source_id})
+MATCH (t {id: $target_id})
+MERGE (g)-[:INTERPRETS]->(t)
+"""
+
 _CYPHER_PROHIBITED_UNDER = """
 MATCH (p:Practice {id: $source_id})
 MATCH (a:Article {id: $target_id})
@@ -1113,6 +1217,14 @@ def seed_graph(
         client, _CYPHER_PHASE, payload.phase_nodes,
         batch_size=batch_size, label="LifecyclePhase", verbose=verbose,
     )
+    counts["LegalInstrument"] = _write_rows(
+        client, _CYPHER_LEGAL_INSTRUMENT, payload.legal_instrument_nodes,
+        batch_size=batch_size, label="LegalInstrument", verbose=verbose,
+    )
+    counts["Guideline"] = _write_rows(
+        client, _CYPHER_GUIDELINE, payload.guideline_nodes,
+        batch_size=batch_size, label="Guideline", verbose=verbose,
+    )
 
     # ── Edges ─────────────────────────────────────────────────────────
     counts["HAS_OBLIGATION"] = _write_rows(
@@ -1159,6 +1271,14 @@ def seed_graph(
     counts["HAS_OBLIGATION_ARTICLE"] = _write_rows(
         client, _CYPHER_HAS_OBLIGATION_ARTICLE, payload.has_obligation_article_edges,
         batch_size=batch_size, label="HAS_OBLIGATION_ARTICLE", verbose=verbose,
+    )
+    counts["HAS_PROVENANCE"] = _write_rows(
+        client, _CYPHER_HAS_PROVENANCE, payload.has_provenance_edges,
+        batch_size=batch_size, label="HAS_PROVENANCE", verbose=verbose,
+    )
+    counts["INTERPRETS"] = _write_rows(
+        client, _CYPHER_INTERPRETS, payload.interprets_edges,
+        batch_size=batch_size, label="INTERPRETS", verbose=verbose,
     )
 
     return counts
