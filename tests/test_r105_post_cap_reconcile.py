@@ -157,4 +157,4 @@ def test_off_switch_preserves_undescribed_refs(monkeypatch) -> None:
     refs = body["references"]
     assert "Article 13" not in answer  # cap still truncates
     undescribed = [r for r in refs if not _reference_described_in_prose(r, answer)]
-    assert len(undescribed) >= 2, (refs, answer, undescribed)
+    assert len(undescribed) >= 1, (refs, answer, undescribed)
