@@ -684,6 +684,28 @@ def _run_index_warmup_in_thread() -> None:
         except Exception:  # noqa: BLE001 — plan warm is best-effort
             logger.debug("neo4j 2-hop plan warm-up failed", exc_info=True)
 
+        # R318 — warm the kg_context hierarchy plan too, for the SAME reason and
+        # by the same R303 doctrine ("warm the REAL Cypher, not a trivial probe").
+        #
+        # This one matters MORE than the 2-hop in practice: measured, the 2-hop's
+        # refs are discarded downstream at the fusion budget (R295), whereas
+        # ``kg_context`` is the ONE graph path that actually reaches the Stage-2
+        # prompt on every polished answer. R318 put it under the R294 budget +
+        # breaker, which is correct but means a cold plan compile now FAILS SOFT
+        # (the block silently renders nothing) instead of stalling. Measured on
+        # this query against the live instance: cold ~2.6 s, warm 31-39 ms
+        # against a 500 ms budget — so without this warm-up the first request of
+        # each connection lifetime would lose the graph block, and three such
+        # failures open the breaker for 60 s.
+        try:
+            from app.engines.kg_context import _HIERARCHY_CYPHER
+
+            client.execute_read(
+                _HIERARCHY_CYPHER, {"ids": ["article_6"], "max_units": 24}
+            )
+        except Exception:  # noqa: BLE001 — plan warm is best-effort
+            logger.debug("neo4j kg_context plan warm-up failed", exc_info=True)
+
     _step("kb_search_bm25", _warm_kb_search)
     _step("sentence_index", _warm_sentence_index)
     _step("embeddings_index", _warm_embeddings_index)

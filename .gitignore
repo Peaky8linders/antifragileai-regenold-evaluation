@@ -67,3 +67,11 @@ node_modules/
 regenold_questions_and_live_answers.md
 HANDOFF_SOTA_EVAL_DATASET.md
 
+
+# R316-05 — a 7.7 MB duplicate checkout (144 files, incl. a sqlite ledger and
+# 125 .pyc, ZERO .py sources). Import-inert, but a stray `git add -A` would
+# commit the lot. It was already cleaned out once in 81373cd.
+regenold-eu-ai-act-rag-main/
+probe_out.json
+.coverage
+.envlocal

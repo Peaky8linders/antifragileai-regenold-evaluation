@@ -282,8 +282,29 @@ def main() -> int:
     )
 
     logger.info("Step 4/5 — persisting assets to %s …", _ASSETS_DIR)
-    np.save(_ASSETS_DIR / EMBED_FILENAME, doc_vecs_unit, allow_pickle=False)
-    np.save(_ASSETS_DIR / SVD_FILENAME, v_t, allow_pickle=False)
+    try:
+        np.save(_ASSETS_DIR / EMBED_FILENAME, doc_vecs_unit, allow_pickle=False)
+        np.save(_ASSETS_DIR / SVD_FILENAME, v_t, allow_pickle=False)
+    except OSError as exc:
+        # ``app/engines/embeddings_index.py`` loads the embedding matrix with
+        # ``mmap_mode="r"`` and holds that mapping for the life of the process.
+        # Windows refuses a TRUNCATING open on a mapped file, so ``np.save``
+        # raises a bare ``[Errno 22] Invalid argument`` — which reads like a
+        # bad path and sends you looking in the wrong place. Name the real
+        # cause and the fix.
+        raise SystemExit(
+            f"Could not overwrite {EMBED_FILENAME}: {exc}\n"
+            "\n"
+            "On Windows this is almost always an ACTIVE MEMORY MAPPING, not a "
+            "bad path: embeddings_index.py np.load(..., mmap_mode='r') keeps "
+            "the asset mapped for the life of any process that has answered an "
+            "embeddings query.\n"
+            "Stop every process holding it (uvicorn / a running eval or test "
+            "run / another builder) and re-run. Verify with:\n"
+            "    python -c \"open(r'app/engines/_assets/"
+            f"{EMBED_FILENAME}','wb').close()\"\n"
+            "which fails the same way while the mapping is held."
+        ) from exc
     meta_payload = [
         {
             "article_ref": article_ref,

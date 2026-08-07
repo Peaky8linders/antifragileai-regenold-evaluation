@@ -1198,6 +1198,69 @@ def _apply_fact_state_carry_forward(
     return out
 
 
+def _subpoint_existence_floor_enabled() -> bool:
+    """R318 — is the sub-point existence floor on? Default ON.
+
+    ``REGENOLD_SUBPOINT_EXISTENCE_FLOOR=0`` restores the pre-R318 behaviour, in
+    which an unresolvable sub-point such as ``Article 3.14a`` could reach the
+    wire. Fresh env read per call (R263.2).
+    """
+    return os.getenv("REGENOLD_SUBPOINT_EXISTENCE_FLOOR", "1").strip().lower() not in (
+        "0",
+        "false",
+        "no",
+        "off",
+    )
+
+
+def _drop_unresolvable_subpoints(references: list[str]) -> list[str]:
+    """Degrade any sub-point citation that does not resolve to its base article.
+
+    Order-preserving and deduplicating. A reference with no sub-point is passed
+    through untouched, so the ONLY thing this can change is a leaf the pinned
+    corpus cannot produce text for.
+
+    Recall is preserved by construction: the replacement is the leaf's own base
+    article, which every reference-scoring metric already treats as the head of
+    that leaf.
+    """
+    from app.data.provision_text import get_provision_text  # noqa: PLC0415
+
+    out: list[str] = []
+    seen: set[str] = set()
+    for ref in references or []:
+        candidate = str(ref)
+        # A sub-point is a trailing ".<token>" on an "Article N" / "Annex X".
+        if "." in candidate.split(" ", 1)[-1]:
+            try:
+                resolved = get_provision_text(candidate)
+            except Exception:  # noqa: BLE001 — resolver must never break the wire
+                resolved = None
+            if not resolved:
+                base = candidate.rsplit(".", 1)[0]
+                # Walk up until something resolves (handles "Article 5.1.zz").
+                while "." in base.split(" ", 1)[-1]:
+                    try:
+                        if get_provision_text(base):
+                            break
+                    except Exception:  # noqa: BLE001
+                        pass
+                    base = base.rsplit(".", 1)[0]
+                try:
+                    from app.integrations.regenold.reasoning_trace import (  # noqa: PLC0415
+                        record_note as _rn,
+                    )
+
+                    _rn(f"subpoint_existence_floor: {candidate} -> {base}")
+                except Exception:  # noqa: BLE001 — fail-soft on trace
+                    pass
+                candidate = base
+        if candidate not in seen:
+            seen.add(candidate)
+            out.append(candidate)
+    return out
+
+
 def _engine_cache_key(
     question: str,
     system_context: str | None,
@@ -1338,6 +1401,17 @@ def _engine_cache_key(
             "REGENOLD_KG_MAX_UNITS",
             "REGENOLD_KG_UNIT_CHARS",
             "REGENOLD_KG_MAX_RECITALS",
+            # R318 — R316 shipped this gate WITHOUT adding it here, which is the
+            # R263.2 eval-integrity defect, not a production one: it appends a
+            # CELEX / ELI provenance block to the Stage-2 grounding context via
+            # ``kg_context.render_kg_context``, so it changes the CACHED
+            # ``GraphRAGResponse``. Production runs one consistent arm and is
+            # therefore unaffected; but a same-process two-arm A/B of the flag
+            # would have served arm A's cached answer to arm B and measured
+            # NOTHING — exactly the failure R263.2 documented and R295 hit again
+            # while building an A/B. It is default-OFF, so adding it changes no
+            # key today (an unset var contributes an empty segment either way).
+            "REGENOLD_PROVENANCE_IN_PROMPT",
             # R313 — grounding BREADTH (how many cited provisions get verbatim
             # text). Defaults to the pre-R313 constant so the wire is unchanged,
             # but it is in the key so the R288 breadth sweep is actually
@@ -4208,6 +4282,81 @@ _R311_CLASSIFICATION_ASK_RE = re.compile(
 )
 
 
+# ── R317: Annex III point-2 disambiguation for the R311 gate ───────────────
+#
+# THE DEFECT (measured on the real deterministic route, not inferred).
+# "safety component" appears VERBATIM in BOTH high-risk routes:
+#   * Article 6(1)(a) — the Annex I product route ("intended to be used as a
+#     safety component of a product ... covered by the Union harmonisation
+#     legislation listed in Annex I");
+#   * Annex III point 2 — "AI systems intended to be used as safety components
+#     in the management and operation of critical digital infrastructure, road
+#     traffic, or in the supply of water, gas, heating or electricity".
+# The ``annex_i_safety_component`` topic's third pattern is a bare
+# ``\bsafety\s+component``, so R311's gate cannot tell the two apart. It then
+# drops ``Annex III`` via ``_ANNEX_I_ROUTE_DROP_HEADS`` — which is the
+# GOVERNING reference on the Annex III route. Reproduced end-to-end:
+#   "safety component to manage the supply of electricity on a national grid"
+#       R311 ON  -> ['Article 6', 'Article 26']            <- gold Annex III GONE
+#       R311 OFF -> ['Article 6', 'Article 26', 'Annex III']
+# R311's own CLAUDE.md entry records "GOVERNING refs dropped: 0", measured
+# against a 72-row judged batch that contains no Annex III point-2 row, so this
+# shape was never checked.
+#
+# THE FIX IS A GATE NARROWING, NOT A NEW DROP RULE. Reference RECALL is the
+# guard: this pass only ever PREVENTS a removal, so it cannot itself drop a
+# governing reference. R311 keeps firing unchanged on genuine Annex I product
+# questions (medical devices, machinery, vehicles) — its measured MedTech win
+# is untouched.
+#
+# NOTE the ``\w*`` stems. A ``\b(machiner|toy)\b`` guard is DEAD for every
+# natural inflection ("machinery", "toys", "medical devices"): the trailing
+# ``\b`` cannot match after a truncated stem. That exact bug was found in a
+# rejected R317 candidate, where it silently disabled the product guard.
+_R317_CRITICAL_INFRA_RE = re.compile(
+    r"\bcritical\s+(?:digital\s+)?infrastructur\w*|"
+    r"\bsupply\s+of\s+(?:water|gas|heating|electricity|power)\b|"
+    r"\b(?:water|gas|heating|electricity|power|energy)\s+"
+    r"(?:supply|grid|network|utilit\w*|distribution)\b|"
+    r"\b(?:national|power|electricity|energy)\s+grid\b|"
+    r"\broad\s+traffic\b|\btraffic\s+management\b",
+    re.IGNORECASE,
+)
+_R317_ANNEX_I_PRODUCT_RE = re.compile(
+    r"\bannex\s*(?:i|1)\b|\bharmonisation\s+legislation\b|"
+    r"\bharmonization\s+legislation\b|\bthird[-\s]?party\s+conformity\w*|"
+    r"\bnotified\s+bod\w*|\bce\s+mark\w*|\bmachin\w*|\btoy\w*|"
+    r"\brecreational\s+craft\w*|\bwatercraft\w*|\blift\w*|\belevator\w*|"
+    r"\bexplosive\s+atmospher\w*|\batex\b|\bradio\s+equipment\w*|"
+    r"\bpressure\s+(?:equipment|vessel)\w*|\bcableway\w*|"
+    r"\bpersonal\s+protective\s+equipment\w*|\bppe\b|\bgas\s+applianc\w*|"
+    r"\bmedical\s+device\w*|\bin\s*[-\s]?vitro\w*|\bmdr\b|\bivdr\b|\bsamd\b|"
+    r"\bcivil\s+aviation\w*|\baircraft\w*|\baviation\w*|\bdrone\w*|"
+    r"\bunmanned\w*|\bmotor\s+vehicl\w*|\bquadricycl\w*|\btractor\w*|"
+    r"\bagricultural\s+(?:or\s+forestry\s+)?vehicl\w*|\bmarine\s+equipment\w*|"
+    r"\brail(?:way)?\s+system\w*|\bindustrial\s+robot\w*|\bmanufactur\w*|"
+    r"\btype[-\s]?approval\w*|\bproduct\s+(?:safety|law|legislation)\w*",
+    re.IGNORECASE,
+)
+
+
+def _r317_is_annex_iii_critical_infrastructure(live: str) -> bool:
+    """True when the live turn is an Annex III point-2 critical-infra ask.
+
+    The OBJECT is the disambiguator: the supply of electricity is not a
+    "product covered by Union harmonisation legislation". Requires a
+    critical-infrastructure object AND the ABSENCE of any Annex I product-law
+    marker, so a genuinely mixed question ("safety component in machinery
+    regulating the water supply") keeps the Annex I reading and R311 still
+    fires there.
+    """
+    if not live:
+        return False
+    return bool(_R317_CRITICAL_INFRA_RE.search(live)) and not _R317_ANNEX_I_PRODUCT_RE.search(
+        live
+    )
+
+
 def _annex_i_product_route_question(question: str) -> bool:
     """True when the question is an Article 6(1) Annex I product-route ask.
 
@@ -4233,9 +4382,40 @@ def _annex_i_product_route_question(question: str) -> bool:
         topic = next(
             t for t in _CLASSIFICATION_TOPICS if t["name"] == "annex_i_safety_component"
         )
-        return any(pat.search(live) for pat in topic["patterns"])
+        if not any(pat.search(live) for pat in topic["patterns"]):
+            return False
+        # R317 — the topic's bare ``\bsafety\s+component`` pattern also matches
+        # Annex III point 2. Refuse the Annex I reading there, so R311 cannot
+        # drop the governing ``Annex III``.
+        if _r317_annex_iii_guard_enabled() and _r317_is_annex_iii_critical_infrastructure(
+            live
+        ):
+            try:
+                from app.integrations.regenold.reasoning_trace import (  # noqa: PLC0415
+                    record_note as _rn,
+                )
+
+                _rn("annex_iii_infra_guard: R311 suppressed (Annex III point-2 ask)")
+            except Exception:  # noqa: BLE001 — fail-soft on trace
+                pass
+            return False
+        return True
     except Exception:  # noqa: BLE001 — fail-soft: never gate the route on this
         return False
+
+
+def _r317_annex_iii_guard_enabled() -> bool:
+    """R317 — is the Annex III point-2 guard on R311's gate enabled?
+
+    Default ON. Set ``REGENOLD_ANNEX_III_INFRA_GUARD=0`` to restore the
+    pre-R317 (gold-dropping) R311 gate.
+    """
+    return os.getenv("REGENOLD_ANNEX_III_INFRA_GUARD", "1").strip().lower() not in (
+        "0",
+        "false",
+        "no",
+        "off",
+    )
 
 
 def _apply_annex_i_route_exclusivity(
@@ -4280,6 +4460,181 @@ def _annex_i_route_exclusivity_enabled() -> bool:
         "no",
         "off",
     )
+
+
+# ── R317: Chapter III exclusivity on a not-high-risk verdict ────────────────
+#
+# THE STATUTORY ARGUMENT (this is a legal fact, not a benchmark artefact).
+# Chapter III of the Regulation is titled "HIGH-RISK AI SYSTEMS" and its
+# Articles 8-49 — the Section 2 requirements, the Section 3 operator
+# obligations, the Section 4 notified-body machinery and the Section 5
+# standards / conformity-assessment / certificate / registration machinery —
+# apply only to systems that ARE high-risk. So when the answer's own verdict is
+# that a system is prohibited outright, or is not high-risk, citing Chapter III
+# machinery is wrong as a matter of law.
+#
+# WHAT THIS IS NOT
+#   * Not positional. Nothing is dropped because of its rank (R142.1 lost a
+#     live pairwise 11-0, p=0.001, doing exactly that).
+#   * Not an identity blocklist. The same heads are KEPT — and are gold — on a
+#     high-risk verdict. Measured on the 132-row gold probe set: Article 6 is
+#     non-gold 21x and gold 22x; only the verdict separates the two.
+#   * Not prose-driven. R298/R302 measured that 86% of wrong refs ARE described
+#     in the prose, so an "is it described" pruner is a structural no-op.
+#
+# WHAT WAS MEASURED (R317, two independent instruments)
+#   gold gate  — 132 recorded live rows with gold, zero generation variance:
+#                0 gold dropped, Ref Loose EXACTLY unchanged, Ref Strict +0.004.
+#   hold-out   — 191 judged rows (different questions, grounded Sonnet-5 judge
+#                labels): 7 judge-WRONG refs removed, 0 governing destroyed.
+#
+# WHAT WAS MEASURED AND REJECTED (kept here so it is not re-proposed)
+#   Dropping Article 50 on a PROHIBITED verdict looked free on the gold gate but
+#   destroyed 5 governing refs to remove 3 wrong ones on the hold-out — the
+#   R142.1 signature. Article 50 is genuinely governing on many prohibited-
+#   verdict answers. Only the Chapter III component survived both instruments.
+#
+# Article 5, Article 6, Annex I and Annex III are NEVER dropped: they are the
+# classification TESTS, and citing them is how an answer shows it applied the
+# test. The gold for a minimal-risk verdict on this probe set is literally
+# ``[Annex III, Article 50, Article 6]`` — the tests, with none of the
+# machinery. An earlier cut that treated Annex I/III as machinery cost 6 gold.
+_R317_CHAPTER_III = frozenset(f"Article {n}" for n in range(8, 50))
+_R317_TESTS = frozenset({"Article 5", "Article 6", "Annex I", "Annex III"})
+# NOTE the drop set is Chapter III ARTICLES ONLY. The technical/conformity
+# annexes (Annex IV-VIII) look like the same machinery and were in the first
+# cut, but on the independent judged hold-out they were the ONLY thing the pass
+# destroyed: Annex VII on rg_106 and Annex VIII on rg_066 are governing there.
+# Ablating them out is what took the hold-out from 2 governing destroyed to 0.
+
+# The Stage-2 prompt mandates a verdict-first (BLUF) answer, so the verdict is
+# in the lead. Scanning only the lead avoids catching a later hypothetical
+# ("it WOULD be high-risk if ...").
+_R317_LEAD_CHARS = 320
+_R317_PROHIBITED_RE = re.compile(
+    r"\b(?:is\s+)?prohibit(?:ed|s)\b|\bbans?\b|\bbanned\b|\boutright\s+ban\b|"
+    r"\bviolates\s+article\s*5\b|\bnot\s+permitted\b",
+    re.IGNORECASE,
+)
+_R317_NOT_HIGH_RISK_RE = re.compile(
+    r"\b(?:not|neither)\s+(?:a\s+)?high[-\s]?risk\b|"
+    r"\bdoes\s+not\s+(?:qualify|count|fall)\b[^.]{0,40}\bhigh[-\s]?risk\b|"
+    r"\bminimal[-\s]?risk\b|\bminimal\s+or\s+no\s+risk\b|\blow[-\s]?risk\b",
+    re.IGNORECASE,
+)
+_R317_HIGH_RISK_RE = re.compile(
+    r"\b(?:is|are|as|remains?|becomes?|classified\s+as|qualifies\s+as)\s+"
+    r"(?:a\s+)?high[-\s]?risk\b|\bhigh[-\s]?risk\s+under\b",
+    re.IGNORECASE,
+)
+
+
+# A NEGATED prohibition is the opposite verdict. The deterministic
+# general-classification answer opens verbatim "The system described is NOT
+# among the practices prohibited under Article 5 ..." — read naively that
+# matches _R317_PROHIBITED_RE and inverts the verdict. Measured: this bug alone
+# stripped the rank-0 governing article (Article 13 / Article 10) from two
+# 276-suite rows.
+_R317_NEGATED_PROHIBITION_RE = re.compile(
+    r"\b(?:not|neither|isn't|is\s+not|are\s+not|does\s+not\s+fall)\b[^.]{0,60}?"
+    r"\b(?:prohibit\w*|banned?|ban)\b",
+    re.IGNORECASE,
+)
+
+
+def _r317_verdict(answer: str) -> str:
+    """PROHIBITED | NOT_HIGH_RISK | HIGH_RISK | UNKNOWN, from the answer lead.
+
+    KEEP-BY-DEFAULT: anything unrecognised is UNKNOWN and the pass no-ops.
+    """
+    if not answer or not isinstance(answer, str):
+        return "UNKNOWN"
+    lead = answer[:_R317_LEAD_CHARS]
+    not_hr = bool(_R317_NOT_HIGH_RISK_RE.search(lead))
+    prohibited = bool(_R317_PROHIBITED_RE.search(lead)) and not _R317_NEGATED_PROHIBITION_RE.search(lead)
+    if prohibited and not not_hr:
+        return "PROHIBITED"
+    if _R317_HIGH_RISK_RE.search(lead) and not not_hr:
+        return "HIGH_RISK"
+    if not_hr:
+        return "NOT_HIGH_RISK"
+    return "UNKNOWN"
+
+
+def _tier_exclusivity_enabled() -> bool:
+    """R317 — is the Chapter III tier-exclusivity pass enabled? **Default OFF.**
+
+    MEASURED REGRESSION — this is why the default is OFF. The pass was built
+    against two instruments that both said it was clean (the 132-row gold probe
+    set: 0 gold dropped; a 191-row judged hold-out: 7 wrong refs removed, 0
+    governing destroyed). The davidath regression guard says otherwise::
+
+        REGENOLD_TIER_EXCLUSIVITY=0 -> Ref Loose 0.5971  Ref Strict 0.4748
+        REGENOLD_TIER_EXCLUSIVITY=1 -> Ref Loose 0.5811  Ref Strict 0.4683
+                                       (-0.0160)         (-0.0065)
+
+    Per-row: it changes 42 of 476 rows and drops **67 davidath GOLD
+    references** across 40 scenarios (0 on QA).
+
+    The statutory premise — "on a prohibited / not-high-risk verdict, Chapter
+    III machinery is wrong as a matter of law" — is contradicted by the
+    benchmark's own gold. The verdict detector is not the bug; it reads these
+    rows CORRECTLY as PROHIBITED. But davidath's gold for a prohibited-practice
+    scenario still contains the Chapter III chain (``sc_002`` gold is
+    ``[5, 6, 9, 10, 13, 14, 15, 16, 49, 50]``), because the answer legitimately
+    carries the consequences of the classification. This is the same
+    falsification that killed the R317 role-exclusivity candidate: 331 of 339
+    davidath scenarios are classification-shaped and their gold IS the
+    downstream chain.
+
+    The existing lead-reference guard protects only rank 0; ranks 1..n are gold
+    too, and those are what this drops. Dropping a gold reference is the R142.1
+    failure mode that lost a live pairwise judge 11-0 (p=0.001), so per the
+    standing doctrine (reference RECALL is the guard) it does not ship ON.
+
+    The pass, its 24 tests and its hold-out win are kept so a future round can
+    re-gate it on a signal that separates the two populations and re-A/B it
+    with ``evals.harness.easyhard_ab``. Set ``REGENOLD_TIER_EXCLUSIVITY=1`` to
+    re-enable.
+    """
+    return os.getenv("REGENOLD_TIER_EXCLUSIVITY", "0").strip().lower() not in (
+        "0",
+        "false",
+        "no",
+        "off",
+    )
+
+
+def _apply_tier_exclusivity(
+    references: list[str], question: str, answer: str
+) -> list[str]:
+    """Drop Chapter III machinery when the answer's verdict is not high-risk.
+
+    Gold-protected (never drops a classification test or a provision the LIVE
+    question named) and floor-protected (never empties the list).
+    """
+    if not references or not _tier_exclusivity_enabled():
+        return references
+    verdict = _r317_verdict(answer)
+    if verdict not in ("PROHIBITED", "NOT_HIGH_RISK"):
+        return references
+
+    drop = set(_R317_CHAPTER_III) - _R317_TESTS
+    drop -= _question_named_heads(question)
+    # NEVER drop the lead reference. Measured on the 132-row gold probe set:
+    # 63.5% of gold refs sit at rank 0 and 86% within the top two, so the lead
+    # is the single most likely governing provision — and the answer is written
+    # around it. This matters most where the verdict signal is least reliable:
+    # the deterministic path ships the R33 default-limited FALLBACK opener
+    # ("This system is classified as limited-risk ...") on questions that are
+    # really about a role transition, where Article 25 / Article 26 lead and
+    # ARE governing. Without this guard the pass stripped exactly those.
+    drop -= {_clamp_ref_head(references[0]) or references[0]}
+
+    kept = [r for r in references if (_clamp_ref_head(r) or r) not in drop]
+    if not kept or kept == references:
+        return references
+    return kept
 
 
 def adaptive_ref_clamp(
@@ -8932,6 +9287,35 @@ def regenold_eu_ai_act_ask(
     except Exception:  # noqa: BLE001 — fail-soft; never 500 the route
         pass
 
+    # R317 — Chapter III exclusivity. Sits immediately after R311 because both
+    # are verdict/route-scoped removals that must see the FINAL candidate list
+    # and must land before the trace finalisation, so the reasoning trace
+    # equals the wire references. See ``_apply_tier_exclusivity`` above for the
+    # statutory argument and the two-instrument measurement.
+    #
+    # Reads ``answer_text``, which is final by this point (frozen far upstream
+    # while the reference passes keep running — the R306 finding). davidath is
+    # unaffected: under ``provider=cli`` the answer is the deterministic verdict
+    # prose, and the pass is additionally a no-op whenever the verdict is
+    # HIGH_RISK or UNKNOWN.
+    try:
+        _r317_refs = _apply_tier_exclusivity(
+            list(references), live_user_message or question, answer_text or ""
+        )
+        if _r317_refs != references:
+            _dropped = [r for r in references if r not in _r317_refs]
+            references = _r317_refs
+            try:
+                from app.integrations.regenold.reasoning_trace import (  # noqa: PLC0415
+                    record_note as _rn,
+                )
+
+                _rn("tier_exclusivity_dropped=" + ",".join(_dropped))
+            except Exception:  # noqa: BLE001 — fail-soft on trace
+                pass
+    except Exception:  # noqa: BLE001 — fail-soft; never 500 the route
+        pass
+
     # NLI DeBERTa Cross-Encoder Citation Verification & Grounding.
     #
     # DEFAULT OFF. It shipped default-ON with no A/B; three measured reasons
@@ -9025,6 +9409,33 @@ def regenold_eu_ai_act_ask(
                         pass
                     references = _frozen
         except Exception:  # noqa: BLE001 — fail-soft; never 500 the route
+            pass
+
+    # ── R318 — sub-point existence floor (hard rule #5) ────────────────────
+    #
+    # FOUND BY THE R318 ADVERSARIAL OMNIBUS PROBE, in BOTH arms, so it is
+    # independent of any prompt change. Asked "How does Article 3(14a) define an
+    # SME?", the answer is CORRECT ("Article 3 contains no point (14a)") while
+    # the wire shipped ``references: ["Article 3.14a"]`` — a citation to a
+    # sub-point that does not exist. 3(14a) is a Digital Omnibus insertion; the
+    # adopted Article 3 has 68 numbered definitions and no lettered points.
+    #
+    # The existing floor only ever validated the BASE article, and "Art. 3"
+    # exists, so an invented sub-point sailed through. Hard rule #5 says every
+    # emitted citation must resolve — and a citation the answer's own prose
+    # calls non-existent is the cite-and-mismatch failure in its purest form.
+    #
+    # DEGRADE, NEVER DROP. An unresolvable sub-point falls back to its base
+    # article, so reference RECALL is mathematically unchanged (the head was
+    # already implied by the leaf) and this cannot become an R142.1-style
+    # gold-dropping clamp. Proven safe before shipping: of 49 distinct
+    # sub-point citations across the curated sub-point gold sets and everything
+    # ``subpoint_emitter`` can emit, ALL 49 resolve — so this drops exactly the
+    # hallucinated leaf and nothing legitimate.
+    if _subpoint_existence_floor_enabled():
+        try:
+            references = _drop_unresolvable_subpoints(references)
+        except Exception:  # noqa: BLE001 — never 500 the route on a guard
             pass
 
     # R50 / R131 — finalise the reasoning trace AFTER every reference pass

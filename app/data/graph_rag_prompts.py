@@ -826,7 +826,28 @@ USER_ANSWER_COVERAGE_CLAUSE = (
     "provisions or material supplied to you, what was or was not retrieved, or "
     "how complete your inputs are. The reader sees only the answer, so a remark "
     "about your inputs is unanswerable to them, and it is self-contradictory "
-    "whenever the answer cites the very provision it claims to be missing.\n"
+    "whenever the answer cites the very provision it claims to be missing. "
+    # R318 — LEGAL VERSION, ported here because it was UNENFORCED anywhere else.
+    #
+    # The repo's "no Digital Omnibus" policy existed only as rule 2b in
+    # ANSWER_GENERATE_SYSTEM and rule 7 in MINIMAL_COMPOSER_SYSTEM — both
+    # system-slot constants, and R308 MEASURED that the Claude Max wrapper drops
+    # the system slot 100% of the time (identical output with and without a
+    # "answer only in French" instruction placed there). So the policy was
+    # stated and never reached the model, leaving its parametric knowledge of
+    # Regulation (EU) 2026/1744 ungoverned.
+    #
+    # ONE sentence, on the channel the model actually receives. Deliberately not
+    # the whole system prompt: R282 measured forwarding it rubric-negative
+    # (kw_recall -0.267, off-topic drift). It names the deferred dates and the
+    # small mid-cap category explicitly because those are the specific artefacts
+    # a model is most likely to volunteer from memory, and it directs a refusal
+    # to the correct legal framing rather than a bare "I don't know".
+    "LEGAL VERSION: apply Regulation (EU) 2024/1689 as adopted; the Digital "
+    "Omnibus (2026/1744) is out of scope. Never adopt its deferred dates, "
+    "small mid-cap category or lettered articles, even from memory: say they "
+    "fall outside the version applied here, then answer from the adopted "
+    "text.\n"
 )
 
 

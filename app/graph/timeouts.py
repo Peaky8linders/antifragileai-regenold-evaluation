@@ -36,12 +36,19 @@ backend work; it only stops us throwing the result away.
 Choosing the default
 --------------------
 
-``250`` ms is a little over 2x the worst warm sample measured (116 ms),
-which leaves headroom for jitter without becoming a meaningful latency
-risk: the same request spends 10-40 s in Stage-2 synthesis. The cold
-~700 ms cost is deliberately **not** covered by the budget — it is paid
-off-request by the boot warm-up in ``app/main.py`` instead, which is the
-right place for a one-off connection/plan-cache cost.
+The default is :data:`DEFAULT_GRAPH_TIMEOUT_MS` — **500 ms**. It is comfortably
+over the worst warm sample measured (116 ms for the 2-hop; 31-48 ms for the
+``kg_context`` hierarchy query), which leaves headroom for jitter without
+becoming a meaningful latency risk: the same request spends 10-40 s in Stage-2
+synthesis. The cold ~700 ms - 2.6 s cost is deliberately **not** covered by the
+budget — it is paid off-request by the boot warm-up in ``app/main.py`` instead,
+which is the right place for a one-off connection/plan-cache cost.
+
+(R318 note: this paragraph used to state the default as ``250`` ms while the
+constant below has been ``500``. The numbers quoted in the failure-path
+measurement further down are the ORIGINAL R294 readings at the 250 ms budget
+and are left as-is — they are the historical evidence for why the breaker had
+to land alongside any raise, and that argument holds a fortiori at 500 ms.)
 
 This module is only consulted on the **hosted Neo4j** path. The R121
 embedded SQLite backend answers the same traversal in-process in
