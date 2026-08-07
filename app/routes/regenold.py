@@ -1198,6 +1198,69 @@ def _apply_fact_state_carry_forward(
     return out
 
 
+def _subpoint_existence_floor_enabled() -> bool:
+    """R318 — is the sub-point existence floor on? Default ON.
+
+    ``REGENOLD_SUBPOINT_EXISTENCE_FLOOR=0`` restores the pre-R318 behaviour, in
+    which an unresolvable sub-point such as ``Article 3.14a`` could reach the
+    wire. Fresh env read per call (R263.2).
+    """
+    return os.getenv("REGENOLD_SUBPOINT_EXISTENCE_FLOOR", "1").strip().lower() not in (
+        "0",
+        "false",
+        "no",
+        "off",
+    )
+
+
+def _drop_unresolvable_subpoints(references: list[str]) -> list[str]:
+    """Degrade any sub-point citation that does not resolve to its base article.
+
+    Order-preserving and deduplicating. A reference with no sub-point is passed
+    through untouched, so the ONLY thing this can change is a leaf the pinned
+    corpus cannot produce text for.
+
+    Recall is preserved by construction: the replacement is the leaf's own base
+    article, which every reference-scoring metric already treats as the head of
+    that leaf.
+    """
+    from app.data.provision_text import get_provision_text  # noqa: PLC0415
+
+    out: list[str] = []
+    seen: set[str] = set()
+    for ref in references or []:
+        candidate = str(ref)
+        # A sub-point is a trailing ".<token>" on an "Article N" / "Annex X".
+        if "." in candidate.split(" ", 1)[-1]:
+            try:
+                resolved = get_provision_text(candidate)
+            except Exception:  # noqa: BLE001 — resolver must never break the wire
+                resolved = None
+            if not resolved:
+                base = candidate.rsplit(".", 1)[0]
+                # Walk up until something resolves (handles "Article 5.1.zz").
+                while "." in base.split(" ", 1)[-1]:
+                    try:
+                        if get_provision_text(base):
+                            break
+                    except Exception:  # noqa: BLE001
+                        pass
+                    base = base.rsplit(".", 1)[0]
+                try:
+                    from app.integrations.regenold.reasoning_trace import (  # noqa: PLC0415
+                        record_note as _rn,
+                    )
+
+                    _rn(f"subpoint_existence_floor: {candidate} -> {base}")
+                except Exception:  # noqa: BLE001 — fail-soft on trace
+                    pass
+                candidate = base
+        if candidate not in seen:
+            seen.add(candidate)
+            out.append(candidate)
+    return out
+
+
 def _engine_cache_key(
     question: str,
     system_context: str | None,
@@ -9346,6 +9409,33 @@ def regenold_eu_ai_act_ask(
                         pass
                     references = _frozen
         except Exception:  # noqa: BLE001 — fail-soft; never 500 the route
+            pass
+
+    # ── R318 — sub-point existence floor (hard rule #5) ────────────────────
+    #
+    # FOUND BY THE R318 ADVERSARIAL OMNIBUS PROBE, in BOTH arms, so it is
+    # independent of any prompt change. Asked "How does Article 3(14a) define an
+    # SME?", the answer is CORRECT ("Article 3 contains no point (14a)") while
+    # the wire shipped ``references: ["Article 3.14a"]`` — a citation to a
+    # sub-point that does not exist. 3(14a) is a Digital Omnibus insertion; the
+    # adopted Article 3 has 68 numbered definitions and no lettered points.
+    #
+    # The existing floor only ever validated the BASE article, and "Art. 3"
+    # exists, so an invented sub-point sailed through. Hard rule #5 says every
+    # emitted citation must resolve — and a citation the answer's own prose
+    # calls non-existent is the cite-and-mismatch failure in its purest form.
+    #
+    # DEGRADE, NEVER DROP. An unresolvable sub-point falls back to its base
+    # article, so reference RECALL is mathematically unchanged (the head was
+    # already implied by the leaf) and this cannot become an R142.1-style
+    # gold-dropping clamp. Proven safe before shipping: of 49 distinct
+    # sub-point citations across the curated sub-point gold sets and everything
+    # ``subpoint_emitter`` can emit, ALL 49 resolve — so this drops exactly the
+    # hallucinated leaf and nothing legitimate.
+    if _subpoint_existence_floor_enabled():
+        try:
+            references = _drop_unresolvable_subpoints(references)
+        except Exception:  # noqa: BLE001 — never 500 the route on a guard
             pass
 
     # R50 / R131 — finalise the reasoning trace AFTER every reference pass

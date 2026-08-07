@@ -232,7 +232,21 @@ class TestAnswerCoverageClause:
         # discuss the reference block itself), taking it to ~1955 chars.
         # Still bounded, and still an order of magnitude under the 3.2K/51K
         # prompts R277 measured as quality-neutral.
-        assert 900 <= len(USER_ANSWER_COVERAGE_CLAUSE) <= 2200
+        #
+        # R318 — raised 2200 -> 2300 for the LEGAL VERSION sentence (~286
+        # chars), and the raise is deliberate rather than incidental. The rule
+        # it carries was previously stated ONLY in the Stage-2 system slot,
+        # which R308 measured the Claude Max wrapper drops 100% of the time, so
+        # the "no Digital Omnibus" policy reached the model on zero requests.
+        # Measured on a 12-probe adversarial set, re-scored to distinguish
+        # IMPORTING an artefact from REJECTING it by name: Omnibus imports went
+        # 2 -> 0 and correct rejections 1 -> 4. The wording was compressed three
+        # times to try to fit under 2200 and would not go further without
+        # dropping the named artefacts (deferred dates / small mid-cap /
+        # lettered articles), which are what tell the model WHAT to refuse.
+        # 2241 chars remains an order of magnitude under the measured-neutral
+        # 3.2K, and the ceiling still guards against unbounded creep.
+        assert 900 <= len(USER_ANSWER_COVERAGE_CLAUSE) <= 2300
 
 
 class TestClauseIsActuallyDelivered:
