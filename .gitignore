@@ -74,3 +74,4 @@ HANDOFF_SOTA_EVAL_DATASET.md
 regenold-eu-ai-act-rag-main/
 probe_out.json
 .coverage
+.envlocal

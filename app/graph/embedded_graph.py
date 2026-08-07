@@ -368,18 +368,31 @@ def graph_backend() -> str:
 
 
 def embedded_backend_selected() -> bool:
-    """True iff the embedded in-process graph backend is active (R127 default)."""
+    """True iff the embedded in-process graph backend is active.
+
+    R318 — this is now an OPT-IN (``REGENOLD_GRAPH_BACKEND=embedded``), not the
+    default. It was the default under R127/R129; R313.1 inverted that. The old
+    "(R127 default)" note is corrected here because it asserted the opposite of
+    what :func:`graph_backend` returns.
+    """
     return graph_backend() == "embedded"
 
 
 def neo4j_backend_selected() -> bool:
-    """True iff the hosted Neo4j Aura backend is EXPLICITLY selected.
+    """True iff the hosted Neo4j Aura backend is active — which is the DEFAULT.
 
-    R127 — Aura now activates only on an explicit
-    ``REGENOLD_GRAPH_BACKEND=neo4j``; the unset default is ``embedded``.
-    ``app.graph.client._should_activate`` gates the Neo4j driver on this so a
-    deploy that still carries ``NEO4J_URI`` in its dashboard does NOT pay the
-    Aura retrieval / boot-seed network cost unless it opts back in.
+    R318 — CORRECTS AN INVERTED DOCSTRING. This previously read "Aura now
+    activates only on an explicit ``REGENOLD_GRAPH_BACKEND=neo4j``; the unset
+    default is ``embedded``", which is the exact opposite of
+    :func:`graph_backend` two functions above (``_DEFAULT_BACKEND = "neo4j"``
+    since R313.1). That mattered: it is how an audit concludes the hosted graph
+    is inactive when it is in fact serving every request, and it survived
+    because ``railway.toml`` also still says ``embedded`` — inert since R306
+    established that Railway's ``[deploy]`` schema has no ``envs`` key, so the
+    CODE default is the only thing that ships.
+
+    ``app.graph.client._should_activate`` gates the Neo4j driver on this, so a
+    deploy that wants the embedded backend must set the var explicitly.
     """
     return graph_backend() == "neo4j"
 

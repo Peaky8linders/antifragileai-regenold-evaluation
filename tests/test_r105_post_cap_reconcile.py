@@ -87,6 +87,25 @@ _Q = (
 
 def _stage2_env(monkeypatch) -> None:
     """Force a Stage-2-landed, hard-truncated answer through the route."""
+    # R318 — MUST come first. ``_stage2_provider_enabled`` short-circuits on
+    # ``P2P_GRAPH_RAG_PROVIDER=cli`` (app/engines/_graph_rag_impl.py) BEFORE it
+    # ever consults ``is_openai_wrapper_enabled``, which is what ``_post``
+    # patches. So under the documented deterministic eval env this fixture could
+    # not make Stage-2 land, ``graph_stats["stage2_landed"]`` stayed False, and
+    # the reconcile correctly declined to fire — the wiring test then failed for
+    # a reason that is NOT a defect, and its sibling passed VACUOUSLY (with no
+    # reconcile in either arm, the two arms are identical and ``on <= off``
+    # holds trivially at equality — the same "cannot distinguish gate-works from
+    # gate-is-a-no-op" degradation 878a748 introduced, reached via the env
+    # instead of the assertion).
+    #
+    # Verified: with the provider var unset the reconcile fires at BOTH call
+    # sites and trims 6 references to 3, so the R72/R72.1 inert-gate recurrence
+    # this file exists to catch has NOT happened. ``tests/conftest.py`` states
+    # the invariant ("P2P_GRAPH_RAG_PROVIDER is deliberately NOT forced to cli")
+    # and siblings opt out the same way — see test_r133_prose_subpoints.py and
+    # test_r146_stage2_fidelity.py. Test-only: no assertion is weakened.
+    monkeypatch.delenv("P2P_GRAPH_RAG_PROVIDER", raising=False)
     settings.regenold.api_key = SecretStr("regenold-test-key")
     monkeypatch.setenv("REGENOLD_VERBATIM_ANSWER", "1")
     monkeypatch.setenv("REGENOLD_ANSWER_ROUTER", "1")
