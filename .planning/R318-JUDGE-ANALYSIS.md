@@ -108,6 +108,76 @@ the governing paragraph is what `_reemit_parents_for_subpoints` (R87-C) does
 deliberately, to fix a scoring artefact. Against this judge it costs precision.
 Those two goals are in direct tension and the trade has never been measured.
 
+### 2b. What is actually wrong — tail padding, not bad retrieval
+
+Two measurements settle the mechanism.
+
+**The wrong references are positionally concentrated.** Wrong-rate by position in
+the emitted list:
+
+| rank | wrong / total | rate |
+| --- | --- | --- |
+| 1 | 20 / 93 | **0.22** |
+| 2 | 35 / 78 | 0.45 |
+| 3 | 32 / 53 | **0.60** |
+| 4 | 6 / 15 | 0.40 |
+| 5 | 7 / 8 | 0.88 |
+
+Retrieval is not the problem: the FIRST reference is right 78% of the time. The
+THIRD is wrong 60% of the time.
+
+**The collapse is a cliff, not arithmetic.** Against an independent per-reference
+error rate of 0.327:
+
+| refs | observed | independence predicts |
+| --- | --- | --- |
+| 1 | **0.93** | 0.67 |
+| 2 | 0.56 | 0.45 |
+| 3 | **0.05** | 0.30 |
+| 5 | 0.00 | 0.14 |
+
+1- and 2-reference rows beat independence; 3-reference rows are six times worse
+than it predicts. That discontinuity lands exactly on the R77-I6 QA budget of
+**3**, and 38 of 100 rows sit at exactly 3 references — the modal bucket, passing
+at 0.05, and supplying **36 of the 62 reference failures (58%)**.
+
+So the system locates the governing provision well and then fills the remaining
+budget with tangential material, and a zero-tolerance gate turns each filler into
+a failed row. 34 of the 62 failing rows have **exactly one** wrong reference.
+
+**But truncation is NOT the fix, and this is where R142.1 went wrong.**
+Deterministic counterfactual over the recorded rows (zero generation variance):
+
+| cap | pass rate | correct kept | wrong kept |
+| --- | --- | --- | --- |
+| none | 0.37 | 149 | 104 |
+| 3 | 0.40 | 137 | 87 |
+| 2 | **0.55** | **116** | 55 |
+| 1 | 0.78 | 73 | 20 |
+| oracle (drop only wrong) | **1.00** | **149** | **0** |
+
+Capping at 2 destroys **33 correct references to remove 49 wrong ones**. That is
+precisely the trade R142.1's positional clamp made when it lost a live pairwise
+11-0 (p=0.001) — it buys a binary gate at the cost of recall, and recall is
+scored.
+
+The oracle row is the important one: **all of the headroom is in identifying
+which tail reference is wrong, not in cutting the tail.** And the two known
+approaches are already refuted — a prose-driven pruner is a structural no-op
+(R298: 86% of wrong refs ARE described in the prose) and identity blocklists
+fail (R311, and Finding 2 above: the same articles appear in both lists).
+
+### 2c. The 0.31 headline overstates the damage
+
+The judge's reference gate is zero-tolerance conjunctive: one wrong reference
+fails the row. The competition does not score that way — it uses
+`reference_correctness_loose` (Jaccard) and `_strict` (F1), both graded.
+
+The continuous measures here are **precision 0.673 / recall 0.893 / F1 0.768**.
+Quote F1 alongside the pass rate; 0.31 alone reads as broken when the reference
+set is mostly right. R302 made this same correction (0.349 -> 0.717 under partial
+credit).
+
 ## Finding 3 — Component D is adding references from prose
 
 Observed repeatedly during the replay:
