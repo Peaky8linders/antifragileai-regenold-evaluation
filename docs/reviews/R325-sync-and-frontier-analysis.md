@@ -199,6 +199,50 @@ nothing; `{number: '3'}` and `{id: 'article_3'}` work. Any `ORDER BY` must cast
 cap dropped definitions 3(4)–3(8) (deployer / authrep / importer / distributor
 / operator).
 
+### 4.1 What actually contributes — measured, not configured
+
+"Configured" ≠ "consulted" ≠ "contributes". Measured on four representative
+questions, deterministic path, live graph:
+
+**Contributing**
+
+| subsystem | contribution per request |
+| --- | --- |
+| **BM25** (345 docs) | the primary ranker; §5.2 shows its ordering is the best signal in the system (AUC 0.703) |
+| **kg_context → Aura** | fires every request — **5,122–14,102 chars** of provision structure into Stage-2 |
+| **embeddings index** (SVD, 919 sentences) | 5 hits/query, additive candidates |
+| **turboquant dense** (277 docs) | 5 hits/query via `dense_top_k`; running the uncompressed NumPy fallback (`turboquant_available: False`, expected on Windows) |
+
+**Built, seeded, and never read**
+
+| dark surface | evidence |
+| --- | --- |
+| **7 Neo4j VECTOR indexes, 1,490 embeddings** | `grep -rn 'db.index.vector' app/` → **0 files** |
+| **`ft_provision_prose` FULLTEXT index** | `grep -rn 'db.index.fulltext' app/` → **0 files** |
+| **2-hop graph expand** | `REGENOLD_GRAPH_2HOP` **OFF by code default**. Forced on it works — 29 hop-1 + 5 hop-2 articles in **51 ms** — but R295 measured the fusion cap admitting ~**4 of 660** surfaced refs even when enabled. |
+| **SubPoint / Practice / AnnexIIICategory / OperatorRole / LifecyclePhase** | seeded (37 / 8 / 8 / 5 / 4) but kg_context's 3 Cypher shapes read only Article/Annex → Paragraph/Point + Recital anchors. The RAG repo reads them via 14 shapes; this repo does not. |
+
+The graph therefore serves as **Stage-2 context only, never retrieval** — the
+deliberate R252 decision after graph-primary retrieval buried the operative
+article behind a blunt risk-tier dump.
+
+**Why this is the interesting finding, not trivia.** §5.2 shows selection is
+exhausted: nothing re-orders BM25's output better than BM25 does. The dark
+surfaces are *generation-side* levers, not more candidates to rank — the vector
+and fulltext indexes would retrieve **different** provisions rather than
+re-order the same ones, and the unread node layers (Practice, OperatorRole,
+AnnexIIICategory) are precisely the structured context that would let Stage-2
+attribute a duty to the right actor instead of over-citing. The largest
+built-but-unused capability in the system points at the only remaining
+direction.
+
+⚠ **Method note.** First pass I recorded `hop2 = 0` and `turboquant = 0` and
+nearly wrote both off as dead. Both were my error — the 2-hop result field is
+`hop2_articles` (I read `refs`), and turboquant exposes `dense_top_k`, not
+`query`. The "zero consumers" claims above are `grep` over `app/` and are
+solid; a "returns nothing" claim needs the API checked first. This is the same
+key-form trap CLAUDE.md already warns about, in a new costume.
+
 ---
 
 ## 5. The frontier analysis
@@ -335,7 +379,13 @@ the grounded judge, and the regenold gold.
    grade with `evals.judge.grounded`, and apply the parent-collapse **offline**
    to the same sidecar — one run answers both questions with zero generation
    variance.
-2. **Attack generation.** §5.2 closed selection. Why does a 3-ref answer name a
+2. **Attack generation — and the lever is already built and idle.** §5.2 closed
+   selection; §4.1 shows **1,490 Neo4j embeddings across 7 VECTOR indexes and a
+   FULLTEXT index with literally zero consumers**, plus five seeded node layers
+   kg_context never reads. Cheapest decisive probe: measure what the vector
+   layer retrieves that BM25 **misses** — if it surfaces gold BM25 never had,
+   that is the generation-side fix; if it only re-orders the same set, it is
+   another wash and should be recorded as one. Why does a 3-ref answer name a
    wrong provision **53% of the time at rank 3**?
 3. **Fix the judge** before trusting any further answer number — 8 of 22 answer
    failures on the easy batch are labelled "truncated" and **all 8 are false
