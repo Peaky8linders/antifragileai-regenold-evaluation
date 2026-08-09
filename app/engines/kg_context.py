@@ -78,6 +78,8 @@ logger = logging.getLogger(__name__)
 __all__ = [
     "kg_context_enabled",
     "fetch_provision_hierarchy",
+    "fetch_subpoint_detail",
+    "fetch_deontic_context",
     "render_kg_context",
     "reset_kg_context_memo",
 ]
@@ -213,6 +215,29 @@ MATCH (a)-[:HAS_RECITAL_ANCHOR]->(r:Recital)
 WHERE a.id IN $ids
 RETURN a.id AS id, r.number AS num, r.text AS text
 ORDER BY a.id, toIntegerOrNull(r.number), r.number
+LIMIT $limit
+"""
+
+_SUBPOINT_CYPHER = """
+MATCH (a) WHERE a.id IN $ids AND (a:Article OR a:Annex)
+MATCH (a)-[:HAS_PARAGRAPH]->(p)-[:HAS_POINT]->(pt)-[:HAS_SUBPOINT]->(s:SubPoint)
+RETURN coalesce(a.strict_citation, a.id) AS cite,
+       p.number AS para, pt.letter AS letter, s.id AS sid, s.text AS text
+ORDER BY a.id, toIntegerOrNull(p.number), p.number, pt.letter, s.id
+LIMIT $limit
+"""
+
+_DEONTIC_CYPHER = """
+MATCH (a:Article) WHERE a.id IN $ids
+OPTIONAL MATCH (pr:Practice)-[:PROHIBITED_UNDER]->(a)
+OPTIONAL MATCH (cat:AnnexIIICategory)-[:TRIGGERS_HIGH_RISK_UNDER]->(a)
+OPTIONAL MATCH (ro:OperatorRole)-[hoa:HAS_OBLIGATION_ARTICLE]->(a)
+OPTIONAL MATCH (ph:LifecyclePhase)-[:APPLIES_TO]->(a)
+RETURN coalesce(a.strict_citation, a.id) AS cite,
+       collect(DISTINCT coalesce(pr.short_name, pr.id)) AS practices,
+       collect(DISTINCT coalesce(cat.label, cat.id)) AS annex_iii,
+       collect(DISTINCT coalesce(ro.label, ro.id) + ' (' + coalesce(hoa.tier,'') + ')') AS roles,
+       collect(DISTINCT coalesce(ph.label, ph.id) + ' from ' + coalesce(ph.effective_date,'')) AS phases
 LIMIT $limit
 """
 
@@ -498,6 +523,46 @@ def fetch_recital_anchors(refs: list[str]) -> list[dict]:
     return rows
 
 
+def fetch_subpoint_detail(refs: list[str]) -> list[dict]:
+    """Sub-point leaves (conditions, exceptions, carve-outs) of cited provisions."""
+    if not kg_context_enabled():
+        return []
+    ids = _node_ids(refs or [], _int_env("REGENOLD_KG_MAX_REFS", _DEFAULT_MAX_REFS, 1, 10))
+    if not ids:
+        return []
+    cached = _memo_get("subpoint", ids, 24)
+    if cached is not None:
+        return cached
+    try:
+        rows = _bounded_execute_read(_SUBPOINT_CYPHER, {"ids": ids, "limit": 24})
+        result = list(rows or [])
+    except Exception:  # noqa: BLE001
+        logger.debug("kg_context: subpoint fetch failed", exc_info=True)
+        result = []
+    _memo_put("subpoint", ids, 24, result)
+    return result
+
+
+def fetch_deontic_context(refs: list[str]) -> list[dict]:
+    """Prohibited practices / Annex III categories / role duties / phases."""
+    if not kg_context_enabled():
+        return []
+    ids = _node_ids(refs or [], _int_env("REGENOLD_KG_MAX_REFS", _DEFAULT_MAX_REFS, 1, 10))
+    if not ids:
+        return []
+    cached = _memo_get("deontic", ids, 12)
+    if cached is not None:
+        return cached
+    try:
+        rows = _bounded_execute_read(_DEONTIC_CYPHER, {"ids": ids, "limit": 12})
+        result = list(rows or [])
+    except Exception:  # noqa: BLE001
+        logger.debug("kg_context: deontic fetch failed", exc_info=True)
+        result = []
+    _memo_put("deontic", ids, 12, result)
+    return result
+
+
 def render_kg_context(refs: list[str]) -> list[str]:
     """Render the graph's contribution as NON-CITABLE Stage-2 context.
 
@@ -539,6 +604,50 @@ def render_kg_context(refs: list[str]) -> list[str]:
             "that is not already listed above, and do NOT cite a paragraph "
             "number as a separate provision):\n"
             + "\n".join(lines)
+        )
+
+    try:
+        subpoints = fetch_subpoint_detail(refs)
+    except Exception:  # noqa: BLE001
+        subpoints = []
+    sp_lines = []
+    for sp in subpoints:
+        text = _flat(sp.get("text"), unit_chars)
+        if text:
+            sp_lines.append(f"- {sp.get('cite')}, para {sp.get('para')}, point ({sp.get('letter')}): {text}")
+    if sp_lines:
+        parts.append(
+            "\nKNOWLEDGE-GRAPH SUBPOINT CARVE-OUTS "
+            "(conditions, exceptions and scope limits of the provisions above "
+            "— these qualify the general duty; a prohibition stated without its "
+            "carve-out states the law incorrectly):\n"
+            + "\n".join(sp_lines)
+        )
+
+    try:
+        deontics = fetch_deontic_context(refs)
+    except Exception:  # noqa: BLE001
+        deontics = []
+    deontic_lines = []
+    for d in deontics:
+        cite = str(d.get('cite') or "").strip()
+        pieces = []
+        if d.get('practices') and any(x for x in d['practices'] if x):
+            pieces.append(f"Prohibited practices: {', '.join(x for x in d['practices'] if x)}")
+        if d.get('annex_iii') and any(x for x in d['annex_iii'] if x):
+            pieces.append(f"Annex III categories: {', '.join(x for x in d['annex_iii'] if x)}")
+        if d.get('roles') and any(x for x in d['roles'] if x):
+            pieces.append(f"Operator roles: {', '.join(x for x in d['roles'] if x)}")
+        if d.get('phases') and any(x for x in d['phases'] if x):
+            pieces.append(f"Lifecycle phases: {', '.join(x for x in d['phases'] if x)}")
+        if pieces:
+            deontic_lines.append(f"- {cite}: " + "; ".join(pieces))
+    if deontic_lines:
+        parts.append(
+            "\nKNOWLEDGE-GRAPH REGULATORY CLASSIFICATION "
+            "(role duties, risk categories and lifecycle phases attached to the "
+            "provisions above — non-citable structural context):\n"
+            + "\n".join(deontic_lines)
         )
 
     try:
