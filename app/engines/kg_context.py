@@ -86,6 +86,10 @@ _DEFAULT_MAX_REFS = 8
 _DEFAULT_MAX_UNITS = 24
 _DEFAULT_UNIT_CHARS = 900
 _DEFAULT_MAX_RECITALS = 5
+#: Total ceiling across every block ``render_kg_context`` returns (R323, ported
+#: from the RAG repo in R325). Without it a 12-ref scenario can inject an
+#: unbounded wall of provision text that crowds the rest of the Stage-2 prompt.
+_DEFAULT_MAX_CHARS = 16000
 
 
 def kg_context_enabled() -> bool:
@@ -208,7 +212,7 @@ _RECITAL_CYPHER = """
 MATCH (a)-[:HAS_RECITAL_ANCHOR]->(r:Recital)
 WHERE a.id IN $ids
 RETURN a.id AS id, r.number AS num, r.text AS text
-ORDER BY a.id, r.number
+ORDER BY a.id, toIntegerOrNull(r.number), r.number
 LIMIT $limit
 """
 
@@ -392,17 +396,61 @@ def _bounded_execute_read(cypher: str, params: dict) -> list[dict]:
         return []
 
 
+#: An enumeration opening inside the budget means the LIST is the obligation.
+_ENUM_OPENER_RE = re.compile(r"\(a\)\s")
+
+#: Hard ceiling for a single unit once the enumeration guard has extended it.
+#: Bounds the worst case so one pathological provision cannot dominate the
+#: Stage-2 budget.
+_UNIT_HARD_CEILING = 2600
+
+
 def _flat(text: object, limit: int) -> str:
+    """Flatten a provision to at most ``limit`` chars, losing as little as possible.
+
+    R325 — ported from the RAG repo's R323 + R324. Measured HERE before the
+    port: ``render_kg_context(['Article 5'])`` delivered only **3 of the 8**
+    Article 5(1) prohibited practices. (a) subliminal, (b) vulnerability,
+    (d) criminal-risk profiling, (e) facial scraping and (h) real-time RBI were
+    all cut away, with nothing marking the truncation — a prohibition shipped
+    without its scope reads as if the list were complete.
+
+    Two distinct amputations are fixed:
+
+    1. BACKTRACK COULD DISCARD HALF THE BUDGET. The sentence-boundary search
+       accepted any break past ``limit // 2``, so a 1421-char provision at a
+       900 budget was delivered at ~470 chars (33%). The accepted break must
+       now fall in the last QUARTER of the budget; a nearer one loses too much
+       and we fall through to a clause, then a word boundary.
+
+    2. IT CUT MID-ENUMERATION WITHOUT SAYING SO. When an enumeration opens
+       inside the budget the whole unit is delivered up to
+       ``_UNIT_HARD_CEILING``; beyond that the text is explicitly marked
+       ``[...]`` rather than ending mid-clause as if it were complete.
+
+    ``_UNIT_HARD_CEILING`` is a CEILING, not a switch. The RAG repo's first cut
+    fell straight back to ``limit`` past the ceiling, so a 2599-char
+    enumeration was delivered whole and a 2601-char one was cut at 900 — the
+    cliff landing on the LONGEST enumerations, exactly the "duty defined by its
+    list" cases the guard exists for. Cut AT the ceiling and mark it.
+    """
     t = " ".join(str(text or "").split())
     if len(t) <= limit:
         return t
+
+    if _ENUM_OPENER_RE.search(t[:limit]):
+        if len(t) <= _UNIT_HARD_CEILING:
+            return t
+        limit = _UNIT_HARD_CEILING
+
     cut = t[:limit]
+    floor = (limit * 3) // 4
     for sep in (". ", "; ", ", "):
         idx = cut.rfind(sep)
-        if idx > limit // 2:
-            return cut[: idx + 1].strip()
+        if idx > floor:
+            return cut[: idx + 1].strip() + " [...]"
     idx = cut.rfind(" ")
-    return (cut[:idx] if idx > limit // 2 else cut).strip()
+    return ((cut[:idx] if idx > floor else cut).strip()) + " [...]"
 
 
 def fetch_provision_hierarchy(refs: list[str]) -> list[dict]:
@@ -547,12 +595,30 @@ def render_kg_context(refs: list[str]) -> list[str]:
         except Exception:  # noqa: BLE001
             pass
 
+    # R325 (ported from R323) — a TOTAL ceiling on what the graph may inject.
+    # Enforced by dropping WHOLE trailing blocks, never by cutting one mid-way:
+    # a half-rendered block reads as complete. Blocks are ordered
+    # most-load-bearing first, so the tail is the right thing to lose.
+    #
+    # NOTE the interaction with the per-unit ceiling above: raising what one
+    # unit may contribute WITHOUT a total ceiling would let the provision block
+    # crowd out everything behind it — i.e. the new content would silently
+    # delete the older blocks. Both bounds have to exist together.
+    max_chars = _int_env("REGENOLD_KG_MAX_CHARS", _DEFAULT_MAX_CHARS, 1200, 60000)
+    dropped = 0
+    while parts and sum(len(p) for p in parts) > max_chars and len(parts) > 1:
+        parts.pop()
+        dropped += 1
+
     if parts:
         try:
             from app.integrations.regenold.reasoning_trace import (  # noqa: PLC0415
                 record_note,
             )
-            record_note(f"kg_context sections={len(parts)} refs={len(refs or [])}")
+            note = f"kg_context sections={len(parts)} refs={len(refs or [])}"
+            if dropped:
+                note += f" dropped_over_budget={dropped}"
+            record_note(note)
         except Exception:  # noqa: BLE001
             pass
     return parts
