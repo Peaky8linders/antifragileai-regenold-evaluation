@@ -3846,10 +3846,82 @@ _CROSS_INSTRUMENT_RE = re.compile(
 #
 # ``2024/1689`` still matches, so the self-reference exclusion below (which
 # lets a genuine AI Act mention through) is unaffected.
-_NUMBERED_REG_RE = re.compile(
-    r"\bof\s+regulation\s*\(e[uc]\)\s*(?:no\.?\s*)?(\d{1,4}/\d{2,4})",
+# R325 (ported from the RAG repo's R322) — the bare POSTPOSITIVE form:
+# "Article 35 GDPR", "Article 22 GDPR", "Article 9 GDPR". Every alternation in
+# ``_CROSS_INSTRUMENT_RE`` requires a leading ``of`` ("Article 35 OF THE
+# GDPR"), so the preposition-less shorthand that lawyers actually write slipped
+# through and was promoted onto the wire as an AI ACT article. Rare but always
+# a hard-rule-#4 legal fabrication when it fires, because the numbers collide
+# with unrelated provisions — GDPR Art. 35 (DPIA) becomes AI Act Art. 35
+# (notified-body identification numbers); GDPR Art. 22 (automated decision
+# making) becomes AI Act Art. 22 (authorised representatives).
+#
+# Anchored at ``^`` of the AHEAD window so the instrument must IMMEDIATELY
+# follow the mention (after an optional sub-point paren and comma). That
+# anchoring is what keeps "Article 10 of the AI Act requires..." allowed — its
+# ahead window starts " of the AI Act", which cannot match — and likewise
+# "Article 6 and the GDPR ...", where the AI Act article is the real referent.
+_FOREIGN_INSTRUMENT_AHEAD_RE = re.compile(
+    r"^\s*(?:\([^)]*\)\s*)*(?:,\s*)?"
+    r"(?:\bgdpr\b"
+    r"|\bcharter\b"
+    r"|\bmdr\b|\bivdr\b|\bnis\s*2\b|\bcra\b|\bdsa\b|\bdma\b|\bpld\b"
+    r"|\btfeu\b|\bteu\b)",
     re.IGNORECASE,
 )
+
+# R325 (ported from the RAG repo's R324) — ONE definition of "a numbered EU
+# Regulation id", shared by the AHEAD guard below and the BEHIND guard further
+# down. R323 widened only the ahead copy, so the prefix form ("Regulation (EU)
+# No 1025/2012, Article 10") kept leaking: two regexes encoding one concept,
+# one updated. A single constant is what stops the next widening from being
+# half-applied.
+#
+# The ``\(e[uc]\)`` parenthetical is OPTIONAL — the AI Act's own prose writes
+# both "Regulation (EU) 2016/679" and the bare "Regulation 2016/679", and the
+# bare form was leaking Article 5 (prohibited practices) onto the wire.
+_REG_NUMBER_FRAGMENT = (
+    r"\bregulation\s*(?:\(e[uc]\)\s*)?(?:no\.?\s*)?(\d{1,4}/\d{2,4})"
+)
+
+_NUMBERED_REG_RE = re.compile(r"\bof\s+" + _REG_NUMBER_FRAGMENT, re.IGNORECASE)
+
+# R325 — where the AHEAD window ends.
+#
+# A flat 56-char window let any interposed clause push the qualifying
+# regulation past the boundary, so the citation leaked anyway. MEASURED:
+#
+#   "Article 10, second subparagraph, point (b), of Regulation (EU) No 1025/2012"
+#       -> shipped AI Act **Article 10**
+#
+# ⚠ Simply WIDENING the window is wrong, and the RAG repo measured it as such:
+# at a flat 120 chars, "Article 13 requires transparency for high-risk systems.
+# Article 35 of Regulation (EU) 2016/679 requires a DPIA." suppresses the
+# GENUINE Article 13, because the next sentence's foreign instrument falls
+# inside its window. Dropping a real citation is the R142.1 failure mode and
+# costs more than the leak.
+#
+# So the window is BOUNDED FIRST, THEN widened: it stops at the end of the
+# sentence, or at the next Article/Annex mention, whichever comes first. A
+# citation can only be attributed to an instrument named in its OWN clause.
+# ``[.!?]\s+[A-Z]`` rather than ``[.!?]\s`` so that "e.g." and the "No. 1025"
+# particle do not terminate the window early (both are followed by lowercase or
+# a digit), which would re-open the leak from the other side.
+_AHEAD_STOP_RE = re.compile(
+    r"[.!?]\s+[A-Z]|;\s|\b(?:article|art\.|annex)\s", re.IGNORECASE
+)
+_AHEAD_MAX_CHARS = 160
+
+
+def _ahead_window(prose: str, end: int) -> str:
+    """The text after a mention that may legitimately qualify it.
+
+    Bounded at the clause/sentence containing the mention — see
+    ``_AHEAD_STOP_RE`` for why an unbounded widening drops gold references.
+    """
+    seg = prose[end : end + _AHEAD_MAX_CHARS]
+    m = _AHEAD_STOP_RE.search(seg)
+    return seg[: m.start()] if m else seg
 
 # R321 — the PREFIX form of a foreign-instrument citation.
 #
@@ -3878,10 +3950,22 @@ _FOREIGN_INSTRUMENT_BEHIND_RE = re.compile(
     r"|\bmdr\b|\bivdr\b|\bnis\s*2\b|\bcra\b|\bdsa\b|\bdma\b|\bpld\b"
     r"|\btfeu\b|\bteu\b"
     r"|\bdirective\b"
-    r"|\bregulation\s*\(e[uc]\)\s*(?!2024/1689)\d{4}/\d+"
-    r")[\s,‑-]*$",
+    # R325 — was ``\(e[uc]\)\s*(?!2024/1689)\d{4}/\d+``, i.e. the pre-R323 form,
+    # so every shape the AHEAD guard learned about still leaked here. Now shares
+    # ``_REG_NUMBER_FRAGMENT`` with that guard. The AI Act self-reference
+    # exclusion is kept as a lookahead over the whole fragment.
+    r"|(?!regulation\s*(?:\(e[uc]\)\s*)?(?:no\.?\s*)?2024/1689)" + _REG_NUMBER_FRAGMENT
+    + r")[\s,‑-]*$",
     re.IGNORECASE,
 )
+# R325 — the behind window must fit the longest prefix form plus its separator:
+# "Regulation (EU) No 1025/2012, " is 30 chars, so the pre-R325 24-char window
+# made the numbered-regulation alternation UNREACHABLE at any numbering — it had
+# never fired. Widening is safe because the pattern is anchored at ``$`` with
+# only ``[\s,‑-]`` allowed between the instrument and the mention: a sentence
+# that merely mentions the GDPR earlier cannot match, since a full stop is not
+# in that separator class.
+_BEHIND_WINDOW_CHARS = 48
 # R311 — the negation cue need not be ADJACENT to the mention.
 #
 # The pre-R311 form was ``(?:\bnot|...)\s*$`` over a 24-char lookbehind, i.e.
@@ -3919,13 +4003,18 @@ def _prose_mention_is_real_citation(prose: str, start: int, end: int) -> bool:
 
     ``start`` / ``end`` bracket the matched mention in ``prose``.
     """
-    ahead = prose[end : end + 56]
+    ahead = _ahead_window(prose, end)
     if _CROSS_INSTRUMENT_RE.search(ahead):
         return False  # GDPR / Directive / Treaty / Charter / Decision
+    # R325 — the same reference written WITHOUT the ``of`` ("Article 35 GDPR").
+    if _FOREIGN_INSTRUMENT_AHEAD_RE.search(ahead):
+        return False
     # R321 — the PREFIX form: "GDPR Art. 5", "EU Charter Art. 21", "MDR
     # Article 10". Measured: without this, GDPR Article 5 was promoted onto
     # the wire as AI Act Article 5. See _FOREIGN_INSTRUMENT_BEHIND_RE.
-    if _FOREIGN_INSTRUMENT_BEHIND_RE.search(prose[max(0, start - 24) : start]):
+    if _FOREIGN_INSTRUMENT_BEHIND_RE.search(
+        prose[max(0, start - _BEHIND_WINDOW_CHARS) : start]
+    ):
         return False
     m_reg = _NUMBERED_REG_RE.search(ahead)
     if m_reg and m_reg.group(1) != "2024/1689":
@@ -8840,9 +8929,27 @@ def regenold_eu_ai_act_ask(
 
             from app.data.article_existence import ARTICLE_EXISTENCE
 
-            # Extract cited articles/annexes in polished prose
+            # Extract cited articles/annexes in polished prose.
+            #
+            # R325 (ported from the RAG repo's R324-C1) — this pass MUST apply
+            # the same foreign-instrument guard as ``_add_prose_named_refs``.
+            # It is the SECOND prose-to-citation extraction path in this route
+            # and it was entirely unguarded: a bare regex, then append anything
+            # resolving in ARTICLE_EXISTENCE. So every foreign citation the
+            # guard correctly dropped upstream was silently re-added here —
+            # which is why widening the guard's regex measures byte-identical
+            # on the wire. The guard fix was real; this path undid it.
+            #
+            # MEASURED here before this call: "Article 30 of Regulation (EC)
+            # No 765/2008" shipped AI Act **Article 30** (notifying procedure).
+            # Hard rule #4, in a wire-legal shape that the hard-rule-#5
+            # ARTICLE_EXISTENCE lint cannot catch, because Article 30 exists.
             prose_citations = set()
             for match in re.finditer(r"\b(Article|Art\.|Annex)\s+([IVXLCDM\d]+)\b", answer_text, re.IGNORECASE):
+                if not _prose_mention_is_real_citation(
+                    answer_text, match.start(), match.end()
+                ):
+                    continue
                 prefix = match.group(1).lower()
                 num = match.group(2).strip()
                 if prefix.startswith("art"):
