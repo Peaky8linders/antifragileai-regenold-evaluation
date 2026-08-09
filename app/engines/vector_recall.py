@@ -1,12 +1,13 @@
-"""Route-safe additive recall module using the local sentence-level embedding index.
+"""Route-safe additive recall module using Neo4j vector indexes and local SVD embedding index.
 
-This module surfaces article candidates that BM25 may miss by leveraging
-the sentence-level TF-IDF+SVD embedding index. It is purely additive and
-does not depend on Neo4j or external services.
+This module surfaces article/annex candidates that BM25 may miss by leveraging:
+1. Neo4j native vector indexes (`v_article_embedding`, `v_annex_embedding`) when active.
+2. Local sentence-level TF-IDF+SVD embedding index as a fail-soft fallback.
 
+It is purely additive and route-safe (returns `[]` on any exception).
 It respects two environment variables (read fresh per call):
 - REGENOLD_GRAPH_VECTOR_RECALL: If "1", activates the recall path. Default OFF.
-- REGENOLD_VECTOR_MIN_SIM: The similarity floor for candidates. Default "0.72".
+- REGENOLD_VECTOR_MIN_SIM: The similarity floor for candidates. Default "0.35".
 """
 from __future__ import annotations
 
@@ -29,12 +30,59 @@ def is_enabled() -> bool:
         return False
 
 
+def _query_neo4j_vector_index(question: str, top_k: int, min_sim: float) -> list[tuple[str, float]]:
+    """Query Neo4j native vector indexes if driver is connected. Returns list of (ref, score)."""
+    try:
+        from app.graph.client import get_graph_client  # noqa: PLC0415
+        client = get_graph_client()
+        if not getattr(client, "enabled", False):
+            return []
+
+        from app.engines.embeddings_index import _embed_query  # noqa: PLC0415
+        from app.engines.kg_context import _bounded_execute_read  # noqa: PLC0415
+
+        vec = _embed_query(question)
+        if vec is None:
+            return []
+
+        emb_list = [float(x) for x in vec]
+        hits: list[tuple[str, float]] = []
+
+        cypher_art = """
+        CALL db.index.vector.queryNodes('v_article_embedding', $k, $emb)
+        YIELD node, score
+        RETURN coalesce(node.strict_citation, node.id) AS ref, score
+        """
+        art_res = _bounded_execute_read(cypher_art, {"k": top_k * 2, "emb": emb_list})
+        for r in art_res or []:
+            ref = str(r.get("ref") or "").strip()
+            score = float(r.get("score") or 0.0)
+            if ref and score >= min_sim:
+                hits.append((ref, score))
+
+        cypher_annex = """
+        CALL db.index.vector.queryNodes('v_annex_embedding', $k, $emb)
+        YIELD node, score
+        RETURN coalesce(node.strict_citation, node.id) AS ref, score
+        """
+        annex_res = _bounded_execute_read(cypher_annex, {"k": top_k * 2, "emb": emb_list})
+        for r in annex_res or []:
+            ref = str(r.get("ref") or "").strip()
+            score = float(r.get("score") or 0.0)
+            if ref and score >= min_sim:
+                hits.append((ref, score))
+
+        return hits
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("vector_recall: neo4j vector query skipped/failed: %s", exc)
+        return []
+
+
 def recall_articles(question: str, *, top_k: int = 3) -> list[str]:
     """Return up to `top_k` unique article refs matching the question.
 
-    Queries the local sentence-level embeddings index and collapses
-    the hits to unique article references by taking the maximum
-    similarity score per article.
+    Queries Neo4j vector indexes first if active; falls back to the local sentence-level
+    embeddings index.
 
     Returns `[]` on every error path (route-safe). Filters hits by the
     `REGENOLD_VECTOR_MIN_SIM` threshold and verifies the article exists
@@ -57,30 +105,33 @@ def recall_articles(question: str, *, top_k: int = 3) -> list[str]:
         logger.warning("vector_recall: failed to parse REGENOLD_VECTOR_MIN_SIM: %s", exc)
         min_sim = 0.35
 
-    try:
-        hits = embeddings_index.query(question, top_k=50, threshold=min_sim)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("vector_recall: embeddings_index.query failed: %s", exc)
-        return []
+    article_scores: dict[str, float] = {}
+
+    # 1. Primary path: Try Neo4j native vector search
+    n4j_hits = _query_neo4j_vector_index(question, top_k=top_k * 2, min_sim=min_sim)
+    for ref, score in n4j_hits:
+        if ref not in article_scores or score > article_scores[ref]:
+            article_scores[ref] = score
+
+    # 2. Fallback path: If Neo4j yielded no hits, query local embeddings index
+    if not article_scores:
+        try:
+            hits = embeddings_index.query(question, top_k=50, threshold=min_sim)
+            for hit in hits:
+                ref = hit.article_ref
+                if ref not in article_scores:
+                    article_scores[ref] = hit.similarity
+                else:
+                    article_scores[ref] = max(article_scores[ref], hit.similarity)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("vector_recall: embeddings_index.query failed: %s", exc)
+            return []
 
     try:
-        article_scores = {}
-        for hit in hits:
-            ref = hit.article_ref
-            if ref not in article_scores:
-                article_scores[ref] = hit.similarity
-            else:
-                article_scores[ref] = max(article_scores[ref], hit.similarity)
-
         sorted_refs = sorted(article_scores.keys(), key=lambda r: article_scores[r], reverse=True)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("vector_recall: failed to process hits: %s", exc)
-        return []
-
-    try:
         valid_refs = set(article_existence.ARTICLE_EXISTENCE)
     except Exception as exc:  # noqa: BLE001
-        logger.warning("vector_recall: failed to access ARTICLE_EXISTENCE: %s", exc)
+        logger.warning("vector_recall: failed to process hits: %s", exc)
         return []
 
     results = []
