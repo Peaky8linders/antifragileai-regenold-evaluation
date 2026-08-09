@@ -281,7 +281,30 @@ seeder succeeds, `/healthz/graph` still reports ok, answers just get worse.
   implementations disagreed on 30% of rows.
 * **Chapter-III tier exclusivity** — clean on five gates, then dropped **67
   gold across 40 scenarios** on the full 476.
-* Lesson: **work the RANKER, not the trimmer.**
+* **A cheap LEXICAL re-ranker (R325).** "Work the ranker, not the trimmer" was
+  the standing lesson; measured, it is also closed. AUC for separating CORRECT
+  from WRONG refs over the 273 predicted refs in the 100 graded rows:
+
+  | signal | AUC | | signal | AUC |
+  | --- | --- | --- | --- | --- |
+  | **rank** (engine's own order) | **0.703** | | described_chars | 0.613 |
+  | lex_ans (IDF coverage) | 0.641 | | q_kb_overlap | 0.608 |
+  | n_mentions | 0.625 | | is_subpoint | 0.554 |
+
+  **No combination beats `rank` alone** (all-features 0.696, rank+lex+desc
+  0.701) — the signals are correlated, not complementary. Same instrument that
+  killed neural NLI. Rank-1 is already **86%** right.
+* Lesson, updated: **selection is close to exhausted.** The engine already
+  orders well and nothing cheap re-orders it better, so the remaining
+  over-citation gap must be attacked at **GENERATION** — retrieval and the
+  Stage-2 grounding block — not by another trimmer or ranker.
+* The ONE structural exception that survived: **parent-collapse** (drop a bare
+  head when its own sub-point is cited) — 9 wrong removed : 1 correct lost,
+  F1 +0.0177, 5 rows flip fail→pass, 0 flip pass→fail. Shipped
+  `REGENOLD_PARENT_COLLAPSE`, **default OFF**, because that 1 loss means it
+  does not satisfy hard rule #8 as written. Note it is a **provable no-op on
+  davidath** (`article_heads()` projection), so only `easyhard_ab` or the
+  grounded judge can gate it.
 
 **Retrieval / graph:**
 * **Graph-primary retrieval** — the blunt risk-tier dump buries the operative
@@ -396,6 +419,7 @@ Defaults are the CODE default, re-measured 2026-08-09.
 | `REGENOLD_REF_PARTITION` | **OFF** | it deleted gold references |
 | `REGENOLD_COMPLETENESS_VERIFIER` | **OFF** | it appended inverted law |
 | `REGENOLD_FINAL_REF_CLAMP` | **OFF** | R142.1 — lost the pairwise judge 11-0 |
+| `REGENOLD_PARENT_COLLAPSE` | **OFF** | R325 — drop a head when its own sub-point is cited. F1 +0.018 on the graded batch but loses 1 gold, so it awaits `easyhard_ab` |
 | `NEO4J_AUTO_SEED` | on unless `0` | **pin to 0 here** — hard rule #12 |
 
 Stage-2 models (`app/config.py`): parse `claude-sonnet-5`, Stage-2
@@ -469,17 +493,21 @@ attributed, not Omnibus — and `tests/test_kb_stubs_filled.py` pins it.
 
 ## Open, ranked
 
-1. **Over-citation** — the whole remaining frontier gap. Work the ranker, and
-   start with the two mechanisms that ADD tail references, both live, both
-   env-gated, both never measured: the **Component D grounding augmenter** and
-   **`_reemit_parents_for_subpoints`** (the judge's most common remark is
-   literally "over-citation of parent article alongside the specific governing
-   paragraph"). Do it **offline on recorded rows first** — zero generation
-   variance. Pattern: `evals/bench/ref_precision_sim.py`.
-2. **Fix the judge** before trusting any further answer number — the length
+1. **Run `--mode hard`.** It is **the graded turn** (the adversarial pushback;
+   67 of 111 hard rows carry it) and it has NEVER been run. Every optimisation
+   decision on the table is being made on the *easy* turn — that is the
+   instrument trap. Free, ~40-70 min. Do this before ranking anything else.
+2. **Gate the parent-collapse** with `easyhard_ab` (davidath cannot see it).
+   +0.018 F1 / +5 rows measured offline; one gold ref is the price.
+3. **Attack GENERATION, not selection.** R325 closed the ranker (above), so the
+   remaining ~90% of the over-citation gap is upstream: why does a 3-ref answer
+   name a wrong provision **53% of the time at rank 3**? The refs-per-row cliff
+   is the shape of it — 1 ref → 0.88 pass, 2 → 0.54, **3 → 0.05**, 4+ → 0.06,
+   with 41 of 100 rows sitting at exactly 3 (the QA budget). That is a
+   retrieval / grounding question.
+4. **Fix the judge** before trusting any further answer number — the length
    artefact above. `evals/judge/legal_v2.py` already implements the
    quote-or-retract rule that catches it.
-3. **Finish the measurement** — the remaining 10 easy rows, and `--mode hard`.
 4. **The Neo4j vector layer is unused** — 7 VECTOR indexes and ~1,490
    embeddings with zero consumers.
 5. **The kg_context change still owes its merge gate.** It is answer-affecting,
