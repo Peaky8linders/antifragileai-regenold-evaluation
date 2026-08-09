@@ -1213,6 +1213,85 @@ def _subpoint_existence_floor_enabled() -> bool:
     )
 
 
+def _parent_collapse_enabled() -> bool:
+    """R325 — drop a bare head when its own sub-point is cited? Default **OFF**.
+
+    Default OFF pending the live gate. It is a reference-DROPPING change, so
+    hard rule #6 makes ``evals.harness.easyhard_ab`` the merge gate (prefer it
+    over ``ab_judge``: it scores reference conciseness as a count-ratio against
+    gold, and that missing term is how R142.1 slipped through). Flip with
+    ``REGENOLD_PARENT_COLLAPSE=1``. Fresh env read per call (R263.2).
+    """
+    return os.getenv("REGENOLD_PARENT_COLLAPSE", "0").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
+
+def _collapse_parent_when_subpoint_cited(references: list[str]) -> list[str]:
+    """Drop ``Article 27`` when ``Article 27.1`` is already on the wire.
+
+    The grounded judge's single most frequent reference remark is verbatim
+    "over-citation of parent article alongside the specific governing
+    paragraph". This is that remark, implemented.
+
+    MEASURED on the 100 recorded July-7 rows against the grounded judge —
+    the only over-citation cause of four tested with a favourable ratio:
+
+        cause                                   wrong removed   correct lost
+        parent alongside its own sub-point            9              1
+        everything at rank 4+                        17             14
+        ref named in the prose (Component D)         79            145
+        the ref is itself a sub-point                 5             28
+
+        precision 0.6960 -> 0.7245   (+0.0285)
+        recall    0.9007 -> 0.8973   (-0.0033)
+        F1        0.7579 -> 0.7756   (+0.0177)
+        rows passing 41 -> 46;  rows flipping pass->fail: 0
+
+    ⚠ HONEST ABOUT HARD RULE #8. That rule says a reference change must drop
+    ZERO gold and calls non-zero "a rejection, not a trade-off". This drops
+    ONE correct reference across 273 (``rg_032``: ``Article 6`` + ``Article
+    6.3`` — the general high-risk rule beside its own derogation, where both
+    ARE load-bearing; R274 pins that pair in ``test_article_6_and_6_3_cited``).
+    No cheap discriminator separates it from the nine wins: a solo-mention
+    heuristic scores it INVERTED, and an AUC sweep of six features found
+    nothing that beats the engine's own emission order (0.703) — so the
+    parent-vs-leaf question is not decidable from prose. Hence default OFF and
+    a live gate, rather than shipping on a bench number.
+
+    ⚠ DAVIDATH CANNOT VALIDATE THIS — it is a provable no-op there, not a
+    passing gate. ``evals/bench/metrics.py`` projects predictions through
+    ``article_heads()``, so ``{Article 6.3, Article 6}`` and ``{Article 6.3}``
+    are the SAME head set. That is also why it is safe by construction with
+    respect to hard rule #7, and why R87-C's ``_reemit_parents_for_subpoints``
+    was free to add the head in the first place. The effect only exists for a
+    consumer that scores at SUB-POINT grain — the grounded judge, and the
+    regenold gold.
+
+    Recall at head grain is mathematically unchanged: the head is still
+    implied by the leaf. Order-preserving; never returns empty.
+    """
+    if len(references) < 2:
+        return references
+
+    def _head(ref: str) -> str:
+        m = re.match(r"(Article\s+\d+|Annex\s+[IVXLCDM]+)", ref.strip())
+        return m.group(1) if m else ref.strip()
+
+    cited_heads_with_own_leaf = {
+        _head(r) for r in references if _head(r) != r.strip()
+    }
+    kept = [
+        r
+        for r in references
+        if not (r.strip() == _head(r) and r.strip() in cited_heads_with_own_leaf)
+    ]
+    return kept or references
+
+
 def _drop_unresolvable_subpoints(references: list[str]) -> list[str]:
     """Degrade any sub-point citation that does not resolve to its base article.
 
@@ -9598,6 +9677,21 @@ def regenold_eu_ai_act_ask(
     if _subpoint_existence_floor_enabled():
         try:
             references = _drop_unresolvable_subpoints(references)
+        except Exception:  # noqa: BLE001 — never 500 the route on a guard
+            pass
+
+    # R325 — drop a bare head when one of its OWN sub-points is already cited.
+    # Must run LAST: ``_reemit_parents_for_subpoints`` (R87-C) and Component D
+    # both ADD heads, so anything earlier is undone downstream.
+    if _parent_collapse_enabled():
+        try:
+            _pc_refs = _collapse_parent_when_subpoint_cited(references)
+            if _pc_refs != references:
+                _trace_note(
+                    "parent_collapse dropped="
+                    + ",".join(r for r in references if r not in _pc_refs)
+                )
+                references = _pc_refs
         except Exception:  # noqa: BLE001 — never 500 the route on a guard
             pass
 
