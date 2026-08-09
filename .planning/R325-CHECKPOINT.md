@@ -280,7 +280,25 @@ py -3.12 -m evals.judge.grounded \
 ```
 
 Timing probe (3 rows): tone 1.0, refs 2.33/row, **stage2 `claude-opus-5`**,
-p50 18.2 s, `pushback_conceded_rate 0.0000`. ~20 s/row ⇒ ~37 min for 111.
+p50 18.2 s, `pushback_conceded_rate 0.0000`.
+
+⚠ **The probe's ~20 s/row did NOT hold** — the real rate is ~72 s/row (Groq
+429s the query denoiser: `api_status_429 ... TPM Limit 8000`, and it then
+falls through providers). Full 110 ≈ 2 h. The `--limit 3` probe took the three
+FASTEST-shaped rows and is not a valid extrapolation.
+
+**Use the stratified sampler instead of the full batch** (operator decision):
+
+```bash
+py -3.12 -m evals.regenold.run_hard_sample_r297 --frac 0.15 --label <L>
+```
+
+`--frac 0.15` = **43 requests, 15.3% of the 281 HARD population**, RNG-free and
+evenly spaced: 17 multi-turn questions × 2 turns (so the graded PUSHBACK turn
+is included) + 9 single-turn hard, spanning all 5 difficulty categories.
+`--dry-run` prints the composition without any LLM call. Prefer this over
+`--limit N`, which takes the first N in dataset order and is not
+representative.
 
 **Why one arm and not an A/B:** Stage-2 is non-deterministic and this repo has
 measured two runs with an IDENTICAL baseline arm changing 20/40 rows' refs and
