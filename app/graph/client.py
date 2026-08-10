@@ -207,6 +207,48 @@ class GraphClient:
         logger.warning("Neo4j execute_read exhausted retries: %s", last_exc)
         return []
 
+    def execute_read_strict(
+        self, query: str, parameters: dict | None = None
+    ) -> list[dict]:
+        """Execute a read query while preserving failure versus no rows.
+
+        Retrieval circuit breakers and write-safety checks must distinguish a
+        valid empty result from an authentication, connectivity, index, or
+        Cypher failure.  The legacy :meth:`execute_read` remains fail-soft for
+        callers that intentionally collapse both states to ``[]``; this strict
+        variant retries the same transient failures and then raises.
+        """
+        if self._driver is None:
+            raise RuntimeError("Neo4j client is disabled")
+
+        unavailable = self._service_unavailable_class()
+        attempts = max(1, self._settings.max_retries + 1)
+
+        for attempt in range(attempts):
+            try:
+                return self._run_read(query, parameters)
+            except Exception as exc:  # noqa: BLE001
+                if (
+                    unavailable is not None
+                    and isinstance(exc, unavailable)
+                    and attempt < attempts - 1
+                ):
+                    backoff = self._settings.retry_backoff_seconds * (attempt + 1)
+                    logger.info(
+                        "Neo4j strict read transient failure (attempt %d/%d), "
+                        "backing off %.2fs: %s",
+                        attempt + 1,
+                        attempts,
+                        backoff,
+                        exc,
+                    )
+                    time.sleep(backoff)
+                    continue
+                logger.warning("Neo4j execute_read_strict failed: %s", exc)
+                raise
+
+        raise RuntimeError("Neo4j strict read exhausted retries")
+
     def execute_write(self, query: str, parameters: dict | None = None) -> list[dict]:
         """Execute a write Cypher query within a managed transaction."""
         if self._driver is None:

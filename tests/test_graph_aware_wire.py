@@ -61,17 +61,10 @@ def _reset_graph_aware_env(monkeypatch):
     guarantees a clean state regardless of what the surrounding shell
     happened to export.
 
-    ``REGENOLD_FALLBACK_WARNING=0`` is ISOLATION, not suppression of a real
-    defect: under ``provider=cli`` the engine legitimately reports degraded
-    mode, which adds the optional ``warning`` key and would break this file's
-    exact key-set assertions — assertions that are about the GRAPH-AWARE wire,
-    not about degraded-mode signalling. The ``warning`` field has its own
-    dedicated contract tests in ``tests/test_regenold_fallback_warning.py``
-    (including its default-ON behaviour), so the contract is still pinned;
-    turning it off here just keeps this file testing one thing.
+    Fallback responses now share the exact competition schema, so no separate
+    degraded-wire isolation flag is necessary.
     """
     monkeypatch.delenv("REGENOLD_GRAPH_AWARE", raising=False)
-    monkeypatch.setenv("REGENOLD_FALLBACK_WARNING", "0")
 
 
 def _post(question: str, c: TestClient) -> dict:

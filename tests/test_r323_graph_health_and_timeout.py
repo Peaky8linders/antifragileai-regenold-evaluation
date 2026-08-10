@@ -25,6 +25,8 @@ raising to 750 cannot affect a warm request.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 from app.graph.client import GraphClient
@@ -93,6 +95,39 @@ def test_disabled_client_is_reported_disabled_not_unhealthy() -> None:
             return False
 
     assert _Off([]).health_check()["status"] == "disabled"
+
+
+def _strict_client(monkeypatch: pytest.MonkeyPatch, outcome: object) -> GraphClient:
+    client = GraphClient.__new__(GraphClient)
+    client._driver = object()
+    client._settings = SimpleNamespace(max_retries=0, retry_backoff_seconds=0)
+    monkeypatch.setattr(client, "_service_unavailable_class", lambda: None)
+
+    def _run_read(query: str, parameters: dict | None) -> list[dict]:
+        if isinstance(outcome, BaseException):
+            raise outcome
+        return list(outcome)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(client, "_run_read", _run_read)
+    return client
+
+
+def test_strict_read_preserves_valid_empty_result(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = _strict_client(monkeypatch, [])
+    assert client.execute_read_strict("MATCH (n) RETURN n") == []
+
+
+def test_strict_read_propagates_driver_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = _strict_client(monkeypatch, RuntimeError("auth failed"))
+    with pytest.raises(RuntimeError, match="auth failed"):
+        client.execute_read_strict("RETURN 1")
+
+
+def test_strict_read_rejects_disabled_client() -> None:
+    client = GraphClient.__new__(GraphClient)
+    client._driver = None
+    with pytest.raises(RuntimeError, match="disabled"):
+        client.execute_read_strict("RETURN 1")
 
 
 # ── the budget ──────────────────────────────────────────────────────────────

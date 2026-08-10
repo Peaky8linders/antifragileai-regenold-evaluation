@@ -74,6 +74,90 @@ class TestReferenceCorrectness:
         assert metrics.reference_correctness_loose([], 5) == 0.0
         assert metrics.reference_correctness_strict([], 5) == 0.0
 
+    def test_exact_coord_variant_scores_full_coordinates_not_only_heads(self):
+        """R327 — the full-coordinate formula lives under its OWN name.
+
+        Gold shape decides which formula is valid. This one is correct where gold
+        carries sub-point grain (easyhard ``expected_refs``); against davidath's
+        head-level gold it would score a MORE precise citation as 0.0, so the
+        CANONICAL axis name stays bound to the head-level formula and keeps the
+        authoritative CLAUDE.md baseline reproducible.
+        """
+        assert metrics.reference_correctness_strict_exact_coord(
+            ["Article 3.999"], ["Article 3.1"]
+        ) == 0.0
+        assert metrics.reference_correctness_strict_head_f1_proxy(
+            ["Article 3.999"], ["Article 3.1"]
+        ) == 1.0
+
+    def test_canonical_strict_axis_stays_head_level_for_comparability(self):
+        assert metrics.reference_correctness_strict(
+            ["Article 3.999"], ["Article 3.1"]
+        ) == metrics.reference_correctness_strict_head_f1_proxy(
+            ["Article 3.999"], ["Article 3.1"]
+        )
+
+    def test_strict_penalises_duplicates_invalids_and_parent_leaf(self):
+        clean = metrics.reference_correctness_strict(
+            ["Article 50.4"], ["Article 50.4"]
+        )
+        noisy = metrics.reference_correctness_strict(
+            ["Article 50.4", "Article 50.4", "Article 50", "Article 999"],
+            ["Article 50.4"],
+        )
+        diag = metrics.canonical_reference_diagnostics(
+            ["Article 50.4", "Article 50.4", "Article 50", "Article 999"]
+        )
+        assert clean == 1.0
+        assert noisy < clean
+        assert diag["duplicate_count"] == 1
+        assert diag["invalid_count"] == 1
+        assert diag["parent_leaf_pair_count"] == 1
+
+    def test_invalid_only_prediction_cannot_perfect_no_gold(self):
+        assert metrics.reference_correctness_strict(["Article 999"], []) == 0.0
+        assert metrics.reference_conciseness(["Article 999"], []) == 0.0
+
+
+class TestNegationDiagnostics:
+    def test_polarity_reversal_is_reported(self):
+        d = metrics.negation_criterion_diagnostics(
+            "Providers must keep the logs.",
+            "Providers must not keep the logs.",
+        )
+        assert d["checked"] == 1
+        assert d["mismatch_count"] == 1
+
+    def test_negated_lexical_prohibition_reverses_holding(self):
+        pred = "The system is prohibited."
+        gold = "The system is not prohibited."
+        d = metrics.negation_criterion_diagnostics(pred, gold)
+        assert d["mismatch_count"] == 1
+        assert metrics.answer_correctness_strict_token_overlap_proxy(pred, gold) == 1.0
+        # R327 — the polarity factor is a DIAGNOSTIC, not a primary-axis
+        # multiplier. Measured, it zeroes all four answer axes on 142 of 476 rows
+        # whose holding is in fact correct (63 percent false positives), chiefly
+        # via "without" in "without prejudice" and by parity-cancelling negations
+        # across a whole answer. Multiplying the canonical axes by it both broke
+        # the CLAUDE.md baseline and understated correctness.
+        assert metrics.answer_correctness_strict_polarity_adj(pred, gold) == 0.0
+        assert metrics.answer_correctness_loose_polarity_adj(pred, gold) == 0.0
+        assert metrics.answer_correctness_strict(pred, gold) == 1.0
+
+    def test_score_row_preserves_token_only_proxy_with_corrected_primary(self):
+        score = metrics.score_row(
+            pred_answer="The system is prohibited.",
+            pred_refs=["Article 5"],
+            gold_answer="The system is not prohibited.",
+            gold_articles=5,
+            latency_ms=1.0,
+        ).to_dict()
+        # The canonical axis is polarity-blind (comparability); the mismatch is
+        # still surfaced as a diagnostic so the polarity signal is not lost.
+        assert score["ans_correctness_strict"] == 1.0
+        assert score["ans_correctness_strict_token_overlap_proxy"] == 1.0
+        assert score["criterion_negation_mismatch_count"] == 1
+
 
 class TestRegulatoryTone:
     def test_clean_regulator_voice_scores_high(self):

@@ -1,4 +1,8 @@
-"""Per-rubric scoring functions for the Regenold competition.
+"""Deterministic local proxy scorers for the Regenold competition.
+
+The competition publishes the axis names and output grammar, but not the
+numeric evaluator formulas. Nothing in this module is an official formula;
+``METRIC_PROVENANCE`` is persisted so downstream reports retain that fact.
 
 The 2026 competition rubric scores 8 axes (page 3 of the rules deck):
 
@@ -27,7 +31,67 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Iterable
+from typing import Any, Iterable
+
+
+METRICS_VERSION = "r327-canonical-historical-plus-diagnostics"
+
+# The competition publishes axis names and the output contract, but not its
+# numeric formulas. Persist this marker so local proxy results cannot be
+# mistaken for official evaluator scores.
+METRIC_PROVENANCE: dict[str, Any] = {
+    "metrics_version": METRICS_VERSION,
+    "formula_authority": "local_reproducible_proxy; official_numeric_formulas_undisclosed",
+    # R327 — the CANONICAL axis names carry the HISTORICAL formulas so the
+    # authoritative CLAUDE.md baseline stays reproducible and every merge gate
+    # stays comparable. The polarity-adjusted and full-coordinate formulas are
+    # exposed under their own names as DIAGNOSTICS only.
+    "comparability": (
+        "canonical axes == historical formulas; new formulas live under "
+        "*_polarity_adj / *_exact_coord and are diagnostics, not the baseline"
+    ),
+    "ans_correctness_loose": "token_jaccard_proxy",
+    "ans_correctness_strict": "gold_token_recall_proxy",
+    "ans_correctness_precision": "pred_token_precision_proxy",
+    "ans_correctness_f1": "token_f1_proxy",
+    "diagnostic_answer_fields": {
+        "answer_correctness_loose_polarity_adj": "jaccard * holding-polarity factor",
+        "answer_correctness_strict_polarity_adj": "recall * holding-polarity factor",
+        "answer_correctness_precision_polarity_adj": "precision * polarity factor",
+        "answer_correctness_f1_polarity_adj": "F1 * holding-polarity factor",
+        "_polarity_factor_caveat": (
+            "measured 63 percent false-positive: zeroes 142/476 rows whose "
+            "holding is correct. Never multiply a primary axis by it."
+        ),
+    },
+    "legacy_answer_fields": {
+        "ans_correctness_loose_token_overlap_proxy": "polarity_blind token Jaccard",
+        "ans_correctness_strict_token_overlap_proxy": "polarity_blind gold-token recall",
+        "ans_correctness_precision_token_overlap_proxy": "polarity_blind pred-token precision",
+        "ans_correctness_f1_token_overlap_proxy": "polarity_blind token F1",
+        "ans_correctness_loose_legacy": "pre-R82 polarity-blind token Jaccard",
+        "ans_correctness_strict_legacy": "pre-R82 polarity-blind gold-token recall",
+    },
+    "ref_correctness_loose": "article_or_annex_head_recall_proxy",
+    "ref_correctness_strict": "article_or_annex_head_f1_proxy",
+    "ref_conciseness": "quadratic_head_count_ratio_proxy",
+    "diagnostic_reference_fields": {
+        "reference_correctness_strict_exact_coord": (
+            "validated_full_coordinate_f1; invalids/duplicates/parent-leaf pairs "
+            "penalised. Only meaningful where gold carries sub-point grain — "
+            "against head-level davidath gold it scores a MORE precise "
+            "citation as 0.0."
+        ),
+        "reference_conciseness_exact_coord": (
+            "quadratic_count_ratio_over_all_proposed_entries; parent_leaf_pairs_penalized"
+        ),
+    },
+    "legacy_reference_fields": {
+        "ref_correctness_loose_head_recall_proxy": "historical loose formula",
+        "ref_correctness_strict_head_f1_proxy": "historical strict formula",
+        "ref_conciseness_head_count_proxy": "historical conciseness formula",
+    },
+}
 
 
 # ── Tokenisation ─────────────────────────────────────────────────────────
@@ -127,10 +191,73 @@ def article_heads(refs: Iterable[str]) -> set[str]:
     return out
 
 
+def _canonical_ref(ref: Any, *, predicted: bool) -> str | None:
+    """Return a real, canonical full EU AI Act coordinate or ``None``.
+
+    Predicted references must already obey the public wire grammar. Gold may
+    use the repository's internal parenthesised representation. A made-up leaf
+    is invalid even when its parent provision exists.
+    """
+    if not isinstance(ref, str) or not ref.strip():
+        return None
+    try:
+        from app.data.provision_text import get_provision_text, provision_exists
+        from app.integrations.regenold import refs as central_refs
+
+        raw = ref.strip()
+        if predicted and not (
+            central_refs.USER_FACING_ARTICLE_RE.fullmatch(raw)
+            or central_refs.USER_FACING_ANNEX_RE.fullmatch(raw)
+        ):
+            return None
+        canonical = central_refs.normalise(raw)
+        if not provision_exists(canonical) or get_provision_text(canonical) is None:
+            return None
+        return canonical
+    except (TypeError, ValueError):
+        return None
+
+
+def canonical_reference_diagnostics(pred_refs: Iterable[Any] | None) -> dict[str, Any]:
+    """Validate proposed references and expose every strict-score penalty."""
+    raw = list(pred_refs or [])
+    valid: list[str] = []
+    invalid: list[str] = []
+    for ref in raw:
+        canonical = _canonical_ref(ref, predicted=True)
+        if canonical is None:
+            invalid.append(str(ref))
+        else:
+            valid.append(canonical)
+    seen: set[str] = set()
+    duplicates: list[str] = []
+    for ref in valid:
+        if ref in seen:
+            duplicates.append(ref)
+        seen.add(ref)
+    unique = sorted(seen)
+    parent_leaf_pairs = [
+        [left, right]
+        for i, left in enumerate(unique)
+        for right in unique[i + 1 :]
+        if right.startswith(left + ".") or left.startswith(right + ".")
+    ]
+    return {
+        "raw_count": len(raw),
+        "canonical_refs": unique,
+        "invalid_refs": invalid,
+        "invalid_count": len(invalid),
+        "duplicate_refs": duplicates,
+        "duplicate_count": len(duplicates),
+        "parent_leaf_pairs": parent_leaf_pairs,
+        "parent_leaf_pair_count": len(parent_leaf_pairs),
+    }
+
+
 # ── 1+2: Answer correctness ──────────────────────────────────────────────
 
 
-def answer_correctness_loose(pred: str, gold: str) -> float:
+def answer_correctness_loose_token_overlap_proxy(pred: str, gold: str) -> float:
     """Token-Jaccard between predicted and gold answer.
 
     Returns 0.0–1.0. Robust to phrasing differences as long as the
@@ -141,10 +268,8 @@ def answer_correctness_loose(pred: str, gold: str) -> float:
     *stricter* than ``answer_correctness_strict`` (= recall) on any
     row where |pred| > |gold|. The two-axis decomposition is:
     ``answer_correctness_precision`` (verbose-direction signal) +
-    ``answer_correctness_strict`` (recall). The competition rubric
-    pins both Loose=Jaccard and Strict=Recall as canonical axes;
-    don't change the formulas — use the new precision / F1 fields
-    (R85-A) to decompose where the gap comes from.
+    ``answer_correctness_strict_token_overlap_proxy`` (recall). These are
+    historical local formulas, not disclosed official evaluator formulas.
     """
     pt = _tokens(pred)
     gt = _tokens(gold)
@@ -157,7 +282,30 @@ def answer_correctness_loose(pred: str, gold: str) -> float:
     return overlap / union if union else 0.0
 
 
-def answer_correctness_strict(pred: str, gold: str) -> float:
+def answer_correctness_loose(pred: str, gold: str) -> float:
+    """Canonical token-Jaccard proxy (current versioned primary).
+
+    R327 - canonical axis names are bound to the HISTORICAL polarity-blind
+    formulas. The polarity factor was measured to zero all four answer axes on
+    142 of 476 rows whose holding is in fact correct (a 63 percent false-
+    positive rate), chiefly via "without" in "without prejudice" and by parity-
+    cancelling negations across a whole answer. Multiplying the primary axes by
+    it made the CLAUDE.md baseline unreproducible AND understated correctness.
+    The polarity-adjusted variant is retained as
+    answer_correctness_loose_polarity_adj, and the mismatch rate is already
+    reported as the criterion_negation_mismatch_rate diagnostic.
+    """
+    return answer_correctness_loose_token_overlap_proxy(pred, gold)
+
+
+def answer_correctness_loose_polarity_adj(pred: str, gold: str) -> float:
+    """Diagnostic: loose proxy scaled by the holding-polarity factor."""
+    return answer_correctness_loose_token_overlap_proxy(
+        pred, gold
+    ) * _polarity_score_factor(pred, gold)
+
+
+def answer_correctness_strict_token_overlap_proxy(pred: str, gold: str) -> float:
     """Fraction of gold-answer tokens present in the prediction.
 
     This is **token-recall** — one-sided, doesn't penalise extra
@@ -174,7 +322,7 @@ def answer_correctness_strict(pred: str, gold: str) -> float:
     return len(pt & gt) / len(gt)
 
 
-def answer_correctness_precision(pred: str, gold: str) -> float:
+def answer_correctness_precision_token_overlap_proxy(pred: str, gold: str) -> float:
     """Fraction of predicted-answer tokens present in the gold answer.
 
     Counterpart to :func:`answer_correctness_strict` (which is recall —
@@ -199,7 +347,30 @@ def answer_correctness_precision(pred: str, gold: str) -> float:
     return len(pt & gt) / len(pt)
 
 
-def answer_correctness_f1(pred: str, gold: str) -> float:
+def answer_correctness_precision(pred: str, gold: str) -> float:
+    """Canonical predicted-token precision proxy.
+
+    R327 - canonical axis names are bound to the HISTORICAL polarity-blind
+    formulas. The polarity factor was measured to zero all four answer axes on
+    142 of 476 rows whose holding is in fact correct (a 63 percent false-
+    positive rate), chiefly via "without" in "without prejudice" and by parity-
+    cancelling negations across a whole answer. Multiplying the primary axes by
+    it made the CLAUDE.md baseline unreproducible AND understated correctness.
+    The polarity-adjusted variant is retained as
+    answer_correctness_precision_polarity_adj, and the mismatch rate is already
+    reported as the criterion_negation_mismatch_rate diagnostic.
+    """
+    return answer_correctness_precision_token_overlap_proxy(pred, gold)
+
+
+def answer_correctness_precision_polarity_adj(pred: str, gold: str) -> float:
+    """Diagnostic: precision proxy scaled by the holding-polarity factor."""
+    return answer_correctness_precision_token_overlap_proxy(
+        pred, gold
+    ) * _polarity_score_factor(pred, gold)
+
+
+def answer_correctness_f1_token_overlap_proxy(pred: str, gold: str) -> float:
     """Symmetric F1 of predicted vs gold answer tokens.
 
     Standard NLP metric — ``2·P·R / (P+R)`` where P =
@@ -224,6 +395,29 @@ def answer_correctness_f1(pred: str, gold: str) -> float:
     p = overlap / len(pt)
     r = overlap / len(gt)
     return 2 * p * r / (p + r)
+
+
+def answer_correctness_f1(pred: str, gold: str) -> float:
+    """Canonical token F1 proxy.
+
+    R327 - canonical axis names are bound to the HISTORICAL polarity-blind
+    formulas. The polarity factor was measured to zero all four answer axes on
+    142 of 476 rows whose holding is in fact correct (a 63 percent false-
+    positive rate), chiefly via "without" in "without prejudice" and by parity-
+    cancelling negations across a whole answer. Multiplying the primary axes by
+    it made the CLAUDE.md baseline unreproducible AND understated correctness.
+    The polarity-adjusted variant is retained as
+    answer_correctness_f1_polarity_adj, and the mismatch rate is already
+    reported as the criterion_negation_mismatch_rate diagnostic.
+    """
+    return answer_correctness_f1_token_overlap_proxy(pred, gold)
+
+
+def answer_correctness_f1_polarity_adj(pred: str, gold: str) -> float:
+    """Diagnostic: f1 proxy scaled by the holding-polarity factor."""
+    return answer_correctness_f1_token_overlap_proxy(
+        pred, gold
+    ) * _polarity_score_factor(pred, gold)
 
 
 def pred_gold_token_ratio(pred: str, gold: str) -> float:
@@ -290,6 +484,136 @@ def answer_keyword_recall(
     return len(pt & gt) / len(gt)
 
 
+def answer_correctness_strict(pred: str, gold: str) -> float:
+    """Canonical gold-token recall proxy (current versioned primary).
+
+    R327 - canonical axis names are bound to the HISTORICAL polarity-blind
+    formulas. The polarity factor was measured to zero all four answer axes on
+    142 of 476 rows whose holding is in fact correct (a 63 percent false-
+    positive rate), chiefly via "without" in "without prejudice" and by parity-
+    cancelling negations across a whole answer. Multiplying the primary axes by
+    it made the CLAUDE.md baseline unreproducible AND understated correctness.
+    The polarity-adjusted variant is retained as
+    answer_correctness_strict_polarity_adj, and the mismatch rate is already
+    reported as the criterion_negation_mismatch_rate diagnostic.
+    """
+    return answer_correctness_strict_token_overlap_proxy(pred, gold)
+
+
+def answer_correctness_strict_polarity_adj(pred: str, gold: str) -> float:
+    """Diagnostic: strict proxy scaled by the holding-polarity factor."""
+    return answer_correctness_strict_token_overlap_proxy(
+        pred, gold
+    ) * _polarity_score_factor(pred, gold)
+
+
+_GRAMMATICAL_NEGATION_RE = re.compile(
+    r"\b(?:not|no|never|without|cannot|can't|doesn't|isn't|aren't|won't|"
+    r"mustn't|mayn't)\b",
+    re.I,
+)
+_LEXICAL_PROHIBITION_RE = re.compile(
+    r"\b(?:prohibit(?:ed|s|ion)?|forbid(?:den|s)?|bann(?:ed|ing)|exempt(?:ed|ion)?)\b",
+    re.I,
+)
+_LEXICAL_POSITIVE_MODAL_RE = re.compile(
+    r"\b(?:must|shall|may|required?|oblig(?:ed|ation)|permitted?|allowed?|"
+    r"applies?|applicable|need(?:s|ed)?(?:\s+to)?|has\s+to|have\s+to)\b",
+    re.I,
+)
+
+
+def _criterion_polarity(text: str) -> int:
+    """Resolve holding polarity with grammatical negation as an operator.
+
+    Lexical prohibition is negative (``prohibited``); an odd grammatical
+    negation reverses it (``not prohibited``). Positive modals work the same
+    way (``required`` vs ``not required``). Clauses mixing positive and
+    negative lexical holdings are left unclassified rather than guessed.
+    """
+    value = text or ""
+    lexical_negative = bool(_LEXICAL_PROHIBITION_RE.search(value))
+    lexical_positive = bool(_LEXICAL_POSITIVE_MODAL_RE.search(value))
+    grammatical_negations = len(_GRAMMATICAL_NEGATION_RE.findall(value))
+    if lexical_negative and lexical_positive:
+        return 0
+    if lexical_negative:
+        base = -1
+    elif lexical_positive:
+        base = 1
+    elif grammatical_negations:
+        # A bare negated classification (e.g. "is not high-risk") reverses
+        # the otherwise affirmative holding expressed by the clause.
+        base = 1
+    else:
+        return 0
+    return -base if grammatical_negations % 2 else base
+
+
+def negation_criterion_diagnostics(
+    pred: str, gold: str, criteria: list[str] | None = None
+) -> dict[str, Any]:
+    """Diagnose polarity reversals hidden by token-overlap answer proxies.
+
+    It matches each polar gold criterion to the predicted clause with greatest
+    content overlap and records positive/negative reversals. Current versioned
+    primary answer metrics use the resulting mismatch rate; explicit token-only
+    proxy fields remain available for longitudinal comparison.
+    """
+    raw_criteria = [*(criteria or []), *re.split(r"(?<=[.!?;])\s+|\n+", gold or "")]
+    gold_clauses = list(dict.fromkeys(
+        str(c).strip() for c in raw_criteria if str(c).strip()
+    ))
+    pred_clauses = [
+        c.strip() for c in re.split(r"(?<=[.!?;])\s+|\n+", pred or "") if c.strip()
+    ]
+    checked = matched = 0
+    mismatches: list[dict[str, Any]] = []
+    modal_tokens = {
+        "must", "shall", "may", "not", "no", "prohibit", "forbid", "ban",
+        "permit", "allow", "requir", "oblig", "apply", "applicable", "exempt",
+    }
+    for criterion in gold_clauses:
+        gold_polarity = _criterion_polarity(criterion)
+        if not gold_polarity:
+            continue
+        checked += 1
+        anchors = _tokens(criterion) - modal_tokens
+        candidates = [(len(anchors & _tokens(clause)), clause) for clause in pred_clauses]
+        if not candidates:
+            continue
+        overlap, best = max(candidates, key=lambda item: item[0])
+        if overlap <= 0:
+            continue
+        matched += 1
+        pred_polarity = _criterion_polarity(best)
+        if pred_polarity != gold_polarity:
+            mismatches.append(
+                {
+                    "criterion": criterion,
+                    "prediction_clause": best,
+                    "gold_polarity": gold_polarity,
+                    "pred_polarity": pred_polarity,
+                }
+            )
+    return {
+        "checked": checked,
+        "matched": matched,
+        "mismatch_count": len(mismatches),
+        "mismatch_rate": (len(mismatches) / matched) if matched else 0.0,
+        "mismatches": mismatches,
+    }
+
+
+def _polarity_score_factor(pred: str, gold: str) -> float:
+    """Multiplicative construct-validity factor for primary answer proxies."""
+    diag = negation_criterion_diagnostics(pred, gold)
+    matched = int(diag["matched"])
+    if matched <= 0:
+        return 1.0
+    return max(0.0, 1.0 - (int(diag["mismatch_count"]) / matched))
+
+
 # ── 3: Answer conciseness ────────────────────────────────────────────────
 
 
@@ -336,8 +660,30 @@ def _gold_ref_set(relevant_article: int | list[int] | list[str] | None) -> set[s
     return set()
 
 
+def _gold_exact_refs(relevant_article: int | list[int] | list[str] | None) -> set[str]:
+    """Canonical full-coordinate gold set, never projected to a parent."""
+    if relevant_article is None:
+        return set()
+    values: list[Any]
+    if isinstance(relevant_article, int):
+        values = [f"Article {relevant_article}"]
+    elif isinstance(relevant_article, list):
+        values = [
+            f"Article {int(value)}" if isinstance(value, int) else value
+            for value in relevant_article
+            if value is not None
+        ]
+    else:
+        return set()
+    return {
+        canonical
+        for value in values
+        if (canonical := _canonical_ref(value, predicted=False)) is not None
+    }
+
+
 def reference_correctness_loose(
-    pred_refs: list[str], gold_articles: int | list[int] | None
+    pred_refs: list[str], gold_articles: int | list[int] | list[str] | None
 ) -> float:
     """Recall of gold articles. 1.0 = every gold article is cited.
 
@@ -353,14 +699,17 @@ def reference_correctness_loose(
     return overlap / len(gold)
 
 
-def reference_correctness_strict(
-    pred_refs: list[str], gold_articles: int | list[int] | None
+def reference_correctness_loose_head_recall_proxy(
+    pred_refs: list[str], gold_articles: int | list[int] | list[str] | None
 ) -> float:
-    """F1 of predicted vs gold article set. 1.0 = exact set match.
+    """Explicit name for the backward-compatible loose proxy."""
+    return reference_correctness_loose(pred_refs, gold_articles)
 
-    Strict — over-citation reduces precision, under-citation reduces
-    recall. Combined into F1 so the score is symmetric to both errors.
-    """
+
+def reference_correctness_strict_head_f1_proxy(
+    pred_refs: list[str], gold_articles: int | list[int] | list[str] | None
+) -> float:
+    """Historical head-level F1 retained for longitudinal comparisons."""
     pred_heads = article_heads(pred_refs)
     gold = _gold_ref_set(gold_articles)
     if not gold and not pred_heads:
@@ -375,21 +724,81 @@ def reference_correctness_strict(
     return 2 * precision * recall / (precision + recall)
 
 
+def reference_correctness_strict(
+    pred_refs: list[str], gold_articles: int | list[int] | list[str] | None
+) -> float:
+    """F1 of predicted vs gold article set. 1.0 = exact set match.
+
+    Strict — over-citation reduces precision, under-citation reduces
+    recall. Combined into F1 so the score is symmetric to both errors.
+
+    R327 — THE CANONICAL AXIS NAME IS BOUND TO THE HISTORICAL FORMULA.
+
+    An uncommitted pass redefined this name in place to score full canonical
+    coordinates. That silently invalidated the authoritative baseline in
+    CLAUDE.md ("Grade every run against THIS block") and the ``easyhard_ab``
+    merge gate — in the SAME change as the reference behaviour those gates exist
+    to judge. It also scores a MORE precise citation as 0.0 against davidath's
+    head-level gold (``Article 5.1.f`` vs gold ``Article 5``).
+
+    The new formula is kept, under its own name, as
+    :func:`reference_correctness_strict_exact_coord`.
+    """
+    return reference_correctness_strict_head_f1_proxy(pred_refs, gold_articles)
+
+
+def reference_correctness_strict_exact_coord(
+    pred_refs: list[str], gold_articles: int | list[int] | list[str] | None
+) -> float:
+    """Full-coordinate F1: invalid, duplicate and parent/leaf refs penalised.
+
+    Only meaningful where gold carries sub-point grain (``easyhard``
+    ``expected_refs``). Against head-level gold it under-scores a more precise
+    prediction, so it is a diagnostic, not the canonical axis.
+    """
+    diag = canonical_reference_diagnostics(pred_refs)
+    pred = set(diag["canonical_refs"])
+    gold = _gold_exact_refs(gold_articles)
+    effective_pred_count = int(diag["raw_count"]) + int(diag["parent_leaf_pair_count"])
+    if not gold and effective_pred_count == 0:
+        return 1.0
+    if not gold or effective_pred_count == 0:
+        return 0.0
+    tp = len(pred & gold)
+    if tp == 0:
+        return 0.0
+    precision = tp / effective_pred_count
+    recall = tp / len(gold)
+    return 2 * precision * recall / (precision + recall)
+
+
 # ── 6: Reference conciseness ─────────────────────────────────────────────
 
 
 def reference_conciseness(
-    pred_refs: list[str], gold_articles: int | list[int] | None
+    pred_refs: list[str], gold_articles: int | list[int] | list[str] | None
 ) -> float:
     """Length-ratio of predicted refs vs gold reference count.
 
     For QA pairs (single relevant_article), the rubric is one citation —
     over-citation linearly degrades. For scenarios (multi-article gold),
     the ideal length is the gold cardinality.
+
+    R327 — canonical name restored to the historical unique-head count ratio,
+    for the same comparability reason as
+    :func:`reference_correctness_strict`. The raw-count variant is
+    :func:`reference_conciseness_exact_coord`.
     """
-    pred_heads = article_heads(pred_refs)
-    gold = _gold_ref_set(gold_articles)
-    lp = len(pred_heads)
+    return reference_conciseness_head_count_proxy(pred_refs, gold_articles)
+
+
+def reference_conciseness_exact_coord(
+    pred_refs: list[str], gold_articles: int | list[int] | list[str] | None
+) -> float:
+    """Count ratio over ALL proposed entries, penalising parent/leaf pairs."""
+    diag = canonical_reference_diagnostics(pred_refs)
+    gold = _gold_exact_refs(gold_articles)
+    lp = int(diag["raw_count"]) + int(diag["parent_leaf_pair_count"])
     lg = len(gold)
     if lg == 0:
         return 1.0 if lp == 0 else 0.0
@@ -397,6 +806,21 @@ def reference_conciseness(
         return 0.0
     # Symmetric length ratio with quadratic falloff (same shape as answer
     # conciseness so the rubric is internally consistent).
+    ratio = min(lp, lg) / max(lp, lg)
+    return ratio * ratio
+
+
+def reference_conciseness_head_count_proxy(
+    pred_refs: list[str], gold_articles: int | list[int] | list[str] | None
+) -> float:
+    """Historical unique-head count ratio retained as an explicit proxy."""
+    pred_heads = article_heads(pred_refs)
+    gold = _gold_ref_set(gold_articles)
+    lp, lg = len(pred_heads), len(gold)
+    if lg == 0:
+        return 1.0 if lp == 0 else 0.0
+    if lp == 0:
+        return 0.0
     ratio = min(lp, lg) / max(lp, lg)
     return ratio * ratio
 
@@ -503,23 +927,75 @@ class RowScore:
     answer_correctness_f1: float = 0.0
     pred_gold_token_ratio: float = 0.0
     ans_keyword_recall: float | None = None
+    reference_correctness_strict_head_f1_proxy: float = 0.0
+    reference_conciseness_head_count_proxy: float = 0.0
+    invalid_ref_count: int = 0
+    duplicate_ref_count: int = 0
+    parent_leaf_pair_count: int = 0
+    criterion_negation_checked: int = 0
+    criterion_negation_mismatch_count: int = 0
+    criterion_negation_mismatch_rate: float = 0.0
+    answer_correctness_loose_token_overlap_proxy: float = 0.0
+    answer_correctness_strict_token_overlap_proxy: float = 0.0
+    answer_correctness_precision_token_overlap_proxy: float = 0.0
+    answer_correctness_f1_token_overlap_proxy: float = 0.0
 
-    def to_dict(self) -> dict[str, float | None]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "ans_correctness_loose": round(self.answer_correctness_loose, 4),
             "ans_correctness_strict": round(self.answer_correctness_strict, 4),
+            "ans_correctness_loose_token_overlap_proxy": round(
+                self.answer_correctness_loose_token_overlap_proxy, 4
+            ),
+            "ans_correctness_strict_token_overlap_proxy": round(
+                self.answer_correctness_strict_token_overlap_proxy, 4
+            ),
             "ans_conciseness": round(self.answer_conciseness, 4),
             "ref_correctness_loose": round(self.reference_correctness_loose, 4),
+            "ref_correctness_loose_head_recall_proxy": round(
+                self.reference_correctness_loose, 4
+            ),
             "ref_correctness_strict": round(self.reference_correctness_strict, 4),
+            "ref_correctness_strict_head_f1_proxy": round(
+                self.reference_correctness_strict_head_f1_proxy, 4
+            ),
             "ref_conciseness": round(self.reference_conciseness, 4),
+            "ref_conciseness_head_count_proxy": round(
+                self.reference_conciseness_head_count_proxy, 4
+            ),
             "latency_ms": round(self.latency_ms, 2),
             "regulatory_tone": round(self.regulatory_tone, 4),
             "ans_correctness_loose_legacy": round(self.answer_correctness_loose_legacy, 4),
             "ans_correctness_strict_legacy": round(self.answer_correctness_strict_legacy, 4),
             "ans_correctness_precision": round(self.answer_correctness_precision, 4),
             "ans_correctness_f1": round(self.answer_correctness_f1, 4),
+            "ans_correctness_precision_token_overlap_proxy": round(
+                self.answer_correctness_precision_token_overlap_proxy, 4
+            ),
+            "ans_correctness_f1_token_overlap_proxy": round(
+                self.answer_correctness_f1_token_overlap_proxy, 4
+            ),
             "pred_gold_token_ratio": round(self.pred_gold_token_ratio, 4),
             "ans_keyword_recall": round(self.ans_keyword_recall, 4) if self.ans_keyword_recall is not None else None,
+            "invalid_ref_count": self.invalid_ref_count,
+            "duplicate_ref_count": self.duplicate_ref_count,
+            "parent_leaf_pair_count": self.parent_leaf_pair_count,
+            "criterion_negation_checked": self.criterion_negation_checked,
+            "criterion_negation_mismatch_count": self.criterion_negation_mismatch_count,
+            "criterion_negation_mismatch_rate": round(
+                self.criterion_negation_mismatch_rate, 4
+            ),
+            # R327 — ``metric_provenance`` deliberately NOT emitted per row.
+            #
+            # ``runner.py`` diffs ``_DIFF_KEYS = ("pred_answer", "pred_refs",
+            # "scores")`` for the R138 ``--assert-baseline`` byte-identical CI
+            # gate. Embedding the whole provenance dict (and a version string
+            # that changes whenever a formula is documented) inside every row's
+            # ``scores`` made that gate permanently red against every stored
+            # baseline, for a reason unrelated to any score. The payload root
+            # already carries both keys once (runner.py builds them there), and
+            # once is the right number.
+            "metrics_version": METRICS_VERSION,
         }
 
 
@@ -527,11 +1003,13 @@ def score_row(
     pred_answer: str,
     pred_refs: list[str],
     gold_answer: str,
-    gold_articles: int | list[int] | None,
+    gold_articles: int | list[int] | list[str] | None,
     latency_ms: float,
     expected_keywords: list[str] | None = None,
 ) -> RowScore:
     """Compute every metric for one row in one call."""
+    ref_diag = canonical_reference_diagnostics(pred_refs)
+    neg_diag = negation_criterion_diagnostics(pred_answer, gold_answer, expected_keywords)
     return RowScore(
         answer_correctness_loose=answer_correctness_loose(pred_answer, gold_answer),
         answer_correctness_strict=answer_correctness_strict(pred_answer, gold_answer),
@@ -543,14 +1021,38 @@ def score_row(
             pred_refs, gold_articles
         ),
         reference_conciseness=reference_conciseness(pred_refs, gold_articles),
+        reference_correctness_strict_head_f1_proxy=(
+            reference_correctness_strict_head_f1_proxy(pred_refs, gold_articles)
+        ),
+        reference_conciseness_head_count_proxy=(
+            reference_conciseness_head_count_proxy(pred_refs, gold_articles)
+        ),
         latency_ms=latency_ms,
         regulatory_tone=regulatory_tone(pred_answer),
         answer_correctness_loose_legacy=answer_correctness_loose_legacy(pred_answer, gold_answer),
         answer_correctness_strict_legacy=answer_correctness_strict_legacy(pred_answer, gold_answer),
         answer_correctness_precision=answer_correctness_precision(pred_answer, gold_answer),
         answer_correctness_f1=answer_correctness_f1(pred_answer, gold_answer),
+        answer_correctness_loose_token_overlap_proxy=(
+            answer_correctness_loose_token_overlap_proxy(pred_answer, gold_answer)
+        ),
+        answer_correctness_strict_token_overlap_proxy=(
+            answer_correctness_strict_token_overlap_proxy(pred_answer, gold_answer)
+        ),
+        answer_correctness_precision_token_overlap_proxy=(
+            answer_correctness_precision_token_overlap_proxy(pred_answer, gold_answer)
+        ),
+        answer_correctness_f1_token_overlap_proxy=(
+            answer_correctness_f1_token_overlap_proxy(pred_answer, gold_answer)
+        ),
         pred_gold_token_ratio=pred_gold_token_ratio(pred_answer, gold_answer),
         ans_keyword_recall=answer_keyword_recall(pred_answer, expected_keywords),
+        invalid_ref_count=int(ref_diag["invalid_count"]),
+        duplicate_ref_count=int(ref_diag["duplicate_count"]),
+        parent_leaf_pair_count=int(ref_diag["parent_leaf_pair_count"]),
+        criterion_negation_checked=int(neg_diag["checked"]),
+        criterion_negation_mismatch_count=int(neg_diag["mismatch_count"]),
+        criterion_negation_mismatch_rate=float(neg_diag["mismatch_rate"]),
     )
 
 
@@ -578,7 +1080,7 @@ def refusal_correctness(refused_flags: list[bool]) -> float:
 # ── Batch-level aggregation ──────────────────────────────────────────────
 
 
-def aggregate(rows: list[RowScore]) -> dict[str, float]:
+def aggregate(rows: list[RowScore]) -> dict[str, Any]:
     """Mean per axis + latency percentiles."""
     if not rows:
         return {}
@@ -591,20 +1093,53 @@ def aggregate(rows: list[RowScore]) -> dict[str, float]:
         "n": n,
         "ans_correctness_loose": round(s("answer_correctness_loose") / n, 4),
         "ans_correctness_strict": round(s("answer_correctness_strict") / n, 4),
+        "ans_correctness_loose_token_overlap_proxy": round(
+            s("answer_correctness_loose_token_overlap_proxy") / n, 4
+        ),
+        "ans_correctness_strict_token_overlap_proxy": round(
+            s("answer_correctness_strict_token_overlap_proxy") / n, 4
+        ),
         "ans_conciseness": round(s("answer_conciseness") / n, 4),
         "ref_correctness_loose": round(s("reference_correctness_loose") / n, 4),
+        "ref_correctness_loose_head_recall_proxy": round(
+            s("reference_correctness_loose") / n, 4
+        ),
         "ref_correctness_strict": round(s("reference_correctness_strict") / n, 4),
+        "ref_correctness_strict_head_f1_proxy": round(
+            s("reference_correctness_strict_head_f1_proxy") / n, 4
+        ),
         "ref_conciseness": round(s("reference_conciseness") / n, 4),
+        "ref_conciseness_head_count_proxy": round(
+            s("reference_conciseness_head_count_proxy") / n, 4
+        ),
         "regulatory_tone": round(s("regulatory_tone") / n, 4),
         "ans_correctness_loose_legacy": round(s("answer_correctness_loose_legacy") / n, 4),
         "ans_correctness_strict_legacy": round(s("answer_correctness_strict_legacy") / n, 4),
         "ans_correctness_precision": round(s("answer_correctness_precision") / n, 4),
         "ans_correctness_f1": round(s("answer_correctness_f1") / n, 4),
+        "ans_correctness_precision_token_overlap_proxy": round(
+            s("answer_correctness_precision_token_overlap_proxy") / n, 4
+        ),
+        "ans_correctness_f1_token_overlap_proxy": round(
+            s("answer_correctness_f1_token_overlap_proxy") / n, 4
+        ),
         "pred_gold_token_ratio": round(s("pred_gold_token_ratio") / n, 4),
         "latency_p50_ms": round(percentile(latencies, 50), 2),
         "latency_p95_ms": round(percentile(latencies, 95), 2),
         "latency_max_ms": round(max(latencies) if latencies else 0.0, 2),
         "latency_mean_ms": round(sum(latencies) / n, 2),
+        "invalid_ref_count": int(s("invalid_ref_count")),
+        "duplicate_ref_count": int(s("duplicate_ref_count")),
+        "parent_leaf_pair_count": int(s("parent_leaf_pair_count")),
+        "criterion_negation_checked": int(s("criterion_negation_checked")),
+        "criterion_negation_mismatch_count": int(s("criterion_negation_mismatch_count")),
+        "criterion_negation_mismatch_rate": round(
+            s("criterion_negation_mismatch_count") / s("criterion_negation_checked")
+            if s("criterion_negation_checked") else 0.0,
+            4,
+        ),
+        "metrics_version": METRICS_VERSION,
+        "metric_provenance": METRIC_PROVENANCE,
     }
     if kr_rows:
         res["ans_keyword_recall"] = round(kr_avg, 4)

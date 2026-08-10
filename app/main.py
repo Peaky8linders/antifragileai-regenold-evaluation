@@ -256,10 +256,12 @@ def _log_llm_provider_status() -> None:
 
 # ─── Auto-seed on startup ────────────────────────────────────────────────
 #
-# When ``NEO4J_URI`` is set AND ``NEO4J_AUTO_SEED`` is not explicitly
-# disabled, the boot path checks ``KBMetadata.seed_version`` against the
-# in-process ``SEED_VERSION`` and fires the seeder in a daemon thread
-# when they differ (or the graph is empty). The thread is fire-and-forget
+# Production Aura is a shared, durable knowledge graph.  Startup therefore
+# treats it as read-only unless an operator explicitly opts in with
+# ``NEO4J_AUTO_SEED=1``.  Even with that opt-in, the boot path seeds only a
+# graph proven to contain zero nodes; version drift is migration work, not a
+# reason for an application worker to rewrite a non-empty graph.  The thread
+# is fire-and-forget
 # — uvicorn's startup never blocks on graph I/O. Multi-worker safety is
 # handled by a process-local lock plus an opt-in Postgres advisory lock
 # (when ``DATABASE_URL`` is set, only ONE worker actually performs the
@@ -274,20 +276,14 @@ _AUTO_SEED_STARTED = False
 
 
 def _auto_seed_disabled_by_env() -> bool:
-    """Return True when ``NEO4J_AUTO_SEED`` is explicitly off.
+    """Return True unless ``NEO4J_AUTO_SEED`` explicitly opts in.
 
-    Default is ON when ``NEO4J_URI`` is set — operators have to opt OUT
-    rather than opt in (matches the user's expectation that "set the URI,
-    get a seeded graph"). The off-toggle accepts the usual truthy /
-    falsy spellings: ``0`` / ``false`` / ``no`` / ``off`` (any case).
+    Aura is shared production state, so an unset, blank, malformed, or false
+    value is disabled.  Only ``1`` / ``true`` / ``yes`` / ``on`` enables the
+    empty-graph bootstrap path.
     """
     raw = os.getenv("NEO4J_AUTO_SEED")
-    if raw is None:
-        return False
-    # R39 eng-review F4: empty string is NOT a disable signal —
-    # Railway / Docker `--env-file` overrides sometimes pass a blank
-    # value and the user expects the default (ON) to kick in.
-    return raw.strip().lower() in {"0", "false", "no", "off"}
+    return raw is None or raw.strip().lower() not in {"1", "true", "yes", "on"}
 
 
 def _acquire_postgres_advisory_lock() -> object | None:
@@ -449,13 +445,15 @@ def _maybe_auto_seed_neo4j() -> None:
     Decision tree:
 
     1. No ``NEO4J_URI`` → log ``action=disabled-no-uri`` and return.
-    2. ``NEO4J_AUTO_SEED=0/false/no/off`` → log ``action=disabled-by-env``.
+    2. Unless ``NEO4J_AUTO_SEED=1/true/yes/on`` → log
+       ``action=disabled-by-env``.  Startup is read-only by default.
     3. ``REGENOLD_AUTO_SEED_LEADER_ONLY=1`` (default) AND uvicorn passes
        a worker index env var > 0 → log ``action=skip-non-leader``.
     4. ``GraphClient`` disabled → log ``action=skip-graph-disabled``.
-    5. Query ``KBMetadata``. If a row exists with matching
-       ``seed_version``, log ``action=skip-current``.
-    6. Otherwise → fire daemon thread to seed; log ``action=seed-started``.
+    5. Strictly query metadata and total node count.  A timeout or read error
+       is fail-closed and never authorises a write.
+    6. If the graph is current, skip.  If it is non-empty but drifted, report
+       the mismatch and skip.  Only a graph proven empty is seeded.
 
     Skip entirely when ``REGENOLD_SKIP_STARTUP_LOG=1`` — tests use this
     to keep TestClient output clean (and to avoid spinning up the seeder
@@ -523,10 +521,9 @@ def _maybe_auto_seed_neo4j() -> None:
         # spawned, so a hung NEO4J_URI blocks uvicorn from serving and the
         # Railway healthcheck (30 s) fails the release. Measured 35 s of boot
         # remaining after the probe fix until this call was bounded too.
-        # Timing out here is safe: it simply means we could not prove the seed
-        # is current, and the code below then does what it would do for any
-        # unknown seed — hand off to the daemon thread, which owns its own
-        # locking and never blocks boot.
+        # Timing out here must be fail-closed: inability to read shared Aura
+        # state is not evidence that the graph is empty and never authorises a
+        # background write.
         import concurrent.futures as _cf  # noqa: PLC0415
 
         _meta_budget_s = 3.0
@@ -538,10 +535,14 @@ def _maybe_auto_seed_neo4j() -> None:
             _meta_budget_s = 3.0
         _mpool = _cf.ThreadPoolExecutor(max_workers=1)
         try:
+            strict_read = getattr(client, "execute_read_strict", client.execute_read)
             meta_rows = _mpool.submit(
-                client.execute_read,
-                "MATCH (m:KBMetadata) "
-                "RETURN m.seed_version AS v, m.kb_version AS kv LIMIT 1",
+                strict_read,
+                "CALL { OPTIONAL MATCH (m:KBMetadata) "
+                "  RETURN head(collect(m)) AS meta } "
+                "CALL { MATCH (n) RETURN count(n) AS node_count } "
+                "RETURN meta.seed_version AS v, meta.kb_version AS kv, "
+                "node_count",
             ).result(timeout=_meta_budget_s)
         except _cf.TimeoutError:
             # ONLY the budget case is swallowed here. A genuine exception from
@@ -551,14 +552,23 @@ def _maybe_auto_seed_neo4j() -> None:
             # must not be logged as the same one.
             logger.warning(
                 "regenold.startup auto_seed_check meta_probe_timeout "
-                "budget_s=%s — proceeding as if the seed were unknown",
+                "budget_s=%s action=skip-unverified",
                 _meta_budget_s,
             )
-            meta_rows = []
+            return
         finally:
             _mpool.shutdown(wait=False)
         current_seed = (meta_rows[0].get("v") if meta_rows else "") or ""
         current_kb = (meta_rows[0].get("kv") if meta_rows else "") or ""
+        node_count_raw = meta_rows[0].get("node_count") if meta_rows else None
+        try:
+            node_count = int(node_count_raw)
+        except (TypeError, ValueError):
+            logger.warning(
+                "regenold.startup auto_seed_check action=skip-unverified "
+                "reason=missing-node-count"
+            )
+            return
 
         if (
             current_seed == SEED_VERSION
@@ -570,6 +580,19 @@ def _maybe_auto_seed_neo4j() -> None:
                 "kb_version=%s",
                 current_seed,
                 current_kb,
+            )
+            return
+
+        if node_count != 0:
+            logger.warning(
+                "regenold.startup auto_seed_check action=skip-nonempty-drift "
+                "node_count=%d current_seed=%s want_seed=%s current_kb=%s "
+                "want_kb=%s",
+                node_count,
+                current_seed or "<missing>",
+                SEED_VERSION,
+                current_kb or "<missing>",
+                KB_VERSION,
             )
             return
 
@@ -585,14 +608,7 @@ def _maybe_auto_seed_neo4j() -> None:
                 return
             _AUTO_SEED_STARTED = True
 
-        if not current_seed:
-            reason = "graph_empty"
-        else:
-            reason = (
-                f"seed_drift current_seed={current_seed} "
-                f"want_seed={SEED_VERSION} current_kb={current_kb} "
-                f"want_kb={KB_VERSION}"
-            )
+        reason = "graph_empty_verified node_count=0"
 
         logger.info(
             "regenold.startup auto_seed_check action=seed-started "
@@ -639,9 +655,8 @@ _INDEX_WARMUP_STARTED = False
 def _index_warmup_disabled_by_env() -> bool:
     """True when ``REGENOLD_INDEX_WARMUP`` is explicitly off.
 
-    Default is ON. Mirrors :func:`_auto_seed_disabled_by_env`: an empty
-    string is NOT a disable signal (Railway / Docker ``--env-file``
-    overrides sometimes pass a blank value).
+    Default is ON. Unlike graph auto-seeding, this operation only populates
+    process-local read caches, so a blank value retains the enabled default.
     """
     raw = os.getenv("REGENOLD_INDEX_WARMUP")
     if raw is None:

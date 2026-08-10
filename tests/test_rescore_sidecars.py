@@ -79,6 +79,19 @@ def test_rescore_row_rep100_emits_keyword_recall(fake_sidecar: Path) -> None:
     assert out["ans_keyword_recall"] > 0
 
 
+def test_rescore_row_prefers_pred_answer_field() -> None:
+    out = rescore_row(
+        {
+            "pred_answer": "providers must document",
+            "answer": "completely unrelated fallback",
+            "gold_answer": "providers must document",
+            "pred_refs": ["Article 9"],
+            "gold_refs": ["Article 9"],
+        }
+    )
+    assert out["ans_correctness_strict"] == 1.0
+
+
 def test_rescore_sidecar_writes_sibling_file(fake_sidecar: Path) -> None:
     sibling = rescore_sidecar(fake_sidecar)
     assert sibling.name == "fake.rescored.json"
@@ -94,3 +107,15 @@ def test_rescore_sidecar_aggregate_present(fake_sidecar: Path) -> None:
     assert "rescored_aggregate" in rescored
     assert "ans_correctness_loose" in rescored["rescored_aggregate"]
     assert "ans_correctness_loose_legacy" in rescored["rescored_aggregate"]
+    assert len(rescored["source_content_sha256"]) == 64
+
+
+def test_rescore_cache_invalidates_when_source_content_changes(fake_sidecar: Path) -> None:
+    sibling = rescore_sidecar(fake_sidecar)
+    first = json.loads(sibling.read_text(encoding="utf-8"))["source_content_sha256"]
+    payload = json.loads(fake_sidecar.read_text(encoding="utf-8"))
+    payload["rows"][0]["pred_answer"] = "changed prediction"
+    fake_sidecar.write_text(json.dumps(payload), encoding="utf-8")
+    rescore_sidecar(fake_sidecar)
+    second = json.loads(sibling.read_text(encoding="utf-8"))["source_content_sha256"]
+    assert second != first

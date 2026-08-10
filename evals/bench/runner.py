@@ -183,18 +183,24 @@ def _multiturn_coherence_probe(
     scenarios: list[dict[str, Any]],
     limit: int = 20,
 ) -> dict[str, Any]:
-    """Multi-turn coherence pass.
+    """Conversation-anchor retention diagnostic (not correctness scoring).
 
     Picks ``limit`` random scenarios, constructs a 2-turn conversation
     (initial classification question, then a follow-up "what about
     deployers?" / "and the technical documentation requirements?"),
-    and measures whether the follow-up answer correctly resolves the
-    referent. The score is the fraction of follow-up answers that
-    (a) cite at least one of the gold articles, (b) don't introduce a
-    fresh refusal phrase.
+    The dataset has no turn-specific gold answer or gold references for this
+    synthetic follow-up. This only checks whether a source-turn article anchor
+    survives and whether the system avoids a fresh refusal; it is not legal or
+    reference correctness.
     """
     if not scenarios:
-        return {"n": 0, "coherence_rate": 0.0}
+        return {
+            "n": 0,
+            "anchor_retention_rate": 0.0,
+            "coherence_rate": 0.0,
+            "metric_kind": "conversation_anchor_retention_diagnostic",
+            "is_correctness_metric": False,
+        }
     items = scenarios[:limit]
     coherent = 0
     rows: list[dict[str, Any]] = []
@@ -216,10 +222,14 @@ def _multiturn_coherence_probe(
         body2, lat2, _ = _ask_multiturn(client, history)
         answer2 = body2.get("answer") or ""
         refs2 = body2.get("references") or []
-        gold_articles = s.get("related_articles") or []
+        source_turn_articles = s.get("related_articles") or []
         pred_heads = metrics.article_heads(refs2)
-        gold = {f"Article {int(a)}" for a in gold_articles if a is not None}
-        cites_gold = bool(pred_heads & gold) if gold else False
+        source_anchors = {
+            f"Article {int(a)}" for a in source_turn_articles if a is not None
+        }
+        retains_source_anchor = (
+            bool(pred_heads & source_anchors) if source_anchors else False
+        )
         # Refusal sniff — if the follow-up dropped to "outside scope" it
         # broke coherence (the engine forgot the prior turn's context).
         refusal_markers = (
@@ -229,8 +239,8 @@ def _multiturn_coherence_probe(
             "this assistant only",
         )
         is_refusal = any(m in answer2.lower() for m in refusal_markers)
-        is_coherent = cites_gold and not is_refusal
-        if is_coherent:
+        retained = retains_source_anchor and not is_refusal
+        if retained:
             coherent += 1
         rows.append(
             {
@@ -239,16 +249,29 @@ def _multiturn_coherence_probe(
                 "answer1": answer1[:240],
                 "answer2": answer2[:240],
                 "refs2": refs2,
-                "gold_articles": gold_articles,
-                "is_coherent": is_coherent,
+                "source_turn_articles": source_turn_articles,
+                "gold_articles": source_turn_articles,
+                "retains_source_anchor": retained,
+                "is_coherent": retained,
+                "turn_specific_gold_available": False,
+                "is_correctness_metric": False,
                 "latency_q1_ms": round(lat1, 2),
                 "latency_q2_ms": round(lat2, 2),
             }
         )
+    rate = round(coherent / len(items), 4) if items else 0.0
     return {
         "n": len(items),
         "coherent": coherent,
-        "coherence_rate": round(coherent / len(items), 4) if items else 0.0,
+        "retained_source_anchor": coherent,
+        "anchor_retention_rate": rate,
+        "coherence_rate": rate,
+        "metric_kind": "conversation_anchor_retention_diagnostic",
+        "is_correctness_metric": False,
+        "turn_specific_gold_available": False,
+        "score_interpretation": (
+            "source-turn anchor retention plus non-refusal; not legal or reference correctness"
+        ),
         "rows": rows,
     }
 
@@ -285,7 +308,13 @@ def run(
         ) as client:
             qa_rows: list[dict[str, Any]] = []
             scenario_rows: list[dict[str, Any]] = []
-            multiturn: dict[str, Any] = {"n": 0, "coherence_rate": 0.0}
+            multiturn: dict[str, Any] = {
+                "n": 0,
+                "anchor_retention_rate": 0.0,
+                "coherence_rate": 0.0,
+                "metric_kind": "conversation_anchor_retention_diagnostic",
+                "is_correctness_metric": False,
+            }
             if not scenarios_only:
                 qa_rows = _run_qa(client, qa_items, limit)
             if not qa_only:
@@ -308,6 +337,15 @@ def run(
             "n": multiturn.get("n", 0),
             "coherent": multiturn.get("coherent", 0),
             "coherence_rate": multiturn.get("coherence_rate", 0.0),
+            "metric_kind": "conversation_anchor_retention_diagnostic",
+            "is_correctness_metric": False,
+        },
+        "multiturn_diagnostic": {
+            "n": multiturn.get("n", 0),
+            "retained_source_anchor": multiturn.get("retained_source_anchor", 0),
+            "anchor_retention_rate": multiturn.get("anchor_retention_rate", 0.0),
+            "metric_kind": "conversation_anchor_retention_diagnostic",
+            "is_correctness_metric": False,
         },
         "overall": metrics.aggregate(qa_scores + sc_scores),
     }
@@ -323,6 +361,8 @@ def run(
         # the sidecar doesn't mistake a flat bench for "no win".
         "role": "regression_guard",
         "win_measure": "evals.harness.ab_judge",
+        "metrics_version": metrics.METRICS_VERSION,
+        "metric_provenance": metrics.METRIC_PROVENANCE,
         "started_at": started_at,
         "finished_at": finished_at,
         "dataset_fingerprint": bench_dataset.dataset_fingerprint(),
@@ -399,6 +439,11 @@ def _format_human_summary(payload: dict[str, Any]) -> str:
 
 _DIFF_KEYS = ("pred_answer", "pred_refs", "scores")
 
+#: Non-score bookkeeping keys carried inside a row's ``scores`` dict. Excluded
+#: from the ``--assert-baseline`` comparison — see the note in
+#: :func:`assert_baseline`.
+_SCORE_META_KEYS = frozenset({"metrics_version", "metric_provenance"})
+
 
 def assert_baseline(payload: dict[str, Any], baseline_label: str, *, max_show: int = 12) -> int:
     """R138 — per-row byte-diff of a fresh run vs a stored baseline sidecar.
@@ -427,7 +472,24 @@ def assert_baseline(payload: dict[str, Any], baseline_label: str, *, max_show: i
                 diffs.append(f"{source}:{rid} present in only one run")
                 continue
             for k in _DIFF_KEYS:
-                if cr.get(k) != br.get(k):
+                cv, bv = cr.get(k), br.get(k)
+                if k == "scores":
+                    # R327 — compare the SCORE AXES only. Bookkeeping keys
+                    # (``metrics_version`` and, previously, the whole
+                    # ``metric_provenance`` dict) live inside ``scores`` and
+                    # change whenever a formula is renamed or documented, which
+                    # made this gate red for reasons unrelated to any score.
+                    # Axes present in only one payload are also skipped, so
+                    # ADDING a diagnostic axis cannot fail the gate — only a
+                    # changed value on a shared axis can.
+                    cv = cv if isinstance(cv, dict) else {}
+                    bv = bv if isinstance(bv, dict) else {}
+                    shared = (set(cv) & set(bv)) - _SCORE_META_KEYS
+                    if any(cv[a] != bv[a] for a in shared):
+                        diffs.append(f"{source}:{rid} scores changed")
+                        break
+                    continue
+                if cv != bv:
                     diffs.append(f"{source}:{rid} {k} changed")
                     break
 

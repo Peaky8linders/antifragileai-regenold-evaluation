@@ -291,58 +291,6 @@ _ENGINE_CACHE = _BoundedLRUCache(capacity=512)
 _MIN_CACHEABLE_CONFIDENCE = 0.3
 
 
-# ── Degraded-mode fallback warning (Cloudflare tunnel / wrapper down) ──────
-# When Stage-2 LLM synthesis is ATTEMPTED but the wrapper call fails —
-# Cloudflare tunnel down, Claude Max auth expired, 429 exhaustion, network
-# error, or structural truncation — the engine ships the deterministic
-# Stage-1 answer and sets ``graph_stats["stage2_call_failed"] = True``
-# (app/engines/graph_rag.py ~6427). We surface a non-fatal ``warning`` on
-# the wire so Regenold can tell a degraded (deterministic-fallback) answer
-# from a fully LLM-polished one. The answer + references stay grounded in
-# the EU AI Act — only the LLM refinement is absent.
-#
-# The flag is True ONLY on a genuine wrapper failure — NEVER on the
-# intentional Stage-2 skip, a successful polish, or ``provider=cli`` (the
-# deterministic bench, where Stage-2 is never attempted). So the warning
-# appears exactly when the tunnel/wrapper is down and the davidath bench
-# stays byte-identical. Env-gated for instant rollback (default ON).
-_FALLBACK_WARNING_TEXT = (
-    "This answer was produced by the deterministic fallback pipeline "
-    "because the primary LLM synthesis service was temporarily "
-    "unavailable; it remains grounded in the EU AI Act but may be less "
-    "refined than usual."
-)
-
-
-def _fallback_warning_enabled() -> bool:
-    """Env gate for the degraded-mode ``warning`` field (default ON)."""
-    return os.getenv("REGENOLD_FALLBACK_WARNING", "1").strip().lower() not in {
-        "0",
-        "off",
-        "false",
-        "no",
-    }
-
-
-def _fallback_warning_for(rag_res: Any) -> str | None:
-    """Return the degraded-mode warning when Stage-2 fell back, else None.
-
-    Reads the engine's ``stage2_call_failed`` flag from ``graph_stats``.
-    Fail-soft: any error returns ``None`` — the warning must never 500 the
-    route. A ``None`` return is serialised out entirely by
-    ``response_model_exclude_none``, keeping the happy-path JSON unchanged.
-    """
-    try:
-        if not _fallback_warning_enabled():
-            return None
-        stats = getattr(rag_res, "graph_stats", None) or {}
-        if stats.get("stage2_call_failed"):
-            return _FALLBACK_WARNING_TEXT
-    except Exception:  # noqa: BLE001 — never fail the route on the warning
-        return None
-    return None
-
-
 # ---------------------------------------------------------------------------
 # R86-D — Deployer 1-hop expansion (module-level helper for testability)
 # ---------------------------------------------------------------------------
@@ -1214,13 +1162,12 @@ def _subpoint_existence_floor_enabled() -> bool:
 
 
 def _parent_collapse_enabled() -> bool:
-    """R325 — drop a bare head when its own sub-point is cited? Default **OFF**.
+    """Drop a bare head when its own sub-point is cited. Default **OFF**.
 
-    Default OFF pending the live gate. It is a reference-DROPPING change, so
-    hard rule #6 makes ``evals.harness.easyhard_ab`` the merge gate (prefer it
-    over ``ab_judge``: it scores reference conciseness as a count-ratio against
-    gold, and that missing term is how R142.1 slipped through). Flip with
-    ``REGENOLD_PARENT_COLLAPSE=1``. Fresh env read per call (R263.2).
+    A leaf already identifies its own provision head, so retaining both spends
+    a reference slot without adding a distinct legal coordinate. The known
+    Article 6 general-rule loss keeps this reference-dropping change opt-in for
+    the live acceptance harness. Fresh env read per call keeps it reversible.
     """
     return os.getenv("REGENOLD_PARENT_COLLAPSE", "0").strip().lower() in (
         "1",
@@ -1277,17 +1224,20 @@ def _collapse_parent_when_subpoint_cited(references: list[str]) -> list[str]:
     if len(references) < 2:
         return references
 
+    def _wire(ref: str) -> str:
+        return reference_from_article_ref(ref) or ref.strip()
+
     def _head(ref: str) -> str:
-        m = re.match(r"(Article\s+\d+|Annex\s+[IVXLCDM]+)", ref.strip())
-        return m.group(1) if m else ref.strip()
+        wire = _wire(ref)
+        return _clamp_ref_head(wire) or wire
 
     cited_heads_with_own_leaf = {
-        _head(r) for r in references if _head(r) != r.strip()
+        _head(r) for r in references if _head(r) != _wire(r)
     }
     kept = [
         r
         for r in references
-        if not (r.strip() == _head(r) and r.strip() in cited_heads_with_own_leaf)
+        if not (_wire(r) == _head(r) and _head(r) in cited_heads_with_own_leaf)
     ]
     return kept or references
 
@@ -1930,9 +1880,16 @@ def _should_ship_verbatim(question: str, history_turn_count: int) -> bool:
 def _stage2_conciseness_backstop_enabled() -> bool:
     """Whether to shrink polished prose after Stage-2 lands (R120).
 
-    Default OFF. Competition rules encourage 1–4 sentences but do not
-    require chopping Sonnet output after polish; completeness and
-    professional tone beat an artificial four-sentence ceiling.
+    Default ON to keep ordinary competition answers within four complete
+    readable units. Closed-set and answer-structured enumerations are protected
+    by the backstop itself rather than disabling the bound globally.
+
+    R327 — restored to default **OFF**. Turning it on is a live answer-length
+    change on Answer-Conciseness, the one rubric axis we lead (zero headroom),
+    and it also switches on the R105 reference reconciliation, so a length
+    change and a reference change would ride one unmeasured switch. Hard rule #2
+    additionally forbids the soft CHAR cap ("the char cap deletes verdict-first
+    leads"); any bound must be SENTENCE-only. Gate with ``ab_judge`` first.
     """
     raw = os.getenv("REGENOLD_STAGE2_CONCISENESS_BACKSTOP", "0").strip().lower()
     return raw in ("1", "true", "yes", "on")
@@ -3217,10 +3174,66 @@ _REFS_RECONCILE_FLOOR = 1
 # R77 — I6 shape-aware QA reference budget. QA gold avg ~1 article;
 # the legacy MAX_REFERENCES=5 over-cites and degrades Ref Conciseness
 # + the LLM-as-judge refs-faithfulness axis. Tighten pure QA to 3.
-# Scenarios already route through _effective_max_refs=10 via the
-# _is_scenario_question branch. Controlled by REGENOLD_QA_REF_BUDGET
-# env (default ON).
+# Ordinary scenarios share the five-reference semantic-minimality ceiling;
+# explicit closed-set/listing questions receive a bounded protected exception.
 _QA_MAX_REFERENCES = 3
+_ENUMERATION_MAX_REFERENCES = 12
+
+
+def _component_d_citable_only_enabled() -> bool:
+    """R327 — restrict Component D promotion to retrieval-grounded refs? **OFF**.
+
+    ON means a catalog-valid coordinate that Stage-2 named but retrieval never
+    surfaced is not promoted onto the wire. It is a defensible grounding stance
+    and it is answer-affecting, so per the validation policy it ships
+    default-OFF-in-code with an off-switch until ``ab_judge`` has A/B'd it.
+    Fresh env read per call (R263.2).
+    """
+    return os.getenv("REGENOLD_COMPONENT_D_CITABLE_ONLY", "0").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
+
+def _citable_base_guard_enabled() -> bool:
+    """R327 — restrict prose-promotion to the retrieved citation universe? **ON**.
+
+    Gates passing ``citable_bases`` into :func:`_add_prose_named_refs`. Default
+    ON because it only ever REMOVES an ungrounded promotion (it cannot invent a
+    reference), but env-gated so ``easyhard_ab`` can A/B it and so it can be
+    rolled back without a deploy. Fresh env read per call (R263.2).
+    """
+    return os.getenv("REGENOLD_CITABLE_BASE_GUARD", "1").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
+
+def _minimal_ref_budget_enabled() -> bool:
+    """R327 — collapse every scenario budget to ``MAX_REFERENCES``? **OFF**.
+
+    An earlier uncommitted pass rewrote all four scenario budget sites to a flat
+    5 on a "semantic minimality" rationale. That is the positional / top-N clamp
+    family, and CLAUDE.md records it as measured-dead twice over: davidath
+    scenario gold averages **9.88** refs/row, "a top-5 cap measured FREE on a
+    132-row probe and destroyed **421 gold** on scenarios", and R142.1's clamp
+    "lost a live pairwise judge 11-0 (p=0.001)".
+
+    Hard rule #8 makes ``gold_dropped`` the FIRST measurement and a non-zero
+    value a rejection, so the tightening cannot be the default before
+    ``evals.harness.easyhard_ab`` has run on the FULL 476. It is preserved here
+    as an opt-in so that gate can A/B OFF↔ON. Fresh env read per call (R263.2).
+    """
+    return os.getenv("REGENOLD_MINIMAL_REF_BUDGET", "0").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
 
 # R127 (#9 med_05) — risk-classification-ask detector. A "We are ..." question
 # that asks a FOCUSED obligation question WITHOUT a risk-classification ask is a
@@ -3897,8 +3910,28 @@ def _surface_prose_subpoints(answer: str, references: list[str]) -> list[str]:
 # the Charter — none of which is the AI Act. ``of the Regulation`` /
 # ``of this Regulation`` (the AI Act referring to itself) deliberately do
 # NOT match — only a SPECIFIC other instrument does.
+_FOREIGN_ACRONYM_FRAGMENT = (
+    r"(?:gdpr|mdr|ivdr|nis\s*2|cra|dsa|dma|pld|tfeu|teu)"
+)
+#: R327 — ``charter`` is a foreign instrument but NOT an acronym. It was listed
+#: inline in both the AHEAD and BEHIND guards at HEAD; an uncommitted refactor
+#: folded those guards onto ``_FOREIGN_ACRONYM_FRAGMENT`` alone and so dropped
+#: ``charter`` from the AHEAD guard only — the exact "one concept, one
+#: definition ... when you widen a pattern, grep for its siblings" trap. Keep it
+#: in its own fragment so every guard can compose the pair explicitly.
+_FOREIGN_NAMED_FRAGMENT = r"(?:charter)"
+_FOREIGN_PREPOSITION_FRAGMENT = r"(?:of|under|pursuant\s+to)"
 _CROSS_INSTRUMENT_RE = re.compile(
-    r"\bof\s+(?:the\s+)?gdpr\b"
+    # An unambiguous ACRONYM tolerates the wider preposition set: "under the
+    # GDPR" / "pursuant to the TFEU" name a foreign instrument unambiguously.
+    r"\b" + _FOREIGN_PREPOSITION_FRAGMENT + r"\s+(?:the\s+)?"
+    + _FOREIGN_ACRONYM_FRAGMENT + r"\b"
+    # R327 — the AMBIGUOUS named instruments keep HEAD's strict ``of``
+    # requirement. Widening them to ``under|pursuant to`` suppressed GENUINE AI
+    # Act citations: "the decision under Article 6", "notified pursuant to the
+    # directive" and "measures under the treaty establishing…" all refer to an
+    # AI Act coordinate, and hard rule #8 makes a dropped gold ref a rejection.
+    # These four alternatives are byte-for-byte HEAD's.
     r"|\bof\s+(?:council\s+)?directive\b"
     r"|\bof\s+decision\b"
     r"|\bof\s+(?:the\s+)?treaty\b"
@@ -3942,10 +3975,15 @@ _CROSS_INSTRUMENT_RE = re.compile(
 # "Article 6 and the GDPR ...", where the AI Act article is the real referent.
 _FOREIGN_INSTRUMENT_AHEAD_RE = re.compile(
     r"^\s*(?:\([^)]*\)\s*)*(?:,\s*)?"
-    r"(?:\bgdpr\b"
-    r"|\bcharter\b"
-    r"|\bmdr\b|\bivdr\b|\bnis\s*2\b|\bcra\b|\bdsa\b|\bdma\b|\bpld\b"
-    r"|\btfeu\b|\bteu\b)",
+    r"(?:(?:e\.g\.\s*)?(?:"
+    + _FOREIGN_PREPOSITION_FRAGMENT
+    + r")\s+(?:the\s+)?)?\b(?:"
+    # R327 — ``charter`` restored here. HEAD listed it inline; the refactor onto
+    # the acronym-only fragment dropped it, so "Article 8 of the Charter of
+    # Fundamental Rights" stopped being recognised as a foreign instrument and
+    # the bare postpositive form shipped AI Act Article 8 on the wire.
+    + _FOREIGN_ACRONYM_FRAGMENT + r"|" + _FOREIGN_NAMED_FRAGMENT
+    + r")\b",
     re.IGNORECASE,
 )
 
@@ -3963,7 +4001,11 @@ _REG_NUMBER_FRAGMENT = (
     r"\bregulation\s*(?:\(e[uc]\)\s*)?(?:no\.?\s*)?(\d{1,4}/\d{2,4})"
 )
 
-_NUMBERED_REG_RE = re.compile(r"\bof\s+" + _REG_NUMBER_FRAGMENT, re.IGNORECASE)
+_NUMBERED_REG_RE = re.compile(
+    r"\b" + _FOREIGN_PREPOSITION_FRAGMENT + r"\s+(?:the\s+)?"
+    + _REG_NUMBER_FRAGMENT,
+    re.IGNORECASE,
+)
 
 # R325 — where the AHEAD window ends.
 #
@@ -3986,8 +4028,31 @@ _NUMBERED_REG_RE = re.compile(r"\bof\s+" + _REG_NUMBER_FRAGMENT, re.IGNORECASE)
 # ``[.!?]\s+[A-Z]`` rather than ``[.!?]\s`` so that "e.g." and the "No. 1025"
 # particle do not terminate the window early (both are followed by lowercase or
 # a digit), which would re-open the leak from the other side.
+#
+# R327 — the case-sensitive ``[A-Z]`` is CORRECT; an abbreviation guard is what
+# was missing.
+#
+# HEAD compiled the whole pattern with ``re.IGNORECASE``, so ``[A-Z]`` also
+# matched a lowercase letter and the window ended at EVERY ``". x"`` — including
+# the ``e.g.`` in "Article 30, e.g. under Regulation (EC) No 765/2008", which is
+# exactly how that foreign instrument stayed invisible and Article 30 leaked onto
+# the wire. Moving the flag inline (so ``[A-Z]`` means a real capital) fixes that
+# leak, and ``tests/test_r325_foreign_citation_guard.py`` pins it.
+#
+# But dropping the lowercase branch entirely lets the window run past a genuine
+# sentence boundary whose next word is lowercase, and a LONGER window means MORE
+# suppression — the R142.1 gold-drop direction hard rule #8 rejects. So the
+# lowercase branch is kept and made ABBREVIATION-AWARE: a sentence-ending
+# ``[.!?]\s`` still stops the window, unless the period belongs to a known
+# abbreviation that legal prose uses mid-sentence. Each lookbehind is its own
+# fixed width (Python requires fixed-width lookbehind per group) and spelled with
+# character classes because this alternative is not under IGNORECASE.
 _AHEAD_STOP_RE = re.compile(
-    r"[.!?]\s+[A-Z]|;\s|\b(?:article|art\.|annex)\s", re.IGNORECASE
+    r"[.!?]\s+[A-Z]"
+    r"|(?<![Ee]\.[Gg])(?<![Ii]\.[Ee])(?<![Cc][Ff])(?<![Nn][Oo])(?<![Nn][Oo][Ss])"
+    r"(?<![Aa][Rr][Tt])(?<![Pp][Aa][Rr][Aa])[.!?]\s"
+    r"|;\s"
+    r"|(?i:\b(?:article|art\.|annex)\s)"
 )
 _AHEAD_MAX_CHARS = 160
 
@@ -4023,18 +4088,22 @@ def _ahead_window(prose: str, end: int) -> str:
 # into the Stage-2 grounding context, so the model is actively encouraged to
 # write it. Only ~24 chars of lookbehind are used, so an AI Act mention that
 # merely follows a sentence about the GDPR is unaffected.
+_DIRECTIVE_NUMBER_FRAGMENT = (
+    r"\bdirective\s*(?:\(e[uc]\)\s*)?(?:no\.?\s*)?"
+    r"\d{2,4}/\d{1,4}(?:/(?:eu|eec|ec))?"
+)
 _FOREIGN_INSTRUMENT_BEHIND_RE = re.compile(
-    r"(?:\bgdpr\b"
-    r"|\bcharter\b"
-    r"|\bmdr\b|\bivdr\b|\bnis\s*2\b|\bcra\b|\bdsa\b|\bdma\b|\bpld\b"
-    r"|\btfeu\b|\bteu\b"
-    r"|\bdirective\b"
+    r"(?:\b" + _FOREIGN_ACRONYM_FRAGMENT + r"\b"
+    + r"|\bcharter\b"
+    + r"|" + _DIRECTIVE_NUMBER_FRAGMENT
+    + r"|\b(?:council\s+)?directive\b"
     # R325 — was ``\(e[uc]\)\s*(?!2024/1689)\d{4}/\d+``, i.e. the pre-R323 form,
     # so every shape the AHEAD guard learned about still leaked here. Now shares
     # ``_REG_NUMBER_FRAGMENT`` with that guard. The AI Act self-reference
     # exclusion is kept as a lookahead over the whole fragment.
-    r"|(?!regulation\s*(?:\(e[uc]\)\s*)?(?:no\.?\s*)?2024/1689)" + _REG_NUMBER_FRAGMENT
-    + r")[\s,‑-]*$",
+    + r"|(?!regulation\s*(?:\(e[uc]\)\s*)?(?:no\.?\s*)?2024/1689)" + _REG_NUMBER_FRAGMENT
+    + r")(?:\s*\(\s*" + _FOREIGN_ACRONYM_FRAGMENT + r"\s*\))?"
+    + r"(?:['\u2019]s)?[\s,\-\u2011]*$",
     re.IGNORECASE,
 )
 # R325 — the behind window must fit the longest prefix form plus its separator:
@@ -4044,7 +4113,7 @@ _FOREIGN_INSTRUMENT_BEHIND_RE = re.compile(
 # only ``[\s,‑-]`` allowed between the instrument and the mention: a sentence
 # that merely mentions the GDPR earlier cannot match, since a full stop is not
 # in that separator class.
-_BEHIND_WINDOW_CHARS = 48
+_BEHIND_WINDOW_CHARS = 96
 # R311 — the negation cue need not be ADJACENT to the mention.
 #
 # The pre-R311 form was ``(?:\bnot|...)\s*$`` over a 24-char lookbehind, i.e.
@@ -4106,8 +4175,56 @@ def _prose_mention_is_real_citation(prose: str, start: int, end: int) -> bool:
     return True
 
 
+_PROSE_CITATION_RE = re.compile(
+    r"\b(?:(Article|Art\.?)\s+(\d{1,3})|Annex\s+([IVXLCDM]+|\d{1,2}))\b",
+    re.IGNORECASE,
+)
+_ARABIC_ANNEX_TO_ROMAN = {
+    "1": "I", "2": "II", "3": "III", "4": "IV", "5": "V",
+    "6": "VI", "7": "VII", "8": "VIII", "9": "IX", "10": "X",
+    "11": "XI", "12": "XII", "13": "XIII",
+}
+
+
+def _canonical_reference_base(ref: str) -> str | None:
+    """Return a strict wire head for an internal or wire reference."""
+    wire = reference_from_article_ref(str(ref))
+    if not wire:
+        return None
+    return _clamp_ref_head(wire) or wire
+
+
+def _prose_citation_bases(prose: str) -> list[str]:
+    """Extract citation heads in first-mention order, excluding foreign refs.
+
+    This is the single extractor used by both prose-to-reference paths. Arabic
+    annex prose is normalised to the required Roman wire head; invalid Arabic
+    annex numbers remain visible as invalid citations rather than being
+    silently reinterpreted.
+    """
+    out: list[str] = []
+    seen: set[str] = set()
+    for match in _PROSE_CITATION_RE.finditer(prose or ""):
+        if not _prose_mention_is_real_citation(prose, match.start(), match.end()):
+            continue
+        if match.group(2) is not None:
+            base = f"Article {int(match.group(2))}"
+        else:
+            annex = (match.group(3) or "").upper()
+            annex = _ARABIC_ANNEX_TO_ROMAN.get(annex, annex)
+            base = f"Annex {annex}"
+        if base not in seen:
+            out.append(base)
+            seen.add(base)
+    return out
+
+
 def _add_prose_named_refs(
-    references: list[str], prose: str, *, cap: int = 2
+    references: list[str],
+    prose: str,
+    *,
+    citable_bases: frozenset[str] | set[str] | None = None,
+    cap: int = 2,
 ) -> list[str]:
     """Promote refs the answer prose explicitly names into the citations.
 
@@ -4135,46 +4252,36 @@ def _add_prose_named_refs(
             return references
         from app.data.article_existence import ARTICLE_EXISTENCE  # noqa: PLC0415
 
-        present_nums: set[str] = set()
-        present_annex: set[str] = set()
-        for r in references:
-            m = _R72_ARTICLE_NUM_RE.match(r.strip())
-            if m:
-                present_nums.add(m.group(1))
-                continue
-            m = _R72_ANNEX_ROMAN_RE.match(r.strip())
-            if m:
-                present_annex.add(m.group(1).upper())
-
+        allowed_source = (
+            citable_bases
+            if citable_bases is not None
+            else set(references) | set(_prose_citation_bases(prose))
+        )
+        allowed = {
+            base
+            for ref in allowed_source
+            if (base := _canonical_reference_base(ref)) is not None
+        }
+        present = {
+            base
+            for ref in references
+            if (base := _canonical_reference_base(ref)) is not None
+        }
         additions: list[str] = []
-        seen: set[str] = set()
-        for m in _LIVE_ARTICLE_RE.finditer(prose):
-            num = m.group(1)
-            key = f"a:{num}"
-            if num in present_nums or key in seen:
+        for base in _prose_citation_bases(prose):
+            if base in present or base not in allowed:
                 continue
-            if f"Art. {num}" not in ARTICLE_EXISTENCE:
+            catalog_key = (
+                "Art. " + base[len("Article "):]
+                if base.startswith("Article ")
+                else base
+            )
+            if catalog_key not in ARTICLE_EXISTENCE:
                 continue
-            if not _prose_mention_is_real_citation(prose, m.start(), m.end()):
-                continue
-            additions.append(f"Article {num}")
-            seen.add(key)
+            additions.append(base)
+            present.add(base)
             if len(additions) >= cap:
                 break
-        if len(additions) < cap:
-            for m in _LIVE_ANNEX_RE.finditer(prose):
-                rn = m.group(1).upper()
-                key = f"x:{rn}"
-                if rn in present_annex or key in seen:
-                    continue
-                if f"Annex {rn}" not in ARTICLE_EXISTENCE:
-                    continue
-                if not _prose_mention_is_real_citation(prose, m.start(), m.end()):
-                    continue
-                additions.append(f"Annex {rn}")
-                seen.add(key)
-                if len(additions) >= cap:
-                    break
 
         if not additions:
             return references
@@ -7316,6 +7423,11 @@ def regenold_eu_ai_act_ask(
             continue
         seen_refs.add(formatted)
         candidates.append(formatted)
+    _retrieved_citable_reference_bases = frozenset(
+        base
+        for candidate in candidates
+        if (base := _canonical_reference_base(candidate)) is not None
+    )
 
     # Resolve the live user message — used as a topic hint by the
     # anchor-injection helper to suppress broad-anchor overmatch when
@@ -7728,8 +7840,8 @@ def regenold_eu_ai_act_ask(
             record_note("scenario_demoted_to_qa no_risk_classification_ask")
         except Exception:  # noqa: BLE001 — trace is best-effort
             pass
-    # Dynamic budget — scenarios get a 10-ref budget (matches gold avg),
-    # QA stays at the spec's tight 5 (single-article gold).
+    # Competition budget — ordinary scenarios stay within the same five-ref
+    # semantic-minimality ceiling as other multi-provision answers.
     # R47-C — when a compound-role pattern fires (provider+deployer,
     # provider+authrep, distributor+importer, etc.) the union of the
     # role-obligation matrix routinely surfaces 11-15 refs. Stretch
@@ -7754,7 +7866,7 @@ def regenold_eu_ai_act_ask(
     _has_compound_roles = False
     _compound_strength = ""
     _has_listing_intent = False
-    # R281 — True only when the 10/22-ref SCENARIO budget is the one in force
+    # True when the ordinary scenario budget is in force
     # (set at the `elif _is_scenario_question` branch below). See
     # ``adaptive_ref_clamp``: R142's clamp keyed its scenario exemption off a
     # DIFFERENT predicate than the one that sets the budget, and missed 9/10
@@ -7797,7 +7909,11 @@ def regenold_eu_ai_act_ask(
         if _is_scenario_question:
             # Full "We are a {role} offering {X}…" scenario — the gold
             # is the multi-article role×risk matrix (davidath avg 9.8).
-            _effective_max_refs = 12 if _compound_strength == "strong" else 8
+            _effective_max_refs = (
+                MAX_REFERENCES
+                if _minimal_ref_budget_enabled()
+                else (12 if _compound_strength == "strong" else 8)
+            )
         else:
             # R69 round-2 — a compound-role QUESTION ("Are we a provider
             # or just a deployer?"), not a full scenario description.
@@ -7813,9 +7929,13 @@ def regenold_eu_ai_act_ask(
             # provider+deployer chain. Davidath has no compound-role
             # *questions* (its compound rows are all full-scenario
             # shape), so this branch is davidath-neutral.
-            _effective_max_refs = 12 if _compound_strength == "strong" else 5
+            _effective_max_refs = (
+                MAX_REFERENCES
+                if _minimal_ref_budget_enabled()
+                else (12 if _compound_strength == "strong" else 5)
+            )
     elif _is_scenario_question:
-        # R87-B/P1 — HRAIS-listing intent lifts the cap 10 → 22 when
+        # Explicit HRAIS-listing intent receives a bounded 5 → 12 exception when
         # the question explicitly asks for the full Article list of a
         # high-risk system's obligations. r86-live-postship measured
         # every multi-turn HRAIS row hitting the 10-ref cap against
@@ -7841,7 +7961,7 @@ def regenold_eu_ai_act_ask(
         # missed 9 of the 10 rows it most needed to clamp. This flag closes
         # that gap for ``adaptive_ref_clamp``.
         _scenario_budget_active = True
-        _effective_max_refs = 10
+        _effective_max_refs = MAX_REFERENCES if _minimal_ref_budget_enabled() else 10
         if (
             os.getenv("REGENOLD_HRAIS_LISTING_BUDGET", "1")
             .strip()
@@ -7883,12 +8003,32 @@ def regenold_eu_ai_act_ask(
             # davidath ref-scored set has no multi-turn scenario rows, so
             # this is davidath-neutral.
             if _has_listing_intent and _has_hrais_anchor and not _is_multiturn:
-                _effective_max_refs = 22
+                # R87-B/P1 measured the 22-ref lift on r86-live-postship: every
+                # multi-turn HRAIS row was hitting the 10-ref cap against gold
+                # that carries the full obligation chain. Cutting it to 12 is a
+                # reference-DROPPING change, so it only applies under the
+                # opt-in minimal budget until easyhard_ab reports gold_dropped.
+                _lift_from = _effective_max_refs
+                _effective_max_refs = (
+                    _ENUMERATION_MAX_REFERENCES
+                    if _minimal_ref_budget_enabled()
+                    else 22
+                )
+                # ``_scenario_budget_active`` stays True: ``adaptive_ref_clamp``
+                # keys its scenario exemption off this flag, and R281 records
+                # that clearing it is how 9 of 10 rows escaped the clamp.
+                _scenario_budget_active = True
                 try:
                     from app.integrations.regenold.reasoning_trace import (  # noqa: PLC0415
                         record_note,
                     )
-                    record_note("hrais_listing_budget_lift=10->22")
+                    # Report the ACTUAL transition. An uncommitted pass hardcoded
+                    # the left-hand side to MAX_REFERENCES, which mislabelled the
+                    # note on the scenario path (whose pre-lift budget is 10).
+                    record_note(
+                        f"hrais_listing_budget_lift={_lift_from}"
+                        f"->{_effective_max_refs}"
+                    )
                 except Exception:  # noqa: BLE001 — fail-soft on trace
                     pass
                 # R87-B/P2 — HRAIS chain seed. When the question is
@@ -8196,15 +8336,30 @@ def regenold_eu_ai_act_ask(
     # (a measured rubric win: Ref Strict +0.014 / Ref Conciseness +0.014)
     # to a blanket 7. Now the budget is raised ONLY when the hop actually
     # injected candidates, and only by the injected amount (capped at the
-    # historical 7 ceiling so the bump never exceeds the old behaviour;
-    # ``_ONTOLOGY_HOP_MAX_INJECT = 4`` bounds the raise to QA 3 + 4 = 7).
+    # competition-wide five-reference ordinary ceiling. Explicit exhaustive
+    # listing questions already carry their separate 12-reference budget and
+    # therefore remain unchanged by this ``max``.
     _is_weak_compound_question = _has_compound_roles and not _is_scenario_question and _compound_strength != "strong"
     if _ontology_hop_injected > 0 and not _is_weak_compound_question:
         _effective_max_refs = max(
             _effective_max_refs,
-            min(7, _effective_max_refs + _ontology_hop_injected),
+            min(
+                MAX_REFERENCES if _minimal_ref_budget_enabled() else 7,
+                _effective_max_refs + _ontology_hop_injected,
+            ),
         )
 
+    # Stage-2 may read non-citable KG expansion blocks. Freeze the independent
+    # route/retrieval-derived citation universe before any prose-driven pass so
+    # those context-only coordinates can never migrate onto the wire.
+    _stage2_citable_reference_bases = frozenset(
+        set(_retrieved_citable_reference_bases)
+        | {
+            base
+            for candidate in candidates
+            if (base := _canonical_reference_base(candidate)) is not None
+        }
+    )
     references: list[str] = candidates[:_effective_max_refs]
 
     # R115 (Antifragile q11 follow-up) — subpoint-aware budget rescue.
@@ -8969,7 +9124,23 @@ def regenold_eu_ai_act_ask(
         and not _looks_like_scenario_shape(question)
         and references
     ):
-        references = _add_prose_named_refs(references, answer_text)
+        _stage2_citable_reference_bases = frozenset(
+            set(_stage2_citable_reference_bases)
+            | {
+                base
+                for ref in references
+                if (base := _canonical_reference_base(ref)) is not None
+            }
+        )
+        references = _add_prose_named_refs(
+            references,
+            answer_text,
+            citable_bases=(
+                _stage2_citable_reference_bases
+                if _citable_base_guard_enabled()
+                else None
+            ),
+        )
 
     # R94 — verbatim exact-text answer mode (default ON).
     #
@@ -9004,8 +9175,6 @@ def regenold_eu_ai_act_ask(
         and retrieval_path != "no_match"
     ):
         try:
-            import re
-
             from app.data.article_existence import ARTICLE_EXISTENCE
 
             # Extract cited articles/annexes in polished prose.
@@ -9023,29 +9192,17 @@ def regenold_eu_ai_act_ask(
             # No 765/2008" shipped AI Act **Article 30** (notifying procedure).
             # Hard rule #4, in a wire-legal shape that the hard-rule-#5
             # ARTICLE_EXISTENCE lint cannot catch, because Article 30 exists.
-            prose_citations = set()
-            for match in re.finditer(r"\b(Article|Art\.|Annex)\s+([IVXLCDM\d]+)\b", answer_text, re.IGNORECASE):
-                if not _prose_mention_is_real_citation(
-                    answer_text, match.start(), match.end()
-                ):
-                    continue
-                prefix = match.group(1).lower()
-                num = match.group(2).strip()
-                if prefix.startswith("art"):
-                    try:
-                        num_int = int(num)
-                        prose_citations.add(f"Article {num_int}")
-                    except ValueError:
-                        prose_citations.add(f"Article {num}")
-                elif prefix.startswith("annex"):
-                    prose_citations.add(f"Annex {num.upper()}")
+            # Ordered extraction is load-bearing: when the cap is reached,
+            # source-text order — not process-random hash order — determines
+            # which independently grounded citations survive.
+            prose_citations = _prose_citation_bases(answer_text)
 
             # Extract references bases (standardizing to e.g. "Article 16", "Annex III")
-            reference_bases = set()
-            for ref in references:
-                parts = str(ref).split(".")
-                if parts:
-                    reference_bases.add(parts[0].strip())
+            reference_bases = {
+                base
+                for ref in references
+                if (base := _canonical_reference_base(ref)) is not None
+            }
 
             # Verify if every prose citation matches a base in reference_bases
             has_hallucination = False
@@ -9058,18 +9215,41 @@ def regenold_eu_ai_act_ask(
                     if cite.startswith("Article "):
                         catalog_key = "Art. " + cite[len("Article "):]
 
-                    if catalog_key in ARTICLE_EXISTENCE:
-                        logger.info(
-                            "Component D Grounding Guard: Prose cited %s which was missing "
-                            "from reference_bases, but exists in ARTICLE_EXISTENCE. Dynamically "
-                            "augmenting references list.", cite
-                        )
-                        references.append(cite)
-                        reference_bases.add(cite)
-                    else:
+                    if catalog_key not in ARTICLE_EXISTENCE:
+                        # A coordinate that does not resolve in the catalog at
+                        # all is a genuine fabrication. This is HEAD's trigger
+                        # for the deterministic fallback and stays unchanged.
                         has_hallucination = True
                         bad_citation = cite
                         break
+
+                    if (
+                        _component_d_citable_only_enabled()
+                        and cite not in _stage2_citable_reference_bases
+                    ):
+                        # R327 — catalog-valid but outside the retrieval-derived
+                        # citation universe (e.g. it reached Stage-2 only via the
+                        # non-citable KG context). An uncommitted pass treated
+                        # this as a hallucination and discarded the ENTIRE
+                        # polished answer for ``rag_res.kg_answer``. That is a
+                        # very large answer-quality blast radius for a
+                        # reference-scoped problem, so the remedy is scoped to
+                        # the reference: do NOT promote the coordinate, and keep
+                        # the Stage-2 answer. Default OFF pending ab_judge.
+                        logger.info(
+                            "Component D Grounding Guard: prose cited %s — "
+                            "catalog-valid but not retrieval-grounded; not "
+                            "promoting it, answer retained.", cite
+                        )
+                        continue
+
+                    logger.info(
+                        "Component D Grounding Guard: Prose cited %s which was missing "
+                        "from reference_bases, but exists in ARTICLE_EXISTENCE. Dynamically "
+                        "augmenting references list.", cite
+                    )
+                    references.append(cite)
+                    reference_bases.add(cite)
 
             if has_hallucination:
                 logger.warning(
@@ -9080,6 +9260,16 @@ def regenold_eu_ai_act_ask(
                 _kg = getattr(rag_res, "kg_answer", "") or ""
                 if _kg:
                     answer_text = normalise_answer_for_regenold(_kg, question=question)
+                    # R327 — an uncommitted pass added an UNGATED
+                    # ``_reconcile_references_to_prose(..., floor=1)`` plus a
+                    # prose-promotion pass here. That call ignored
+                    # ``REGENOLD_REFS_RECONCILE``, used a literal floor instead
+                    # of ``reconcile_floor``, passed no ``protected`` set and did
+                    # not exempt scenario shapes — i.e. it pruned the wire list
+                    # down to whatever the deterministic Stage-1 prose happened
+                    # to name, on a path that already lost its Stage-2 answer.
+                    # Removed: HEAD leaves ``references`` untouched here, and the
+                    # properly-guarded reconciliation still runs downstream.
                     # R104 — do NOT mutate rag_res.graph_stats in place here.
                     # rag_res is the object returned by _ENGINE_CACHE.get, so
                     # writing stage2_landed=False onto it poisons the cached
@@ -9170,13 +9360,6 @@ def regenold_eu_ai_act_ask(
         # complete enumeration so the full set survives. Still stage2-gated
         # -> davidath byte-identical.
         _closed_set_ask = _is_closed_set_enumeration_ask(question)
-        _is_multi = False
-        try:
-            from app.engines.question_complexity import _is_multi_phrase
-            _is_multi = _is_multi_phrase(question)
-        except Exception:
-            pass
-
         # R306 — the two escapes above are QUESTION-keyed, so they only
         # relax the caps for phrasings someone thought to enumerate in
         # advance. Measured on the live wire: "What are the deployer
@@ -9191,6 +9374,18 @@ def regenold_eu_ai_act_ask(
             _answer_enumerates = answer_has_enumeration(answer_text)
         except Exception:  # noqa: BLE001 — never break the route on a probe
             _answer_enumerates = False
+        # R327 — the ``_is_multi_phrase`` term was dropped in an uncommitted
+        # pass at the same time the conciseness backstop was flipped ON, so
+        # multi-phrase questions lost their cap exemption exactly when the cap
+        # started firing. Restored (fail-soft: a probe error must never break
+        # the route).
+        _is_multi = False
+        try:
+            from app.engines.question_complexity import _is_multi_phrase  # noqa: PLC0415
+
+            _is_multi = _is_multi_phrase(question)
+        except Exception:  # noqa: BLE001 — never break the route on a probe
+            _is_multi = False
         _relax_caps = _closed_set_ask or _is_multi or _answer_enumerates
         if _relax_caps:
             _conc_limit = max(_conc_limit, 1500)
@@ -9265,7 +9460,14 @@ def regenold_eu_ai_act_ask(
         in ("1", "true", "yes", "on")
     ):
         references = _add_prose_named_refs(
-            references, answer_text, cap=_CITE_CONSISTENCY_CAP
+            references,
+            answer_text,
+            citable_bases=(
+                _stage2_citable_reference_bases
+                if _citable_base_guard_enabled()
+                else None
+            ),
+            cap=_CITE_CONSISTENCY_CAP,
         )
 
     # R130 — Article 3 definitional sub-point. The Regenold rules PDF allows a
@@ -9419,8 +9621,8 @@ def regenold_eu_ai_act_ask(
                 pass
 
     # the per-question budget the Component-D block last enforced. Re-clamp to
-    # ``_effective_max_refs`` so pure QA ships its tight 3-ref set (q10 was
-    # shipping 10 vs gold ~2) while scenarios keep their 10/22-ref budget.
+    # ``_effective_max_refs`` so pure QA ships its tight 3-ref set while
+    # ordinary scenarios stay at five and explicit enumerations at twelve.
     # Stage-2-gated → davidath byte-identical; scenario / verbatim / no-match
     # exempt. Runs LAST, before the trace finalisation, so the trace reflects
     # the shipped refs. Env off-switch REGENOLD_FINAL_REF_CLAMP.
@@ -9715,11 +9917,11 @@ def regenold_eu_ai_act_ask(
         if include_telemetry else ""
     )
 
-    # Degraded-mode signal: only set when Stage-2 (Claude Max via the
-    # Cloudflare tunnel) was attempted and failed → deterministic
-    # fallback. ``None`` on every healthy response → excluded by
-    # ``response_model_exclude_none`` → happy-path JSON unchanged.
-    _fallback_warning = _fallback_warning_for(rag_res)
+    # Keep degradation observable without changing the competition wire
+    # contract. Both healthy and fallback responses contain exactly
+    # reasoning / answer / references by default.
+    if graph_stats.get("stage2_call_failed"):
+        logger.warning("regenold_stage2_fallback_served")
 
     # Default response shape = competition spec only. Telemetry block
     # populated only when ?include_telemetry=true (and serialised via
@@ -9730,7 +9932,6 @@ def regenold_eu_ai_act_ask(
             answer=answer_text,
             references=references,
             reasoning=_final_reasoning,
-            warning=_fallback_warning,
             confidence=confidence,
             kb_version=KB_VERSION,
             retrieval_path=retrieval_path,  # type: ignore[arg-type]
@@ -9748,9 +9949,6 @@ def regenold_eu_ai_act_ask(
             # includes a "reasoning" key). R50 overrides with the
             # ReasoningTrace JSON when ?include_reasoning=true.
             reasoning=_final_reasoning,
-            # Degraded-mode fallback warning (tunnel/wrapper down). None
-            # on the happy path → excluded from the JSON.
-            warning=_fallback_warning,
         )
 
     # Round-24 audit-chain entry: full question + answer persisted.

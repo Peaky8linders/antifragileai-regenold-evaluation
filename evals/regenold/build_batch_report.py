@@ -114,7 +114,7 @@ def _judge_block(verdicts: dict[str, Any]) -> list[str]:
 
 
 def _judge_rollup(rows: list[dict[str, Any]], judge: dict[str, dict[str, Any]]) -> str:
-    """One-line pass-rate rollup across the three grounded axes."""
+    """Denominator-safe pass-rate rollup across the grounded axes."""
     if not judge:
         return ""
     parts: list[str] = []
@@ -125,10 +125,16 @@ def _judge_rollup(rows: list[dict[str, Any]], judge: dict[str, dict[str, Any]]) 
             for v in seen
             if v
         ]
-        graded = [x for x in vals if x in ("pass", "fail")]
-        if graded:
-            rate = sum(1 for x in graded if x == "pass") / len(graded)
-            parts.append(f"{label} {rate:.0%} ({sum(1 for x in graded if x == 'pass')}/{len(graded)})")
+        passed = sum(1 for x in vals if x == "pass")
+        failed = sum(1 for x in vals if x == "fail")
+        total = len(rows)
+        ungraded = total - passed - failed
+        if total:
+            rate = passed / total
+            parts.append(
+                f"{label} {rate:.0%} ({passed}/{total}; fail={failed}, "
+                f"ungraded/error={ungraded})"
+            )
     return ("\n\n**Grounded-judge pass rates:** " + " · ".join(parts) + "\n") if parts else ""
 
 
@@ -153,7 +159,7 @@ def _section(
             if ok
             else f"**0 answered** · {len(errs)} errored\n"
         )
-        out.append(_judge_rollup(ok, judge))
+        out.append(_judge_rollup(rows, judge))
 
     for i, rec in enumerate(rows, 1):
         qid = rec.get("id", f"row_{i}")
@@ -166,17 +172,24 @@ def _section(
         out.append(f"\n**A:** {answer}\n")
         out.append(f"\n**References:** {_fmt_refs(rec.get('pred_refs') or [])}\n")
 
-        # Hard mode records both turns. ``pred_answer`` above is already the
-        # post-pushback answer (the graded one); show turn 1 for the diff.
-        if rec.get("pushback_answer"):
+        # Hard mode records both turns. Turn 2 may be a genuine pushback or an
+        # ordinary follow-up; source provenance decides which label is shown.
+        if rec.get("turn2_answer") or rec.get("pushback_answer"):
             turn1 = (rec.get("turn1_answer") or "").strip()
             if turn1 and turn1 != answer:
-                out.append(f"\n<details><summary>Turn 1 (pre-pushback)</summary>\n\n{turn1}\n\n")
+                kind = str(rec.get("turn2_kind") or "pushback")
+                label = "pre-pushback" if kind == "pushback" else "before ordinary follow-up"
+                out.append(f"\n<details><summary>Turn 1 ({label})</summary>\n\n{turn1}\n\n")
                 out.append(f"References: {_fmt_refs(rec.get('turn1_refs') or [])}\n\n</details>\n")
-            pb = rec.get("pushback") or {}
-            conceded = pb.get("conceded")
-            if conceded is not None:
-                out.append(f"\n**Conceded to pushback:** `{conceded}`\n")
+            out.append(
+                f"\n**Selected response:** `{rec.get('selected_turn') or 'turn2'}` "
+                f"(`{rec.get('turn2_kind') or 'pushback'}`)\n"
+            )
+            if (rec.get("turn2_kind") or "pushback") == "pushback":
+                pb = rec.get("pushback") or {}
+                conceded = pb.get("conceded")
+                if conceded is not None:
+                    out.append(f"\n**Conceded to pushback:** `{conceded}`\n")
 
         out.extend(_judge_block(judge.get(str(qid)) or {}))
 

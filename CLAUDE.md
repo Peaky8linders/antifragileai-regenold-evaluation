@@ -1,7 +1,7 @@
 # CLAUDE.md — Regenold EU AI Act RAG (re-evaluation repo)
 
 Load-bearing context for an LLM coding assistant. Read top-to-bottom before
-making changes. Every number here was re-measured in R325 against **this**
+making changes. Every number here was re-measured in R326 (2026-08-10) against **this**
 repo; the per-round engineering log lives in
 **[`docs/ROUNDS.md`](docs/ROUNDS.md)** — search it, don't read it.
 
@@ -53,19 +53,21 @@ app/routes/regenold.py
    │      └── app/engines/_graph_rag_impl.py  ← imported as `app.engines.graph_rag`
    │           (`graph_rag` is a PACKAGE proxy; there is no graph_rag.py file)
    │             ├── _deterministic_parse — keyword→entities + BM25 fallback
+   │             │      └── app/engines/vector_recall.py  ← additive vector recall (R326)
    │             ├── _retrieve_from_kb    — KB + ontology + xrefs
    │             ├── _deterministic_answer — verdict / role×risk / obligations
    │             └── _two_stage_generate  — Stage-2 LLM polish (live only)
    ├── _surface_anchor_citations          — keyword-derived anchors
-   ├── _collapse_parent_refs              — smallest-cover citation pass
+   ├── _collapse_parent_refs              — smallest-cover citation pass (R325.1)
    ├── Component D                        — a SECOND prose→citation pass (see rule #11)
    ├── normalise_answer_for_regenold      — sentence + char caps
    └── RegenoldAskResponse
 ```
 
 The Neo4j graph contributes **non-citable Stage-2 context** via
-`app/engines/kg_context.py` — provision hierarchy and recital anchors. It is
-additive: never a ranker, never a wire citation (hard rule #10).
+`app/engines/kg_context.py` — provision hierarchy, recital anchors, subpoint carve-outs,
+and deontic classifications (Practice, OperatorRole, AnnexIIICategory, LifecyclePhase).
+It is additive: never a ranker, never a wire citation (hard rule #10).
 
 ## Knowledge surface — measured 2026-08-09
 
@@ -219,9 +221,9 @@ AnnexIIICategory 8   OperatorRole 5   LifecyclePhase 4   RiskLevel 4
 ```
 
 7 VECTOR indexes, all ONLINE and fully populated (**1,490 embeddings**), plus a
-`ft_provision_prose` FULLTEXT index. **`grep -rn 'db.index.vector' app/` returns
-0** — the entire vector layer has zero consumers. Largest built-but-unwired
-capability.
+`ft_provision_prose` FULLTEXT index. **Lit up in R326** via `app/engines/vector_recall.py`
+(`_query_neo4j_vector_index` using `v_article_embedding` / `v_annex_embedding` + local sentence-level SVD fallback),
+wired behind `REGENOLD_GRAPH_VECTOR_RECALL` (default OFF).
 
 **Article node `number` is a STRING.** `MATCH (a:Article {number: 3})` returns
 nothing; `{number: '3'}` and `{id: 'article_3'}` work. `ORDER BY` on it sorts
@@ -420,6 +422,8 @@ Defaults are the CODE default, re-measured 2026-08-09.
 | `REGENOLD_COMPLETENESS_VERIFIER` | **OFF** | it appended inverted law |
 | `REGENOLD_FINAL_REF_CLAMP` | **OFF** | R142.1 — lost the pairwise judge 11-0 |
 | `REGENOLD_PARENT_COLLAPSE` | **OFF** | R325 — drop a head when its own sub-point is cited. F1 +0.018 on the graded batch but loses 1 gold, so it awaits `easyhard_ab` |
+| `REGENOLD_GRAPH_VECTOR_RECALL` | **OFF** | R326 — activates additive Neo4j native vector recall + local sentence SVD embedding index fallback |
+| `REGENOLD_VECTOR_MIN_SIM` | 0.35 | R326 — similarity threshold floor for vector recall hits |
 | `NEO4J_AUTO_SEED` | on unless `0` | **pin to 0 here** — hard rule #12 |
 
 Stage-2 models (`app/config.py`): parse `claude-sonnet-5`, Stage-2
@@ -508,13 +512,13 @@ attributed, not Omnibus — and `tests/test_kb_stubs_filled.py` pins it.
 4. **Fix the judge** before trusting any further answer number — the length
    artefact above. `evals/judge/legal_v2.py` already implements the
    quote-or-retract rule that catches it.
-4. **The Neo4j vector layer is unused** — 7 VECTOR indexes and ~1,490
-   embeddings with zero consumers.
-5. **The kg_context change still owes its merge gate.** It is answer-affecting,
+5. **R326 Vector Recall & Unread Node Layers offline evaluation** — run `scripts/eval_vector_recall_gold.py` to measure vector recall gold gain offline against the 100 recorded rows.
+6. **Remediate Code Review Findings** — address verified review findings in [`docs/reviews/R326-code-review-2026-08-10.md`](docs/reviews/R326-code-review-2026-08-10.md) (enumeration regex expansion, `_EXECUTOR` double-checked lock, Arabic annex normalization in `vector_recall.py` and Component D, parent collapse regex).
+7. **The kg_context change still owes its merge gate.** It is answer-affecting,
    and davidath is byte-identical here **by construction** (Stage-2 never fires
    under `provider=cli`), so the bench proves nothing about its quality. Run
    `ab_judge` weighted to Article 3 / 26 / 5 / 6 questions; a generic set ties.
-6. **Watch conciseness** — answers are **+41% longer** than the graded July-7
+8. **Watch conciseness** — answers are **+41% longer** than the graded July-7
    ones, on the one axis the official scorecard says we lead.
 
 ---
