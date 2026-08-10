@@ -2,18 +2,19 @@
 """R82-A — rescore historical sidecars with the corrected tokenizer.
 
 Walks `evals/bench/results/*.json`, recomputes the answer-correctness
-axes from each row's `gold_answer` + `predicted_answer` (+
+axes from each row's `gold_answer` + `pred_answer`/`predicted_answer` (+
 `expected_keywords` when present), and writes a sibling
 `<label>.rescored.json` carrying:
 
   * `rescored_at`: ISO timestamp
-  * `metrics_version`: 'r82-a'
+  * `metrics_version` + local-formula provenance
+  * `source_content_sha256` for cache freshness
   * `rows`: every original row plus `rescored_axes` field
   * `rescored_aggregate`: aggregate dict from `metrics.aggregate`
 
 The ORIGINAL sidecar is never mutated. Re-runs are idempotent — if
-`<label>.rescored.json` already exists with the same row count + same
-metrics_version, the rescore is skipped (use `--force` to override).
+`<label>.rescored.json` already exists with the same row count, metrics
+version, and source content hash, the rescore is skipped.
 
 Usage:
     .venv/Scripts/python.exe -m scripts.rescore_sidecars
@@ -23,6 +24,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from datetime import datetime, timezone
@@ -31,7 +33,7 @@ from typing import Any, Iterable
 
 from evals.bench import metrics
 
-_METRICS_VERSION = "r82-a"
+_METRICS_VERSION = metrics.METRICS_VERSION
 _RESULTS_DIR = Path(__file__).parent.parent / "evals" / "bench" / "results"
 
 
@@ -56,10 +58,16 @@ def rescore_row(row: dict[str, Any]) -> dict[str, float | None]:
     Robust to missing fields — returns 0.0 for any axis whose inputs
     are absent (so a malformed sidecar doesn't crash the walker).
     """
-    pred_answer = row.get("predicted_answer") or row.get("answer") or ""
+    pred_answer = (
+        row.get("pred_answer") or row.get("predicted_answer")
+        or row.get("answer") or ""
+    )
     pred_refs = row.get("pred_refs") or row.get("references") or []
     gold_answer = row.get("gold_answer") or row.get("answer_gold") or ""
-    gold_articles = row.get("gold_articles") or row.get("relevant_article")
+    gold_articles = (
+        row.get("gold_refs") or row.get("expected_refs")
+        or row.get("gold_articles") or row.get("relevant_article")
+    )
     latency_ms = float(row.get("latency_ms") or 0.0)
     expected_keywords = row.get("expected_keywords")  # may be None
 
@@ -84,6 +92,7 @@ def rescore_sidecar(path: Path, *, force: bool = False) -> Path:
     if payload is None:
         raise RuntimeError(f"Could not load sidecar {path}")
     rows = payload.get("rows") or []
+    source_content_sha256 = hashlib.sha256(path.read_bytes()).hexdigest()
     sibling = path.with_suffix(".rescored.json")
     if sibling.exists() and not force:
         existing = _read_payload(sibling)
@@ -91,6 +100,7 @@ def rescore_sidecar(path: Path, *, force: bool = False) -> Path:
             existing is not None
             and existing.get("metrics_version") == _METRICS_VERSION
             and len(existing.get("rows") or []) == len(rows)
+            and existing.get("source_content_sha256") == source_content_sha256
         ):
             return sibling
     # Build the rescored payload — copy the row, attach `rescored_axes`
@@ -104,10 +114,16 @@ def rescore_sidecar(path: Path, *, force: bool = False) -> Path:
         # Build a RowScore for aggregation
         row_scores.append(
             metrics.score_row(
-                pred_answer=row.get("predicted_answer") or row.get("answer") or "",
+                pred_answer=(
+                    row.get("pred_answer") or row.get("predicted_answer")
+                    or row.get("answer") or ""
+                ),
                 pred_refs=list(row.get("pred_refs") or row.get("references") or []),
                 gold_answer=row.get("gold_answer") or row.get("answer_gold") or "",
-                gold_articles=row.get("gold_articles") or row.get("relevant_article"),
+                gold_articles=(
+                    row.get("gold_refs") or row.get("expected_refs")
+                    or row.get("gold_articles") or row.get("relevant_article")
+                ),
                 latency_ms=float(row.get("latency_ms") or 0.0),
                 expected_keywords=row.get("expected_keywords"),
             )
@@ -118,6 +134,8 @@ def rescore_sidecar(path: Path, *, force: bool = False) -> Path:
         datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     )
     new_payload["metrics_version"] = _METRICS_VERSION
+    new_payload["metric_provenance"] = metrics.METRIC_PROVENANCE
+    new_payload["source_content_sha256"] = source_content_sha256
     new_payload["rescored_aggregate"] = metrics.aggregate(row_scores)
     sibling.write_text(
         json.dumps(new_payload, indent=2, ensure_ascii=False), encoding="utf-8"

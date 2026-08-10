@@ -1,7 +1,7 @@
 # CLAUDE.md — Regenold EU AI Act RAG (re-evaluation repo)
 
 Load-bearing context for an LLM coding assistant. Read top-to-bottom before
-making changes. Every number here was re-measured in R325 against **this**
+making changes. Every number here was re-measured in R326 (2026-08-10) against **this**
 repo; the per-round engineering log lives in
 **[`docs/ROUNDS.md`](docs/ROUNDS.md)** — search it, don't read it.
 
@@ -53,19 +53,21 @@ app/routes/regenold.py
    │      └── app/engines/_graph_rag_impl.py  ← imported as `app.engines.graph_rag`
    │           (`graph_rag` is a PACKAGE proxy; there is no graph_rag.py file)
    │             ├── _deterministic_parse — keyword→entities + BM25 fallback
+   │             │      └── app/engines/vector_recall.py  ← additive vector recall (R326)
    │             ├── _retrieve_from_kb    — KB + ontology + xrefs
    │             ├── _deterministic_answer — verdict / role×risk / obligations
    │             └── _two_stage_generate  — Stage-2 LLM polish (live only)
    ├── _surface_anchor_citations          — keyword-derived anchors
-   ├── _collapse_parent_refs              — smallest-cover citation pass
+   ├── _collapse_parent_refs              — smallest-cover citation pass (R325.1)
    ├── Component D                        — a SECOND prose→citation pass (see rule #11)
    ├── normalise_answer_for_regenold      — sentence + char caps
    └── RegenoldAskResponse
 ```
 
 The Neo4j graph contributes **non-citable Stage-2 context** via
-`app/engines/kg_context.py` — provision hierarchy and recital anchors. It is
-additive: never a ranker, never a wire citation (hard rule #10).
+`app/engines/kg_context.py` — provision hierarchy, recital anchors, subpoint carve-outs,
+and deontic classifications (Practice, OperatorRole, AnnexIIICategory, LifecyclePhase).
+It is additive: never a ranker, never a wire citation (hard rule #10).
 
 ## Knowledge surface — measured 2026-08-09
 
@@ -200,6 +202,12 @@ categories · OOS probe (`--oos-suite all`, 51 rows) **49 pass, 0 scope leaks**
 (2 known `adjacent_eu` soft fails) · full `pytest` **55 pre-existing failures**,
 all the documented `provider=cli` Stage-2 env artifact.
 
+⚠ **R327 — this block is measurable again.** An uncommitted pass had rebound the
+canonical axis names to new formulas, so any run graded against this table was
+comparing two different rulers. Canonical names are back on the historical
+formulas; `--assert-baseline` also works again (per-row `metric_provenance` inside
+`scores` had made it permanently red).
+
 ⚠ An older pin of **0.4079 / 0.5543** appears in the log — it is stale.
 ⚠ **Judge the full suite by the failure SET, never the count**, and diff it
 against a baseline checked out **in place** (`git stash`), never in a
@@ -219,9 +227,51 @@ AnnexIIICategory 8   OperatorRole 5   LifecyclePhase 4   RiskLevel 4
 ```
 
 7 VECTOR indexes, all ONLINE and fully populated (**1,490 embeddings**), plus a
-`ft_provision_prose` FULLTEXT index. **`grep -rn 'db.index.vector' app/` returns
-0** — the entire vector layer has zero consumers. Largest built-but-unwired
-capability.
+`ft_provision_prose` FULLTEXT index. Dimensions **128** (TF-IDF → SVD), cosine.
+The seeder writes them with `embeddings_index._embed_query`, the same function the
+query path uses, so query and node vectors share one subspace — verified.
+
+**R326 lit up 2 of the 7**; **R327 reads all 7**, each at a different layer:
+
+| index | nodes | how it is read | can it reach the wire? |
+| --- | --- | --- | --- |
+| `v_article_embedding` | 113 | open-domain additive candidate recall — `app/engines/vector_recall.py`, `REGENOLD_GRAPH_VECTOR_RECALL` (OFF) | yes, gated |
+| `v_annex_embedding` | 13 | same | yes, gated |
+| `v_paragraph_embedding` | 658 | ANN then **constrained to already-cited provisions** — `app/engines/graph_semantic.py` | no |
+| `v_point_embedding` | 421 | same | no |
+| `v_subpoint_embedding` | 37 | same | no |
+| `v_definition_embedding` | 68 | open-domain, non-citable definitional context | no |
+| `v_recital_embedding` | 180 | open-domain, non-citable interpretive context | no |
+
+⚠ **The embedding is a WEAK open-domain retriever and the access mode is the
+whole point.** Measured on the live instance, scores cluster in 0.5–0.88 whether
+the hit is right or wrong — there is no discriminative margin:
+
+* *"Is social scoring by a public authority allowed?"* → `v_article_embedding`
+  rank 1 = **Article 77** (0.73). The answer is Art. 5(1)(c).
+* *"Our hospital wants to transcribe doctor-patient conversations"* → Article 19,
+  then 21. Both wrong.
+* *"Who counts as a deployer?"* → `v_definition_embedding` ranks `def_provider`
+  (0.629) **above** `def_deployer` (0.615).
+
+Which is the same result as the R325 lexical re-ranker (best AUC 0.641 vs
+`rank`'s 0.703) and the three dense-rerank washes. So the sub-provision layers
+are queried by ANN and then **filtered to units of provisions already cited** —
+that converts a weak open-domain retrieval into a strong within-provision
+selection (Art. 12 → 12(1) at 0.891; Art. 50 → 50(3)) and makes citation drift
+structurally impossible, because every candidate already belongs to a cited
+provision. Definitions and recitals stay open-domain but can never be a wire
+citation, so their weak precision costs context budget, never a reference.
+
+⚠ **`HAS_RECITAL_ANCHOR` has 5 edges in the ENTIRE graph** (article_5 → recitals
+18/30/31/44, article_52 → recital 112). So `fetch_recital_anchors` is dead for
+111 of 113 articles while 180 embedded recitals sat unread. That is why the
+recital layer is semantic rather than structural.
+
+⚠ **`CROSS_REFERENCES` (248 edges) is never read as CONTEXT.** Incoming edges are
+real legal signal — `article_50 <- [Article 13, Article 26, Article 5, Article 96]`
+— and the backlink direction is unexplored. It is measured-dead only as a
+*citation* path (fuse slack, R295). Next candidate; needs its own gate.
 
 **Article node `number` is a STRING.** `MATCH (a:Article {number: 3})` returns
 nothing; `{number: '3'}` and `{id: 'article_3'}` work. `ORDER BY` on it sorts
@@ -382,6 +432,17 @@ seeder succeeds, `/healthz/graph` still reports ok, answers just get worse.
 * **Small-n live A/Bs cannot resolve reference axes.** Two runs with an
   IDENTICAL baseline arm changed 20/40 rows' refs and sign-flipped all three
   reference axes. Use full n with repeats, or a deterministic offline sim.
+* **CHECK THE BRANCH ARM'S LATENCY — it is the cheapest inert-A/B detector.**
+  R327 ran a 50-row paired live A/B of `REGENOLD_GRAPH_SEMANTIC_LAYERS` and got
+  byte-identical answers AND byte-identical reference lists on all 50 rows. That
+  reads as "safe". It was inert: arm B averaged **1,096 ms** against arm A's
+  **16,642 ms**, i.e. every row was an `_ENGINE_CACHE` hit and Stage-2 never
+  re-ran. A branch arm an order of magnitude faster than baseline did not run the
+  engine. **Any engine-level flag missing from `_engine_cache_key` makes an
+  in-process A/B measure nothing** — R326's `REGENOLD_GRAPH_VECTOR_RECALL` had
+  the same defect. Route-level post-processing flags must stay OUT of the key
+  (that asymmetry is what makes the paired A/B possible); engine-level ones must
+  be in it.
 * **"Byte-identical" is also what INERT looks like.** A foreign-citation guard
   was widened, measured no wire change, and that was read as *safe* — it was
   also consistent with *not working*, because Component D was re-adding
@@ -398,6 +459,39 @@ seeder succeeds, `/healthz/graph` still reports ok, answers just get worse.
   the feature silently removes itself.
 * **A background job that does `git checkout` will collide with your edits.**
   Commit first, or don't edit while it runs.
+* **R327 — the instrument trap, in its most dangerous form yet: the ruler was
+  rewritten in the SAME change as the behaviour it grades.** An uncommitted pass
+  redefined `ans_correctness_*` and `ref_correctness_strict` / `ref_conciseness`
+  **in place**, under the canonical axis names, while also collapsing every
+  reference budget to 5. Had it been graded, the bench would have "confirmed" the
+  clamp using a scorer built to like it. Canonical axis names are now pinned to
+  the historical formulas; new formulas live under `*_polarity_adj` /
+  `*_exact_coord`. **If you change a formula, change its NAME.**
+* **Gold shape decides which reference formula is valid.** davidath's
+  `relevant_article` gold is HEAD-level, so scoring exact coordinates against it
+  marks a MORE precise citation (`Article 5.1.f` vs gold `Article 5`) as 0.0.
+  easyhard's `expected_refs` DO carry sub-point grain, so it uses the
+  `*_exact_coord` variants. Same axis name, two datasets, two correct formulas.
+* **The first graph query in a fresh process can blow the 750 ms budget.** Cold
+  TLS + driver handshake to Aura measured a MISS on query 1 and 40-68 ms on every
+  query after. So the first row of a batch silently loses its graph context.
+  Warm the client before timing or grading anything.
+* **`provision_exists` is head-level LAX.** `provision_exists("Article 3.999")`
+  is **True**. It cannot be used to validate a leaf coordinate; only
+  `get_provision_text` returning non-None can. (Measured: 0 of 60 real leaf
+  coordinates in the July-7 gold lack verbatim text, so a "real coordinate with no
+  text" fallback is dead code that only ever dresses a FABRICATED coordinate in
+  its parent's words.)
+* **`grep` silently stops printing when it decides the stream is binary.** The
+  cp1252 curly quotes in provision text make `grep -v` emit
+  `Binary file (standard input) matches` and drop every remaining line. It cost a
+  wrong conclusion twice this round ("definitions never fire" — they always did).
+  Write to a file and read it, or `grep -a`.
+* **A non-blocking admission gate is a graph OFF switch under load.**
+  `_KG_ADMISSION.acquire(blocking=False)` with 2 slots hard-dropped every
+  concurrent read past the second. One request issues up to six kg_context reads
+  and the harness runs at concurrency 3, so the graph vanished exactly when it was
+  most in use — while every health probe stayed green.
 
 ## Env flags that matter
 
@@ -420,7 +514,18 @@ Defaults are the CODE default, re-measured 2026-08-09.
 | `REGENOLD_COMPLETENESS_VERIFIER` | **OFF** | it appended inverted law |
 | `REGENOLD_FINAL_REF_CLAMP` | **OFF** | R142.1 — lost the pairwise judge 11-0 |
 | `REGENOLD_PARENT_COLLAPSE` | **OFF** | R325 — drop a head when its own sub-point is cited. F1 +0.018 on the graded batch but loses 1 gold, so it awaits `easyhard_ab` |
-| `NEO4J_AUTO_SEED` | on unless `0` | **pin to 0 here** — hard rule #12 |
+| `REGENOLD_GRAPH_VECTOR_RECALL` | **OFF** | R326 — additive Neo4j native vector recall (article + annex) + local SVD fallback |
+| `REGENOLD_VECTOR_MIN_SIM` | 0.35 | R326 — similarity floor for vector recall hits |
+| `REGENOLD_GRAPH_SEMANTIC_LAYERS` | **OFF** | R327 — reads the other 5 vector indexes as non-citable Stage-2 context |
+| `REGENOLD_KG_SEMANTIC_MAX_CHARS` | 26000 | R327 — total KG ceiling used ONLY when the semantic layers contribute. See the budget note below |
+| `REGENOLD_SEMANTIC_UNITS` / `_UNITS_PER_PROVISION` | 6 / 2 | R327 — focused sub-provision block size, and the per-provision cap |
+| `REGENOLD_SEMANTIC_DEFINITIONS` / `_RECITALS` | 3 / 3 | R327 — per-layer quotas. They must be SEPARATE: recitals score ~0.70 vs definitions ~0.62, so a shared LIMIT returned **zero** definitions |
+| `REGENOLD_KG_MAX_INFLIGHT` | 4 | R327 — graph worker slots. Was 2 with a NON-BLOCKING acquire, which hard-dropped every concurrent read past the second |
+| `REGENOLD_MINIMAL_REF_BUDGET` | **OFF** | R327 — collapses every scenario budget to 5. This is the top-N clamp family; awaits `easyhard_ab` + `gold_dropped` |
+| `REGENOLD_COMPONENT_D_CITABLE_ONLY` | **OFF** | R327 — Component D promotes only retrieval-grounded refs |
+| `REGENOLD_CITABLE_BASE_GUARD` | ON | R327 — restricts prose-promotion to the retrieved citation universe (only ever REMOVES an ungrounded promotion) |
+| `GROUNDED_JUDGE_STRICT_GROUNDING` | **OFF** | R327 — ON makes answer-correctness unscorable on the July-7 batch (it has no gold at all) |
+| `NEO4J_AUTO_SEED` | **OFF unless `1`** | R327 — now opt-IN, and even then only seeds a graph proven to have 0 nodes. Hard rule #12 |
 
 Stage-2 models (`app/config.py`): parse `claude-sonnet-5`, Stage-2
 `claude-opus-5`, complex `claude-opus-5`, complex thinking 4000, max_tokens
@@ -508,13 +613,13 @@ attributed, not Omnibus — and `tests/test_kb_stubs_filled.py` pins it.
 4. **Fix the judge** before trusting any further answer number — the length
    artefact above. `evals/judge/legal_v2.py` already implements the
    quote-or-retract rule that catches it.
-4. **The Neo4j vector layer is unused** — 7 VECTOR indexes and ~1,490
-   embeddings with zero consumers.
-5. **The kg_context change still owes its merge gate.** It is answer-affecting,
+5. **R326 Vector Recall & Unread Node Layers offline evaluation** — run `scripts/eval_vector_recall_gold.py` to measure vector recall gold gain offline against the 100 recorded rows.
+6. **Remediate Code Review Findings** — address verified review findings in [`docs/reviews/R326-code-review-2026-08-10.md`](docs/reviews/R326-code-review-2026-08-10.md) (enumeration regex expansion, `_EXECUTOR` double-checked lock, Arabic annex normalization in `vector_recall.py` and Component D, parent collapse regex).
+7. **The kg_context change still owes its merge gate.** It is answer-affecting,
    and davidath is byte-identical here **by construction** (Stage-2 never fires
    under `provider=cli`), so the bench proves nothing about its quality. Run
    `ab_judge` weighted to Article 3 / 26 / 5 / 6 questions; a generic set ties.
-6. **Watch conciseness** — answers are **+41% longer** than the graded July-7
+8. **Watch conciseness** — answers are **+41% longer** than the graded July-7
    ones, on the one axis the official scorecard says we lead.
 
 ---

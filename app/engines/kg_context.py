@@ -71,6 +71,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import threading
 from contextvars import ContextVar
 
 logger = logging.getLogger(__name__)
@@ -78,6 +79,7 @@ logger = logging.getLogger(__name__)
 __all__ = [
     "kg_context_enabled",
     "fetch_provision_hierarchy",
+    "fetch_recital_anchors",
     "fetch_subpoint_detail",
     "fetch_deontic_context",
     "render_kg_context",
@@ -92,6 +94,18 @@ _DEFAULT_MAX_RECITALS = 5
 #: from the RAG repo in R325). Without it a 12-ref scenario can inject an
 #: unbounded wall of provision text that crowds the rest of the Stage-2 prompt.
 _DEFAULT_MAX_CHARS = 16000
+#: R327 — ceiling used only when the semantic vector layers contribute a block.
+#:
+#: Sized from measurement, not taste. At 5 refs the layers need ~8.4k while the
+#: pre-existing blocks need ~15.6k, so a shared 16,000 ceiling forced the layers
+#: to evict 3,545 chars — 2,600 of it out of PROVISION STRUCTURE, the most
+#: load-bearing block. 24,000 still clipped the hierarchy by 52 chars (12,139
+#: needed vs 12,087 available), which ``_fit_complete_lines`` rounds down to a
+#: 768-char loss at the line boundary. 26,000 leaves every pre-existing block
+#: intact, so the layers-ON arm is a strict superset of the layers-OFF arm and
+#: any A/B delta is attributable to the added context alone.
+#: Override with ``REGENOLD_KG_SEMANTIC_MAX_CHARS``.
+_DEFAULT_SEMANTIC_MAX_CHARS = 26000
 
 
 def kg_context_enabled() -> bool:
@@ -200,45 +214,96 @@ def _node_ids(refs: list[str], limit: int) -> list[str]:
 # ['article_26','article_3']. The load-bearing half — that the rewrite is
 # cost-neutral — is what holds.)
 
+# R327 — THE PROVISION-LEVEL ORDER WAS ALSO WRONG, for the same reason.
+#
+# R318 (above) fixed the ordering of units WITHIN a provision. The ordering OF
+# the provisions was still ``ORDER BY a.id``, i.e. lexicographic over node ids,
+# and ``_node_ids`` receives the refs in RETRIEVAL-RANK order. Measured live:
+#
+#   in  ['Article 50', 'Article 5', 'Annex III', 'Article 26', 'Article 6']
+#   out ['Annex III',  'Article 26', 'Article 5', 'Article 50', 'Article 6']
+#
+# so the top-ranked provision came back 4th of 5. That is load-bearing because
+# ``_fit_complete_lines`` truncates this block at a line boundary when it exceeds
+# the ceiling: the tail is dropped, and the tail was whatever sorted last
+# alphabetically rather than whatever mattered least.
+#
+# The index-preserving idiom (UNWIND the positions, carry ``i``, ORDER BY ``i``)
+# is taken from the Cypher appendix of "Reducing Hallucinations in Complex
+# Question Answering using Simple Graph-based RAG" (query B.6), which uses it to
+# return sections in caller-supplied order. Cost-neutral: same node lookups by
+# id, one extra integer carried through.
 _HIERARCHY_CYPHER = """
-MATCH (a) WHERE a.id IN $ids AND (a:Article OR a:Annex)
+UNWIND range(0, size($ids) - 1) AS i
+WITH i, $ids[i] AS aid
+MATCH (a) WHERE a.id = aid AND (a:Article OR a:Annex)
 OPTIONAL MATCH (a)-[:HAS_PARAGRAPH|HAS_POINT]->(u)
-WITH a, u ORDER BY a.id, coalesce(toInteger(u.number), 2147483647), u.number
-WITH a, collect({num: u.number, text: u.text})[..$max_units] AS units
+WITH i, a, u ORDER BY i, coalesce(toInteger(u.number), 2147483647), u.number
+WITH i, a, collect({num: u.number, text: u.text})[..$max_units] AS units
 RETURN a.id AS id,
        coalesce(a.strict_citation, a.id) AS cite,
        a.title AS title,
        units AS units
+ORDER BY i
 """
 
+# R327 — same index-preserving fix (B.6). ``LIMIT $limit`` truncates this result,
+# so ordering it alphabetically meant the recitals kept were the ones anchored to
+# the alphabetically-first provision, not the highest-ranked one.
 _RECITAL_CYPHER = """
+UNWIND range(0, size($ids) - 1) AS i
+WITH i, $ids[i] AS aid
 MATCH (a)-[:HAS_RECITAL_ANCHOR]->(r:Recital)
-WHERE a.id IN $ids
+WHERE a.id = aid
 RETURN a.id AS id, r.number AS num, r.text AS text
-ORDER BY a.id, coalesce(toInteger(r.number), 2147483647), r.number
+ORDER BY i, coalesce(toInteger(r.number), 2147483647), r.number
 LIMIT $limit
 """
 
+# R327 — same index-preserving fix (B.6); ``LIMIT $limit`` applies here too.
 _SUBPOINT_CYPHER = """
-MATCH (a) WHERE a.id IN $ids AND (a:Article OR a:Annex)
+UNWIND range(0, size($ids) - 1) AS i
+WITH i, $ids[i] AS aid
+MATCH (a) WHERE a.id = aid AND (a:Article OR a:Annex)
 MATCH (a)-[:HAS_PARAGRAPH]->(p)-[:HAS_POINT]->(pt)-[:HAS_SUBPOINT]->(s:SubPoint)
 RETURN coalesce(a.strict_citation, a.id) AS cite,
-       p.number AS para, pt.letter AS letter, s.id AS sid, s.text AS text
-ORDER BY a.id, coalesce(toInteger(p.number), 2147483647), p.number, pt.letter, s.id
+       p.number AS para, pt.letter AS letter, s.roman AS roman,
+       s.id AS sid, s.text AS text
+ORDER BY i, coalesce(toInteger(p.number), 2147483647), p.number, pt.letter, s.id
 LIMIT $limit
 """
 
+#: R327 — ``CALL () { ... }``, not a bare ``CALL { ... }``.
+#:
+#: The bare form parses and returns correct rows on Aura 0644b854 (verified live:
+#: 3 rows for ['article_5','article_6','annex_III'], including the Annex III
+#: UNION branch), but the server answers with
+#: ``01N00 CALL subquery without a variable scope clause is deprecated``. The
+#: explicit empty scope clause is the supported spelling and imports nothing —
+#: parameters like ``$ids`` are always in scope inside a subquery, which is why
+#: the aliased importing ``WITH $ids AS ids`` was legal here too.
 _DEONTIC_CYPHER = """
-MATCH (a:Article) WHERE a.id IN $ids
-OPTIONAL MATCH (pr:Practice)-[:PROHIBITED_UNDER]->(a)
-OPTIONAL MATCH (cat:AnnexIIICategory)-[:TRIGGERS_HIGH_RISK_UNDER]->(a)
-OPTIONAL MATCH (ro:OperatorRole)-[hoa:HAS_OBLIGATION_ARTICLE]->(a)
-OPTIONAL MATCH (ph:LifecyclePhase)-[:APPLIES_TO]->(a)
-RETURN coalesce(a.strict_citation, a.id) AS cite,
-       collect(DISTINCT coalesce(pr.short_name, pr.id)) AS practices,
-       collect(DISTINCT coalesce(cat.label, cat.id)) AS annex_iii,
-       collect(DISTINCT coalesce(ro.label, ro.id) + ' (' + coalesce(hoa.tier,'') + ')') AS roles,
-       collect(DISTINCT coalesce(ph.label, ph.id) + ' from ' + coalesce(ph.effective_date,'')) AS phases
+CALL () {
+    MATCH (a:Article) WHERE a.id IN $ids
+    OPTIONAL MATCH (pr:Practice)-[:PROHIBITED_UNDER]->(a)
+    OPTIONAL MATCH (cat:AnnexIIICategory)-[:TRIGGERS_HIGH_RISK_UNDER]->(a)
+    OPTIONAL MATCH (ro:OperatorRole)-[hoa:HAS_OBLIGATION_ARTICLE]->(a)
+    OPTIONAL MATCH (ph:LifecyclePhase)-[:APPLIES_TO]->(a)
+    RETURN coalesce(a.strict_citation, a.id) AS cite,
+           collect(DISTINCT coalesce(pr.short_name, pr.id)) AS practices,
+           collect(DISTINCT coalesce(cat.label, cat.id)) AS annex_iii,
+           collect(DISTINCT coalesce(ro.label, ro.id) + ' (' + coalesce(hoa.tier,'') + ')') AS roles,
+           collect(DISTINCT coalesce(ph.label, ph.id) + ' from ' + coalesce(ph.effective_date,'')) AS phases
+    UNION
+    MATCH (cat:AnnexIIICategory)
+    WHERE 'annex_III' IN $ids
+    RETURN 'Annex III' AS cite,
+           [] AS practices,
+           collect(DISTINCT coalesce(cat.label, cat.id)) AS annex_iii,
+           [] AS roles,
+           [] AS phases
+}
+RETURN cite, practices, annex_iii, roles, phases
 LIMIT $limit
 """
 
@@ -333,10 +398,26 @@ def reset_kg_context_memo() -> None:
 #: anyway (R295), so it would be starving the one consumer that actually
 #: reaches an answer on behalf of one that does not.
 _EXECUTOR: object | None = None
+_EXECUTOR_LOCK = threading.Lock()
+#: R327 — 4, not 2. One request now issues up to six bounded reads (hierarchy,
+#: sub-points, deontic, recital anchors, and the two R327 semantic-layer reads),
+#: and the eval harness runs at concurrency 3. Two slots made the pool the
+#: bottleneck for the graph's own contribution. Still small enough to bound the
+#: number of abandoned driver calls a degraded Aura can accumulate.
+_KG_MAX_INFLIGHT = _int_env("REGENOLD_KG_MAX_INFLIGHT", 4, 1, 8)
+_KG_ADMISSION = threading.BoundedSemaphore(_KG_MAX_INFLIGHT)
+
+
+class _ReadRows(list):
+    """List-compatible result that distinguishes errors from empty matches."""
+
+    def __init__(self, rows=(), *, failed: bool = False):
+        super().__init__(rows)
+        self.failed = failed
 
 
 def _get_kg_executor():
-    """Lazy, module-private single-worker pool.
+    """Lazy, module-private bounded worker pool.
 
     Deferred import: ``concurrent.futures`` pulls ``threading`` + ``queue``
     (~40 ms cold), and this module is imported on every request path even when
@@ -344,9 +425,14 @@ def _get_kg_executor():
     """
     global _EXECUTOR
     if _EXECUTOR is None:
-        from concurrent.futures import ThreadPoolExecutor  # noqa: PLC0415
+        with _EXECUTOR_LOCK:
+            if _EXECUTOR is None:
+                from concurrent.futures import ThreadPoolExecutor  # noqa: PLC0415
 
-        _EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="kgctx")
+                _EXECUTOR = ThreadPoolExecutor(
+                    max_workers=_KG_MAX_INFLIGHT,
+                    thread_name_prefix="kgctx",
+                )
     return _EXECUTOR
 
 
@@ -393,33 +479,71 @@ def _bounded_execute_read(cypher: str, params: dict) -> list[dict]:
 
     if graph_circuit_open():
         logger.debug("kg_context: skipped — graph circuit open")
-        return []
+        return _ReadRows(failed=True)
 
     from app.graph.client import get_graph_client  # noqa: PLC0415
 
     client = get_graph_client()
     if not getattr(client, "enabled", False):
-        return []
+        return _ReadRows(failed=True)
 
     def _call() -> list[dict]:
+        strict_read = getattr(client, "execute_read_strict", None)
+        if callable(strict_read):
+            return list(strict_read(cypher, params) or [])
+        # Compatibility for graph test doubles and older embedders. Production
+        # GraphClient exposes the strict method so backend errors cannot be
+        # mistaken for a successful query with no matches.
         return list(client.execute_read(cypher, params) or [])
 
     from concurrent.futures import TimeoutError as _FutTimeout  # noqa: PLC0415
 
     budget_ms = resolve_graph_timeout_ms()
+    # R327 — WAIT for a slot instead of dropping the read.
+    #
+    # The admission gate arrived as ``acquire(blocking=False)``, which turns
+    # every concurrent read beyond the second into an immediate failure. One
+    # request issues several kg_context reads, and the eval harness runs at
+    # concurrency 3, so under exactly the load the graph exists to serve, a large
+    # share of reads returned "failed" and the graph context silently vanished —
+    # the opposite of what the admission gate was for. The gate's real job is to
+    # stop an UNBOUNDED queue of abandoned driver calls piling up behind the
+    # workers, and a bounded wait does that just as well.
+    #
+    # The wait is charged against the SAME budget as the query, so the total
+    # caller-visible cost is still bounded by ``resolve_graph_timeout_ms`` and a
+    # saturated pool degrades to the timeout path rather than to a hard drop.
+    _admit_budget_s = max(budget_ms, 1) / 1000.0
+    if not _KG_ADMISSION.acquire(timeout=_admit_budget_s):
+        record_graph_failure()
+        logger.info(
+            "kg_context: graph worker admission saturated after %.0fms",
+            _admit_budget_s * 1000.0,
+        )
+        return _ReadRows(failed=True)
+
+    fut = None
     try:
         fut = _get_kg_executor().submit(_call)
+        # A timeout only bounds the caller. Keep the admission slot occupied
+        # until the backend task really stops, preventing an unbounded queue of
+        # abandoned driver calls behind the two workers.
+        fut.add_done_callback(lambda _done: _KG_ADMISSION.release())
         rows = fut.result(timeout=max(budget_ms, 1) / 1000.0)
         record_graph_success()
-        return rows
+        return _ReadRows(rows)
     except _FutTimeout:
+        if fut is not None:
+            fut.cancel()
         record_graph_failure()
         logger.info("kg_context: cypher timeout budget=%dms", budget_ms)
-        return []
+        return _ReadRows(failed=True)
     except Exception:  # noqa: BLE001 — the graph must never break an answer
+        if fut is None:
+            _KG_ADMISSION.release()
         record_graph_failure()
         logger.debug("kg_context: bounded read failed", exc_info=True)
-        return []
+        return _ReadRows(failed=True)
 
 
 #: An enumeration opening inside the budget means the LIST is the obligation.
@@ -502,8 +626,9 @@ def fetch_provision_hierarchy(refs: list[str]) -> list[dict]:
     if cached is not None:
         return cached
     rows = _bounded_execute_read(_HIERARCHY_CYPHER, {"ids": ids, "max_units": max_units})
-    _memo_put("hierarchy", ids, max_units, rows)
-    return rows
+    if not getattr(rows, "failed", False):
+        _memo_put("hierarchy", ids, max_units, list(rows))
+    return list(rows)
 
 
 def fetch_recital_anchors(refs: list[str]) -> list[dict]:
@@ -520,12 +645,13 @@ def fetch_recital_anchors(refs: list[str]) -> list[dict]:
     if cached is not None:
         return cached
     rows = _bounded_execute_read(_RECITAL_CYPHER, {"ids": ids, "limit": limit})
-    _memo_put("recitals", ids, limit, rows)
-    return rows
+    if not getattr(rows, "failed", False):
+        _memo_put("recitals", ids, limit, list(rows))
+    return list(rows)
 
 
 def fetch_subpoint_detail(refs: list[str]) -> list[dict]:
-    """Sub-point leaves (conditions, exceptions, carve-outs) of cited provisions."""
+    """Sub-point leaves of cited provisions, without inferring legal effect."""
     if not kg_context_enabled():
         return []
     ids = _node_ids(refs or [], _int_env("REGENOLD_KG_MAX_REFS", _DEFAULT_MAX_REFS, 1, 10))
@@ -534,13 +660,15 @@ def fetch_subpoint_detail(refs: list[str]) -> list[dict]:
     cached = _memo_get("subpoint", ids, 24)
     if cached is not None:
         return cached
+    rows: list[dict] = _ReadRows(failed=True)
     try:
         rows = _bounded_execute_read(_SUBPOINT_CYPHER, {"ids": ids, "limit": 24})
         result = list(rows or [])
     except Exception:  # noqa: BLE001
         logger.debug("kg_context: subpoint fetch failed", exc_info=True)
         result = []
-    _memo_put("subpoint", ids, 24, result)
+    if not getattr(rows, "failed", False):
+        _memo_put("subpoint", ids, 24, result)
     return result
 
 
@@ -554,17 +682,199 @@ def fetch_deontic_context(refs: list[str]) -> list[dict]:
     cached = _memo_get("deontic", ids, 12)
     if cached is not None:
         return cached
+    rows: list[dict] = _ReadRows(failed=True)
     try:
         rows = _bounded_execute_read(_DEONTIC_CYPHER, {"ids": ids, "limit": 12})
         result = list(rows or [])
     except Exception:  # noqa: BLE001
         logger.debug("kg_context: deontic fetch failed", exc_info=True)
         result = []
-    _memo_put("deontic", ids, 12, result)
+    if not getattr(rows, "failed", False):
+        _memo_put("deontic", ids, 12, result)
     return result
 
 
-def render_kg_context(refs: list[str]) -> list[str]:
+_R326_RESERVED_MARKERS = (
+    "KNOWLEDGE-GRAPH SUB-POINT DETAIL",
+    "KNOWLEDGE-GRAPH REGULATORY CLASSIFICATION",
+    # R327 — the semantic layers need reserved capacity for the same reason the
+    # R326 blocks do: they render AFTER the hierarchy block, and a large
+    # hierarchy would otherwise consume the whole ceiling and delete them. That
+    # is the "budget the thing you just added" failure — a new context block
+    # that silently removes itself.
+    "KNOWLEDGE-GRAPH QUESTION-FOCUSED SUB-PROVISIONS",
+    "KNOWLEDGE-GRAPH DEFINITIONS",
+    "KNOWLEDGE-GRAPH RECITAL CONTEXT",
+)
+
+
+def _fit_complete_lines(block: str, budget: int) -> str:
+    """Fit a block without cutting a rendered hierarchy/deontic row."""
+    if not block or budget <= 0:
+        return ""
+    if len(block) <= budget:
+        return block
+
+    kept: list[str] = []
+    used = 0
+    for line in block.splitlines():
+        cost = len(line) + (1 if kept else 0)
+        if used + cost > budget:
+            break
+        kept.append(line)
+        used += cost
+
+    # A hierarchy article heading is not useful without at least one unit and
+    # looks complete if stranded at the boundary. Drop such dangling headings.
+    while kept and kept[-1].lstrip().startswith("- ") and kept[-1].rstrip().endswith(":"):
+        kept.pop()
+    if len([line for line in kept if line.strip()]) < 2:
+        return ""
+    return "\n".join(kept)
+
+
+def _budget_context_parts(parts: list[str], max_chars: int) -> tuple[list[str], int]:
+    """Apply a hard total cap while reserving half for present R326 blocks."""
+    if not parts:
+        return [], 0
+
+    reserved_indexes = [
+        idx for idx, part in enumerate(parts)
+        if any(marker in part for marker in _R326_RESERVED_MARKERS)
+    ]
+    fitted: dict[int, str] = {}
+    used = 0
+
+    # Fit the new graph shapes first inside a reserved half-budget. They are
+    # otherwise always the first sections discarded by a large hierarchy.
+    #
+    # R327 — allocate SMALLEST-NEED-FIRST (max-min fair), not in index order with
+    # an equal split. With an equal split, a reserved block whose need exceeds its
+    # 1/N share gets trimmed below two lines and is then dropped outright, while
+    # blocks that needed less than their share leave their remainder unused.
+    # MEASURED: at 5 refs that dropped the QUESTION-FOCUSED SUB-PROVISIONS block
+    # — the highest-precision block of the set — i.e. the feature deleted itself.
+    # Taking the smallest need first lets each small block claim exactly what it
+    # needs and rolls the surplus forward to the larger ones.
+    reserve_left = max_chars // 2
+    ordered_reserved = sorted(reserved_indexes, key=lambda i: len(parts[i]))
+    for pos, idx in enumerate(ordered_reserved):
+        slots_left = len(ordered_reserved) - pos
+        allocation = max(reserve_left // max(slots_left, 1), 0)
+        # Never hand a block more than it needs; the surplus benefits the rest.
+        allocation = min(allocation, len(parts[idx]) + 1)
+        block = _fit_complete_lines(parts[idx], max(0, allocation - 1))
+        if block:
+            fitted[idx] = block
+            cost = len(block) + 1  # caller joins returned parts with a newline
+            used += cost
+            reserve_left -= cost
+
+    # Hierarchy remains first in output, followed by lower-priority recitals
+    # and provenance when room remains. No individual block can defeat the cap.
+    for idx, part in enumerate(parts):
+        if idx in reserved_indexes:
+            continue
+        block = _fit_complete_lines(part, max(0, max_chars - used - 1))
+        if not block:
+            continue
+        fitted[idx] = block
+        used += len(block) + 1
+        if used >= max_chars:
+            break
+
+    ordered = [fitted[idx] for idx in range(len(parts)) if idx in fitted]
+    trimmed_or_dropped = sum(
+        1 for idx, part in enumerate(parts) if fitted.get(idx) != part
+    )
+    return ordered, trimmed_or_dropped
+
+
+def _render_semantic_layers(question: str, refs: list[str]) -> list[str]:
+    """R327 — the five previously-dark vector indexes, as non-citable context.
+
+    See :mod:`app.engines.graph_semantic` for why paragraph/point/subpoint are
+    provision-constrained while definitions/recitals are open-domain. Default
+    OFF behind ``REGENOLD_GRAPH_SEMANTIC_LAYERS``.
+    """
+    if not question:
+        return []
+    try:
+        from app.engines.graph_semantic import (  # noqa: PLC0415
+            fetch_definition_and_recital_context,
+            fetch_focused_subprovisions,
+            semantic_layers_enabled,
+        )
+
+        if not semantic_layers_enabled():
+            return []
+    except Exception:  # noqa: BLE001
+        return []
+
+    parts: list[str] = []
+    unit_chars = _int_env("REGENOLD_KG_UNIT_CHARS", _DEFAULT_UNIT_CHARS, 80, 1200)
+
+    try:
+        focused = fetch_focused_subprovisions(question, refs)
+    except Exception:  # noqa: BLE001
+        focused = []
+    focus_lines: list[str] = []
+    for row in focused:
+        text = _flat(row.get("text"), unit_chars)
+        if not text:
+            continue
+        layer = str(row.get("layer") or "unit").lower()
+        focus_lines.append(
+            f"- {row.get('cite')} [{layer} {row.get('uid')}]: {text}"
+        )
+    if focus_lines:
+        parts.append(
+            "\nKNOWLEDGE-GRAPH QUESTION-FOCUSED SUB-PROVISIONS "
+            "(the paragraphs, points and sub-points OF THE PROVISIONS ALREADY "
+            "LISTED ABOVE that are closest to this question, ranked by the "
+            "graph's own vector indexes. Use them to attribute the duty to the "
+            "right sub-provision. They add NO new provision — every one belongs "
+            "to a provision already cited — so do NOT cite anything new here):\n"
+            + "\n".join(focus_lines)
+        )
+
+    try:
+        gloss = fetch_definition_and_recital_context(question, refs)
+    except Exception:  # noqa: BLE001
+        gloss = []
+    def_lines: list[str] = []
+    rec_lines: list[str] = []
+    for row in gloss:
+        text = _flat(row.get("text"), unit_chars)
+        if not text:
+            continue
+        if str(row.get("layer")) == "Definition":
+            cite = str(row.get("cite") or "").strip()
+            suffix = f" ({cite})" if cite else ""
+            def_lines.append(f"- '{row.get('label')}'{suffix}: {text}")
+        else:
+            rec_lines.append(f"- Recital {row.get('label')}: {text}")
+    if def_lines:
+        parts.append(
+            "\nKNOWLEDGE-GRAPH DEFINITIONS "
+            "(Article 3 definitions semantically closest to this question — "
+            "use them for the correct legal meaning of a term. Definitional "
+            "background only: do NOT add a citation just because a definition "
+            "appears here):\n"
+            + "\n".join(def_lines)
+        )
+    if rec_lines:
+        parts.append(
+            "\nKNOWLEDGE-GRAPH RECITAL CONTEXT "
+            "(interpretive background retrieved semantically. Recitals are NOT "
+            "operative provisions and must NEVER appear as an Article/Annex "
+            "citation):\n"
+            + "\n".join(rec_lines)
+        )
+    return parts
+
+
+def render_kg_context(refs: list[str], question: str = "") -> list[str]:
     """Render the graph's contribution as NON-CITABLE Stage-2 context.
 
     The label matters: it tells the model this is structure and interpretive
@@ -615,13 +925,25 @@ def render_kg_context(refs: list[str]) -> list[str]:
     for sp in subpoints:
         text = _flat(sp.get("text"), unit_chars)
         if text:
-            sp_lines.append(f"- {sp.get('cite')}, para {sp.get('para')}, point ({sp.get('letter')}): {text}")
+            roman = str(sp.get("roman") or "").strip().lower()
+            if not roman:
+                sid = str(sp.get("sid") or "").strip()
+                match = re.search(r"(?:^|[_\-.])([ivxlcdm]+)$", sid, re.IGNORECASE)
+                roman = match.group(1).lower() if match else ""
+            coordinate = (
+                f"{sp.get('cite')}, paragraph {sp.get('para')}, "
+                f"point ({sp.get('letter')})"
+            )
+            if roman:
+                coordinate += f", subpoint ({roman})"
+            sp_lines.append(f"- {coordinate}: {text}")
     if sp_lines:
         parts.append(
-            "\nKNOWLEDGE-GRAPH SUBPOINT CARVE-OUTS "
-            "(conditions, exceptions and scope limits of the provisions above "
-            "— these qualify the general duty; a prohibition stated without its "
-            "carve-out states the law incorrectly):\n"
+            "\nKNOWLEDGE-GRAPH SUB-POINT DETAIL "
+            "(nested enumerated text attached to the provisions above; use the "
+            "full paragraph/point/subpoint coordinate when interpreting it. "
+            "This structural label does not itself assert a condition, exception "
+            "or legal effect):\n"
             + "\n".join(sp_lines)
         )
 
@@ -650,6 +972,15 @@ def render_kg_context(refs: list[str]) -> list[str]:
             "provisions above — non-citable structural context):\n"
             + "\n".join(deontic_lines)
         )
+
+    # R327 — the five previously-dark vector indexes. Placed before the
+    # structural HAS_RECITAL_ANCHOR block because that edge type exists only 5
+    # times in the whole graph, so it contributes nothing for 111 of 113
+    # articles, whereas these layers are populated for every provision.
+    try:
+        parts.extend(_render_semantic_layers(question, refs))
+    except Exception:  # noqa: BLE001 — the graph must never break an answer
+        logger.debug("kg_context: semantic layer render failed", exc_info=True)
 
     try:
         recitals = fetch_recital_anchors(refs)
@@ -705,20 +1036,32 @@ def render_kg_context(refs: list[str]) -> list[str]:
         except Exception:  # noqa: BLE001
             pass
 
-    # R325 (ported from R323) — a TOTAL ceiling on what the graph may inject.
-    # Enforced by dropping WHOLE trailing blocks, never by cutting one mid-way:
-    # a half-rendered block reads as complete. Blocks are ordered
-    # most-load-bearing first, so the tail is the right thing to lose.
+    # R326 — hard total ceiling with reserved capacity for the new structural
+    # layers. Truncation is only at rendered line boundaries, never mid-row.
     #
-    # NOTE the interaction with the per-unit ceiling above: raising what one
-    # unit may contribute WITHOUT a total ceiling would let the provision block
-    # crowd out everything behind it — i.e. the new content would silently
-    # delete the older blocks. Both bounds have to exist together.
-    max_chars = _int_env("REGENOLD_KG_MAX_CHARS", _DEFAULT_MAX_CHARS, 1200, 60000)
-    dropped = 0
-    while parts and sum(len(p) for p in parts) > max_chars and len(parts) > 1:
-        parts.pop()
-        dropped += 1
+    # R327 — when the semantic layers contribute, the ceiling rises.
+    #
+    # MEASURED at 5 refs with one shared 16,000 ceiling: the new blocks displaced
+    # 3,545 chars of existing context, 2,600 of it out of PROVISION STRUCTURE —
+    # the most load-bearing block there is. A "purely additive" layer that
+    # silently deletes the hierarchy is not additive. Raising the ceiling only in
+    # the layers-ON arm ALSO keeps the layers-OFF arm byte-identical, which the
+    # ab_judge / easyhard_ab A/B needs in order to attribute any delta.
+    if any(
+        marker in part
+        for part in parts
+        for marker in (
+            "KNOWLEDGE-GRAPH QUESTION-FOCUSED SUB-PROVISIONS",
+            "KNOWLEDGE-GRAPH DEFINITIONS",
+            "KNOWLEDGE-GRAPH RECITAL CONTEXT",
+        )
+    ):
+        max_chars = _int_env(
+            "REGENOLD_KG_SEMANTIC_MAX_CHARS", _DEFAULT_SEMANTIC_MAX_CHARS, 1200, 60000
+        )
+    else:
+        max_chars = _int_env("REGENOLD_KG_MAX_CHARS", _DEFAULT_MAX_CHARS, 1200, 60000)
+    parts, dropped = _budget_context_parts(parts, max_chars)
 
     if parts:
         try:

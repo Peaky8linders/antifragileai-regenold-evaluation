@@ -7,8 +7,8 @@ reference across 273.
 
 These tests pin three things, in order of what would actually bite:
 
-  1. DEFAULT OFF. It is a reference-dropping change; hard rule #6 makes
-     easyhard_ab the merge gate, so the default must not move ahead of it.
+  1. DEFAULT OFF. The known Article 6 general-rule loss keeps this
+     reference-dropping change behind the live acceptance-harness opt-in.
   2. The head-grain invariant. davidath scores through ``article_heads()``,
      so the collapse MUST be a no-op there. If that ever stops being true,
      this is silently an R142.1-class clamp.
@@ -25,6 +25,7 @@ from evals.bench.metrics import article_heads
 from app.routes.regenold import (
     _collapse_parent_when_subpoint_cited as collapse,
     _parent_collapse_enabled,
+    _reemit_parents_for_subpoints,
 )
 
 
@@ -43,6 +44,30 @@ class TestDefaultOff:
         monkeypatch.setenv("REGENOLD_PARENT_COLLAPSE", v)
         assert _parent_collapse_enabled() is False
 
+    def test_parent_reemission_is_default_on(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """R327 — the R87-C parent re-emission is default ON, as measured.
+
+        An uncommitted pass flipped ``REGENOLD_SUBPOINT_KEEP_PARENT`` to ``0``
+        and added this test pinning the flip. That is a reference-DROPPING
+        change: davidath gold is article-level, so dropping ``Article 27``
+        alongside ``Article 27.1`` turns a documented Jaccard-0.5 partial hit
+        back into 0. Hard rule #8 requires ``gold_dropped`` to be measured FIRST,
+        and it never was — so the measured default is restored.
+        """
+        monkeypatch.delenv("REGENOLD_SUBPOINT_KEEP_PARENT", raising=False)
+        assert _reemit_parents_for_subpoints(["Article 27.1"]) == [
+            "Article 27.1",
+            "Article 27",
+        ]
+
+    def test_parent_reemission_can_be_switched_off(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("REGENOLD_SUBPOINT_KEEP_PARENT", "0")
+        assert _reemit_parents_for_subpoints(["Article 27.1"]) == ["Article 27.1"]
+
 
 class TestCollapse:
     def test_drops_the_parent_of_a_cited_subpoint(self) -> None:
@@ -58,6 +83,12 @@ class TestCollapse:
 
     def test_annex_roman_head(self) -> None:
         assert collapse(["Annex IV", "Annex IV.2"]) == ["Annex IV.2"]
+
+    def test_internal_art_prefix_is_normalised(self) -> None:
+        assert collapse(["Art. 27", "Article 27.1"]) == ["Article 27.1"]
+
+    def test_arabic_annex_head_is_recognised_defensively(self) -> None:
+        assert collapse(["Annex 3", "Annex 3.2"]) == ["Annex 3.2"]
 
     def test_multiple_leaves_of_one_head(self) -> None:
         assert collapse(

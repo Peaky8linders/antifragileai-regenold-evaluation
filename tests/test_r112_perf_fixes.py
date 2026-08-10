@@ -217,7 +217,7 @@ class TestIndexWarmupHook:
 
         monkeypatch.delenv("REGENOLD_INDEX_WARMUP", raising=False)
         assert m._index_warmup_disabled_by_env() is False
-        # Empty string is NOT a disable signal (auto-seed semantics).
+        # Empty string is not a disable signal for process-local warm-up.
         monkeypatch.setenv("REGENOLD_INDEX_WARMUP", "")
         assert m._index_warmup_disabled_by_env() is False
         for off in ("0", "false", "No", "OFF"):

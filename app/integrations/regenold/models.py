@@ -6,7 +6,7 @@ import re
 from contextvars import ContextVar
 from typing import Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.data.article_existence import ARTICLE_EXISTENCE
 from app.integrations.regenold.answer_normaliser import (
@@ -80,10 +80,16 @@ class RegenoldAskRequest(BaseModel):
                 raise ValueError(
                     "Last user message must contain a non-empty question."
                 )
-        # No user message at all → the route's _build_question_from_history
-        # will fall back to the last message regardless of role; allow
-        # the request through (back-compat with single-system-message
+        # No user message at all → the route's ``_build_question_from_history``
+        # falls back to the last message regardless of role, so the request is
+        # answerable. Allow it through (back-compat with single-system-message
         # call sites that have always worked).
+        #
+        # R327 — an uncommitted pass replaced this with a hard
+        # ``raise ValueError``, which turns those call sites into a 422. The
+        # relaxation is a documented contract, not an oversight, and the
+        # non-empty guarantee that actually matters (a live user turn that is
+        # blank) is still enforced by the branch above.
         return self
 
 
@@ -92,11 +98,10 @@ class RegenoldAskResponse(BaseModel):
 
     The Regenold competition spec lists exactly three required fields:
 
-    - ``reasoning`` — optional intermediate reasoning. The spec note:
+    - ``reasoning`` — intermediate reasoning. The spec note:
       "*Can optionally be empty. … will not be considered and might
-      increase latency.*" We default to ``None`` so we don't burn tokens
-      on a field the evaluator skips. Set explicitly only when a real
-      chain-of-thought trace is available.
+      increase latency.*" It therefore defaults to the empty string but
+      always remains present and string-typed on the competition wire.
     - ``answer`` — short (3-4 sentence) professionally-worded answer.
       Truncated route-side via ``_truncate_to_sentences`` so we never
       emit > 4 sentences regardless of LLM behaviour.
@@ -114,39 +119,20 @@ class RegenoldAskResponse(BaseModel):
     evaluator. The fields default to ``None`` / 0 so callers that
     enable telemetry can rely on a stable shape.
 
-    ``warning`` is a fourth, degraded-mode-only field. It is populated
-    ONLY when the primary LLM synthesis service (Claude Max via the
-    Cloudflare tunnel) was unavailable and the answer was produced by
-    the deterministic fallback pipeline. Because the route serialises
-    with ``response_model_exclude_none=True``, on every healthy response
-    the field is ``None`` and disappears from the JSON entirely — the
-    happy-path wire shape stays exactly ``reasoning`` / ``answer`` /
-    ``references`` (+ the telemetry block when opted in). Regenold can
-    therefore treat the mere *presence* of ``warning`` as the
-    degraded-mode signal.
+    Degraded-mode status is deliberately not part of this model: the default
+    and fallback competition responses must have the same exact three-field
+    shape. Operators can inspect server logs or opt-in telemetry instead.
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     answer: str
     references: list[str] = Field(default_factory=list)
-    reasoning: str | None = Field(
-        default=None,
+    reasoning: str = Field(
+        default="",
         description=(
-            "Optional intermediate reasoning. Per Regenold spec, "
-            "evaluator does not consider this field — defaults to None "
-            "so we don't pay latency for unused tokens."
-        ),
-    )
-    # ── Degraded-mode signal (only emitted when the LLM fallback fired) ──
-    warning: str | None = Field(
-        default=None,
-        description=(
-            "Degraded-mode signal. Present ONLY when the primary LLM "
-            "synthesis service (Claude Max via the Cloudflare tunnel) was "
-            "unavailable and the answer was served by the deterministic "
-            "fallback pipeline. Absent (None → excluded from the JSON) on "
-            "every healthy response, so the happy-path wire shape is "
-            "unchanged. The answer + references remain grounded in the EU "
-            "AI Act; only the LLM polish is missing."
+            "Intermediate reasoning. Per Regenold spec, the evaluator does "
+            "not consider this field, so it defaults to an empty string."
         ),
     )
     # ── Optional telemetry block (only emitted with ?include_telemetry=true) ──

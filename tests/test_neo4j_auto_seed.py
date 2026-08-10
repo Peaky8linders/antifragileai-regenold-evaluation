@@ -3,15 +3,14 @@
 The hook (``_maybe_auto_seed_neo4j``) fires from a FastAPI startup
 event and:
 
-* Skips entirely when ``NEO4J_URI`` is unset, when ``NEO4J_AUTO_SEED``
-  is explicitly off, or when ``REGENOLD_SKIP_STARTUP_LOG=1``.
+* Skips entirely unless both ``NEO4J_URI`` and an explicit
+  ``NEO4J_AUTO_SEED=1`` opt-in are present.
 * Reads ``KBMetadata.seed_version`` + ``kb_version`` via
   ``get_graph_client().execute_read``; if both match the current
   ``SEED_VERSION`` + ``KB_VERSION``, logs ``neo4j_seed_current`` and
   returns without writing.
-* Otherwise fires ``threading.Thread(daemon=True)`` to invoke
-  ``scripts.seed_neo4j_kb.run_seed`` in the background — uvicorn boot
-  is never blocked on graph I/O.
+* Seeds only a graph proven empty. Non-empty version drift, read errors, and
+  timeouts are fail-closed and never authorise writes.
 * Catches and logs every exception in the seeder thread so a downed
   Neo4j never affects request serving.
 
@@ -28,7 +27,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-
 # ─── Helpers ─────────────────────────────────────────────────────────────
 
 
@@ -41,11 +39,17 @@ class _FakeClient:
         enabled: bool = True,
         seed_version: str | None = None,
         kb_version: str | None = None,
+        node_count: int | None = None,
         raise_on_read: bool = False,
     ) -> None:
         self.enabled = enabled
         self._seed_version = seed_version
         self._kb_version = kb_version
+        self._node_count = (
+            (0 if seed_version is None else 1)
+            if node_count is None
+            else node_count
+        )
         self._raise_on_read = raise_on_read
         self.execute_read_calls: list[str] = []
 
@@ -53,9 +57,16 @@ class _FakeClient:
         self.execute_read_calls.append(query)
         if self._raise_on_read:
             raise RuntimeError("simulated neo4j read failure")
-        if self._seed_version is None:
-            return []
-        return [{"v": self._seed_version, "kv": self._kb_version or ""}]
+        return [{
+            "v": self._seed_version or "",
+            "kv": self._kb_version or "",
+            "node_count": self._node_count,
+        }]
+
+    def execute_read_strict(
+        self, query: str, parameters: dict | None = None
+    ) -> list[dict]:
+        return self.execute_read(query, parameters)
 
 
 @pytest.fixture(autouse=True)
@@ -116,6 +127,31 @@ class TestSkipPaths:
         _call_hook()
         assert "action=disabled-no-uri" in caplog.text
 
+    @pytest.mark.parametrize(
+        "value", [None, "", "0", "false", "no", "off", "garbage"]
+    )
+    def test_auto_seed_requires_explicit_opt_in(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+        value: str | None,
+    ) -> None:
+        from app import main as _main
+
+        monkeypatch.setenv("NEO4J_URI", "neo4j+s://test:7687")
+        if value is not None:
+            monkeypatch.setenv("NEO4J_AUTO_SEED", value)
+        monkeypatch.setattr(
+            "app.graph.client.get_graph_client",
+            lambda: (_ for _ in ()).throw(
+                AssertionError("graph must not be read")
+            ),
+        )
+
+        caplog.set_level(logging.INFO, logger=_main.__name__)
+        _call_hook()
+        assert "action=disabled-by-env" in caplog.text
+
     @pytest.mark.parametrize("value", ["0", "false", "FALSE", "no", "off"])
     def test_auto_seed_env_off_skips(
         self,
@@ -174,6 +210,7 @@ class TestSkipPaths:
         from app import main as _main
 
         monkeypatch.setenv("NEO4J_URI", "neo4j+s://test:7687")
+        monkeypatch.setenv("NEO4J_AUTO_SEED", "1")
         monkeypatch.setenv("REGENOLD_AUTO_SEED_LEADER_ONLY", "1")
         monkeypatch.setenv("REGENOLD_WORKER_INDEX", "1")
 
@@ -200,6 +237,7 @@ class TestSkipPaths:
         from app import main as _main
 
         monkeypatch.setenv("NEO4J_URI", "neo4j+s://test:7687")
+        monkeypatch.setenv("NEO4J_AUTO_SEED", "1")
         monkeypatch.setenv("REGENOLD_AUTO_SEED_LEADER_ONLY", "1")
         monkeypatch.setenv("REGENOLD_WORKER_INDEX", "0")
 
@@ -222,6 +260,7 @@ class TestSkipPaths:
         from app import main as _main
 
         monkeypatch.setenv("NEO4J_URI", "neo4j+s://test:7687")
+        monkeypatch.setenv("NEO4J_AUTO_SEED", "1")
         fake = _FakeClient(enabled=False)
         monkeypatch.setattr(
             "app.graph.client.get_graph_client", lambda: fake
@@ -249,6 +288,7 @@ class TestSeedCurrent:
         from scripts.seed_neo4j_kb import SEED_VERSION
 
         monkeypatch.setenv("NEO4J_URI", "neo4j+s://test:7687")
+        monkeypatch.setenv("NEO4J_AUTO_SEED", "1")
         fake = _FakeClient(
             enabled=True,
             seed_version=SEED_VERSION,
@@ -297,6 +337,7 @@ class TestSeedNeeded:
         from app import main as _main
 
         monkeypatch.setenv("NEO4J_URI", "neo4j+s://test:7687")
+        monkeypatch.setenv("NEO4J_AUTO_SEED", "1")
         fake = _FakeClient(
             enabled=True, seed_version=None, kb_version=None
         )
@@ -321,7 +362,7 @@ class TestSeedNeeded:
         caplog.set_level(logging.INFO, logger=_main.__name__)
         _call_hook()
         assert "action=seed-started" in caplog.text
-        assert "reason=graph_empty" in caplog.text
+        assert "reason=graph_empty_verified" in caplog.text
 
         # Wait for the daemon thread to finish so we can assert against
         # the seeder mock.
@@ -333,19 +374,21 @@ class TestSeedNeeded:
         assert "nodes=505" in caplog.text
         assert "edges=351" in caplog.text
 
-    def test_seed_drift_triggers_seed(
+    def test_nonempty_seed_drift_never_triggers_seed(
         self,
         monkeypatch: pytest.MonkeyPatch,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """A non-matching seed_version must trigger a re-seed."""
+        """A non-empty mismatched graph requires a deliberate migration."""
         from app import main as _main
 
         monkeypatch.setenv("NEO4J_URI", "neo4j+s://test:7687")
+        monkeypatch.setenv("NEO4J_AUTO_SEED", "1")
         fake = _FakeClient(
             enabled=True,
             seed_version="2025-01-01-OLD",
             kb_version="ancient",
+            node_count=505,
         )
         monkeypatch.setattr(
             "app.graph.client.get_graph_client", lambda: fake
@@ -367,12 +410,9 @@ class TestSeedNeeded:
 
         caplog.set_level(logging.INFO, logger=_main.__name__)
         _call_hook()
-        assert "action=seed-started" in caplog.text
-        assert "reason=seed_drift" in caplog.text
+        assert "action=skip-nonempty-drift" in caplog.text
         assert "current_seed=2025-01-01-OLD" in caplog.text
-
-        self._wait_for_thread("regenold-auto-seed")
-        run_seed_mock.assert_called_once()
+        run_seed_mock.assert_not_called()
 
 
 # ─── Error-handling ─────────────────────────────────────────────────────
@@ -398,6 +438,7 @@ class TestErrorHandling:
         from app import main as _main
 
         monkeypatch.setenv("NEO4J_URI", "neo4j+s://test:7687")
+        monkeypatch.setenv("NEO4J_AUTO_SEED", "1")
         fake = _FakeClient(enabled=True, seed_version=None)
         monkeypatch.setattr(
             "app.graph.client.get_graph_client", lambda: fake
@@ -425,6 +466,7 @@ class TestErrorHandling:
         from app import main as _main
 
         monkeypatch.setenv("NEO4J_URI", "neo4j+s://test:7687")
+        monkeypatch.setenv("NEO4J_AUTO_SEED", "1")
         fake = _FakeClient(enabled=True, seed_version=None)
         monkeypatch.setattr(
             "app.graph.client.get_graph_client", lambda: fake
@@ -450,14 +492,45 @@ class TestErrorHandling:
         from app import main as _main
 
         monkeypatch.setenv("NEO4J_URI", "neo4j+s://test:7687")
+        monkeypatch.setenv("NEO4J_AUTO_SEED", "1")
         fake = _FakeClient(enabled=True, raise_on_read=True)
         monkeypatch.setattr(
             "app.graph.client.get_graph_client", lambda: fake
         )
+        run_seed_mock = MagicMock()
+        monkeypatch.setattr("scripts.seed_neo4j_kb.run_seed", run_seed_mock)
 
         caplog.set_level(logging.WARNING, logger=_main.__name__)
         _call_hook()  # must not raise
         assert "auto_seed_check action=error" in caplog.text
+        run_seed_mock.assert_not_called()
+        assert _main._AUTO_SEED_STARTED is False
+
+    def test_empty_metadata_result_is_not_proof_of_empty_graph(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """A fail-soft legacy [] result must never authorise a graph write."""
+        from app import main as _main
+
+        monkeypatch.setenv("NEO4J_URI", "neo4j+s://test:7687")
+        monkeypatch.setenv("NEO4J_AUTO_SEED", "1")
+        fake = _FakeClient(enabled=True)
+        monkeypatch.setattr(fake, "execute_read_strict", lambda *args: [])
+        monkeypatch.setattr(
+            "app.graph.client.get_graph_client", lambda: fake
+        )
+        run_seed_mock = MagicMock()
+        monkeypatch.setattr("scripts.seed_neo4j_kb.run_seed", run_seed_mock)
+
+        caplog.set_level(logging.WARNING, logger=_main.__name__)
+        _call_hook()
+
+        assert "action=skip-unverified" in caplog.text
+        assert "reason=missing-node-count" in caplog.text
+        run_seed_mock.assert_not_called()
+        assert _main._AUTO_SEED_STARTED is False
 
 
 # ─── Latency invariant ──────────────────────────────────────────────────
@@ -475,6 +548,7 @@ class TestLatency:
         daemon thread.
         """
         monkeypatch.setenv("NEO4J_URI", "neo4j+s://test:7687")
+        monkeypatch.setenv("NEO4J_AUTO_SEED", "1")
         fake = _FakeClient(enabled=True, seed_version=None)
         monkeypatch.setattr(
             "app.graph.client.get_graph_client", lambda: fake

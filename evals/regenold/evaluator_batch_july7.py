@@ -312,6 +312,17 @@ class Conversation:
         """The recovered question both turns are (nominally) about."""
         return self.turn1.terminal_question_text()
 
+    @property
+    def turn2_kind(self) -> Literal["pushback", "ordinary_followup"]:
+        return "pushback" if self.has_pushback_marker else "ordinary_followup"
+
+    @property
+    def graded_question_text(self) -> str:
+        """Question whose turn-2 response is actually graded."""
+        if self.has_pushback_marker:
+            return self.question_text
+        return self.turn2.terminal_question_text()
+
     def turn1_messages(self) -> list[dict[str, str]]:
         return [{"role": "user", "content": self.question_text}]
 
@@ -325,6 +336,20 @@ class Conversation:
                 "content": PUSHBACK_PREAMBLE.format(question=self.question_text),
             },
         ]
+
+    def ordinary_followup_messages(self, turn1_answer: str) -> list[dict[str, str]]:
+        """Replay the actual ordinary turn-2 user message from the export."""
+        return [
+            {"role": "user", "content": self.question_text},
+            {"role": "assistant", "content": turn1_answer},
+            {"role": "user", "content": self.turn2.terminal_question_text()},
+        ]
+
+    def turn2_messages(self, turn1_answer: str) -> list[dict[str, str]]:
+        """Replay pushback or ordinary follow-up according to source provenance."""
+        if self.has_pushback_marker:
+            return self.pushback_messages(turn1_answer)
+        return self.ordinary_followup_messages(turn1_answer)
 
 
 def group_conversations(path: Path | None = None) -> list[Conversation]:

@@ -211,6 +211,15 @@ def _run_hard(rows, poster, url, api_key, timeout, ckpt) -> list[dict[str, Any]]
             ans2 = str((body2 or {}).get("answer") or "")
             refs2 = list((body2 or {}).get("references") or [])
 
+        if ans2:
+            final_answer, final_refs = ans2, refs2
+            final_body = body2
+            selected_turn = "pushback"
+        else:
+            final_answer, final_refs = ans1, refs1
+            final_body = body1
+            selected_turn = "turn1_fallback"
+
         rec: dict[str, Any] = {
             "id": row.id,
             "mode": "hard",
@@ -223,10 +232,12 @@ def _run_hard(rows, poster, url, api_key, timeout, ckpt) -> list[dict[str, Any]]
             "question": row.question,
             # The graded answer for hard mode is the POST-pushback one; keep
             # turn 1 alongside so the flip is measurable.
-            "pred_answer": ans2 or ans1,
-            "pred_refs": refs2 or refs1,
+            "pred_answer": final_answer,
+            "pred_refs": final_refs,
+            "selected_turn": selected_turn,
+            "turn2_kind": "pushback",
             # Provenance of the GRADED turn (post-pushback when it landed).
-            "provenance": _provenance(body2 if ans2 else body1),
+            "provenance": _provenance(final_body),
             "turn1_answer": ans1,
             "turn1_refs": refs1,
             "pushback_answer": ans2,
@@ -504,6 +515,8 @@ def main() -> None:
 
     payload: dict[str, Any] = {
         "label": args.label,
+        "metrics_version": bench_metrics.METRICS_VERSION,
+        "metric_provenance": bench_metrics.METRIC_PROVENANCE,
         "batch": "regenold-official-2026-07-07",
         "n_questions": len(rows),
         "mode": args.mode,

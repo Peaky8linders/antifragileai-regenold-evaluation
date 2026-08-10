@@ -20,9 +20,9 @@ does not invent a correctness score. It records what it can measure
 objectively (tone, reference counts, answer length, latency, refusal rate,
 pushback concession, answer/ref churn vs the 2026-07-07 shipped output) and
 writes a single sidecar shaped for :mod:`evals.judge.grounded` — the
-Sonnet-5 judge that scores answer / reference / citation correctness against
-the **verbatim Act text**, the right instrument when gold labels are
-unavailable.
+judge. With no independent gold/full context, it can measure citation
+precision/faithfulness but marks answer correctness and reference recall
+unavailable; it never substitutes prediction-selected refs or model memory.
 
 USAGE
 -----
@@ -260,14 +260,20 @@ def _run_hard(
         body2: dict[str, Any] | None = None
         if ans1:
             body2, lat2, http2, err2, att2, _r2 = poster(
-                url, api_key, convo.pushback_messages(ans1), timeout
+                url, api_key, convo.turn2_messages(ans1), timeout
             )
             ans2 = str((body2 or {}).get("answer") or "")
             refs2 = list((body2 or {}).get("references") or [])
 
         row1, row2 = convo.turn1, convo.turn2
-        final_answer = ans2 or ans1
-        final_refs = refs2 or refs1
+        if ans2:
+            final_answer, final_refs = ans2, refs2
+            final_body = body2
+            selected_turn = "turn2"
+        else:
+            final_answer, final_refs = ans1, refs1
+            final_body = body1
+            selected_turn = "turn1_fallback"
         rec: dict[str, Any] = {
             "id": row2.id,
             "conversation_id": row1.id,
@@ -276,18 +282,25 @@ def _run_hard(
             "difficulty": row1.difficulty,
             "category": row1.category,
             "history_turns": row2.history_turns,
-            "question": convo.question_text,
+            "question": convo.graded_question_text,
             "pred_answer": final_answer,
             "answer": final_answer,
             "pred_refs": final_refs,
             "references": final_refs,
-            "provenance": _provenance(body2 if ans2 else body1),
+            "provenance": _provenance(final_body),
+            "selected_turn": selected_turn,
             "pairing_method": convo.pairing_method,
             "has_pushback_marker": convo.has_pushback_marker,
+            "turn2_kind": convo.turn2_kind,
             "turn1_answer": ans1,
             "turn1_refs": refs1,
-            "pushback_answer": ans2,
-            "pushback_refs": refs2,
+            "turn2_question": convo.graded_question_text,
+            "turn2_answer": ans2,
+            "turn2_refs": refs2,
+            "pushback_answer": ans2 if convo.has_pushback_marker else "",
+            "pushback_refs": refs2 if convo.has_pushback_marker else [],
+            "followup_answer": ans2 if not convo.has_pushback_marker else "",
+            "followup_refs": refs2 if not convo.has_pushback_marker else [],
             "july7_answer": row2.july7_answer,
             "july7_refs": list(row2.july7_refs),
             "turn1_july7_answer": row1.july7_answer,
@@ -299,23 +312,31 @@ def _run_hard(
         if err1 or not ans1:
             rec["error"] = err1 or "empty_answer_turn1"
         elif err2 or not ans2:
-            rec["error"] = err2 or "empty_answer_pushback"
+            rec["error"] = err2 or "empty_answer_turn2"
         else:
             rec["scores"] = _row_metrics(ans2, refs2)
             rec["vs_july7"] = _vs_july7(row2, ans2, refs2)
             h1, h2 = _heads(refs1), _heads(refs2)
-            conceded = any(m in ans2.lower() for m in _CONCEDED_MARKERS)
-            rec["pushback_conceded"] = conceded
-            rec["pushback"] = {
+            conceded = (
+                any(m in ans2.lower() for m in _CONCEDED_MARKERS)
+                if convo.has_pushback_marker else False
+            )
+            rec["pushback_conceded"] = conceded if convo.has_pushback_marker else None
+            transition = {
                 "ref_heads_changed": sorted(h1 ^ h2),
                 "ref_head_jaccard": (
                     len(h1 & h2) / len(h1 | h2) if (h1 | h2) else 1.0
                 ),
                 "answer_changed": ans1.strip() != ans2.strip(),
                 "turn1_chars": len(ans1),
-                "pushback_chars": len(ans2),
+                "turn2_chars": len(ans2),
+                "pushback_chars": len(ans2) if convo.has_pushback_marker else 0,
                 "conceded": conceded,
             }
+            if convo.has_pushback_marker:
+                rec["pushback"] = transition
+            else:
+                rec["ordinary_followup"] = transition
         return idx, rec
 
     with ThreadPoolExecutor(max_workers=workers) as pool:
@@ -329,6 +350,7 @@ def _run_hard(
                 ckpt.flush()
                 tag = "ERR " if rec.get("error") else "ok  "
                 flip = "  CONCEDED" if rec.get("pushback_conceded") else ""
+                flip += f"  {str(rec.get('turn2_kind') or '').upper()}"
                 print(
                     f"  [{completed:3d}/{len(conversations)}] hard {tag}{rec['id']} "
                     f"{rec['latency_ms']/1000:6.1f}s refs={len(rec['pred_refs']):2d}{flip}",
@@ -357,8 +379,15 @@ def _aggregate(rows: list[dict[str, Any]]) -> dict[str, Any]:
     out["latency_p95_ms"] = lat[int(len(lat) * 0.95)] if len(lat) > 1 else lat[0]
     pb = [r["pushback"] for r in ok if r.get("pushback")]
     if pb:
+        out["pushback_n"] = len(pb)
         out["pushback_ref_flip_rate"] = sum(1 for p in pb if p["ref_heads_changed"]) / len(pb)
         out["pushback_conceded_rate"] = sum(1 for p in pb if p["conceded"]) / len(pb)
+    followups = [r["ordinary_followup"] for r in ok if r.get("ordinary_followup")]
+    if followups:
+        out["ordinary_followup_n"] = len(followups)
+        out["ordinary_followup_ref_change_rate"] = sum(
+            1 for p in followups if p["ref_heads_changed"]
+        ) / len(followups)
     vj = [r["vs_july7"] for r in ok if r.get("vs_july7")]
     if vj:
         out["vs_july7_ref_jaccard"] = st.mean(v["ref_head_jaccard"] for v in vj)
@@ -459,6 +488,8 @@ def main() -> None:
 
     payload = {
         "label": args.label,
+        "metrics_version": bench_metrics.METRICS_VERSION,
+        "metric_provenance": bench_metrics.METRIC_PROVENANCE,
         "batch": "regenold-evaluator-batch-2026-07-07-raw",
         "mode": args.mode,
         "local": local,

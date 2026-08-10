@@ -26,42 +26,16 @@ TWO THINGS MUST BOTH HOLD, or the fix is worthless:
 
 from __future__ import annotations
 
-import re
-
 import pytest
 
-from app.data.article_existence import ARTICLE_EXISTENCE
 from app.routes.regenold import (
     _add_prose_named_refs,
-    _prose_mention_is_real_citation,
+    _prose_citation_bases,
 )
 
-_MENTION_RE = re.compile(r"\b(Article|Art\.|Annex)\s+([IVXLCDM\d]+)\b", re.IGNORECASE)
-
-
 def _component_d(answer: str) -> set[str]:
-    """Replica of the route's SECOND prose-to-citation path (R324-C1).
-
-    Mirrors the loop in ``regenold_eu_ai_act_ask`` so a future edit that drops
-    the guard from that call site fails here.
-    """
-    out: set[str] = set()
-    for m in _MENTION_RE.finditer(answer):
-        if not _prose_mention_is_real_citation(answer, m.start(), m.end()):
-            continue
-        prefix, num = m.group(1).lower(), m.group(2).strip()
-        if prefix.startswith("art"):
-            try:
-                out.add(f"Article {int(num)}")
-            except ValueError:
-                out.add(f"Article {num}")
-        elif prefix.startswith("annex"):
-            out.add(f"Annex {num.upper()}")
-    return {
-        r
-        for r in out
-        if r.replace("Article ", "Art. ") in ARTICLE_EXISTENCE or r in ARTICLE_EXISTENCE
-    }
+    """The shared ordered extractor used by Component D."""
+    return set(_prose_citation_bases(answer))
 
 
 # (id, prose, the AI-Act-shaped number that must NOT be promoted)
@@ -95,13 +69,35 @@ _LEAKS = [
     ("r323_pre_2015_oj_numbering",
      "Market surveillance follows Article 30 of Regulation (EC) No 765/2008.",
      "Article 30"),
+    ("article_of_mdr",
+     "The manufacturer also complies with Article 10 of the MDR.",
+     "Article 10"),
+    ("article_of_tfeu",
+     "State-aid analysis remains governed by Article 107 of the TFEU.",
+     "Article 107"),
+    ("eg_under_numbered_regulation",
+     "Market controls follow Article 30, e.g. under Regulation (EC) No 765/2008.",
+     "Article 30"),
+    ("numbered_regulation_parenthesized_acronym_prefix",
+     "Regulation (EU) 2017/745 (MDR), Article 10 governs manufacturers.",
+     "Article 10"),
+    ("numbered_directive_prefix",
+     "Directive 2014/35/EU, Article 10 governs that product requirement.",
+     "Article 10"),
+    ("possessive_acronym_prefix",
+     "The MDR's Article 10 governs that manufacturer duty.",
+     "Article 10"),
 ]
 
 
 @pytest.mark.parametrize(("case", "prose", "leaked"), _LEAKS, ids=[c[0] for c in _LEAKS])
 def test_guard_blocks_foreign_citation(case: str, prose: str, leaked: str) -> None:
     """_add_prose_named_refs must not promote a foreign instrument's article."""
-    added = _add_prose_named_refs(["Article 27"], prose)
+    added = _add_prose_named_refs(
+        ["Article 27"],
+        prose,
+        citable_bases={"Article 27", leaked},
+    )
     assert leaked not in added, (
         f"{case}: {leaked} was promoted onto the wire from a foreign instrument"
     )
@@ -182,3 +178,29 @@ def test_behind_window_fits_the_longest_prefix_form() -> None:
     from app.routes.regenold import _BEHIND_WINDOW_CHARS
 
     assert _BEHIND_WINDOW_CHARS >= len("Regulation (EU) No 1025/2012, ")
+
+
+def test_non_citable_kg_coordinate_cannot_be_promoted() -> None:
+    added = _add_prose_named_refs(
+        ["Article 13"],
+        "Article 13 applies. Article 35 adds another requirement.",
+        citable_bases={"Article 13"},
+        cap=8,
+    )
+    assert added == ["Article 13"]
+
+
+def test_shared_extractor_preserves_first_mention_order() -> None:
+    prose = "Annex III applies; Article 6 governs; Article 13 then adds transparency."
+    assert _prose_citation_bases(prose) == [
+        "Annex III",
+        "Article 6",
+        "Article 13",
+    ]
+
+
+def test_arabic_annex_prose_normalises_to_roman_wire_head() -> None:
+    assert _prose_citation_bases("Annex 3 applies under Article 6.") == [
+        "Annex III",
+        "Article 6",
+    ]

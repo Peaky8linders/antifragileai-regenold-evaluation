@@ -185,11 +185,16 @@ _Q = (
 
 def _stage2_env(monkeypatch) -> None:
     settings.regenold.api_key = SecretStr("regenold-test-key")
+    monkeypatch.setenv("P2P_GRAPH_RAG_PROVIDER", "openai_wrapper")
     monkeypatch.setenv("P2P_GRAPH_RAG_ENABLE_STAGE2", "1")
+    monkeypatch.setenv("REGENOLD_STAGE2_SIMPLE_SKIP", "0")
+    monkeypatch.setenv("REGENOLD_CURATED_STAGE2_SKIP", "0")
     monkeypatch.setenv("REGENOLD_STAGE2_MIN_CONFIDENCE", "0")
     monkeypatch.setenv("REGENOLD_VERBATIM_ANSWER", "0")  # keep Sonnet prose on the wire
     monkeypatch.setenv("REGENOLD_ANSWER_ROUTER", "1")
     monkeypatch.setenv("REGENOLD_QUERY_DENOISER", "0")
+
+
 
 
 def _post(question: str, augment_spy):
@@ -199,7 +204,7 @@ def _post(question: str, augment_spy):
             return_value=True,
         ),
         patch(
-            "app.engines.graph_rag._openai_wrapper_complete_for_graph_rag",
+            "app.engines._graph_rag_impl._openai_wrapper_complete_for_graph_rag",
             return_value=_SONNET,
         ),
         patch(
@@ -245,8 +250,9 @@ def test_stage2_augmenter_called_when_enabled(monkeypatch) -> None:
     augmenter invocation (the gate is real, the change is reversible)."""
     monkeypatch.setenv("REGENOLD_STAGE2_REF_AUGMENT", "1")
     _stage2_env(monkeypatch)
-    body, spy = _post(_Q + " (augment-on variant)", _passthrough)
+    body, spy = _post(_Q, _passthrough)
     if body.get("retrieval_path") not in {"no_match"} and "Article" in body.get(
         "answer", ""
     ):
         assert spy.call_count >= 1, "augmenter must fire when explicitly enabled"
+

@@ -12,24 +12,62 @@ It respects two environment variables (read fresh per call):
 from __future__ import annotations
 
 import logging
+import math
 import os
-
 import re
+from dataclasses import dataclass
+
 logger = logging.getLogger(__name__)
+
+_ANNEX_ARABIC_TO_ROMAN = {
+    1: "I",
+    2: "II",
+    3: "III",
+    4: "IV",
+    5: "V",
+    6: "VI",
+    7: "VII",
+    8: "VIII",
+    9: "IX",
+    10: "X",
+    11: "XI",
+    12: "XII",
+    13: "XIII",
+}
+
+
+@dataclass(frozen=True)
+class RecallHit:
+    """A validated recall result with auditable retrieval provenance."""
+
+    ref: str
+    score: float
+    source: str
+
 
 def _norm_ref(r: str) -> str:
     r = str(r).strip()
     m_art = re.search(r"(?i)\b(?:Art\.?|Article|article_)\s*(\d+)", r)
-    if m_art: return f"Art. {m_art.group(1)}"
+    if m_art:
+        return f"Art. {m_art.group(1)}"
+    m_ann_arabic = re.search(r"(?i)\b(?:Annex\s+|annex_)(\d{1,2})\b", r)
+    if m_ann_arabic:
+        roman = _ANNEX_ARABIC_TO_ROMAN.get(int(m_ann_arabic.group(1)))
+        if roman is not None:
+            # Recall validates and returns provision heads. Any paragraph/item
+            # suffix is therefore collapsed consistently with Article refs.
+            return f"Annex {roman}"
     m_ann = re.search(r"(?i)\b(?:Annex|annex_)\s*([IVXLCDM]+)", r)
-    if m_ann: return f"Annex {m_ann.group(1).upper()}"
+    if m_ann:
+        return f"Annex {m_ann.group(1).upper()}"
     return r
+
 
 def is_enabled() -> bool:
     """Return True if the vector recall path is enabled via env and assets exist."""
     if os.environ.get("REGENOLD_GRAPH_VECTOR_RECALL") != "1":
         return False
-        
+
     try:
         from app.engines import embeddings_index
         return embeddings_index.is_available()
@@ -38,8 +76,8 @@ def is_enabled() -> bool:
         return False
 
 
-def _query_neo4j_vector_index(question: str, top_k: int, min_sim: float) -> list[tuple[str, float]]:
-    """Query Neo4j native vector indexes if driver is connected. Returns list of (ref, score)."""
+def _query_neo4j_vector_index(question: str, top_k: int, min_sim: float) -> list[RecallHit]:
+    """Query both Neo4j vector indexes and retain index provenance."""
     try:
         from app.graph.client import get_graph_client  # noqa: PLC0415
         client = get_graph_client()
@@ -54,31 +92,28 @@ def _query_neo4j_vector_index(question: str, top_k: int, min_sim: float) -> list
             return []
 
         emb_list = [float(x) for x in vec]
-        hits: list[tuple[str, float]] = []
-
-        cypher_art = """
-        CALL db.index.vector.queryNodes('v_article_embedding', $k, $emb)
-        YIELD node, score
-        RETURN coalesce(node.strict_citation, node.id) AS ref, score
-        """
-        art_res = _bounded_execute_read(cypher_art, {"k": top_k * 2, "emb": emb_list})
-        for r in art_res or []:
-            ref = str(r.get("ref") or "").strip()
-            score = float(r.get("score") or 0.0)
-            if ref and score >= min_sim:
-                hits.append((ref, score))
-
-        cypher_annex = """
-        CALL db.index.vector.queryNodes('v_annex_embedding', $k, $emb)
-        YIELD node, score
-        RETURN coalesce(node.strict_citation, node.id) AS ref, score
-        """
-        annex_res = _bounded_execute_read(cypher_annex, {"k": top_k * 2, "emb": emb_list})
-        for r in annex_res or []:
-            ref = str(r.get("ref") or "").strip()
-            score = float(r.get("score") or 0.0)
-            if ref and score >= min_sim:
-                hits.append((ref, score))
+        hits: list[RecallHit] = []
+        per_index_k = max(1, min(100, int(top_k) * 2))
+        for index_name in ("v_article_embedding", "v_annex_embedding"):
+            cypher = f"""
+            CALL db.index.vector.queryNodes('{index_name}', $k, $emb)
+            YIELD node, score
+            RETURN coalesce(node.strict_citation, node.id) AS ref, score
+            """
+            rows = _bounded_execute_read(
+                cypher,
+                {"k": per_index_k, "emb": emb_list},
+            )
+            for row in rows or []:
+                ref = str(row.get("ref") or "").strip()
+                try:
+                    score = float(row.get("score") or 0.0)
+                except (TypeError, ValueError):
+                    continue
+                if ref and math.isfinite(score) and score >= min_sim:
+                    hits.append(
+                        RecallHit(ref=ref, score=score, source=f"neo4j:{index_name}")
+                    )
 
         return hits
     except Exception as exc:  # noqa: BLE001
@@ -86,8 +121,12 @@ def _query_neo4j_vector_index(question: str, top_k: int, min_sim: float) -> list
         return []
 
 
-def recall_articles(question: str, *, top_k: int = 3) -> list[str]:
-    """Return up to `top_k` unique article refs matching the question.
+def recall_articles_with_provenance(
+    question: str,
+    *,
+    top_k: int = 3,
+) -> list[RecallHit]:
+    """Return validated article/annex hits with source and similarity.
 
     Queries Neo4j vector indexes first if active; falls back to the local sentence-level
     embeddings index.
@@ -96,12 +135,12 @@ def recall_articles(question: str, *, top_k: int = 3) -> list[str]:
     `REGENOLD_VECTOR_MIN_SIM` threshold and verifies the article exists
     in `ARTICLE_EXISTENCE`.
     """
-    if not is_enabled():
+    if not is_enabled() or top_k <= 0:
         return []
 
     try:
-        from app.engines import embeddings_index
         from app.data import article_existence
+        from app.engines import embeddings_index
     except Exception as exc:  # noqa: BLE001
         logger.warning("vector_recall: failed to import dependencies: %s", exc)
         return []
@@ -113,46 +152,66 @@ def recall_articles(question: str, *, top_k: int = 3) -> list[str]:
         logger.warning("vector_recall: failed to parse REGENOLD_VECTOR_MIN_SIM: %s", exc)
         min_sim = 0.35
 
-    article_scores: dict[str, float] = {}
+    try:
+        valid_refs = set(article_existence.ARTICLE_EXISTENCE)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("vector_recall: failed to load valid refs: %s", exc)
+        return []
+
+    hits_by_ref: dict[str, RecallHit] = {}
 
     # 1. Primary path: Try Neo4j native vector search
-    n4j_hits = _query_neo4j_vector_index(question, top_k=top_k * 2, min_sim=min_sim)
-    for raw_ref, score in n4j_hits:
-        ref = _norm_ref(raw_ref)
-        if ref not in article_scores or score > article_scores[ref]:
-            article_scores[ref] = score
+    n4j_hits = _query_neo4j_vector_index(question, top_k=top_k, min_sim=min_sim)
+    for hit in n4j_hits:
+        ref = _norm_ref(hit.ref)
+        if ref not in valid_refs:
+            continue
+        previous = hits_by_ref.get(ref)
+        if previous is None or hit.score > previous.score:
+            hits_by_ref[ref] = RecallHit(ref=ref, score=hit.score, source=hit.source)
 
-    # 2. Fallback path: If Neo4j yielded no hits, query local embeddings index
-    if not article_scores:
+    # 2. Fallback path: native garbage is not availability. Fall back unless
+    # Neo4j produced at least one canonical, corpus-valid provision.
+    if not hits_by_ref:
         try:
             hits = embeddings_index.query(question, top_k=50, threshold=min_sim)
             for hit in hits:
                 ref = _norm_ref(hit.article_ref)
-                if ref not in article_scores:
-                    article_scores[ref] = hit.similarity
-                else:
-                    article_scores[ref] = max(article_scores[ref], hit.similarity)
+                try:
+                    score = float(hit.similarity)
+                except (TypeError, ValueError):
+                    continue
+                if ref not in valid_refs or not math.isfinite(score) or score < min_sim:
+                    continue
+                previous = hits_by_ref.get(ref)
+                if previous is None or score > previous.score:
+                    hits_by_ref[ref] = RecallHit(
+                        ref=ref,
+                        score=score,
+                        source="local:svd_sentence",
+                    )
         except Exception as exc:  # noqa: BLE001
             logger.warning("vector_recall: embeddings_index.query failed: %s", exc)
             return []
 
     try:
-        sorted_refs = sorted(article_scores.keys(), key=lambda r: article_scores[r], reverse=True)
-        valid_refs = set(article_existence.ARTICLE_EXISTENCE)
+        return sorted(hits_by_ref.values(), key=lambda hit: hit.score, reverse=True)[:top_k]
     except Exception as exc:  # noqa: BLE001
         logger.warning("vector_recall: failed to process hits: %s", exc)
         return []
 
-    results = []
-    for ref in sorted_refs:
-        if ref in valid_refs:
-            results.append(ref)
-            if len(results) >= top_k:
-                break
 
-    return results
+def recall_articles(question: str, *, top_k: int = 3) -> list[str]:
+    """Compatibility wrapper returning only canonical provision refs."""
+    return [
+        hit.ref
+        for hit in recall_articles_with_provenance(question, top_k=top_k)
+    ]
+
 
 __all__ = [
+    "RecallHit",
     "is_enabled",
     "recall_articles",
+    "recall_articles_with_provenance",
 ]

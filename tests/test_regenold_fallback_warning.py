@@ -1,4 +1,4 @@
-"""Degraded-mode ``warning`` field regression guards.
+"""Degraded-mode competition-wire schema regression guards.
 
 When Stage-2 LLM synthesis (Claude Max via the Cloudflare tunnel) is
 attempted but the wrapper call fails — tunnel down, Claude Max auth
@@ -7,19 +7,12 @@ engine ships the deterministic Stage-1 answer and sets
 ``graph_stats["stage2_call_failed"] = True`` (see
 ``app/engines/graph_rag.py`` ~line 6427).
 
-The route surfaces a non-fatal ``warning`` string on the wire so
-Regenold can tell a degraded (deterministic-fallback) answer from a
-fully LLM-polished one. The ``answer`` + ``references`` remain grounded
-in the EU AI Act — only the LLM refinement is absent.
-
-CRITICAL invariant: a HEALTHY response carries NO ``warning`` key at
-all (the route serialises with ``response_model_exclude_none=True``), so
-the happy-path JSON Regenold normally receives is byte-identical to
-before this feature.
+The competition contract always has exactly ``reasoning``, ``answer`` and
+``references``. Degradation stays observable in server logs/opt-in telemetry,
+never through a fourth default-wire key.
 """
 from __future__ import annotations
 
-import os
 from unittest.mock import patch
 
 import pytest
@@ -59,7 +52,9 @@ def _configure_key_and_clear_cache():
     yield
 
 
-def _cited_response(*, stage2_call_failed: bool) -> GraphRAGResponse:
+def _cited_response(
+    *, stage2_call_failed: bool, answer: str | None = None
+) -> GraphRAGResponse:
     """A healthy, cited answer — optionally flagged as a Stage-2 fallback.
 
     ``stage2_call_failed=True`` mimics the exact engine state after the
@@ -68,7 +63,7 @@ def _cited_response(*, stage2_call_failed: bool) -> GraphRAGResponse:
     normal, fully-polished answer.
     """
     return GraphRAGResponse(
-        answer=(
+        answer=answer or (
             "Article 13 requires high-risk AI providers to design "
             "transparency mechanisms so deployers can interpret outputs."
         ),
@@ -89,10 +84,10 @@ def _cited_response(*, stage2_call_failed: bool) -> GraphRAGResponse:
     )
 
 
-class TestFallbackWarningWire:
-    """End-to-end: the ``warning`` key on the actual Regenold wire JSON."""
+class TestFallbackSchemaWire:
+    """Healthy and degraded answers have the same exact default schema."""
 
-    def test_warning_present_when_stage2_call_failed(self) -> None:
+    def test_fallback_has_exact_three_field_schema(self) -> None:
         resp = _cited_response(stage2_call_failed=True)
         with patch(
             "app.routes.regenold.ask_compliance_question", return_value=resp
@@ -104,12 +99,8 @@ class TestFallbackWarningWire:
             )
         assert r.status_code == 200, r.json()
         body = r.json()
-        assert "warning" in body, (
-            f"a degraded-mode fallback must surface a warning; got keys "
-            f"{sorted(body)}"
-        )
-        assert isinstance(body["warning"], str) and body["warning"].strip()
-        # The spec fields are still present + intact.
+        assert set(body) == {"reasoning", "answer", "references"}
+        assert isinstance(body["reasoning"], str)
         assert body["answer"], "answer must survive the fallback"
         assert body["references"], "references must survive the fallback"
 
@@ -126,12 +117,9 @@ class TestFallbackWarningWire:
             )
         assert r.status_code == 200, r.json()
         body = r.json()
-        assert "warning" not in body, (
-            f"a healthy response must NOT carry a warning key; got "
-            f"{body.get('warning')!r}"
-        )
+        assert set(body) == {"reasoning", "answer", "references"}
 
-    def test_warning_coexists_with_telemetry_block(self) -> None:
+    def test_fallback_telemetry_does_not_add_warning(self) -> None:
         resp = _cited_response(stage2_call_failed=True)
         with patch(
             "app.routes.regenold.ask_compliance_question", return_value=resp
@@ -143,42 +131,87 @@ class TestFallbackWarningWire:
             )
         assert r.status_code == 200, r.json()
         body = r.json()
-        assert body.get("warning"), "warning must be present under telemetry too"
+        assert "warning" not in body
         assert "confidence" in body, "telemetry block must still be present"
 
-    def test_env_gate_off_suppresses_warning(self) -> None:
-        """``REGENOLD_FALLBACK_WARNING=0`` reverts to no-warning behaviour."""
-        resp = _cited_response(stage2_call_failed=True)
-        with patch.dict(os.environ, {"REGENOLD_FALLBACK_WARNING": "0"}):
-            with patch(
-                "app.routes.regenold.ask_compliance_question", return_value=resp
-            ):
-                r = _client().post(
-                    "/api/v1/regenold/eu-ai-act/ask",
-                    headers=_headers(),
-                    json=_messages("What does Article 13 require?"),
-                )
-        assert r.status_code == 200, r.json()
-        body = r.json()
-        assert "warning" not in body, (
-            "env-gate OFF must suppress the warning entirely"
+    def test_landed_stage2_answer_is_uncapped_by_default(self) -> None:
+        """R327 — ``REGENOLD_ANSWER_NO_CAP`` is default ON, per hard rule #2.
+
+        An uncommitted pass flipped ``REGENOLD_ANSWER_NO_CAP`` to ``0`` and
+        ``REGENOLD_STAGE2_CONCISENESS_BACKSTOP`` to ``1``, then pinned a
+        four-sentence ceiling here. Turning the uncap off re-enables the soft CHAR
+        cap as well as the sentence cap, and hard rule #2 is explicit: "Any cap
+        must be SENTENCE-only: the char cap deletes verdict-first leads."
+        Answer-Conciseness is also the ONE rubric axis we lead (zero headroom), so
+        a live length change needs ``ab_judge`` first.
+
+        A cap remains reachable via ``REGENOLD_MAX_ANSWER_SENTENCES`` — see below.
+        """
+        from app.integrations.regenold.models import _split_sentences
+
+        long_answer = " ".join(
+            f"Article 13 requirement {i} remains applicable."
+            for i in range(1, 8)
         )
+        resp = _cited_response(stage2_call_failed=False, answer=long_answer)
+        with patch(
+            "app.routes.regenold.ask_compliance_question", return_value=resp
+        ):
+            r = _client().post(
+                "/api/v1/regenold/eu-ai-act/ask",
+                headers=_headers(),
+                json=_messages("Explain the ordinary Article 13 duty."),
+            )
+        assert r.status_code == 200, r.json()
+        answer = r.json()["answer"]
+        assert len(_split_sentences(answer)) > 4, (
+            f"the uncap must be ON by default; got {answer!r}"
+        )
+        assert answer.rstrip().endswith((".", "!", "?")), answer
+
+    def test_sentence_only_cap_remains_available(
+        self, monkeypatch: "pytest.MonkeyPatch"
+    ) -> None:
+        """A SENTENCE-only bound is the hard-rule-#2-compliant way to shorten."""
+        from app.integrations.regenold.models import _split_sentences
+
+        monkeypatch.setenv("REGENOLD_MAX_ANSWER_SENTENCES", "4")
+        long_answer = " ".join(
+            f"Article 13 requirement {i} remains applicable."
+            for i in range(1, 8)
+        )
+        resp = _cited_response(stage2_call_failed=False, answer=long_answer)
+        with patch(
+            "app.routes.regenold.ask_compliance_question", return_value=resp
+        ):
+            r = _client().post(
+                "/api/v1/regenold/eu-ai-act/ask",
+                headers=_headers(),
+                json=_messages("Explain the ordinary Article 13 duty."),
+            )
+        assert r.status_code == 200, r.json()
+        answer = r.json()["answer"]
+        assert len(_split_sentences(answer)) <= 4, answer
+        assert answer.rstrip().endswith((".", "!", "?")), answer
 
 
-class TestFallbackWarningModel:
-    """Pydantic-level: the field defaults to None and is exclude_none-safe."""
+class TestCompetitionResponseModel:
+    """Pydantic-level schema is strict and reasoning is always a string."""
 
-    def test_warning_defaults_none_and_excluded(self) -> None:
+    def test_default_model_has_exact_three_fields(self) -> None:
         from app.integrations.regenold.models import RegenoldAskResponse
 
         out = RegenoldAskResponse(answer="x", references=["Article 13"])
-        assert out.warning is None
         dumped = out.model_dump(exclude_none=True)
-        assert "warning" not in dumped
+        assert dumped == {
+            "answer": "x",
+            "references": ["Article 13"],
+            "reasoning": "",
+        }
 
-    def test_warning_serialises_when_set(self) -> None:
+    def test_unknown_warning_field_is_rejected(self) -> None:
         from app.integrations.regenold.models import RegenoldAskResponse
+        from pydantic import ValidationError
 
-        out = RegenoldAskResponse(answer="x", warning="degraded")
-        dumped = out.model_dump(exclude_none=True)
-        assert dumped["warning"] == "degraded"
+        with pytest.raises(ValidationError):
+            RegenoldAskResponse(answer="x", warning="degraded")

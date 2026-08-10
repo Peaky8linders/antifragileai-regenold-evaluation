@@ -6,9 +6,9 @@ answer."
 
 Two independently-gated changes are pinned here:
 
-1. ``REGENOLD_ANSWER_NO_CAP`` (default ON) — a request-scoped ContextVar the
-   route sets when ``stage2_landed``, which removes BOTH the sentence cap and
-   the soft char-cap loop from ``normalise_answer_for_regenold``.
+1. ``REGENOLD_ANSWER_NO_CAP`` (default OFF) — an explicit operator override
+   that removes both the sentence cap and soft char-cap loop. The competition
+   route now stays bounded unless this rollback/debug override is opted into.
 
 2. ``REGENOLD_ANSWER_COVERAGE`` (default ON) — appends
    ``USER_ANSWER_COVERAGE_CLAUSE`` to the Stage-2 USER message, the only

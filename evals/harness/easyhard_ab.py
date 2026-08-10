@@ -23,10 +23,10 @@ precision. Verbatim from ``docs/2026-eu-ai-act-competition-rules_official.pdf``:
     "Is the answer sufficiently concise? ... Similarly, the amount of proposed
      references is checked against ground-truth ones."
 
-This runner scores the gold-bearing probe set on exactly those axes
-(``evals.bench.metrics``: reference_correctness_loose = recall,
-_strict = F1, reference_conciseness = count-ratio) plus keyword recall + tone,
-for two env arms, and reports the paired delta.
+This runner scores the gold-bearing probe set with deterministic LOCAL proxy
+formulas. The official evaluator's numeric formulas are undisclosed. Full
+coordinate strictness and count minimality are authoritative here; historical
+head-level formulas remain stamped as compatibility proxies.
 
 The R280 checkpoint's own hard-won lessons are built in:
   * PER-ROW CHECKPOINTING — R280's frontier runner was killed at 65/95 and
@@ -45,10 +45,8 @@ HONESTY / SCOPE
 * Two live LLM arms are NOT deterministic. This is a paired, gold-scored diff
   over n=132, not a pairwise judge — legitimate for a large ref-count effect,
   weak for a small prose effect. Report n and per-row deltas, never just means.
-* Our probe gold is head-form; regenold's example gold is sub-point form
-  (``["Annex IV.2","Article 3.1"]``). Head-level scoring is therefore the
-  honest granularity here, and it is sound for this defect: the measured excess
-  is 97% entirely NON-GOLD ARTICLES, which is a granularity-independent error.
+* Gold that carries a sub-point is scored at that exact coordinate. Head recall
+  remains a guard diagnostic and is never presented as exact matching.
 
 USAGE
 -----
@@ -92,31 +90,76 @@ def _keyword_recall(answer: str, expected: list[str]) -> float:
 
 def _score_row(row: ProbeRow, answer: str, refs: list[str]) -> dict[str, float]:
     gold = list(row.expected_refs or [])
+    diag = bench_metrics.canonical_reference_diagnostics(refs)
+    loose = bench_metrics.reference_correctness_loose(refs, gold)
     return {
-        "ref_loose": bench_metrics.reference_correctness_loose(refs, gold),
-        "ref_strict": bench_metrics.reference_correctness_strict(refs, gold),
-        "ref_conc": bench_metrics.reference_conciseness(refs, gold),
+        # Backward-compatible key plus the honest explicit name.
+        "ref_loose": loose,
+        "ref_loose_head_recall_proxy": loose,
+        # R327 — this gate uses the EXACT-COORDINATE formulas deliberately.
+        #
+        # Gold shape decides which formula is valid. easyhard's ``expected_refs``
+        # carry sub-point grain (``Article 5.1.f``), which is the grain both the
+        # gold and the grounded judge score at (hard rule #8), so a sub-point
+        # mismatch MUST cost something here — that gap is how R142.1's positional
+        # clamp slipped through. davidath's ``relevant_article`` gold is
+        # head-level, so ``evals.bench.runner`` keeps the head-level canonical
+        # formulas instead; scoring exact coordinates against head-level gold
+        # would score a MORE precise citation as 0.0.
+        "ref_strict": bench_metrics.reference_correctness_strict_exact_coord(
+            refs, gold
+        ),
+        "ref_strict_head_f1_proxy": (
+            bench_metrics.reference_correctness_strict_head_f1_proxy(refs, gold)
+        ),
+        "ref_conc": bench_metrics.reference_conciseness_exact_coord(refs, gold),
+        "ref_conc_head_count_proxy": (
+            bench_metrics.reference_conciseness_head_count_proxy(refs, gold)
+        ),
+        "invalid_ref_count": float(diag["invalid_count"]),
+        "duplicate_ref_count": float(diag["duplicate_count"]),
+        "parent_leaf_pair_count": float(diag["parent_leaf_pair_count"]),
         "tone": bench_metrics.regulatory_tone(answer),
         "kw_recall": _keyword_recall(answer, list(row.expected_keywords or [])),
     }
 
 
-_AXES = ("ref_loose", "ref_strict", "ref_conc", "tone", "kw_recall")
+_AXES = ("ref_loose_head_recall_proxy", "ref_strict", "ref_conc", "tone", "kw_recall")
+
+
+def _axis_value(scores: dict[str, Any], axis: str) -> float:
+    """Read new explicit names while accepting historical checkpoint rows."""
+    if axis == "ref_loose_head_recall_proxy":
+        return float(scores.get(axis, scores.get("ref_loose", 0.0)))
+    return float(scores.get(axis, 0.0))
 
 
 def _aggregate(rows: list[dict[str, Any]]) -> dict[str, Any]:
     ok = [r for r in rows if not r.get("error")]
     if not ok:
         return {"n": 0, "errors": len(rows)}
-    out: dict[str, Any] = {"n": len(ok), "errors": len(rows) - len(ok)}
+    out: dict[str, Any] = {
+        "n": len(ok),
+        "n_input": len(rows),
+        "errors": len(rows) - len(ok),
+        "score_denominator": "answered_rows",
+        "metrics_version": bench_metrics.METRICS_VERSION,
+        "metric_provenance": bench_metrics.METRIC_PROVENANCE,
+    }
     for a in _AXES:
-        out[a] = st.mean(r["scores"][a] for r in ok)
+        out[a] = st.mean(_axis_value(r["scores"], a) for r in ok)
+    out["ref_loose"] = out["ref_loose_head_recall_proxy"]
     lat = sorted(r["latency_ms"] for r in ok)
     out["latency_p50_ms"] = lat[len(lat) // 2]
     out["latency_p90_ms"] = lat[int(len(lat) * 0.9)] if len(lat) > 1 else lat[0]
-    n_pred = sum(len(bench_metrics.article_heads(r["pred_refs"])) for r in ok)
-    n_gold = sum(len(bench_metrics.article_heads(r["gold_refs"])) for r in ok)
+    n_pred = sum(len(r.get("pred_refs") or []) for r in ok)
+    n_gold = sum(len(set(r.get("gold_refs") or [])) for r in ok)
     out["pred_gold_ratio"] = (n_pred / n_gold) if n_gold else 0.0
+    n_pred_heads = sum(len(bench_metrics.article_heads(r["pred_refs"])) for r in ok)
+    n_gold_heads = sum(len(bench_metrics.article_heads(r["gold_refs"])) for r in ok)
+    out["pred_gold_head_ratio_proxy"] = (
+        n_pred_heads / n_gold_heads if n_gold_heads else 0.0
+    )
     return out
 
 
@@ -231,7 +274,7 @@ def _report(label: str, base: dict[str, Any], branch: dict[str, Any] | None) -> 
         for a in _AXES:
             d = c[a] - b[a]
             flag = ""
-            if a == "ref_loose" and d < -0.005:
+            if a == "ref_loose_head_recall_proxy" and d < -0.005:
                 flag = "  <-- GOLD LOSS (R142.1 failure mode)"
             print(f"  {a:<12}{b[a]:>10.4f}{c[a]:>10.4f}{d:>+10.4f}{flag}")
         print(
@@ -282,17 +325,12 @@ def _paired(
         agg: dict[str, Any] = {"n": len(common)}
         for arm, idx in (("baseline", 0), ("branch", 1)):
             m: dict[str, float] = {
-                a: st.mean(pair[idx]["scores"][a] for pair in common)
+                a: st.mean(_axis_value(pair[idx]["scores"], a) for pair in common)
                 for a in _AXES
             }
-            n_pred = sum(
-                len(bench_metrics.article_heads(pair[idx]["pred_refs"]))
-                for pair in common
-            )
-            n_gold = sum(
-                len(bench_metrics.article_heads(pair[idx]["gold_refs"]))
-                for pair in common
-            )
+            m["ref_loose"] = m["ref_loose_head_recall_proxy"]
+            n_pred = sum(len(pair[idx].get("pred_refs") or []) for pair in common)
+            n_gold = sum(len(set(pair[idx].get("gold_refs") or [])) for pair in common)
             m["pred_gold_ratio"] = (n_pred / n_gold) if n_gold else 0.0
             agg[arm] = m
         agg["uplift_pp"] = sum(
@@ -317,7 +355,7 @@ def _report_paired(label: str, paired: dict[str, Any]) -> None:
         for a in _AXES:
             d = c[a] - b[a]
             flag = ""
-            if a == "ref_loose" and d < -0.005:
+            if a == "ref_loose_head_recall_proxy" and d < -0.005:
                 flag = "  <-- GOLD LOSS (R142.1 failure mode)"
             print(f"  {a:<12}{b[a]:>10.4f}{c[a]:>10.4f}{d:>+10.4f}{flag}")
         print(
@@ -413,6 +451,8 @@ def main() -> None:
                 "paired": paired,
                 "baseline_rows": a_rows,
                 "branch_rows": b_rows,
+                "metrics_version": bench_metrics.METRICS_VERSION,
+                "metric_provenance": bench_metrics.METRIC_PROVENANCE,
             },
             indent=1,
             ensure_ascii=False,

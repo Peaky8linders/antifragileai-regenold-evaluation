@@ -79,7 +79,8 @@ Bias controls
 The judge is NEVER shown: which system produced the answer, any arm/label,
 any prior score, or a prior baseline answer. This is enforced structurally,
 not by convention: every render function is built from :func:`_norm`'s
-strict allowlist (``id, category, question, answer, pred_refs, gold_refs``)
+strict allowlist (``id, category, question, answer, pred_refs, gold_refs,``
+``gold_answer, independent_gold_context``)
 — any other key on the input row (``arm``, ``label``, ``july07_answer``,
 ``system``, a prior ``score``, ...) is simply never read.
 
@@ -140,6 +141,8 @@ from evals.judge.grounded import (  # reuse the sidecar-loading + row-norm plumb
     _load_rows,
     _norm,
     _num,
+    _answer_grounding_block,
+    _has_independent_answer_grounding,
 )
 
 _DEFAULT_MODEL = "claude-sonnet-5"
@@ -184,8 +187,8 @@ def _quote_substantiated(quote: str, *text_blocks: str, min_words: int = 8) -> b
 
 
 def _resolve_provision_texts(refs: list[str], cap: int, max_refs: int) -> dict[str, str]:
-    """Resolve each ref to its verbatim EU AI Act text (article-level
-    fallback). Unlike ``grounded._provision_block`` this returns a
+    """Resolve each ref at its exact cited coordinate. Unlike
+    ``grounded._provision_block`` this returns a
     ``ref -> text`` MAP so post-processing can substantiate a quote
     against the exact provision it was claimed against."""
     from app.data.provision_text import get_provision_text  # local heavy import
@@ -198,10 +201,6 @@ def _resolve_provision_texts(refs: list[str], cap: int, max_refs: int) -> dict[s
             continue
         seen.add(key)
         txt = get_provision_text(key)
-        if txt is None:
-            base = key.split(".")[0].split("(")[0].strip()
-            if base and base != key:
-                txt = get_provision_text(base)
         out[key] = (txt or "").strip()[:cap]
     return out
 
@@ -296,11 +295,11 @@ def render_answer_correctness(r: dict[str, Any], union_map: dict[str, str]) -> s
         f"QUESTION: {r['question'][:600]}\n\n"
         "VERBATIM EU AI ACT TEXT (the provisions relevant to this question):\n"
         f"{union_block}\n\n"
-        f"PREDICTED ANSWER: {r['answer'][:1400]}\n\n"
+        f"PREDICTED ANSWER: {r['answer']}\n\n"
         "STEP 1 — decompose the PREDICTED ANSWER into discrete legal "
         "propositions (one assertion each).\n"
         "STEP 2 — for EACH proposition, using ONLY the verbatim text above "
-        "plus well-established AI Act structure, mark it SUPPORTED, "
+        "and no outside legal memory, mark it SUPPORTED, "
         "CONTRADICTED, or NOT-ADDRESSED (the text neither confirms nor "
         "denies it). For every CONTRADICTED proposition you MUST quote >=8 "
         "consecutive verbatim words from the text above that contradict "
@@ -326,6 +325,16 @@ def render_reference_correctness(
     (enforced in post-processing, not trusted from the model)."""
     pred_block = _block_from_map(pred_map)
     gold_block = _block_from_map(gold_map)
+    recall_available = bool(gold_map or r.get("independent_gold_context"))
+    recall_instruction = (
+        "Assess missing governing provisions against the independent gold block."
+        if recall_available
+        else (
+            "No independent gold context was supplied. Do not use memory to "
+            "invent missing provisions; return missing_governing=[] and treat "
+            "recall as unavailable."
+        )
+    )
     return (
         _ANTI_SYCOPHANCY + _CALIBRATION_REFS +
         f"QUESTION: {r['question'][:500]}\n\n"
@@ -336,6 +345,7 @@ def render_reference_correctness(
         "VERBATIM TEXT OF GOLD CITATIONS (candidate governing provisions if "
         "the predicted set is missing something):\n"
         f"{gold_block}\n\n"
+        f"RECALL AVAILABILITY: {recall_instruction}\n\n"
         "Classify EVERY predicted citation into exactly one class:\n"
         "  GOVERNING  — directly answers the question; omitting it would "
         "be an error.\n"
@@ -367,7 +377,7 @@ def render_citation_faithfulness(r: dict[str, Any], pred_map: dict[str, str]) ->
     return (
         _ANTI_SYCOPHANCY + _CALIBRATION_CITE +
         f"QUESTION: {r['question'][:400]}\n\n"
-        f"PREDICTED ANSWER: {r['answer'][:1200]}\n\n"
+        f"PREDICTED ANSWER: {r['answer']}\n\n"
         "VERBATIM TEXT OF EACH CITED PROVISION:\n"
         f"{pred_block}\n\n"
         "For EACH cited provision, decide whether the answer's prose "
@@ -393,7 +403,7 @@ def render_answer_conciseness(r: dict[str, Any]) -> str:
     return (
         _ANTI_SYCOPHANCY + _CALIBRATION_CONCISE +
         f"QUESTION: {r['question'][:500]}\n\n"
-        f"PREDICTED ANSWER: {r['answer'][:1400]}\n\n"
+        f"PREDICTED ANSWER: {r['answer']}\n\n"
         "Judge ONLY what is PRESENT in the answer for load-bearing "
         "relevance to the question asked. Do NOT judge completeness here "
         "— a missing required element is scored on a different axis, not "
@@ -418,14 +428,21 @@ def render_answer_conciseness(r: dict[str, Any]) -> str:
 
 def _prepare(axis: str, r: dict[str, Any]) -> tuple[str, dict[str, Any]]:
     if axis == "answer_correctness":
-        union = list(dict.fromkeys([*r["gold_refs"], *r["pred_refs"]]))
-        union_map = _resolve_provision_texts(union, _GOLD_TEXT_CAP, _MAX_GOLD_REFS + _MAX_PRED_REFS)
-        return render_answer_correctness(r, union_map), {"union_map": union_map}
+        gold_map = (
+            {"independent_answer_context": _answer_grounding_block(r)}
+            if _has_independent_answer_grounding(r) else {}
+        )
+        return render_answer_correctness(r, gold_map), {"union_map": gold_map}
     if axis == "reference_correctness":
         pred_map = _resolve_provision_texts(r["pred_refs"], _PRED_TEXT_CAP, _MAX_PRED_REFS)
         gold_map = _resolve_provision_texts(r["gold_refs"], _GOLD_TEXT_CAP, _MAX_GOLD_REFS)
+        supplied = str(r.get("independent_gold_context") or "").strip()
+        if supplied:
+            gold_map["independent_gold_context"] = supplied
         return render_reference_correctness(r, pred_map, gold_map), {
-            "pred_map": pred_map, "gold_map": gold_map,
+            "pred_map": pred_map,
+            "gold_map": gold_map,
+            "recall_available": any(str(text).strip() for text in gold_map.values()),
         }
     if axis == "citation_faithfulness":
         pred_map = _resolve_provision_texts(r["pred_refs"], _PRED_TEXT_CAP, _MAX_PRED_REFS)
@@ -464,15 +481,19 @@ def _postprocess_answer_correctness(raw: dict[str, Any], union_map: dict[str, st
         else:
             not_addressed += 1
     omission_present = bool(raw.get("omission_present"))
-    total = supported + contradicted
-    factual_score = (supported / total) if total else (0.5 if not_addressed else 1.0)
+    total = supported + contradicted + not_addressed
+    factual_score = (supported / total) if total else 0.0
     fabrication_present = contradicted > 0
-    verdict = "pass" if (contradicted == 0 and not omission_present) else "fail"
+    unsupported_present = not_addressed > 0
+    verdict = "pass" if (
+        contradicted == 0 and not unsupported_present and not omission_present
+    ) else "fail"
     return {
         "verdict": verdict,
         "supported": supported, "contradicted": contradicted, "not_addressed": not_addressed,
         "omission_present": omission_present, "omission_detail": raw.get("omission_detail") or "",
         "fabrication_present": fabrication_present, "fabrications": fabrications,
+        "unsupported_present": unsupported_present,
         "factual_score": round(factual_score, 4),
         "unsubstantiated_verdicts": unsub,
         "failure_mode": raw.get("failure_mode") or "",
@@ -482,6 +503,7 @@ def _postprocess_answer_correctness(raw: dict[str, Any], union_map: dict[str, st
 
 def _postprocess_reference_correctness(
     raw: dict[str, Any], pred_map: dict[str, str], gold_map: dict[str, str], pred_refs: list[str],
+    recall_available: bool = True,
 ) -> dict[str, Any]:
     if raw.get("judge_error"):
         return dict(raw)
@@ -523,7 +545,7 @@ def _postprocess_reference_correctness(
             # as SUPPORTING (never as WRONG on a format hiccup).
             supporting.append(ref)
 
-    missing_raw = raw.get("missing_governing") or []
+    missing_raw = (raw.get("missing_governing") or []) if recall_available else []
     missing: list[str] = []
     for m in missing_raw:
         if not isinstance(m, dict):
@@ -541,7 +563,7 @@ def _postprocess_reference_correctness(
     focus_precision = (len(governing) / total) if total else 0.0
     legal_soundness_precision = ((len(governing) + len(supporting)) / total) if total else 0.0
     denom = len(governing) + len(missing)
-    recall = (len(governing) / denom) if denom else 1.0
+    recall = ((len(governing) / denom) if denom else 1.0) if recall_available else None
     verdict = "pass" if (len(wrong) == 0 and len(missing) == 0) else "fail"
     return {
         "verdict": verdict,
@@ -550,7 +572,12 @@ def _postprocess_reference_correctness(
         "n_predicted": total,
         "focus_precision": round(focus_precision, 4),
         "legal_soundness_precision": round(legal_soundness_precision, 4),
-        "recall": round(recall, 4),
+        "recall": round(recall, 4) if recall is not None else None,
+        "recall_available": recall_available,
+        "recall_provenance": (
+            "independent_gold_context"
+            if recall_available else "unavailable_no_independent_gold"
+        ),
         "unsubstantiated_verdicts": unsub,
         "failure_mode": raw.get("failure_mode") or "",
         "_raw": raw,
@@ -637,7 +664,13 @@ def _postprocess(axis: str, raw: dict[str, Any], r: dict[str, Any], ctx: dict[st
     if axis == "answer_correctness":
         return _postprocess_answer_correctness(raw, ctx["union_map"])
     if axis == "reference_correctness":
-        return _postprocess_reference_correctness(raw, ctx["pred_map"], ctx["gold_map"], r["pred_refs"])
+        return _postprocess_reference_correctness(
+            raw,
+            ctx["pred_map"],
+            ctx["gold_map"],
+            r["pred_refs"],
+            ctx.get("recall_available", True),
+        )
     if axis == "citation_faithfulness":
         return _postprocess_citation_faithfulness(raw, ctx["pred_map"], r["pred_refs"])
     if axis == "answer_conciseness":
@@ -763,7 +796,27 @@ def _judge_row(
     r: dict[str, Any], caller: Callable[[str], dict[str, Any]], k: int,
     retries: int = _DEFAULT_MAX_RETRIES,
 ) -> dict[str, Any]:
-    verdicts = {axis: _judge_axis(axis, r, caller, k, retries) for axis in AXES}
+    if not r["answer"]:
+        verdicts = {
+            axis: {
+                "verdict": "fail",
+                "evaluation_error": "empty_answer",
+                "failure_mode": "empty answer",
+                "_samples_n": 0,
+            }
+            for axis in AXES
+        }
+        return {"id": r["id"], "category": r["category"], "verdicts": verdicts}
+    verdicts: dict[str, Any] = {}
+    for axis in AXES:
+        if axis == "answer_correctness" and not _has_independent_answer_grounding(r):
+            verdicts[axis] = {
+                "judge_error": "no_independent_gold_context",
+                "grounding_status": "unscorable",
+                "_samples_n": 0,
+            }
+        else:
+            verdicts[axis] = _judge_axis(axis, r, caller, k, retries)
     return {"id": r["id"], "category": r["category"], "verdicts": verdicts}
 
 
@@ -781,7 +834,7 @@ def _aggregate(judged: list[dict[str, Any]]) -> dict[str, Any]:
         gov_total = sup_total = wrong_total = missing_total = 0
         prec_focus: list[float] = []; prec_sound: list[float] = []; rec: list[float] = []
         fact: list[float] = []
-        omission_rows = fabrication_rows = 0
+        omission_rows = fabrication_rows = unsupported_rows = 0
         agreements: list[float] = []
         for row in judged:
             v = (row.get("verdicts") or {}).get(axis) or {}
@@ -823,6 +876,8 @@ def _aggregate(judged: list[dict[str, Any]]) -> dict[str, Any]:
                     omission_rows += 1
                 if v.get("fabrication_present"):
                     fabrication_rows += 1
+                if v.get("unsupported_present"):
+                    unsupported_rows += 1
                 global_substantiated += _num(v.get("contradicted"))
         entry: dict[str, Any] = {
             "n": n, "pass": p, "fail": f, "error": e,
@@ -848,6 +903,7 @@ def _aggregate(judged: list[dict[str, Any]]) -> dict[str, Any]:
                 entry["mean_factual_score"] = round(sum(fact) / len(fact), 4)
             entry["omission_rows"] = omission_rows
             entry["fabrication_rows"] = fabrication_rows
+            entry["unsupported_rows"] = unsupported_rows
         agg[axis] = entry
 
     total_claims = global_substantiated + global_unsubstantiated
@@ -923,10 +979,10 @@ def run(
     _assert_claude_max_transport(provider)
     caller = _resolve_caller(provider, timeout_s)
     all_rows = [_norm(r) for r in _load_rows(sidecar)]
-    n_error_rows = sum(1 for r in all_rows if not r["answer"])
-    rows = [r for r in all_rows if r["answer"]]  # skip error/empty-answer rows
     if limit:
-        rows = rows[:limit]
+        all_rows = all_rows[:limit]
+    rows = all_rows
+    n_error_rows = sum(1 for r in rows if not r["answer"])
     k = max(1, samples)
     print(
         f"[legal_v2] {len(rows)} rows x {len(AXES)} axes x {k} sample(s)  "
@@ -935,8 +991,8 @@ def run(
     )
     if n_error_rows:
         print(
-            f"[legal_v2] !! {n_error_rows} row(s) had no answer and are EXCLUDED "
-            "from every axis below.",
+            f"[legal_v2] {n_error_rows} row(s) had no answer; they remain in "
+            "every denominator as deterministic failures.",
             flush=True,
         )
 
@@ -979,7 +1035,10 @@ def run(
             "elapsed_s": round(time.monotonic() - t0, 1),
             "generated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "axes": list(AXES), "rows": judged_now, "aggregate": _aggregate(judged_now),
-            "excluded_error_rows": n_error_rows,
+            "input_rows": total,
+            "empty_answer_rows": n_error_rows,
+            "excluded_error_rows": 0,
+            "denominator_policy": "all input rows; empty answers fail; judge errors remain errors",
         }
         dest.write_text(json.dumps(summary, indent=2, default=str), encoding="utf-8")
 
