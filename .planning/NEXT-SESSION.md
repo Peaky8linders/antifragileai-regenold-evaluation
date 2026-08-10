@@ -42,31 +42,44 @@ and added OFF-by-default capability. The scoreboard has not moved.
 
 ## 2. Ranked next steps
 
-### 1. Gate the semantic layers with the grounded judge — the sidecars ALREADY EXIST
+### 1. Re-run the gate CONSTRAINED-ONLY — the R327 gate is done and it split the result
 
-Highest value per minute available right now. Two 50-row live sidecars are on
-disk from R327's A/B; the judge run is the only missing piece.
+**The gate ran.** `evals.judge.grounded` over both R327 sidecars, 50 rows × 3 axes
+per arm, `claude-sonnet-5` via the tunnel. Full write-up:
+[`docs/R327-live-ab-semantic-layers.md`](../docs/R327-live-ab-semantic-layers.md).
+
+|  | OFF | ON | flips | net | sign test |
+| --- | --- | --- | --- | --- | --- |
+| answer correctness | 0.620 | 0.660 | 5/3 | +2 | p=0.727 |
+| reference correctness | 0.380 | 0.360 | 3/4 | −1 | p=1.000 |
+| citation faithfulness | 0.900 | 0.960 | 4/1 | +3 | p=0.375 |
+
+The layers **help attribution** (mismatched citations 5→2, outright incorrect
+answer claims **5→1**) and **cost selection** (wrong refs 51→55 at an unchanged
+reference count, micro-precision 0.611→0.583). Nothing is significant at n=50.
+`REGENOLD_GRAPH_SEMANTIC_LAYERS` stays **OFF**.
+
+The two block families measured opposite-signed, and one switch used to bundle
+them. `REGENOLD_SEMANTIC_GLOSS` now separates them, so run the SAME gate with the
+constrained half only:
 
 ```bash
-py -3.12 -m evals.judge.grounded --sidecar evals/bench/results/official-r327-live-ab-A-easy.ckpt.jsonl --label r327-layersOFF --model claude-sonnet-5 --provider wrapper --timeout 120 --concurrency 3
+# regenerate the branch arm with the open-domain blocks suppressed
+REGENOLD_GRAPH_SEMANTIC_LAYERS=1 REGENOLD_SEMANTIC_GLOSS=0   py -3.12 -m evals.regenold.run_official_batch   --label r328-constrained-only --mode easy --limit 50 --timeout 240
+# then judge it against the EXISTING layers-OFF sidecar
+py -3.12 -m evals.judge.grounded   --sidecar evals/bench/results/official-r328-constrained-only-easy.ckpt.jsonl   --label r328-constrained --model claude-sonnet-5 --provider wrapper   --timeout 120 --concurrency 3
 ```
 
-then the same for `official-r327-live-layersON-easy.ckpt.jsonl`
-(`--label r327-layersON`). **Sequentially — never two wrapper-bound jobs at once.**
+Compare with `grounded-r327-layersOFF.json` (already on disk — no need to re-judge
+the baseline). Hypothesis: keeps the +3 faithfulness and the 5→1 incorrect, without
+the precision loss, because the constrained block cannot introduce a citation at
+all — every candidate already belongs to a provision that is already cited.
 
-* Keep `GROUNDED_JUDGE_STRICT_GROUNDING` **OFF** (the default) or
-  answer-correctness returns `judge_error` on 100% of rows: the July-7 batch has
-  **no gold answer and no gold refs at all**, only `jul07_*` (the July-7 system's
-  own predictions, which scored 0.500).
-* Every row now records `answer_grounding_source`. Expect
-  `predicted_refs_fallback_circular` — that grounding can catch "the answer
-  misreads the provision it cites" but cannot catch "a better provision was never
-  cited". Reference-correctness is scored against the Act, so that axis covers it.
-* R327's cheap proxy (agreement with July-7 refs) went **F1 0.825 → 0.798**. That
-  is a similarity measure, not quality. The judge is what decides.
-
-Decision rule: enable `REGENOLD_GRAPH_SEMANTIC_LAYERS` only on a citation-
-faithfulness or answer-correctness win with no reference-precision loss.
+⚠ Two things to carry into any reading of this axis: `gold_coverage = 0.0` on this
+batch, so **reference RECALL is unavailable** and precision-only rewards citing
+less (the hard-rule-#8 hazard) — only safe to compare while ref COUNTS stay level.
+And keep `GROUNDED_JUDGE_STRICT_GROUNDING` OFF or answer-correctness returns
+`judge_error` on every row.
 
 ### 2. Run `--mode hard` — still never run, and it is THE graded turn
 

@@ -1450,6 +1450,10 @@ def _engine_cache_key(
             # The char ceilings decide how much of that context survives, so they
             # belong here for the same reason as the VERIFY budget knobs above.
             "REGENOLD_GRAPH_SEMANTIC_LAYERS",
+            # R327 gate — the open-domain half of the semantic layers, separable
+            # so constrained-only can be measured. Engine-level (it changes the
+            # Stage-2 grounding block), so it must be keyed like its master.
+            "REGENOLD_SEMANTIC_GLOSS",
             "REGENOLD_GRAPH_VECTOR_RECALL",
             "REGENOLD_VECTOR_MIN_SIM",
             "REGENOLD_KG_MAX_CHARS",

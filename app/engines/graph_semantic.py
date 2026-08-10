@@ -74,6 +74,7 @@ logger = logging.getLogger(__name__)
 
 __all__ = [
     "semantic_layers_enabled",
+    "gloss_layers_enabled",
     "fetch_focused_subprovisions",
     "fetch_definition_and_recital_context",
 ]
@@ -89,6 +90,38 @@ _DEFAULT_UNITS_KEPT = 6
 _DEFAULT_UNITS_PER_PROVISION = 2
 _DEFAULT_DEFINITIONS_KEPT = 3
 _DEFAULT_RECITALS_KEPT = 3
+
+
+def gloss_layers_enabled() -> bool:
+    """``REGENOLD_SEMANTIC_GLOSS`` — the OPEN-DOMAIN half. Default **ON**.
+
+    R327 gate result. The grounded judge over 50 live rows separated the two block
+    families by sign:
+
+    * the CONSTRAINED block (paragraph/point/subpoint, filtered to already-cited
+      provisions) carries the win — citation faithfulness 0.900 -> 0.960 net +3,
+      outright incorrect answer claims 5 -> 1 — and cannot introduce a citation at
+      all, since every candidate already belongs to a cited provision;
+    * the OPEN-DOMAIN blocks (definitions, recitals) are the plausible source of
+      the cost — wrong refs 51 -> 55 at an unchanged reference count, and the refs
+      added are the regulation's own neighbours (+Article 4, +Article 27,
+      +Article 57, +Article 71, +Article 72), which is exactly what a recital or a
+      definition names in passing.
+
+    Bundling both under one switch made the net effect unusable: two of three
+    pre-registered conditions passed and the third failed. This flag exists so the
+    next judge run can measure constrained-only by setting it to ``0`` while
+    ``REGENOLD_GRAPH_SEMANTIC_LAYERS=1``.
+
+    Default ON so that flipping only the master switch reproduces the measured
+    R327 behaviour exactly. Fresh env read per call (R263.2).
+    """
+    return os.getenv("REGENOLD_SEMANTIC_GLOSS", "1").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
 
 
 def semantic_layers_enabled() -> bool:
@@ -298,8 +331,12 @@ def fetch_definition_and_recital_context(
     Open-domain by necessity: ``HAS_RECITAL_ANCHOR`` has 5 edges in the whole
     graph, so there is nothing structural to constrain recitals against. Safe
     because neither layer can become a wire citation.
+
+    Gated by BOTH the master switch and :func:`gloss_layers_enabled`, so the
+    open-domain half can be measured separately from the constrained half — see
+    the R327 gate result in that docstring.
     """
-    if not semantic_layers_enabled():
+    if not semantic_layers_enabled() or not gloss_layers_enabled():
         return []
     try:
         from app.engines.kg_context import (  # noqa: PLC0415
