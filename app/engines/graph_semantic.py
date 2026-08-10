@@ -84,6 +84,9 @@ _DEFAULT_MIN_SIM = 0.30
 #: cited provision actually appear in the global top-k.
 _DEFAULT_ANN_FANOUT = 60
 _DEFAULT_UNITS_KEPT = 6
+#: Max units drawn from any ONE cited provision, so a single provision cannot
+#: consume the whole focused block (see the B.2 roll-up note on _FOCUS_CYPHER).
+_DEFAULT_UNITS_PER_PROVISION = 2
 _DEFAULT_DEFINITIONS_KEPT = 3
 _DEFAULT_RECITALS_KEPT = 3
 
@@ -155,12 +158,29 @@ CALL () {
 WITH node, score WHERE score >= $min_sim
 MATCH (a)-[:HAS_PARAGRAPH|HAS_POINT|HAS_SUBPOINT*1..3]->(node)
 WHERE a.id IN $ids AND (a:Article OR a:Annex)
+// R327 — PER-PROVISION CAP, not a flat global top-N.
+//
+// A flat `ORDER BY score DESC LIMIT n` lets one provision monopolise the block:
+// measured, Article 50 took 3 of 5 slots and Article 26 nearly vanished, even
+// though both were cited. The roll-up idiom is from the Cypher appendix of
+// "Reducing Hallucinations in Complex Question Answering using Simple
+// Graph-based RAG" (query B.2), which searches at chunk grain and then keeps the
+// best-scoring chunk PER PARENT paragraph. Same shape here: rank units inside
+// each cited provision, keep the top `$per_provision`, then order provisions by
+// their own best unit. Coverage across the cited set is what this block is for —
+// attributing a duty to the right sub-provision of EACH provision on the wire.
+WITH a, node, score ORDER BY score DESC
+WITH a,
+     collect({uid: node.id, layer: head(labels(node)), text: node.text,
+              score: score})[..$per_provision] AS units,
+     max(score) AS best
+ORDER BY best DESC
+UNWIND units AS u
 RETURN coalesce(a.strict_citation, a.id) AS cite,
-       node.id AS uid,
-       head(labels(node)) AS layer,
-       node.text AS text,
-       score
-ORDER BY score DESC
+       u.uid AS uid,
+       u.layer AS layer,
+       u.text AS text,
+       u.score AS score
 LIMIT $limit
 """
 
@@ -235,6 +255,12 @@ def fetch_focused_subprovisions(question: str, refs: list[str]) -> list[dict]:
                 ),
                 "limit": _int_env(
                     "REGENOLD_SEMANTIC_UNITS", _DEFAULT_UNITS_KEPT, 1, 20
+                ),
+                "per_provision": _int_env(
+                    "REGENOLD_SEMANTIC_UNITS_PER_PROVISION",
+                    _DEFAULT_UNITS_PER_PROVISION,
+                    1,
+                    6,
                 ),
             },
         )

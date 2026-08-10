@@ -214,32 +214,62 @@ def _node_ids(refs: list[str], limit: int) -> list[str]:
 # ['article_26','article_3']. The load-bearing half — that the rewrite is
 # cost-neutral — is what holds.)
 
+# R327 — THE PROVISION-LEVEL ORDER WAS ALSO WRONG, for the same reason.
+#
+# R318 (above) fixed the ordering of units WITHIN a provision. The ordering OF
+# the provisions was still ``ORDER BY a.id``, i.e. lexicographic over node ids,
+# and ``_node_ids`` receives the refs in RETRIEVAL-RANK order. Measured live:
+#
+#   in  ['Article 50', 'Article 5', 'Annex III', 'Article 26', 'Article 6']
+#   out ['Annex III',  'Article 26', 'Article 5', 'Article 50', 'Article 6']
+#
+# so the top-ranked provision came back 4th of 5. That is load-bearing because
+# ``_fit_complete_lines`` truncates this block at a line boundary when it exceeds
+# the ceiling: the tail is dropped, and the tail was whatever sorted last
+# alphabetically rather than whatever mattered least.
+#
+# The index-preserving idiom (UNWIND the positions, carry ``i``, ORDER BY ``i``)
+# is taken from the Cypher appendix of "Reducing Hallucinations in Complex
+# Question Answering using Simple Graph-based RAG" (query B.6), which uses it to
+# return sections in caller-supplied order. Cost-neutral: same node lookups by
+# id, one extra integer carried through.
 _HIERARCHY_CYPHER = """
-MATCH (a) WHERE a.id IN $ids AND (a:Article OR a:Annex)
+UNWIND range(0, size($ids) - 1) AS i
+WITH i, $ids[i] AS aid
+MATCH (a) WHERE a.id = aid AND (a:Article OR a:Annex)
 OPTIONAL MATCH (a)-[:HAS_PARAGRAPH|HAS_POINT]->(u)
-WITH a, u ORDER BY a.id, coalesce(toInteger(u.number), 2147483647), u.number
-WITH a, collect({num: u.number, text: u.text})[..$max_units] AS units
+WITH i, a, u ORDER BY i, coalesce(toInteger(u.number), 2147483647), u.number
+WITH i, a, collect({num: u.number, text: u.text})[..$max_units] AS units
 RETURN a.id AS id,
        coalesce(a.strict_citation, a.id) AS cite,
        a.title AS title,
        units AS units
+ORDER BY i
 """
 
+# R327 — same index-preserving fix (B.6). ``LIMIT $limit`` truncates this result,
+# so ordering it alphabetically meant the recitals kept were the ones anchored to
+# the alphabetically-first provision, not the highest-ranked one.
 _RECITAL_CYPHER = """
+UNWIND range(0, size($ids) - 1) AS i
+WITH i, $ids[i] AS aid
 MATCH (a)-[:HAS_RECITAL_ANCHOR]->(r:Recital)
-WHERE a.id IN $ids
+WHERE a.id = aid
 RETURN a.id AS id, r.number AS num, r.text AS text
-ORDER BY a.id, coalesce(toInteger(r.number), 2147483647), r.number
+ORDER BY i, coalesce(toInteger(r.number), 2147483647), r.number
 LIMIT $limit
 """
 
+# R327 — same index-preserving fix (B.6); ``LIMIT $limit`` applies here too.
 _SUBPOINT_CYPHER = """
-MATCH (a) WHERE a.id IN $ids AND (a:Article OR a:Annex)
+UNWIND range(0, size($ids) - 1) AS i
+WITH i, $ids[i] AS aid
+MATCH (a) WHERE a.id = aid AND (a:Article OR a:Annex)
 MATCH (a)-[:HAS_PARAGRAPH]->(p)-[:HAS_POINT]->(pt)-[:HAS_SUBPOINT]->(s:SubPoint)
 RETURN coalesce(a.strict_citation, a.id) AS cite,
        p.number AS para, pt.letter AS letter, s.roman AS roman,
        s.id AS sid, s.text AS text
-ORDER BY a.id, coalesce(toInteger(p.number), 2147483647), p.number, pt.letter, s.id
+ORDER BY i, coalesce(toInteger(p.number), 2147483647), p.number, pt.letter, s.id
 LIMIT $limit
 """
 
