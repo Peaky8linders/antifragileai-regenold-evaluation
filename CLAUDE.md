@@ -598,29 +598,44 @@ attributed, not Omnibus — and `tests/test_kb_stubs_filled.py` pins it.
 
 ## Open, ranked
 
-1. **Run `--mode hard`.** It is **the graded turn** (the adversarial pushback;
+Full handoff: [`.planning/NEXT-SESSION.md`](.planning/NEXT-SESSION.md).
+
+1. **Gate the R327 semantic layers with `evals.judge.grounded`.** The two 50-row
+   live sidecars already exist (`official-r327-live-ab-A-easy.ckpt.jsonl` and
+   `official-r327-live-layersON-easy.ckpt.jsonl`), so only the judge run is
+   missing. Keep `GROUNDED_JUDGE_STRICT_GROUNDING` OFF or the axis is unscorable.
+   The cheap proxy leaned mildly NEGATIVE (F1 0.825 -> 0.798 vs July-7's own
+   refs), so this decides whether the layers ever go ON.
+2. **Run `--mode hard`.** It is **the graded turn** (the adversarial pushback;
    67 of 111 hard rows carry it) and it has NEVER been run. Every optimisation
    decision on the table is being made on the *easy* turn — that is the
-   instrument trap. Free, ~40-70 min. Do this before ranking anything else.
-2. **Gate the parent-collapse** with `easyhard_ab` (davidath cannot see it).
+   instrument trap. Free, ~40-70 min.
+3. **Re-verify the baseline reproduces** before grading anything against it.
+   R327 rebound the canonical axis names to the historical formulas, so the block
+   above should be measurable again; if it does not reproduce, stop and find out
+   why.
+4. **Gate the parent-collapse** with `easyhard_ab` (davidath cannot see it).
    +0.018 F1 / +5 rows measured offline; one gold ref is the price.
-3. **Attack GENERATION, not selection.** R325 closed the ranker (above), so the
+5. **Attack GENERATION, not selection.** R325 closed the ranker, so the
    remaining ~90% of the over-citation gap is upstream: why does a 3-ref answer
    name a wrong provision **53% of the time at rank 3**? The refs-per-row cliff
    is the shape of it — 1 ref → 0.88 pass, 2 → 0.54, **3 → 0.05**, 4+ → 0.06,
-   with 41 of 100 rows sitting at exactly 3 (the QA budget). That is a
-   retrieval / grounding question.
-4. **Fix the judge** before trusting any further answer number — the length
+   with 41 of 100 rows sitting at exactly 3 (the QA budget). R327's constrained
+   sub-provision layer is the first instrument aimed here.
+6. **`CROSS_REFERENCES` backlinks as non-citable context** — 248 edges, never
+   read as context, real legal signal. The best unshipped graph idea; needs its
+   own gate, and prompt budget competes with Answer-Conciseness.
+7. **Fix the judge** before trusting any further answer number — the length
    artefact above. `evals/judge/legal_v2.py` already implements the
    quote-or-retract rule that catches it.
-5. **R326 Vector Recall & Unread Node Layers offline evaluation** — run `scripts/eval_vector_recall_gold.py` to measure vector recall gold gain offline against the 100 recorded rows.
-6. **Remediate Code Review Findings** — address verified review findings in [`docs/reviews/R326-code-review-2026-08-10.md`](docs/reviews/R326-code-review-2026-08-10.md) (enumeration regex expansion, `_EXECUTOR` double-checked lock, Arabic annex normalization in `vector_recall.py` and Component D, parent collapse regex).
-7. **The kg_context change still owes its merge gate.** It is answer-affecting,
-   and davidath is byte-identical here **by construction** (Stage-2 never fires
-   under `provider=cli`), so the bench proves nothing about its quality. Run
-   `ab_judge` weighted to Article 3 / 26 / 5 / 6 questions; a generic set ties.
 8. **Watch conciseness** — answers are **+41% longer** than the graded July-7
-   ones, on the one axis the official scorecard says we lead.
+   ones, on the one axis the official scorecard says we lead. Any bound must be
+   SENTENCE-only (hard rule #2).
+
+**Closed — do not re-open:** R326 review finding I1 (`_ENUM_OPENER_RE`) is a
+non-finding (enumerated units begin at `(a)`; verified 5(1)/10(2)/13(3) match,
+26(1) is 228 chars so nothing truncates). I2-I5 are done. `_DEONTIC_CYPHER` parses
+fine on Aura. The judge's parent-text fallback must stay removed.
 
 ---
 
