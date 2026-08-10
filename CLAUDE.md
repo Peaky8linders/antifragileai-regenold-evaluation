@@ -432,6 +432,17 @@ seeder succeeds, `/healthz/graph` still reports ok, answers just get worse.
 * **Small-n live A/Bs cannot resolve reference axes.** Two runs with an
   IDENTICAL baseline arm changed 20/40 rows' refs and sign-flipped all three
   reference axes. Use full n with repeats, or a deterministic offline sim.
+* **CHECK THE BRANCH ARM'S LATENCY — it is the cheapest inert-A/B detector.**
+  R327 ran a 50-row paired live A/B of `REGENOLD_GRAPH_SEMANTIC_LAYERS` and got
+  byte-identical answers AND byte-identical reference lists on all 50 rows. That
+  reads as "safe". It was inert: arm B averaged **1,096 ms** against arm A's
+  **16,642 ms**, i.e. every row was an `_ENGINE_CACHE` hit and Stage-2 never
+  re-ran. A branch arm an order of magnitude faster than baseline did not run the
+  engine. **Any engine-level flag missing from `_engine_cache_key` makes an
+  in-process A/B measure nothing** — R326's `REGENOLD_GRAPH_VECTOR_RECALL` had
+  the same defect. Route-level post-processing flags must stay OUT of the key
+  (that asymmetry is what makes the paired A/B possible); engine-level ones must
+  be in it.
 * **"Byte-identical" is also what INERT looks like.** A foreign-citation guard
   was widened, measured no wire change, and that was read as *safe* — it was
   also consistent with *not working*, because Component D was re-adding
