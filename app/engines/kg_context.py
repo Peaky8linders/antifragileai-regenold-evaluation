@@ -140,19 +140,20 @@ def _node_ids(refs: list[str], limit: int) -> list[str]:
     out: list[str] = []
     seen: set[str] = set()
     for ref in refs or []:
-        node_id = None
-        m = _ART_RE.search(str(ref))
-        if m:
+        for m in _ART_RE.finditer(str(ref)):
             node_id = f"article_{int(m.group(1))}"
-        else:
-            m = _ANNEX_RE.search(str(ref))
-            if m:
-                node_id = f"annex_{m.group(1).upper()}"
-        if node_id and node_id not in seen:
-            seen.add(node_id)
-            out.append(node_id)
-        if len(out) >= limit:
-            break
+            if node_id not in seen:
+                seen.add(node_id)
+                out.append(node_id)
+                if len(out) >= limit:
+                    return out
+        for m in _ANNEX_RE.finditer(str(ref)):
+            node_id = f"annex_{m.group(1).upper()}"
+            if node_id not in seen:
+                seen.add(node_id)
+                out.append(node_id)
+                if len(out) >= limit:
+                    return out
     return out
 
 
@@ -214,7 +215,7 @@ _RECITAL_CYPHER = """
 MATCH (a)-[:HAS_RECITAL_ANCHOR]->(r:Recital)
 WHERE a.id IN $ids
 RETURN a.id AS id, r.number AS num, r.text AS text
-ORDER BY a.id, toIntegerOrNull(r.number), r.number
+ORDER BY a.id, coalesce(toInteger(r.number), 2147483647), r.number
 LIMIT $limit
 """
 
@@ -223,7 +224,7 @@ MATCH (a) WHERE a.id IN $ids AND (a:Article OR a:Annex)
 MATCH (a)-[:HAS_PARAGRAPH]->(p)-[:HAS_POINT]->(pt)-[:HAS_SUBPOINT]->(s:SubPoint)
 RETURN coalesce(a.strict_citation, a.id) AS cite,
        p.number AS para, pt.letter AS letter, s.id AS sid, s.text AS text
-ORDER BY a.id, toIntegerOrNull(p.number), p.number, pt.letter, s.id
+ORDER BY a.id, coalesce(toInteger(p.number), 2147483647), p.number, pt.letter, s.id
 LIMIT $limit
 """
 
@@ -422,7 +423,7 @@ def _bounded_execute_read(cypher: str, params: dict) -> list[dict]:
 
 
 #: An enumeration opening inside the budget means the LIST is the obligation.
-_ENUM_OPENER_RE = re.compile(r"\(a\)\s")
+_ENUM_OPENER_RE = re.compile(r"(?:\(?a\)\s|\(?1\)\s|1\.\s)")
 
 #: Hard ceiling for a single unit once the enumeration guard has extended it.
 #: Bounds the worst case so one pathological provision cannot dominate the

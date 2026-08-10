@@ -14,8 +14,16 @@ from __future__ import annotations
 import logging
 import os
 
+import re
 logger = logging.getLogger(__name__)
 
+def _norm_ref(r: str) -> str:
+    r = str(r).strip()
+    m_art = re.search(r"(?i)\b(?:Art\.?|Article|article_)\s*(\d+)", r)
+    if m_art: return f"Art. {m_art.group(1)}"
+    m_ann = re.search(r"(?i)\b(?:Annex|annex_)\s*([IVXLCDM]+)", r)
+    if m_ann: return f"Annex {m_ann.group(1).upper()}"
+    return r
 
 def is_enabled() -> bool:
     """Return True if the vector recall path is enabled via env and assets exist."""
@@ -109,7 +117,8 @@ def recall_articles(question: str, *, top_k: int = 3) -> list[str]:
 
     # 1. Primary path: Try Neo4j native vector search
     n4j_hits = _query_neo4j_vector_index(question, top_k=top_k * 2, min_sim=min_sim)
-    for ref, score in n4j_hits:
+    for raw_ref, score in n4j_hits:
+        ref = _norm_ref(raw_ref)
         if ref not in article_scores or score > article_scores[ref]:
             article_scores[ref] = score
 
@@ -118,7 +127,7 @@ def recall_articles(question: str, *, top_k: int = 3) -> list[str]:
         try:
             hits = embeddings_index.query(question, top_k=50, threshold=min_sim)
             for hit in hits:
-                ref = hit.article_ref
+                ref = _norm_ref(hit.article_ref)
                 if ref not in article_scores:
                     article_scores[ref] = hit.similarity
                 else:
