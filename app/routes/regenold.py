@@ -1430,6 +1430,35 @@ def _engine_cache_key(
             "REGENOLD_KG_MAX_UNITS",
             "REGENOLD_KG_UNIT_CHARS",
             "REGENOLD_KG_MAX_RECITALS",
+            # R327 — CAUGHT BY THE LATENCY, NOT THE OUTPUT.
+            #
+            # A live 50-row paired A/B of REGENOLD_GRAPH_SEMANTIC_LAYERS came back
+            # byte-identical on all 50 answers and all 50 reference lists — which
+            # reads as "safe" but was the INERT signature. Arm B's mean latency was
+            # 1,096 ms against arm A's 16,642 ms: every row was an engine-cache
+            # hit, so Stage-2 never re-ran and the branch arm measured nothing.
+            # Exactly the R263.2 failure mode, and exactly the CLAUDE.md gotcha
+            # "'byte-identical' is also what INERT looks like".
+            #
+            # Both of these change ENGINE output, so both must be keyed:
+            #   * GRAPH_SEMANTIC_LAYERS adds three blocks to the Stage-2 grounding
+            #     context ⇒ flips the polished answer and the refs derived from it.
+            #   * GRAPH_VECTOR_RECALL appends candidates to ``query.entities`` in
+            #     ``_deterministic_parse`` ⇒ flips the retrieved provisions
+            #     directly. R326 shipped it without a key entry, so any in-process
+            #     A/B of vector recall also measured nothing.
+            # The char ceilings decide how much of that context survives, so they
+            # belong here for the same reason as the VERIFY budget knobs above.
+            "REGENOLD_GRAPH_SEMANTIC_LAYERS",
+            "REGENOLD_GRAPH_VECTOR_RECALL",
+            "REGENOLD_VECTOR_MIN_SIM",
+            "REGENOLD_KG_MAX_CHARS",
+            "REGENOLD_KG_SEMANTIC_MAX_CHARS",
+            "REGENOLD_SEMANTIC_UNITS",
+            "REGENOLD_SEMANTIC_UNITS_PER_PROVISION",
+            "REGENOLD_SEMANTIC_DEFINITIONS",
+            "REGENOLD_SEMANTIC_RECITALS",
+            "REGENOLD_SEMANTIC_MIN_SIM",
             # R318 — R316 shipped this gate WITHOUT adding it here, which is the
             # R263.2 eval-integrity defect, not a production one: it appends a
             # CELEX / ELI provenance block to the Stage-2 grounding context via
