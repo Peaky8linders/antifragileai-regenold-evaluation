@@ -225,6 +225,57 @@ def _call_judge_sonnet(prompt: str, timeout_s: float = 30.0) -> dict[str, Any]:
     return _parse_judge_json(resp.text or "")
 
 
+def _call_judge_bedrock(prompt: str, timeout_s: float = 30.0) -> dict[str, Any]:
+    """Send judge prompt through BedrockProvider and parse JSON response."""
+    try:
+        from app.llm.bedrock_client import (
+            BedrockRequest,
+            get_bedrock_provider,
+            is_bedrock_provider_enabled,
+            resolve_bedrock_model,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return {"judge_error": f"bedrock_unavailable: {exc}"}
+    if not is_bedrock_provider_enabled():
+        return {"judge_error": "bedrock_not_configured"}
+
+    provider = get_bedrock_provider()
+    # Precedence: explicit env pin > the CLI --model flag > the EU default.
+    # The documented grounded-judge invocation passes `--model claude-sonnet-5`,
+    # so the flag must reach this path or it silently grades on a model the
+    # operator did not choose. resolve_bedrock_model() maps the plain Anthropic
+    # name onto its EU cross-region profile.
+    model_id = os.getenv("REGENOLD_BEDROCK_JUDGE_MODEL", "").strip()
+    if not model_id:
+        model_id = resolve_bedrock_model(_JUDGE_MODEL or "claude-sonnet-5")
+    # NOT the wrapper path's 400. Bedrock honours the system prompt (the Claude
+    # Max wrapper drops it), so the judge reasons in prose before emitting its
+    # JSON — at 400 tokens it gets cut off mid-reasoning and the row comes back
+    # `no_json`, i.e. a SILENTLY UNSCORED axis rather than a visible failure.
+    # Measured on the refs axis, eu.anthropic.claude-sonnet-4-6, 2026-08-11.
+    # This is a truncation fix, not a rubric change — the prompts and the
+    # parsed formulas are untouched.
+    max_tokens = int(os.getenv("REGENOLD_BEDROCK_JUDGE_MAX_TOKENS", "1600"))
+    req = BedrockRequest(
+        system=_JUDGE_SYSTEM,
+        user=prompt,
+        model=model_id,
+        max_tokens=max_tokens,
+        temperature=0.0,
+        timeout_seconds=timeout_s,
+    )
+    try:
+        resp = provider.complete(req)
+    except Exception as exc:  # noqa: BLE001
+        return {"judge_error": f"call_failed: {exc}"}
+    if resp is None:
+        return {"judge_error": "bedrock_returned_none"}
+    if resp.error:
+        return {"judge_error": f"bedrock_error: {resp.error[:160]}"}
+    return _parse_judge_json(resp.text or "")
+
+
+
 _groq_lock = threading.Lock()
 _groq_last_call_time = 0.0
 
@@ -559,6 +610,8 @@ def _resolve_caller(provider: str, timeout_s: float = 30.0) -> Callable[[str], d
         return lambda p: _call_judge_groq(p, timeout_s=timeout_s)
     if provider == "gemini":
         return lambda p: _call_judge_gemini(p, timeout_s=timeout_s)
+    if provider == "bedrock" or os.getenv("P2P_GRAPH_RAG_PROVIDER", "").strip().lower() == "bedrock":
+        return lambda p: _call_judge_bedrock(p, timeout_s=timeout_s)
     # "wrapper" or anything else falls back to the wrapper (historical
     # default) — runner_v2 / bench-runner sidecars produced pre-R66-C
     # all assume the wrapper path is active.

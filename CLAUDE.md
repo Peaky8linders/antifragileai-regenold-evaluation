@@ -527,6 +527,11 @@ Defaults are the CODE default, re-measured 2026-08-09.
 | `REGENOLD_CITABLE_BASE_GUARD` | ON | R327 — restricts prose-promotion to the retrieved citation universe (only ever REMOVES an ungrounded promotion) |
 | `GROUNDED_JUDGE_STRICT_GROUNDING` | **OFF** | R327 — ON makes answer-correctness unscorable on the July-7 batch (it has no gold at all) |
 | `NEO4J_AUTO_SEED` | **OFF unless `1`** | R327 — now opt-IN, and even then only seeds a graph proven to have 0 nodes. Hard rule #12 |
+| `BEDROCK_REGION` | **`eu-central-1`** | R328 — Bedrock source Region. Also reads `AWS_DEFAULT_REGION` / `AWS_REGION`. NOT `us-east-1`: an `eu.` profile is unresolvable there |
+| `REGENOLD_BEDROCK_MODEL` | `eu.anthropic.claude-opus-4-8` | R328 — Stage-1 + Stage-2 main RAG tier |
+| `REGENOLD_BEDROCK_COMPLEX_MODEL` | `eu.anthropic.claude-opus-5` | R328 — the `complex_question` tier |
+| `REGENOLD_BEDROCK_JUDGE_MODEL` | `eu.anthropic.claude-sonnet-5` | R328 — judge. Precedence: this env > the CLI `--model` flag > the default |
+| `REGENOLD_BEDROCK_JUDGE_MAX_TOKENS` | **1600** | R328 — NOT the wrapper's 400. Bedrock honours the system prompt (the wrapper drops it), so the judge reasons in prose before its JSON; at 400 it truncates and the axis returns `no_json` — a SILENTLY UNSCORED axis, not a visible failure |
 
 Stage-2 models (`app/config.py`): parse `claude-sonnet-5`, Stage-2
 `claude-opus-5`, complex `claude-opus-5`, complex thinking 4000, max_tokens
@@ -536,17 +541,55 @@ model A/B, and note the trace reports the model actually sent.
 
 ## LLM provider story
 
-`P2P_GRAPH_RAG_PROVIDER` selects one of three mutually exclusive paths:
+`P2P_GRAPH_RAG_PROVIDER` selects one of four mutually exclusive paths:
 
 | Value | Behaviour | Setup |
 | --- | --- | --- |
 | `cli` / `auto`* | Pure deterministic, no LLM, sub-10 ms. **This is what davidath runs.** | none |
 | `anthropic` | Stage-1 + Stage-2 via Anthropic SDK (per-token billing) | `P2P_GRAPH_RAG_API_KEY=sk-ant-…` |
 | `openai_wrapper` | Stage-1 + Stage-2 + Stage-0 intent via the local Claude Code Max wrapper | wrapper on `127.0.0.1:8000` + `OPENAI_API_BASE` |
+| `bedrock` | Stage-1 + Stage-2 + judge via AWS Bedrock **EU cross-region inference** (R328). This is what **Railway** runs. | `AWS_BEARER_TOKEN_BEDROCK` (or `AWS_ACCESS_KEY_ID`/`_SECRET_ACCESS_KEY`) |
 
 `* auto` → `anthropic` when a key is set, else `cli`. Every sub-pipeline falls
 back to a deterministic equivalent on error, so the route never 500s on a
 downed LLM.
+
+### Bedrock — the EU cross-region path (R328)
+
+Region and model geography are **ONE decision, not two**. An `eu.` inference
+profile does not exist outside the EU geography's Regions, so calling one from
+`us-east-1` fails with `ValidationException: The provided model identifier is
+invalid` — which reads like a bad model name and is really a bad Region. The
+code default is `eu-central-1` precisely because the default model is an `eu.`
+profile; `_warn_on_geography_mismatch` logs loudly if the two disagree.
+
+⚠ **Two ID SHAPES coexist and neither is guessable — read the catalog, never
+extrapolate.** Sonnet 4.6 / Opus 4.7 onward carry a BARE id
+(`eu.anthropic.claude-sonnet-5`); older ones keep the dated tail
+(`eu.anthropic.claude-sonnet-4-5-20250929-v1:0`); Opus 4.6 is a third shape
+again (`eu.anthropic.claude-opus-4-6-v1`). Verify with
+`list_inference_profiles(typeEquals='SYSTEM_DEFINED')`.
+
+⚠ **Listed-and-ACTIVE is NOT invocable, and `GetFoundationModelAvailability`
+cannot tell you which is which.** Measured 2026-08-11: it returned
+`AUTHORIZED / entitlement AVAILABLE / region AVAILABLE` for `claude-opus-4-8`
+(which returned `AccessDeniedException` on every invoke) *and* for
+`claude-opus-4-6-v1` (which invoked fine) — identical output, opposite reality.
+The only instrument that answers "can I invoke this?" is an actual invoke. That
+is why `scripts/e2e_bedrock_rag_judge_test.py` preflights each model with a real
+5-token call instead of trusting the availability API.
+
+⚠ **A Bedrock API key (`ABSK…`) carries its own IAM policy, fixed at creation.**
+Granting model access in the console afterwards does NOT widen an existing key.
+A key minted before a model shipped can deny exactly that model while allowing
+older ones on the identical code path — which is indistinguishable from an
+account-level block unless you swap the credential.
+
+Model targets are **code defaults**, not env (`railway.toml [deploy.envs]` has
+never applied — hard-won; see the gotchas):
+`REGENOLD_BEDROCK_MODEL` = `eu.anthropic.claude-opus-4-8` (Stage-1 + Stage-2),
+`REGENOLD_BEDROCK_COMPLEX_MODEL` = `eu.anthropic.claude-opus-5`,
+`REGENOLD_BEDROCK_JUDGE_MODEL` = `eu.anthropic.claude-sonnet-5`.
 
 The wrapper lives at `D:\Claude Projects\claude-code-openai-wrapper` (not this
 repo) and bills the flat Max subscription. Evals MUST use it, not SDK-direct.

@@ -497,6 +497,83 @@ def _opus_for_all_enabled() -> bool:
     }
 
 
+BEDROCK_RAG_MODEL = "eu.anthropic.claude-opus-4-8"
+"""Main RAG tier (Stage-1 + Stage-2) when ``P2P_GRAPH_RAG_PROVIDER=bedrock``."""
+
+BEDROCK_COMPLEX_MODEL = "eu.anthropic.claude-opus-5"
+"""Complex tier — the ~20% of questions ``complex_question`` flags."""
+
+
+def _bedrock_complete_for_graph_rag(
+    *, system: str, user: str, max_tokens: int, temperature: float,
+    complex_question: bool = False, stage_name: str = "Stage"
+) -> str | None:
+    """Execute GraphRAG Stage-1/2 completions via AWS Bedrock."""
+    try:
+        from app.llm.bedrock_client import (
+            BedrockRequest,
+            get_bedrock_provider,
+            is_bedrock_provider_enabled,
+            resolve_bedrock_model,
+        )
+    except Exception:
+        return None
+
+    if not is_bedrock_provider_enabled():
+        return None
+
+    # Bedrock model selection is env-owned, NOT read from ``settings.graph_rag``.
+    # Those fields name Anthropic-API models, and the Bedrock EU catalog is a
+    # different, narrower surface with its own per-model account entitlements —
+    # silently aliasing one onto the other is how a deploy ends up running a
+    # model nobody chose.
+    #
+    # Operator ask (2026-08-11), EU cross-region inference profiles only:
+    #   main RAG (Stage-1 + Stage-2) — eu.anthropic.claude-opus-4-8
+    #   complex tier                 — eu.anthropic.claude-opus-5
+    #   judge (evals/judge/runner)   — eu.anthropic.claude-sonnet-5
+    # Defaults are CODE defaults on purpose: railway.toml [deploy.envs] has
+    # never applied, so anything that must survive a Railway deploy lives here.
+    is_stage2 = "stage 2" in (stage_name or "").lower()
+    default_model = os.getenv(
+        "REGENOLD_BEDROCK_MODEL", BEDROCK_RAG_MODEL
+    ).strip() or BEDROCK_RAG_MODEL
+
+    if complex_question:
+        model = (
+            os.getenv("REGENOLD_BEDROCK_COMPLEX_MODEL", "").strip()
+            or BEDROCK_COMPLEX_MODEL
+        )
+    elif is_stage2:
+        model = os.getenv("REGENOLD_BEDROCK_STAGE2_MODEL", "").strip() or default_model
+    else:
+        model = os.getenv("REGENOLD_BEDROCK_STAGE1_MODEL", "").strip() or default_model
+
+    model_id = resolve_bedrock_model(model)
+
+    try:
+        provider = get_bedrock_provider()
+        resp = provider.complete(
+            BedrockRequest(
+                system=system,
+                user=user,
+                model=model_id,
+                max_tokens=max_tokens or 1024,
+                temperature=temperature,
+            )
+        )
+        if resp.error or not resp.text:
+            logger.warning("graph_rag.bedrock_call_failed: %s", resp.error)
+            return None
+        if _looks_structurally_truncated(resp.text):
+            logger.warning("graph_rag.bedrock_truncated_structural: falling back")
+            return None
+        return resp.text
+    except Exception as exc:
+        logger.warning("graph_rag.bedrock_exception: %s", exc)
+        return None
+
+
 def _openai_wrapper_complete_for_graph_rag(
 
     *, system: str, user: str, max_tokens: int, temperature: float,
@@ -911,6 +988,12 @@ def _stage2_complete(
                     return None
                 return resp.text
             return None
+        if env_provider == "bedrock":
+            return _bedrock_complete_for_graph_rag(
+                system=system, user=user, max_tokens=max_tokens,
+                temperature=temperature, complex_question=complex_question,
+                stage_name=stage_name,
+            )
         return _openai_wrapper_complete_for_graph_rag(
             system=system, user=user, max_tokens=max_tokens,
             temperature=temperature, complex_question=complex_question,
@@ -1146,6 +1229,11 @@ def _stage2_provider_enabled() -> bool:
         from app.llm.openai_wrapper_provider import is_gemini_provider_enabled
         result = is_gemini_provider_enabled()
         logger.debug("Stage2 gemini provider enabled: %s", result)
+        return result
+    if env_value == "bedrock":
+        from app.llm.bedrock_client import is_bedrock_provider_enabled
+        result = is_bedrock_provider_enabled()
+        logger.debug("Stage2 bedrock provider enabled: %s", result)
         return result
     if env_value == "anthropic":
         try:
@@ -7444,7 +7532,11 @@ def _claude_max_enhance_answer(
         _env_provider = force_provider or os.getenv("P2P_GRAPH_RAG_PROVIDER", "").strip().lower()
         _use_anthropic_sdk = False
         _use_gemini = False
-        if _env_provider == "anthropic":
+        _use_bedrock = False
+        if _env_provider == "bedrock":
+            from app.llm.bedrock_client import is_bedrock_provider_enabled
+            _use_bedrock = is_bedrock_provider_enabled()
+        elif _env_provider == "anthropic":
             try:
                 from app.config import settings as _s  # noqa: PLC0415
                 _use_anthropic_sdk = _s.graph_rag.api_key is not None
@@ -7571,6 +7663,15 @@ def _claude_max_enhance_answer(
                 text_raw = None
             else:
                 text_raw = resp.text
+        elif _use_bedrock:
+            text_raw = _bedrock_complete_for_graph_rag(
+                system=system_prompt,
+                user=user_message,
+                max_tokens=max_tokens,
+                temperature=0.0,
+                complex_question=complex_q,
+                stage_name="Stage 2 (Polishing)"
+            )
         else:
             text_raw = _openai_wrapper_complete_for_graph_rag(
                 system=system_prompt,
