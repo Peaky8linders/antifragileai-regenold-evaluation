@@ -109,7 +109,64 @@ the precision delta here only because the reference COUNT is nearly identical
 between arms (131 vs 132); it would not be safe to read it across a change that
 alters how many refs ship.
 
-## Verdict
+## R327.1 — the third arm: CONSTRAINED ONLY
+
+The gate above split by sign, so the open-domain half was separated behind
+`REGENOLD_SEMANTIC_GLOSS` and a third live arm was run and judged identically.
+
+| arm | ans (historical) | ref pass | ref MACRO | ref micro | wrong/total refs | cite |
+| --- | --- | --- | --- | --- | --- | --- |
+| layers OFF | 0.880 | 0.380 | 0.675 | 0.611 | 51/131 | 0.900 |
+| both halves | 0.880 | 0.360 | 0.642 | 0.583 | 55/132 | **0.960** |
+| **constrained only** | 0.880 | 0.367 | 0.657 | **0.614** | **49/127** | **0.960** |
+
+Constrained-only keeps the **entire** citation-faithfulness gain (+3 net, 5 up /
+2 down, p=0.453) and returns micro reference precision to baseline (+0.003), with
+2 fewer wrong refs. Running the open-domain half as well costs 0.028 micro
+precision for no additional gain.
+
+**Shipped:** `REGENOLD_GRAPH_SEMANTIC_LAYERS=1`, `REGENOLD_SEMANTIC_GLOSS=0`.
+
+### Two corrections to the earlier reading
+
+1. **Reference correctness never regressed.** CLAUDE.md's documented `0.673` is
+   MACRO precision (mean of per-row); the `0.611` reported earlier is MICRO.
+   Like-for-like the layers-OFF arm is MACRO **0.675** against the documented
+   **0.673**, and ref pass rate 0.380 against 0.333. The judge's own summary
+   already prints MACRO.
+2. **The "+2 answer correctness" for the layers was a ruler artifact.** An
+   uncommitted pass had force-failed a row on any *unsupported* claim under the
+   same `verdict` key; the R318 sidecar never applied it, and the rule alone moves
+   the pass rate from 0.880 to 0.620. Under the historical rule the layers are net
+   **0** on answer correctness (+5/−5). Fixed in R327.1: `verdict` keeps the
+   historical meaning and `verdict_unsupported_strict` is emitted alongside.
+
+### The mechanism is generation, not plumbing
+
+The obvious explanation for the open-domain cost — "recitals name other articles,
+Stage-2 repeats them, a prose path promotes them" — is **falsified**. Only **1 of
+13** added wrong refs is named inside a rendered definition/recital block; 10
+appear in the layers-ON prose and in no gloss block.
+
+And the shape is **substitution, not inflation**: 131 → 132 total refs but 4 more
+wrong and 3 fewer correct. rg_020 went `['Article 74','Article 16','Article 10']`
+→ `['Article 26','Article 16']` — count *down*. So the extra context shifts what
+Stage-2 chooses to discuss and `_reconcile_references_to_prose` follows the prose.
+That is CLAUDE.md's open item "attack GENERATION, not selection", showing up
+directly. It is why the fix is to withhold the block rather than patch a promotion
+path — and why no cheap trimmer would have helped.
+
+Separately measured and rejected as a lever: rows whose answer names no
+Article/Annex at all (a verbatim Art. 3 definition) account for only **2 rows / 1
+wrong ref = 2%** of the 51 wrong refs. The 51 are diffuse, consistent with the
+documented "tail padding" finding.
+
+⚠ **`gold_dropped` is unmeasured.** Constrained-only ships 2 fewer judge-correct
+refs (80 → 78) at 4 fewer total. With `gold_coverage = 0.0` there is no gold term
+on this batch, so hard rule #8 cannot be checked here. `easyhard_ab` is what can
+supply it, and that is the top follow-up.
+
+## Verdict (as of the two-arm gate, superseded above)
 
 **`REGENOLD_GRAPH_SEMANTIC_LAYERS` stays OFF.** The decision rule set before the
 run was "a citation-faithfulness or answer-correctness win with **no

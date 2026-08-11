@@ -220,3 +220,62 @@ def test_executor_cold_initialization_is_singleton_under_concurrency():
         if created is not None:
             created.shutdown(wait=True, cancel_futures=True)
         kg._EXECUTOR = previous
+
+
+# ── R327.1 — the gated default is CONSTRAINED-ONLY ───────────────────────────
+
+
+def test_semantic_layers_default_on_constrained_only(monkeypatch):
+    """Master switch ON, open-domain gloss OFF — the measured configuration.
+
+    Grounded judge, 50 live July-7 rows per arm:
+
+                          ans(hist)  ref MACRO  ref micro  wrong/total  cite
+        layers OFF          0.880      0.675      0.611      51/131     0.900
+        layers ON (both)    0.880      0.642      0.583      55/132     0.960
+        CONSTRAINED ONLY    0.880      0.657      0.614      49/127     0.960
+
+    Constrained-only keeps the whole citation-faithfulness gain and returns
+    reference precision to baseline; running the open-domain half too costs 0.028
+    micro precision for no extra gain.
+    """
+    from app.engines import graph_semantic as gs
+
+    monkeypatch.delenv("REGENOLD_GRAPH_SEMANTIC_LAYERS", raising=False)
+    monkeypatch.delenv("REGENOLD_SEMANTIC_GLOSS", raising=False)
+    assert gs.semantic_layers_enabled() is True
+    assert gs.gloss_layers_enabled() is False
+
+
+def test_semantic_layers_have_an_off_switch(monkeypatch):
+    from app.engines import graph_semantic as gs
+
+    monkeypatch.setenv("REGENOLD_GRAPH_SEMANTIC_LAYERS", "0")
+    assert gs.semantic_layers_enabled() is False
+
+
+def test_gloss_off_suppresses_only_the_open_domain_blocks(monkeypatch):
+    """GLOSS=0 must drop definitions+recitals and KEEP the constrained block."""
+    from app.engines import graph_semantic as gs
+
+    monkeypatch.setenv("REGENOLD_GRAPH_SEMANTIC_LAYERS", "1")
+    monkeypatch.setenv("REGENOLD_SEMANTIC_GLOSS", "0")
+    # The gloss fetch short-circuits before touching the graph at all.
+    assert gs.fetch_definition_and_recital_context("q", ["Article 50"]) == []
+
+
+def test_both_semantic_flags_are_in_the_engine_cache_key():
+    """Engine-level flags MUST be keyed or an in-process A/B replays the cache.
+
+    R327 measured this the hard way: the first semantic-layer A/B was
+    byte-identical on all 50 rows because arm B was served from _ENGINE_CACHE
+    (1,096 ms vs 16,642 ms).
+    """
+    import app.routes.regenold as route
+
+    src = route._engine_cache_key.__doc__ or ""
+    import inspect
+
+    body = inspect.getsource(route._engine_cache_key)
+    for flag in ("REGENOLD_GRAPH_SEMANTIC_LAYERS", "REGENOLD_SEMANTIC_GLOSS"):
+        assert flag in body, f"{flag} missing from _engine_cache_key"

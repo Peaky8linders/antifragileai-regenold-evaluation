@@ -61,8 +61,12 @@ SAFETY
   cannot widen that allowlist (the R323 failure mode).
 * Two bounded reads total, through ``kg_context._bounded_execute_read``, so the
   existing graph timeout budget and circuit breaker apply unchanged.
-* Default **OFF** behind ``REGENOLD_GRAPH_SEMANTIC_LAYERS`` so ``ab_judge`` can
-  A/B OFF<->ON, per the CLAUDE.md validation policy.
+* Default **ON** as of R327.1, but only the CONSTRAINED half:
+  ``REGENOLD_GRAPH_SEMANTIC_LAYERS=1`` with ``REGENOLD_SEMANTIC_GLOSS=0``. The
+  grounded judge measured constrained-only at citation faithfulness 0.900 ->
+  0.960 with reference precision back at baseline, while running the open-domain
+  half as well cost 0.028 micro precision for no extra gain. Both flags are in
+  ``_engine_cache_key``, so an in-process A/B of either is real.
 """
 
 from __future__ import annotations
@@ -93,7 +97,7 @@ _DEFAULT_RECITALS_KEPT = 3
 
 
 def gloss_layers_enabled() -> bool:
-    """``REGENOLD_SEMANTIC_GLOSS`` — the OPEN-DOMAIN half. Default **ON**.
+    """``REGENOLD_SEMANTIC_GLOSS`` — the OPEN-DOMAIN half. Default **OFF**.
 
     R327 gate result. The grounded judge over 50 live rows separated the two block
     families by sign:
@@ -102,21 +106,40 @@ def gloss_layers_enabled() -> bool:
       provisions) carries the win — citation faithfulness 0.900 -> 0.960 net +3,
       outright incorrect answer claims 5 -> 1 — and cannot introduce a citation at
       all, since every candidate already belongs to a cited provision;
-    * the OPEN-DOMAIN blocks (definitions, recitals) are the plausible source of
-      the cost — wrong refs 51 -> 55 at an unchanged reference count, and the refs
-      added are the regulation's own neighbours (+Article 4, +Article 27,
-      +Article 57, +Article 71, +Article 72), which is exactly what a recital or a
-      definition names in passing.
+    * the OPEN-DOMAIN blocks (definitions, recitals) carry the cost — wrong refs
+      51 -> 55 at an unchanged reference count.
 
-    Bundling both under one switch made the net effect unusable: two of three
-    pre-registered conditions passed and the third failed. This flag exists so the
-    next judge run can measure constrained-only by setting it to ``0`` while
-    ``REGENOLD_GRAPH_SEMANTIC_LAYERS=1``.
+    ⚠ The obvious MECHANISM for that cost is falsified. Only **1 of 13** added
+    wrong refs is actually named inside a rendered definition/recital block; 10
+    appear in the layers-ON prose and in no gloss block. And the shape is
+    SUBSTITUTION, not inflation: 131 -> 132 total refs but 4 more wrong and 3
+    fewer correct (rg_020 went ['Article 74','Article 16','Article 10'] ->
+    ['Article 26','Article 16'] — count DOWN). So the extra context shifts what
+    Stage-2 chooses to discuss, and ``_reconcile_references_to_prose`` follows the
+    prose. That is a GENERATION effect, not a plumbing bug — which is why the fix
+    is to withhold the block, not to patch a promotion path.
 
-    Default ON so that flipping only the master switch reproduces the measured
-    R327 behaviour exactly. Fresh env read per call (R263.2).
+    R327.1 GATE RESULT — measured, not assumed. Grounded judge, 50 live July-7
+    rows per arm, all three arms against the same baseline:
+
+                          ans(hist)  ref pass  ref MACRO  ref micro  wrong/total  cite
+        layers OFF          0.880      0.380     0.675      0.611      51/131     0.900
+        layers ON (both)    0.880      0.360     0.642      0.583      55/132     0.960
+        CONSTRAINED ONLY    0.880      0.367     0.657      0.614      49/127     0.960
+
+    Constrained-only keeps the ENTIRE citation-faithfulness win (+3 net, 5 up /
+    2 down) while returning micro reference precision to baseline (+0.003) and
+    cutting wrong refs 51 -> 49. Running both halves costs 0.028 micro precision
+    for no additional gain. So the open-domain half is OFF.
+
+    ⚠ Not significant at n=50 (p=0.453 on the best axis), and it ships 2 fewer
+    judge-correct refs (80 -> 78) — with ``gold_coverage = 0.0`` on this batch
+    there is no gold term, so hard rule #8's ``gold_dropped`` is UNMEASURED here.
+    ``easyhard_ab`` is what can supply it.
+
+    Fresh env read per call (R263.2).
     """
-    return os.getenv("REGENOLD_SEMANTIC_GLOSS", "1").strip().lower() in (
+    return os.getenv("REGENOLD_SEMANTIC_GLOSS", "0").strip().lower() in (
         "1",
         "true",
         "yes",
@@ -125,13 +148,21 @@ def gloss_layers_enabled() -> bool:
 
 
 def semantic_layers_enabled() -> bool:
-    """``REGENOLD_GRAPH_SEMANTIC_LAYERS`` — default **OFF**.
+    """``REGENOLD_GRAPH_SEMANTIC_LAYERS`` — default **ON** (constrained half only).
 
-    Answer-affecting (it changes the Stage-2 grounding block), so it ships
-    default-OFF-in-code with an off-switch until ``ab_judge`` has measured it.
+    R327.1 — enabled on the gate result, by operator decision. With
+    ``REGENOLD_SEMANTIC_GLOSS`` OFF (its default) this reads
+    ``v_paragraph_embedding`` / ``v_point_embedding`` / ``v_subpoint_embedding``
+    constrained to already-cited provisions, which measured citation faithfulness
+    0.900 -> 0.960 at baseline reference precision. See
+    :func:`gloss_layers_enabled` for the full three-arm table.
+
+    Set to ``0`` for instant rollback; the flag is in ``_engine_cache_key`` so an
+    in-process A/B of it is real and not a cache replay.
+
     Fresh env read per call (R263.2).
     """
-    return os.getenv("REGENOLD_GRAPH_SEMANTIC_LAYERS", "0").strip().lower() in (
+    return os.getenv("REGENOLD_GRAPH_SEMANTIC_LAYERS", "1").strip().lower() in (
         "1",
         "true",
         "yes",

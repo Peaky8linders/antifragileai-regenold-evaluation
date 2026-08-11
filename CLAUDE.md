@@ -516,8 +516,8 @@ Defaults are the CODE default, re-measured 2026-08-09.
 | `REGENOLD_PARENT_COLLAPSE` | **OFF** | R325 — drop a head when its own sub-point is cited. F1 +0.018 on the graded batch but loses 1 gold, so it awaits `easyhard_ab` |
 | `REGENOLD_GRAPH_VECTOR_RECALL` | **OFF** | R326 — additive Neo4j native vector recall (article + annex) + local SVD fallback |
 | `REGENOLD_VECTOR_MIN_SIM` | 0.35 | R326 — similarity floor for vector recall hits |
-| `REGENOLD_GRAPH_SEMANTIC_LAYERS` | **OFF** | R327 — reads the other 5 vector indexes as non-citable Stage-2 context. **GATED**: grounded judge over 50 live rows gave citation faithfulness 0.900→0.960 (+3 net) and incorrect answer claims 5→1, but reference micro-precision 0.611→0.583 (wrong refs 51→55 at an unchanged ref count). Stays OFF |
-| `REGENOLD_SEMANTIC_GLOSS` | ON | R327 — the OPEN-DOMAIN half (definitions + recitals) of the layers above. Set to `0` with the master ON to measure **constrained-only**, which is where the win lives |
+| `REGENOLD_GRAPH_SEMANTIC_LAYERS` | **ON** | R327.1 — reads the other 5 vector indexes as non-citable Stage-2 context. **GATED ON**: constrained-only measured citation faithfulness 0.900→**0.960** at baseline reference precision (micro 0.611→0.614, wrong refs 51→49). Off-switch `=0` |
+| `REGENOLD_SEMANTIC_GLOSS` | **OFF** | R327.1 — the OPEN-DOMAIN half (definitions + recitals). Running it too cost micro precision 0.614→0.583 for NO extra gain, so it is off. `=1` restores the both-halves arm |
 | `REGENOLD_KG_SEMANTIC_MAX_CHARS` | 26000 | R327 — total KG ceiling used ONLY when the semantic layers contribute. See the budget note below |
 | `REGENOLD_SEMANTIC_UNITS` / `_UNITS_PER_PROVISION` | 6 / 2 | R327 — focused sub-provision block size, and the per-provision cap |
 | `REGENOLD_SEMANTIC_DEFINITIONS` / `_RECITALS` | 3 / 3 | R327 — per-layer quotas. They must be SEPARATE: recitals score ~0.70 vs definitions ~0.62, so a shared LIMIT returned **zero** definitions |
@@ -601,16 +601,20 @@ attributed, not Omnibus — and `tests/test_kb_stubs_filled.py` pins it.
 
 Full handoff: [`.planning/NEXT-SESSION.md`](.planning/NEXT-SESSION.md).
 
-1. **DONE — the semantic layers are gated.** Result in
-   [`docs/R327-live-ab-semantic-layers.md`](docs/R327-live-ab-semantic-layers.md):
-   they help ATTRIBUTION (citation faithfulness 0.900→0.960 net +3, outright
-   incorrect answer claims **5→1**) and cost SELECTION (wrong refs 51→55 at an
-   unchanged ref count, micro-precision 0.611→0.583). Nothing significant at n=50
-   (all p ≥ 0.375). `REGENOLD_GRAPH_SEMANTIC_LAYERS` stays **OFF**.
-   **Next: run the same gate constrained-only** — `REGENOLD_GRAPH_SEMANTIC_LAYERS=1
-   REGENOLD_SEMANTIC_GLOSS=0`. The two block families measured opposite-signed and
-   one switch used to bundle them; the constrained block cannot introduce a
-   citation at all, so the hypothesis is that it keeps the win without the cost.
+1. **DONE — the semantic layers are gated ON, constrained-only.** Three arms,
+   grounded judge, 50 live July-7 rows each
+   ([`docs/R327-live-ab-semantic-layers.md`](docs/R327-live-ab-semantic-layers.md)):
+
+   | arm | ans (hist.) | ref pass | ref MACRO | ref micro | wrong/total | cite |
+   | --- | --- | --- | --- | --- | --- | --- |
+   | layers OFF | 0.880 | 0.380 | 0.675 | 0.611 | 51/131 | 0.900 |
+   | both halves | 0.880 | 0.360 | 0.642 | 0.583 | 55/132 | **0.960** |
+   | **constrained only** | 0.880 | 0.367 | 0.657 | **0.614** | **49/127** | **0.960** |
+
+   Shipped `REGENOLD_GRAPH_SEMANTIC_LAYERS=1` + `REGENOLD_SEMANTIC_GLOSS=0`.
+   ⚠ Not significant at n=50 (p=0.453) and it ships 2 fewer judge-correct refs, and
+   `gold_coverage=0.0` here means hard rule #8's `gold_dropped` is **unmeasured** —
+   `easyhard_ab` is what can supply it. **That is now the top follow-up.**
 2. **Run `--mode hard`.** It is **the graded turn** (the adversarial pushback;
    67 of 111 hard rows carry it) and it has NEVER been run. Every optimisation
    decision on the table is being made on the *easy* turn — that is the
