@@ -130,3 +130,70 @@ def test_official_replay_selects_turn2_answer_and_empty_refs_atomically() -> Non
     assert rec["selected_turn"] == "pushback"
     assert rec["pred_answer"] == "turn two"
     assert rec["pred_refs"] == []
+
+
+# ── R327.1 — the answer-correctness verdict rule must stay comparable ────────
+
+
+def _ac_verdicts(monkeypatch, counts: dict) -> dict:
+    """Drive grounded._judge_row's answer-correctness post-processing."""
+    from evals.judge import grounded
+
+    row = {
+        "id": "x",
+        "category": None,
+        "question": "q",
+        "answer": "a",
+        "pred_refs": ["Article 5"],
+        "gold_refs": [],
+        "gold_answer": "",
+        "independent_gold_context": "",
+    }
+
+    def fake_caller(_prompt, **_kw):
+        return dict(counts)
+
+    monkeypatch.setattr(
+        grounded, "_call_judge_with_retry",
+        lambda caller, prompt: (dict(counts), 1, False),
+    )
+    monkeypatch.setattr(grounded, "_provision_block", lambda *a, **k: "text")
+    out = grounded._judge_row(row, fake_caller)
+    return out["verdicts"]["answer_correctness"]
+
+
+def test_unsupported_claim_does_not_fail_the_row_by_default(monkeypatch) -> None:
+    """R327.1 — an uncommitted pass force-failed on `unsupported`, IN PLACE.
+
+    Measured: the rule alone moves the answer-correctness pass rate from 0.880 to
+    0.620 on the R327 rows, and the R318 sidecar that produced the documented
+    "0.500 -> 0.780" never applied it. Redefining an axis under its own name is
+    the instrument trap, so `verdict` keeps the historical meaning.
+    """
+    v = _ac_verdicts(
+        monkeypatch,
+        {"correct": 3, "incorrect": 0, "unsupported": 2, "missing": 0},
+    )
+    assert v["verdict"] == "pass"
+    assert v["verdict_hard_only"] == "pass"
+    assert v["verdict_unsupported_strict"] == "fail"
+    assert v["unsupported_enforced"] is False
+
+
+def test_incorrect_claim_still_fails_the_row(monkeypatch) -> None:
+    v = _ac_verdicts(
+        monkeypatch,
+        {"correct": 1, "incorrect": 1, "unsupported": 0, "missing": 0},
+    )
+    assert v["verdict"] == "fail"
+    assert v["verdict_hard_only"] == "fail"
+
+
+def test_strict_rule_is_opt_in(monkeypatch) -> None:
+    monkeypatch.setenv("GROUNDED_JUDGE_UNSUPPORTED_FAILS", "1")
+    v = _ac_verdicts(
+        monkeypatch,
+        {"correct": 3, "incorrect": 0, "unsupported": 2, "missing": 0},
+    )
+    assert v["verdict"] == "fail"
+    assert v["unsupported_enforced"] is True

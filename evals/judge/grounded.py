@@ -183,6 +183,24 @@ def _has_independent_answer_grounding(r: dict[str, Any]) -> bool:
     )
 
 
+def _unsupported_fails_enabled() -> bool:
+    """``GROUNDED_JUDGE_UNSUPPORTED_FAILS`` — default **OFF**.
+
+    Whether an UNSUPPORTED-but-not-wrong claim fails the answer-correctness row.
+    Default OFF so the axis keeps the meaning the documented July-7 numbers were
+    produced under; the strict reading is always emitted alongside as
+    ``verdict_unsupported_strict``, so nothing is lost either way.
+    """
+    import os  # noqa: PLC0415
+
+    return os.getenv("GROUNDED_JUDGE_UNSUPPORTED_FAILS", "0").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
+
 def _strict_independent_grounding_required() -> bool:
     """``GROUNDED_JUDGE_STRICT_GROUNDING`` — default **OFF**.
 
@@ -368,11 +386,35 @@ def _judge_row(r: dict[str, Any], caller: Callable[[str], dict[str, Any]]) -> di
             result = dict(result); result["_attempts"] = attempts
         if axis == "answer_correctness" and not result.get("judge_error"):
             result = dict(result)
-            failures = sum(
-                _num(result.get(field)) for field in ("incorrect", "unsupported", "missing")
+            # R327.1 — BOTH verdicts are emitted, and the CANONICAL one is the
+            # historical rule.
+            #
+            # An uncommitted pass redefined this axis in place: it force-failed a
+            # row on any of incorrect / unsupported / missing, under the same
+            # ``verdict`` key. Measured on the R318 sidecar the old judge never
+            # applied that rule (``unsupported_enforced`` absent on all 100 rows),
+            # and on the R327 rows the rule alone moves the pass rate from
+            # **0.880 to 0.620**. So the documented "answer correctness 0.500 ->
+            # 0.780" was silently made non-comparable — the same instrument trap
+            # that was caught in ``evals/bench/metrics.py`` and missed here.
+            #
+            # ``verdict`` therefore keeps the historical meaning (an outright
+            # wrong or missing element fails; an unsupported-but-not-wrong claim
+            # does not), and the stricter reading is reported alongside under its
+            # own name. Opt into the strict rule as primary with
+            # ``GROUNDED_JUDGE_UNSUPPORTED_FAILS=1``.
+            hard = sum(_num(result.get(f)) for f in ("incorrect", "missing"))
+            unsupported = _num(result.get("unsupported"))
+            result["verdict_unsupported_strict"] = (
+                "fail" if hard or unsupported else "pass"
             )
-            result["verdict"] = "fail" if failures else "pass"
-            result["unsupported_enforced"] = True
+            result["verdict_hard_only"] = "fail" if hard else "pass"
+            if _unsupported_fails_enabled():
+                result["verdict"] = result["verdict_unsupported_strict"]
+                result["unsupported_enforced"] = True
+            else:
+                result["verdict"] = result["verdict_hard_only"]
+                result["unsupported_enforced"] = False
             # R327 — record which grounding this verdict rests on, so a
             # prediction-derived (partly circular) grounding is visible in the
             # sidecar instead of being indistinguishable from real gold.
