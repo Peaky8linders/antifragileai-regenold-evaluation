@@ -34,6 +34,18 @@ psycopg[binary]>=3.2.0
 # so the wire contract never breaks.
 anthropic>=0.40.0
 
+# R328 — AWS SDK for the Bedrock EU cross-region inference path. Activated
+# only when ``P2P_GRAPH_RAG_PROVIDER=bedrock``, which is what RAILWAY runs, so
+# this is NOT optional there: without it `_stage2_provider_enabled` raises
+# ModuleNotFoundError on every request. (The app still BOOTS without it —
+# `app.llm.bedrock_client` is imported lazily — so a missing boto3 passes the
+# healthcheck and then 500s the wire, which is the worst possible shape for a
+# failure. The lazy imports are guarded as well; this pin is what makes the
+# provider actually work.)
+# Floor is the Converse API + `list_inference_profiles`, both of which the
+# client uses.
+boto3>=1.35.0
+
 # Round 35 — Neo4j Python driver for the optional graph-RAG path.
 # Activated only when ``NEO4J_URI`` is set on the deploy (Neo4j Aura
 # or self-hosted). ``app.graph.client`` lazily imports + soft-fails
