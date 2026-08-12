@@ -1231,7 +1231,19 @@ def _stage2_provider_enabled() -> bool:
         logger.debug("Stage2 gemini provider enabled: %s", result)
         return result
     if env_value == "bedrock":
-        from app.llm.bedrock_client import is_bedrock_provider_enabled
+        # Guarded: boto3 is an optional wheel. Unguarded, a deploy with
+        # provider=bedrock and no boto3 PASSES the healthcheck (the client is
+        # imported lazily, so the app boots) and then raises on every request —
+        # the worst failure shape there is. Soft-fail to the deterministic path
+        # instead, per the route's never-500-on-a-downed-LLM contract.
+        try:
+            from app.llm.bedrock_client import is_bedrock_provider_enabled
+        except Exception:  # noqa: BLE001
+            logger.warning(
+                "Stage2 bedrock selected but boto3 is not installed — "
+                "falling back to the deterministic path. Add boto3 to requirements."
+            )
+            return False
         result = is_bedrock_provider_enabled()
         logger.debug("Stage2 bedrock provider enabled: %s", result)
         return result
@@ -7534,8 +7546,17 @@ def _claude_max_enhance_answer(
         _use_gemini = False
         _use_bedrock = False
         if _env_provider == "bedrock":
-            from app.llm.bedrock_client import is_bedrock_provider_enabled
-            _use_bedrock = is_bedrock_provider_enabled()
+            # Guarded — see _stage2_provider_enabled: boto3 is an optional
+            # wheel and its absence must degrade, not raise.
+            try:
+                from app.llm.bedrock_client import is_bedrock_provider_enabled
+                _use_bedrock = is_bedrock_provider_enabled()
+            except Exception:  # noqa: BLE001
+                logger.warning(
+                    "Stage2 bedrock selected but boto3 is not installed — "
+                    "falling back to the deterministic path."
+                )
+                _use_bedrock = False
         elif _env_provider == "anthropic":
             try:
                 from app.config import settings as _s  # noqa: PLC0415
