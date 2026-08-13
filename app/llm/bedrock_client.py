@@ -830,11 +830,27 @@ def _reset_bedrock_provider_for_tests() -> None:
 # request still succeeds one tier down. Both halves must be real — a fallback
 # whose target equals the primary is the inert-feature trap.
 
+# Anchored on the ``api_`` prefix that ``_classify_client_error`` emits. A bare
+# substring match is unsafe: the blanket ``except Exception`` handler formats
+# errors as ``unexpected_error: {TypeName}: {msg}``, so a botocore
+# ``ParamValidationError`` or a pydantic ``ValidationError`` — a CODE BUG that
+# fails identically on every model — would otherwise read as "entitlement" and
+# burn the whole chain.
 BEDROCK_ENTITLEMENT_ERROR_MARKERS: tuple[str, ...] = (
-    "access_denied",       # api_access_denied_403 — key lacks the entitlement
-    "validation",          # api_validation_400 — profile unresolvable here
-    "resource_not_found",  # api_resource_not_found_404 — profile absent
+    "api_access_denied",       # 403 — this key lacks the entitlement
+    "api_resource_not_found",  # 404 — the profile does not exist here
 )
+"""Per-MODEL failures. Durable for this credential → safe to remember."""
+
+BEDROCK_TRANSIENT_SKIP_MARKERS: tuple[str, ...] = (
+    "api_validation",  # 400
+)
+"""Advance the chain but DO NOT remember. ``ValidationException`` is overloaded:
+it covers "this profile is unresolvable in this Region" (per-model) AND
+"input too long / bad maxTokens / bad temperature" (per-REQUEST). Caching the
+per-request case as a model denial lets ONE oversized prompt evict the only
+invocable model for the whole TTL — a single long row poisoning the rest of a
+judge batch."""
 
 BEDROCK_FALLBACK_CHAINS: dict[str, tuple[str, ...]] = {
     "opus": (
@@ -860,16 +876,26 @@ _DENIED_LOCK = threading.Lock()
 
 
 def is_entitlement_error(error: str | None) -> bool:
-    """True when ``error`` is a per-model entitlement/resolution failure.
+    """True when ``error`` is a DURABLE per-model entitlement failure.
 
-    These are the only errors worth failing over on: a throttle or a timeout
-    will hit the next model in the chain just as hard, so burning the chain on
-    one would turn a transient blip into N failed calls.
+    These are the only errors worth REMEMBERING: a throttle or a timeout will
+    hit the next model in the chain just as hard, so burning the chain on one
+    would turn a transient blip into N failed calls.
     """
     if not error:
         return False
     low = error.lower()
     return any(marker in low for marker in BEDROCK_ENTITLEMENT_ERROR_MARKERS)
+
+
+def is_skippable_error(error: str | None) -> bool:
+    """True when ``error`` should advance the chain, durable or not."""
+    if not error:
+        return False
+    low = error.lower()
+    return is_entitlement_error(error) or any(
+        marker in low for marker in BEDROCK_TRANSIENT_SKIP_MARKERS
+    )
 
 
 def _note_denied(model_id: str) -> None:
@@ -895,16 +921,25 @@ def reset_bedrock_entitlement_cache() -> None:
 
 
 def fallback_chain_for(model_id: str) -> tuple[str, ...]:
-    """Return the degradation chain a resolved ``model_id`` belongs to.
+    """Return the candidates to DEGRADE to, strictly below ``model_id``.
 
-    Family is matched on the resolved profile ID so an alias and its expansion
-    pick the same chain. Unknown families get an empty chain — we never guess a
-    substitute for a model we have not verified.
+    The chain is ordered most-capable first, so the fallbacks for a model are
+    the SUFFIX after its own position — never the whole chain. Returning the
+    whole chain would ESCALATE a non-head pin: pinning sonnet-4-6 would retry
+    on sonnet-5, i.e. silently promote to a costlier model the operator
+    specifically did not choose.
+
+    Unknown families, and models absent from their family's chain, get an empty
+    tuple — we never guess a substitute for a model whose rank we do not know.
     """
     low = (model_id or "").lower()
     for family, chain in BEDROCK_FALLBACK_CHAINS.items():
-        if family in low:
-            return chain
+        if family not in low:
+            continue
+        lowered = [c.lower() for c in chain]
+        if low in lowered:
+            return chain[lowered.index(low) + 1:]
+        return ()
     return ()
 
 
@@ -932,15 +967,17 @@ def complete_with_fallback(
         if resolved not in ordered:
             ordered.append(resolved)
 
-    # Skip known-denied models, but never skip everything — if the whole chain
-    # is cached-denied, re-probe the primary so a healed key is discovered.
-    live = [m for m in ordered if not _is_denied(m)] or ordered[:1]
+    # Skip known-denied models, but never skip everything. When the whole chain
+    # is cached-denied, re-probe the LAST entry, not the first: the head is the
+    # pinned tier that is 403 by construction, so re-probing it just burns the
+    # round-trip we cached to avoid. The tail is the most-likely-invocable.
+    live = [m for m in ordered if not _is_denied(m)] or ordered[-1:]
 
     last: BedrockResponse | None = None
     for idx, model_id in enumerate(live):
         resp = provider.complete(replace(req, model=model_id))
         if not resp.error:
-            if idx > 0:
+            if model_id != primary:
                 logger.warning(
                     "bedrock_entitlement_fallback_used primary=%s served_by=%s",
                     primary,
@@ -948,13 +985,18 @@ def complete_with_fallback(
                 )
             return resp
         last = resp
-        if not is_entitlement_error(resp.error):
+        if not is_skippable_error(resp.error):
             return resp
-        _note_denied(model_id)
+        # Only DURABLE denials are remembered. A ValidationException may be
+        # about this request, not this model — caching it would evict a
+        # working model for the whole TTL.
+        if is_entitlement_error(resp.error):
+            _note_denied(model_id)
         logger.warning(
-            "bedrock_entitlement_denied model=%s error=%s remaining=%d",
+            "bedrock_model_skipped model=%s error=%s durable=%s remaining=%d",
             model_id,
             resp.error,
+            is_entitlement_error(resp.error),
             len(live) - idx - 1,
         )
 

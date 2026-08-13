@@ -1454,6 +1454,21 @@ def _engine_cache_key(
             # so constrained-only can be measured. Engine-level (it changes the
             # Stage-2 grounding block), so it must be keyed like its master.
             "REGENOLD_SEMANTIC_GLOSS",
+            # R329 — the constrained sub-provision block renders a legal
+            # coordinate ("Article 12.1") in place of the internal node label
+            # ("[paragraph para_12_1]"). That is Stage-2 INPUT, so it is
+            # engine-level for exactly the reason the two flags above are:
+            # unkeyed, arm B is served arm A's cached answer and the A/B
+            # measures nothing.
+            "REGENOLD_SEMANTIC_COORDINATES",
+            # R329 — the Stage-2 USER channel. P3a replaces the citation
+            # scope phrase and injects an explicit CITABLE PROVISIONS list;
+            # P3b adds the uncertainty/abstention sentence. Both change the
+            # prompt the model actually sees, so both flip the polished answer
+            # AND its citations — same doctrine as REGENOLD_USER_REF_MINIMALITY
+            # above.
+            "REGENOLD_CITABLE_UNIVERSE_BLOCK",
+            "REGENOLD_REF_UNCERTAINTY",
             "REGENOLD_GRAPH_VECTOR_RECALL",
             "REGENOLD_VECTOR_MIN_SIM",
             "REGENOLD_KG_MAX_CHARS",
@@ -1548,6 +1563,12 @@ def _engine_cache_key(
             "REGENOLD_BEDROCK_COMPLEX_MODEL",
             "BEDROCK_DEFAULT_MODEL",
             "BEDROCK_REGION",
+            # R328.2 — this gates whether Stage-2 LANDS AT ALL (a rejected
+            # verdict falls back to deterministic Stage-1), so it changes both
+            # the answer and the references. It was missing from this list while
+            # governing two provider paths, which makes an OFF<->ON A/B of it
+            # serve arm A's cached engine output to arm B — R263.2 verbatim.
+            "REGENOLD_STAGE2_VERDICT_GUARD",
             # R295 — the fusion slack decides whether 2-hop refs reach the
             # candidate list at all, so it changes engine output directly.
             "REGENOLD_GRAPH_FUSE_SLACK",

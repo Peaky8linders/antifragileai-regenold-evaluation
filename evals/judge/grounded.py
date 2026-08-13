@@ -595,8 +595,31 @@ def run(*, sidecar: Path, label: str, model: str, provider: str,
                       f"cite={vs['citation_faithfulness']}", flush=True)
     judged = [r for r in out if r is not None]
     agg = _aggregate(judged)
+
+    # R328.2 — `judge_model` records what was REQUESTED. On the Bedrock path an
+    # entitlement chain can degrade the grader (sonnet-5 -> sonnet-4-6), and a
+    # summary asserting the requested model is worse than no record: it is an
+    # active false attribution that survives in the artifact. Collect what
+    # actually graded, and say so loudly when it is not what was asked for.
+    served_models = sorted({
+        m for r in judged
+        for m in (
+            (v or {}).get("_judge_model_served")
+            for v in (r.get("verdicts") or {}).values()
+        )
+        if m
+    })
+    if served_models and served_models != [model]:
+        print(
+            f"  ! judge model DEGRADED — requested={model} "
+            f"actually_graded_by={served_models}",
+            flush=True,
+        )
+
     summary = {
         "label": label, "source_sidecar": str(sidecar), "judge_model": model,
+        "judge_model_served": served_models,
+        "judge_model_comparable": (not served_models) or served_models == [model],
         "provider": provider, "elapsed_s": round(time.monotonic() - t0, 1),
         "generated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "axes": list(GROUNDED_AXES), "rows": judged, "aggregate": agg,

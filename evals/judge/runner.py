@@ -274,7 +274,23 @@ def _call_judge_bedrock(prompt: str, timeout_s: float = 30.0) -> dict[str, Any]:
         return {"judge_error": "bedrock_returned_none"}
     if resp.error:
         return {"judge_error": f"bedrock_error: {resp.error[:160]}"}
-    return _parse_judge_json(resp.text or "")
+
+    parsed = _parse_judge_json(resp.text or "")
+    # R328.2 — the judge is a RULER. If the entitlement chain degraded
+    # sonnet-5 -> sonnet-4-6, every score in this batch was produced by a
+    # different grader than the one named on the command line, and the summary
+    # file would still assert the requested model. Surface what actually
+    # graded, so the caller can record it instead of silently mis-attributing.
+    served = getattr(resp, "model", "") or model_id
+    if isinstance(parsed, dict):
+        parsed["_judge_model_served"] = served
+        if served != model_id:
+            print(
+                f"[judge] WARNING bedrock fallback — requested={model_id} "
+                f"served_by={served}",
+                flush=True,
+            )
+    return parsed
 
 
 

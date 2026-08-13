@@ -88,10 +88,15 @@ def _keyword_recall(answer: str, expected: list[str]) -> float:
     return sum(1 for k in expected if k.lower() in low) / len(expected)
 
 
-def _score_row(row: ProbeRow, answer: str, refs: list[str]) -> dict[str, float]:
+def _score_row(row: ProbeRow, answer: str, refs: list[str]) -> dict[str, Any]:
     gold = list(row.expected_refs or [])
     diag = bench_metrics.canonical_reference_diagnostics(refs)
     loose = bench_metrics.reference_correctness_loose(refs, gold)
+    # R329 Wave 1 (P0) — hard rule #8's instrument. Was unmeasured anywhere in
+    # the repo before this; both grains because the rule is only satisfied at
+    # the sub-point grain ("head-level recall is invariant is NOT sufficient").
+    gd_head = bench_metrics.gold_dropped_head(refs, gold)
+    gd_exact = bench_metrics.gold_dropped_exact(refs, gold)
     return {
         # Backward-compatible key plus the honest explicit name.
         "ref_loose": loose,
@@ -121,6 +126,21 @@ def _score_row(row: ProbeRow, answer: str, refs: list[str]) -> dict[str, float]:
         "parent_leaf_pair_count": float(diag["parent_leaf_pair_count"]),
         "tone": bench_metrics.regulatory_tone(answer),
         "kw_recall": _keyword_recall(answer, list(row.expected_keywords or [])),
+        # R329 (P0) — gold_dropped, both grains. Counts are what the per-arm
+        # summary SUMS (CLAUDE.md: "gold_dropped = Σ |expected_refs -
+        # predicted_refs|" — a total, not a mean); the *_refs lists are what
+        # makes a regression diagnosable straight from a stored .ckpt.jsonl
+        # row without re-running the probe.
+        "gold_dropped_head": float(gd_head["dropped_count"]),
+        "gold_dropped_head_gold_count": float(gd_head["gold_count"]),
+        "gold_dropped_head_refs": gd_head["dropped_refs"],
+        "gold_dropped_exact": float(gd_exact["dropped_count"]),
+        "gold_dropped_exact_gold_count": float(gd_exact["gold_count"]),
+        "gold_dropped_exact_refs": gd_exact["dropped_refs"],
+        # R329 (P0b) — NEW metric name, never a rebind of ref_strict/ref_conc
+        # above (R327's lesson). See reference_crag_fine's docstring for the
+        # asymmetric scale and the measured rationale.
+        "ref_crag_fine": bench_metrics.reference_crag_fine(refs, gold),
     }
 
 
@@ -159,6 +179,27 @@ def _aggregate(rows: list[dict[str, Any]]) -> dict[str, Any]:
     n_gold_heads = sum(len(bench_metrics.article_heads(r["gold_refs"])) for r in ok)
     out["pred_gold_head_ratio_proxy"] = (
         n_pred_heads / n_gold_heads if n_gold_heads else 0.0
+    )
+    # R329 Wave 1 — REPORTED ALONGSIDE the canonical axes above, never in
+    # their place. gold_dropped is a SUM per arm (CLAUDE.md's own formula is
+    # a Σ, not a mean) so a single dropped gold ref anywhere in the arm shows
+    # up as non-zero rather than being averaged away across a large n.
+    # ref_crag_fine is a per-row score, so its per-arm figure is a mean like
+    # the other float axes.
+    out["gold_dropped_head"] = sum(
+        int(r["scores"].get("gold_dropped_head", 0)) for r in ok
+    )
+    out["gold_dropped_head_gold_count"] = sum(
+        int(r["scores"].get("gold_dropped_head_gold_count", 0)) for r in ok
+    )
+    out["gold_dropped_exact"] = sum(
+        int(r["scores"].get("gold_dropped_exact", 0)) for r in ok
+    )
+    out["gold_dropped_exact_gold_count"] = sum(
+        int(r["scores"].get("gold_dropped_exact_gold_count", 0)) for r in ok
+    )
+    out["ref_crag_fine"] = st.mean(
+        _axis_value(r["scores"], "ref_crag_fine") for r in ok
     )
     return out
 
@@ -256,6 +297,19 @@ def _report(label: str, base: dict[str, Any], branch: dict[str, Any] | None) -> 
                 print(f"  {a:<12}{b[a]:>9.4f}")
             print(f"  {'pred:gold':<12}{b['pred_gold_ratio']:>9.2f}")
             print(f"  {'latency p50':<12}{b['latency_p50_ms']/1000:>9.1f}s")
+            # R329 Wave 1 — reported alongside, not instead of, the canonical
+            # axes above.
+            print(
+                f"  {'gold_drop_hd':<12}"
+                f"{int(b.get('gold_dropped_head', 0)):>4d} of "
+                f"{int(b.get('gold_dropped_head_gold_count', 0))} gold heads"
+            )
+            print(
+                f"  {'gold_drop_ex':<12}"
+                f"{int(b.get('gold_dropped_exact', 0)):>4d} of "
+                f"{int(b.get('gold_dropped_exact_gold_count', 0))} gold coords"
+            )
+            print(f"  {'ref_crag_fine':<12}{b.get('ref_crag_fine', 0.0):>9.4f}")
             continue
         c = branch.get(split) or {}
         # Show BOTH arms' error counts (the R282 trap: printing only the
@@ -286,6 +340,30 @@ def _report(label: str, base: dict[str, Any], branch: dict[str, Any] | None) -> 
             f"  {'lat p50 s':<12}{b['latency_p50_ms']/1000:>10.1f}"
             f"{c['latency_p50_ms']/1000:>10.1f}"
             f"{(c['latency_p50_ms']-b['latency_p50_ms'])/1000:>+10.1f}"
+        )
+        # R329 Wave 1 (P0 / P0b) — reported ALONGSIDE the canonical axes
+        # above, never in their place. gold_dropped is a raw SUM per arm
+        # (CLAUDE.md's own formula), so any positive delta here is hard
+        # rule #8 firing — a rejection, not a trade-off to weigh against the
+        # uplift line below.
+        gd_h_delta = c.get("gold_dropped_head", 0) - b.get("gold_dropped_head", 0)
+        gd_e_delta = c.get("gold_dropped_exact", 0) - b.get("gold_dropped_exact", 0)
+        gd_h_flag = "  <-- GOLD DROPPED (hard rule #8)" if gd_h_delta > 0 else ""
+        gd_e_flag = "  <-- GOLD DROPPED (hard rule #8)" if gd_e_delta > 0 else ""
+        print(
+            f"  {'gold_drop_hd':<12}{int(b.get('gold_dropped_head', 0)):>10d}"
+            f"{int(c.get('gold_dropped_head', 0)):>10d}"
+            f"{gd_h_delta:>+10d}{gd_h_flag}"
+        )
+        print(
+            f"  {'gold_drop_ex':<12}{int(b.get('gold_dropped_exact', 0)):>10d}"
+            f"{int(c.get('gold_dropped_exact', 0)):>10d}"
+            f"{gd_e_delta:>+10d}{gd_e_flag}"
+        )
+        print(
+            f"  {'ref_crag_fine':<12}{b.get('ref_crag_fine', 0.0):>10.4f}"
+            f"{c.get('ref_crag_fine', 0.0):>10.4f}"
+            f"{c.get('ref_crag_fine', 0.0) - b.get('ref_crag_fine', 0.0):>+10.4f}"
         )
         uplift = sum(
             _LEVERAGE[a] * (c[a] - b[a]) * 100.0 for a in _LEVERAGE if a in c
@@ -332,6 +410,22 @@ def _paired(
             n_pred = sum(len(pair[idx].get("pred_refs") or []) for pair in common)
             n_gold = sum(len(set(pair[idx].get("gold_refs") or [])) for pair in common)
             m["pred_gold_ratio"] = (n_pred / n_gold) if n_gold else 0.0
+            # R329 Wave 1 — same paired-subset treatment as `_aggregate`:
+            # gold_dropped is a SUM over the common rows, ref_crag_fine a
+            # mean. This is the honest gate for hard rule #8 when either arm
+            # lost rows — the PAIRED read, not the full-arm aggregate.
+            m["gold_dropped_head"] = sum(
+                int(pair[idx]["scores"].get("gold_dropped_head", 0))
+                for pair in common
+            )
+            m["gold_dropped_exact"] = sum(
+                int(pair[idx]["scores"].get("gold_dropped_exact", 0))
+                for pair in common
+            )
+            m["ref_crag_fine"] = st.mean(
+                _axis_value(pair[idx]["scores"], "ref_crag_fine")
+                for pair in common
+            )
             agg[arm] = m
         agg["uplift_pp"] = sum(
             _LEVERAGE[a] * (agg["branch"][a] - agg["baseline"][a]) * 100.0
@@ -362,6 +456,27 @@ def _report_paired(label: str, paired: dict[str, Any]) -> None:
             f"  {'pred:gold':<12}{b['pred_gold_ratio']:>10.2f}"
             f"{c['pred_gold_ratio']:>10.2f}"
             f"{c['pred_gold_ratio'] - b['pred_gold_ratio']:>+10.2f}"
+        )
+        # R329 Wave 1 (P0 / P0b) — the honest PAIRED read of the hard-rule-#8
+        # instrument, reported alongside the canonical axes above.
+        gd_h_delta = c.get("gold_dropped_head", 0) - b.get("gold_dropped_head", 0)
+        gd_e_delta = c.get("gold_dropped_exact", 0) - b.get("gold_dropped_exact", 0)
+        gd_h_flag = "  <-- GOLD DROPPED (hard rule #8)" if gd_h_delta > 0 else ""
+        gd_e_flag = "  <-- GOLD DROPPED (hard rule #8)" if gd_e_delta > 0 else ""
+        print(
+            f"  {'gold_drop_hd':<12}{int(b.get('gold_dropped_head', 0)):>10d}"
+            f"{int(c.get('gold_dropped_head', 0)):>10d}"
+            f"{gd_h_delta:>+10d}{gd_h_flag}"
+        )
+        print(
+            f"  {'gold_drop_ex':<12}{int(b.get('gold_dropped_exact', 0)):>10d}"
+            f"{int(c.get('gold_dropped_exact', 0)):>10d}"
+            f"{gd_e_delta:>+10d}{gd_e_flag}"
+        )
+        print(
+            f"  {'ref_crag_fine':<12}{b.get('ref_crag_fine', 0.0):>10.4f}"
+            f"{c.get('ref_crag_fine', 0.0):>10.4f}"
+            f"{c.get('ref_crag_fine', 0.0) - b.get('ref_crag_fine', 0.0):>+10.4f}"
         )
         print(f"  => est. Overall uplift (leverage-weighted 3 ref axes): "
               f"{p['uplift_pp']:+.2f} pp")

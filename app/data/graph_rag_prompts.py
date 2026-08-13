@@ -503,6 +503,54 @@ USER_REF_MINIMALITY_CLAUSE = (
     "Describing everything supplied is over-citation and is penalised.\n"
 )
 
+# R329 P3b — the CRAG asymmetry. The one axis minimality does NOT state.
+#
+# ``USER_REF_MINIMALITY_CLAUSE`` above argues RELEVANCE ("if removing it would
+# not change the answer, do not cite it"). The NICD graph-RAG paper's safe-refusal
+# design (Wedge et al., Appendix C.2.2 — the fine-grained CRAG scale that scores a
+# wrong answer BELOW no answer) argues UNCERTAINTY, which is a different axis and
+# is unstated anywhere in the delivered prompt today. It is the mechanism behind
+# the paper's roughly halved hallucination rate, and it matches this repo's own
+# measurement that an extra wrong reference costs more than a missing one.
+#
+# Deliberately ONE sentence. R282 measured that dumping instruction volume onto
+# the delivered user channel is itself rubric-negative (kw_recall -0.267).
+#
+# ⚠ IT PULLS AGAINST SYSTEM-PROMPT RULE 10 — "Unmentioned citations are severely
+# penalized" (``ANSWER_GENERATE_SYSTEM``, rule 10 near the top of this module).
+# Rule 10 exists because the route's reconcile pass DROPS references the prose
+# does not name, so it pushes the model to name every candidate in prose; this
+# clause pushes it to stay silent when unsure. On the wrapper path rule 10 is
+# inert (the system slot is dropped 100%), but on Bedrock — which honours the
+# system slot, and is what Railway runs — the two are delivered together. So any
+# arm that turns this ON must read the RECONCILE DROP RATE in the same run, not
+# only the reference axes.
+#
+# DEFAULT OFF, its own flag (``REGENOLD_REF_UNCERTAINTY``) so it can be A/B'd
+# separately from R329 P3a's CITABLE PROVISIONS block.
+USER_REF_UNCERTAINTY_CLAUSE = (
+    " REFERENCE UNCERTAINTY: If you are not certain a provision is on point, "
+    "omit it: an incorrect citation costs more than a missing one.\n"
+)
+
+
+def user_ref_uncertainty_enabled() -> bool:
+    """R329 P3b — deliver the CRAG uncertainty sentence on the user channel.
+
+    DEFAULT OFF. Set ``REGENOLD_REF_UNCERTAINTY=1`` to enable.
+
+    Fresh env read per call so an in-process two-arm A/B is valid (R263.2); a
+    module-level constant would make the branch arm inert.
+
+    See the block comment above for the rule-10 tension this creates.
+    """
+    import os
+
+    return os.environ.get("REGENOLD_REF_UNCERTAINTY", "0").strip().lower() in {
+        "1", "true", "yes", "on",
+    }
+
+
 # R298 — the challenge/pushback turn.
 #
 # MEASURED (R297, 11 multi-turn rows, the evaluator's verbatim pushback):
