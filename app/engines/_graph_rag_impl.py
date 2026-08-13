@@ -6628,6 +6628,127 @@ def _context_article_refs(context: GraphContext | None) -> list[str]:
     return out
 
 
+# ─── R329 P3a — the explicit CITABLE UNIVERSE block ──────────────────────────
+#
+# THE DEFECT (R329 plan, §1 point 6). The user-channel citation instruction in
+# :func:`_claude_max_enhance_answer` says "Cite only articles, annexes and
+# obligations that appear in the EU AI ACT REFERENCES block" — but
+# :func:`_build_context_references_block` renders SEVEN kinds of explicitly
+# NON-citable material inside that same block: cross-regulatory bridging
+# (GDPR/MDR), synthesized multi-hop analysis, legal-AST evaluations, all three
+# KNOWLEDGE-GRAPH sections, the constrained semantic layers, verbatim provision
+# text, and referenced annexes/recitals. Each sub-block carries its own "do NOT
+# cite" clause, so the model must resolve one permissive top-level scope
+# statement against a stack of per-block prohibitions — and the prose it then
+# writes is exactly what the four tail-append prose-mining passes mine into wire
+# references (R134 ``_add_prose_named_refs``, R138 cite-consistency, R133
+# ``_surface_prose_subpoints``, and Component D).
+#
+# THE FIX. Name the citable set explicitly, as a short enumerated list, instead
+# of pointing at a block. This is the NICD graph-RAG paper's own design (Wedge
+# et al., Appendix C.1.2): references are derived mechanically from the
+# identifiers of the material actually used, never from a prose description of
+# scope.
+#
+# This is RENDERING, not retrieval. The set is exactly the ``article`` keys
+# :func:`_build_context_references_block` puts into APPLICABLE OBLIGATIONS /
+# ARTICLE-SPECIFIC OBLIGATIONS, read through the existing
+# :func:`_context_article_refs` helper and sliced to the same caps the renderer
+# applies — so the list can never name a provision whose stub was cut out of the
+# block it is supposed to summarise.
+#
+# DEFAULT OFF. ``REGENOLD_CITABLE_UNIVERSE_BLOCK=1`` enables it; the env is read
+# FRESH per call (the R263.2 doctrine) so an in-process two-arm A/B is valid.
+#
+# ⚠ ENGINE-LEVEL FLAG. It changes the Stage-2 input, so it MUST be registered in
+# ``_engine_cache_key``'s env tuple (app/routes/regenold.py) before any
+# in-process A/B is run — otherwise arm B is served arm A's ``_ENGINE_CACHE``
+# entry and the A/B measures nothing (the R326/R327 inert-A/B trap). Check the
+# branch arm's latency as the cheapest detector.
+
+#: The slices :func:`_build_context_references_block` renders in the
+#: unpartitioned (production-default) path. Mirrored here so the citable list is
+#: a subset of what the model can actually read.
+_CITABLE_OBLIGATIONS_RENDER_CAP = 20
+_CITABLE_ARTICLE_INFO_RENDER_CAP = 15
+
+_CITABLE_ANNEX_RE = re.compile(r"\bAnnex\s+([IVXLCDM]+)\b", re.IGNORECASE)
+_CITABLE_ARTICLE_RE = re.compile(r"\b(?:Art\.?|Articles?)\s*(\d{1,3})\b", re.IGNORECASE)
+
+
+def _citable_universe_enabled() -> bool:
+    """R329 P3a — emit the explicit CITABLE PROVISIONS list? Default OFF.
+
+    Off-switch / on-switch: ``REGENOLD_CITABLE_UNIVERSE_BLOCK``.
+    """
+    return _env_enabled("REGENOLD_CITABLE_UNIVERSE_BLOCK", "0")
+
+
+def _citable_universe_refs(context: GraphContext | None) -> list[str]:
+    """The provisions the engine actually retrieved, in wire-citation form.
+
+    Returns head-level strings — ``Article N`` (Arabic) / ``Annex R`` (Roman,
+    uppercase), per hard rule #1; never ``Art. N`` and never ``Annex 3``.
+
+    Sorted (articles ascending, then annexes in Roman order) rather than left in
+    retrieval-rank order, so the list reads as a PERMISSION SET and not as a
+    ranked agenda — ``USER_REF_MINIMALITY_CLAUSE`` explicitly tells the model the
+    references are "NOT an agenda", and a rank-ordered list would fight it.
+    """
+    if context is None:
+        return []
+    # Reuse the canonical source (_context_article_refs reads the same ``article``
+    # keys _build_context_references_block renders), narrowed to the rendered
+    # slices. No new retrieval, no second traversal.
+    view = GraphContext(
+        obligations=list(getattr(context, "obligations", None) or [])[
+            :_CITABLE_OBLIGATIONS_RENDER_CAP
+        ],
+        article_info=list(getattr(context, "article_info", None) or [])[
+            :_CITABLE_ARTICLE_INFO_RENDER_CAP
+        ],
+    )
+    articles: set[int] = set()
+    annexes: set[str] = set()
+    for raw in _context_article_refs(view):
+        m_ann = _CITABLE_ANNEX_RE.search(raw)
+        if m_ann:
+            annexes.add(m_ann.group(1).upper())
+            continue
+        m_art = _CITABLE_ARTICLE_RE.search(raw)
+        if m_art:
+            articles.add(int(m_art.group(1)))
+    out = [f"Article {n}" for n in sorted(articles)]
+    try:
+        from app.data.ids import roman_to_int  # noqa: PLC0415
+
+        annex_order = sorted(annexes, key=roman_to_int)
+    except Exception:  # noqa: BLE001 — ordering must never break a prompt
+        annex_order = sorted(annexes)
+    out.extend(f"Annex {r}" for r in annex_order)
+    return out
+
+
+def _citable_universe_block(context: GraphContext | None) -> str:
+    """Render the CITABLE PROVISIONS block, or ``""`` when nothing is citable.
+
+    Empty is the correct degradation: with no list to point at, the citation
+    instruction keeps its pre-R329 wording ("the EU AI ACT REFERENCES block"),
+    so a context that retrieved nothing behaves exactly as it does today.
+    """
+    refs = _citable_universe_refs(context)
+    if not refs:
+        return ""
+    return (
+        "CITABLE PROVISIONS (the ONLY values that may appear in a citation):\n"
+        + ", ".join(refs)
+        + "\nA sub-paragraph of a listed provision (for example Article 5(1)(f)) "
+        "counts as that provision. Nothing outside this list may be cited, "
+        "including a provision named only in another section of the EU AI ACT "
+        "REFERENCES block.\n\n"
+    )
+
+
 # Regexes used by the post-Stage-2 hallucination guard. Tight enough to
 # pick up the citation shapes Sonnet emits in prose, loose enough not to
 # false-positive on incidental digits.
@@ -7298,6 +7419,26 @@ def _claude_max_enhance_answer(
                 + "\n\n"
             )
 
+        # R329 P3a — CITABLE UNIVERSE. Default OFF; the full rationale is on
+        # :func:`_citable_universe_block`. Emitted here, immediately ahead of the
+        # instruction paragraph that carries the citation-scope sentence, so the
+        # instruction's "the CITABLE PROVISIONS list above" has an antecedent in
+        # BOTH branches below. When the flag is OFF (or the context retrieved
+        # nothing citable) ``_citable_block`` is "" and ``_cite_scope_phrase``
+        # keeps the pre-R329 wording, making the assembled prompt BYTE-IDENTICAL
+        # to today — that byte-identity is the regression guard, and it is pinned
+        # in tests/test_r329_citable_universe.py.
+        _citable_block = (
+            _citable_universe_block(context) if _citable_universe_enabled() else ""
+        )
+        if _citable_block:
+            user_message += _citable_block
+        _cite_scope_phrase = (
+            "the CITABLE PROVISIONS list above"
+            if _citable_block
+            else "the EU AI ACT REFERENCES block"
+        )
+
         if is_general_classification:
             user_message += (
                 f"BACKGROUND RISK FRAMEWORK:\n{kg_answer}\n\n"
@@ -7310,7 +7451,8 @@ def _claude_max_enhance_answer(
                 "Do NOT use essay introductions, meta-commentary, headings, or titles (e.g., do NOT output 'EU AI Act Classification Analysis:'). "
                 "Write ONE cohesive, flowing answer, NOT a sectioned justification memo: after the verdict, name the operative provisions and the deciding condition once, then stop. Do NOT introduce heading-like sub-topic fragments ('Why it is not prohibited (Article 5).', 'Why it is not Annex III high-risk.', 'The condition that would make it high-risk (Article 6).'), and do NOT restate the same conclusion (for example that the system is not listed in Annex III, or is not prohibited) more than once. "
                 "Apply logical deduction: objectively evaluate the described system against the strict definitions of prohibited or high-risk practices in the references; when the verdict turns on a fact (e.g. whether a medical device requires third-party conformity assessment), state the classification as conditional on that fact in regulatory terms ('High-risk only where the device requires third-party conformity assessment') rather than asserting a tier the facts do not establish. "
-                "Write in formal, neutral regulatory language. Cite only articles and annexes from the EU AI ACT REFERENCES block.\n"
+                "Write in formal, neutral regulatory language. "
+                f"Cite only articles and annexes from {_cite_scope_phrase}.\n"
             )
         else:
             # R312 — ANSWER-FIRST vs REFINE-THE-DRAFT.
@@ -7359,7 +7501,7 @@ def _claude_max_enhance_answer(
                 "context. Never introduce a sector, use-case, or fact (medical, "
                 "employment, biometric, law-enforcement, etc.) that the latest "
                 "question did not state. Cite only articles, annexes and "
-                "obligations that appear in the EU AI ACT REFERENCES block, "
+                f"obligations that appear in {_cite_scope_phrase}, "
                 "and make sure every article or annex you cite is described "
                 "in the prose: state in a few words what it requires, never "
                 "cite a bare number. Lead with a DIRECT verdict: for a yes/no, "
@@ -7399,18 +7541,26 @@ def _claude_max_enhance_answer(
             from app.data.graph_rag_prompts import (  # noqa: PLC0415
                 USER_CHALLENGE_BREVITY_CLAUSE,
                 USER_REF_MINIMALITY_CLAUSE,
+                USER_REF_UNCERTAINTY_CLAUSE,
                 USER_SUBPARAGRAPH_ATTRIBUTION_CLAUSE,
                 challenge_brevity_enabled,
                 is_challenge_turn,
                 subparagraph_attribution_enabled,
                 user_ref_minimality_enabled,
                 user_ref_partition_enabled,
+                user_ref_uncertainty_enabled,
             )
 
             if subparagraph_attribution_enabled():
                 user_message += USER_SUBPARAGRAPH_ATTRIBUTION_CLAUSE
             if user_ref_minimality_enabled():
                 user_message += USER_REF_MINIMALITY_CLAUSE
+            # R329 P3b — the CRAG asymmetry (uncertainty, not relevance).
+            # DEFAULT OFF; own flag REGENOLD_REF_UNCERTAINTY so it A/Bs apart
+            # from R329 P3a. Placed immediately after minimality because the two
+            # are the same paragraph of argument, on different axes.
+            if user_ref_uncertainty_enabled():
+                user_message += USER_REF_UNCERTAINTY_CLAUSE
             if user_ref_partition_enabled():
                 user_message += (
                     " OPERATIVE VS BACKGROUND PARTITION: CITE ONLY the provisions "
@@ -7532,17 +7682,12 @@ def _claude_max_enhance_answer(
                 user_message += USER_ANSWER_COVERAGE_CLAUSE
         except Exception:  # noqa: BLE001 — a prompt add-on must never break Stage-2
             pass
-
-        try:
-            from app.data.graph_rag_prompts import (  # noqa: PLC0415
-                USER_ANSWER_COVERAGE_CLAUSE,
-                answer_coverage_enabled,
-            )
-
-            if answer_coverage_enabled():
-                user_message += USER_ANSWER_COVERAGE_CLAUSE
-        except Exception:  # noqa: BLE001 — a prompt add-on must never break Stage-2
-            pass
+        # R329 P3c — the block above was DUPLICATED verbatim (two identical
+        # try/except pairs, both gated on the same ``answer_coverage_enabled()``),
+        # so ~2.1 KB of ANSWER COVERAGE landed TWICE in every live Stage-2 user
+        # message. Cache-inert (one flag drove both copies), but R282 measured
+        # that instruction volume on the delivered channel is itself harmful, and
+        # a repeated rule shifts emphasis. One copy only. Do not re-add.
 
         try:
             max_tokens = settings.graph_rag.max_tokens
