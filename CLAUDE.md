@@ -567,7 +567,9 @@ shipped ON) entered deliberately and with the risk recorded, not by accident.
 | `REGENOLD_BEDROCK_MODEL` | `eu.anthropic.claude-opus-4-8` | R328 — Stage-1 + Stage-2 main RAG tier. 403 on the current key; R328.2 degrades to `opus-4-6-v1` |
 | `REGENOLD_BEDROCK_COMPLEX_MODEL` | `eu.anthropic.claude-opus-5` | R328 — the `complex_question` tier. Also 403; same chain |
 | `REGENOLD_BEDROCK_JUDGE_MODEL` | `eu.anthropic.claude-sonnet-5` | R328 — judge. Precedence: this env > the CLI `--model` flag > the default. Also 403; degrades to `sonnet-4-6` |
-| `REGENOLD_STAGE2_VERDICT_GUARD` | **ON** | Rejects a Stage-2 answer that stops mid-verdict, on BOTH the wrapper and (since 2026-08-13) the Bedrock path. `=0` disables |
+| `REGENOLD_STAGE2_VERDICT_GUARD` | **ON** | Rejects a Stage-2 answer that stops mid-verdict, on BOTH the wrapper and (since 2026-08-13) the Bedrock path. `=0` disables. ⚠ Never measured on `ab_judge` — davidath cannot see it (Stage-2 only) |
+| `REGENOLD_BEDROCK_MAX_TOKENS` | **4096** | R328.3 — the Stage-2 answer ceiling on Bedrock. NOT `settings.graph_rag.max_tokens` (1536), which is advisory on the wrapper and a HARD mid-word cut here. Worst measured enumerative answer used 3411 |
+| `REGENOLD_BEDROCK_STAGE2_TIMEOUT_S` | **180** | R328.3 — per-call read budget for Stage-2. The 60 s default turned a bigger token ceiling into `ReadTimeoutError` (the worst case emits 3411 tokens in ~70 s) — the same truncation, one layer down |
 | `REGENOLD_BEDROCK_JUDGE_MAX_TOKENS` | **1600** | R328 — NOT the wrapper's 400. Bedrock honours the system prompt (the wrapper drops it), so the judge reasons in prose before its JSON; at 400 it truncates and the axis returns `no_json` — a SILENTLY UNSCORED axis, not a visible failure |
 
 Stage-2 models (`app/config.py`): parse `claude-sonnet-5`, Stage-2
@@ -719,6 +721,76 @@ so the two configurations are trivially confusable. **Check
 pins are 403: distinct cache keys, distinct arms, but the chain serves
 `opus-4-6-v1` for all of them. Read `stage2_models` in the aggregate before
 believing any model-tier comparison.
+
+### R328.3 — truncation must be impossible-or-loud, never silent
+
+Operator directive (2026-08-13): **no truncation at any stage**, so context
+stays intact until the answer is delivered. Four surfaces were cutting content
+and none left evidence. Measured live, enumerative answers surviving Stage-2
+went from **1/4 to 4/4**.
+
+**⚠ `maxTokens` means something DIFFERENT on Bedrock than on the wrapper.**
+The Claude-Max wrapper IGNORES it (R102: `max_tokens=24` returned
+`completion_tokens=1742`). Bedrock HONOURS it. So the shared
+`settings.graph_rag.max_tokens = 1536` — merely advisory upstream — was a hard
+mid-word cut here. Measured at 1536: **3 of 4** enumerative questions returned
+`stopReason=max_tokens`, ending mid-word (`"…Assistive"`). The ceiling must
+never be the thing that stops the model; verbosity is the prompt's job.
+Now `REGENOLD_BEDROCK_MAX_TOKENS` (4096).
+
+**⚠ Raising a ceiling relocates the cut — it does not remove it.** At 4096 the
+worst case took ~70 s against the 60 s default `read_timeout` and came back
+`ReadTimeoutError`: the same truncation one layer down, and *more* expensive
+because it yields nothing at all. Any token-budget change must move
+`REGENOLD_BEDROCK_STAGE2_TIMEOUT_S` with it.
+
+**`stopReason` is the precise signal and it was never read.** The wrapper,
+Anthropic and Gemini branches each check their equivalent; the Bedrock branch
+checked neither, leaving the one honest signal unused while a prose heuristic
+carried the load. A cut that happens to land on a period now fails loudly and
+records `stage2_truncated_max_tokens` in the trace.
+
+**⚠ A false truncation costs the answer TWICE.** `set_answer_no_cap` is gated on
+Stage-2 landing (`regenold.py`), so discarding a polish also **re-arms
+`MAX_ANSWER_SENTENCES = 3`** and the char cap. Measured on the recorded Bedrock
+run: Stage-2-off rows max **785 chars** and ≤3 sentences; Stage-2-landed rows
+reach 2061 chars and 8 sentences. So `_looks_structurally_truncated` is not a
+cheap guard — every false positive is a two-stage downgrade.
+
+And it *was* false-positiving: an answer with `stopReason=end_turn` using 2215
+of 4096 tokens, ending `*Sources: … Recitals 46-59.*`, was judged truncated on
+its closing `*`. **Markdown emphasis/code markers (`*_`` ~`) now peel like
+quotes and brackets already did, and a complete table row (`| … |`) is a
+structural ending.** Long role×obligation matrices legitimately end on one.
+
+**Two silent-loss fixes from the R328.3 audit:**
+
+* `kg_context._fit_complete_lines` returned `""` when a block could not fit its
+  budget — an entire provision hierarchy vanishing with no marker, which is
+  CLAUDE.md's own "a ceiling that falls back to a smaller limit is a switch,
+  not a ceiling". It now cuts AT the ceiling and marks ` [...]`, which is what
+  `_flat` had been doing correctly all along.
+* `reasoning_trace.record_note` stopped at **32** notes. Every clamp in the
+  pipeline reports itself ONLY via a note (`stage2_model=`,
+  `adaptive_ref_clamp_to=`, `stage2_truncated_max_tokens`,
+  `dropped_over_budget`), so the audit trail truncated before the thing it
+  audits — silently. Raised to 128, and the overflow now says so.
+
+⚠ **Latency is a scored axis and this moves it.** Complete enumerative answers
+now take 38–62 s (a short verdict is ~13 s). Before, those questions burned the
+same time and *then* discarded the answer, so this is strictly better — but the
+lever for shortening them is the PROMPT, never the ceiling.
+
+⚠ **Still unfixed, from the same audit — these silently drop content today:**
+`REGENOLD_ADAPTIVE_REF_CLAMP` (**default ON**, undocumented, cuts scenarios to 5
+refs and is `stage2_landed`-gated so davidath cannot see it); judge
+`max_tokens=400` hard-coded on the wrapper/Anthropic paths with no env (only
+Bedrock got 1600); the judge prompt caps (`_GOLD_TEXT_CAP` 12000,
+`_PRED_TEXT_CAP` 6000, `_MAX_PRED_REFS` 8) which make `legal_v2`'s
+quote-or-retract gate *invert* — an unquotable provision downgrades WRONG to
+SUPPORTING, so truncation inflates the pass rate; and `REGENOLD_KG_MAX_UNITS=24`
+rendering Article 3 as 24 of its 68 definitions under a heading that reads
+"PROVISION STRUCTURE".
 
 The wrapper lives at `D:\Claude Projects\claude-code-openai-wrapper` (not this
 repo) and bills the flat Max subscription. Evals MUST use it, not SDK-direct.
