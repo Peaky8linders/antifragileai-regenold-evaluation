@@ -512,7 +512,7 @@ def _bedrock_complete_for_graph_rag(
     try:
         from app.llm.bedrock_client import (
             BedrockRequest,
-            get_bedrock_provider,
+            complete_with_fallback,
             is_bedrock_provider_enabled,
             resolve_bedrock_model,
         )
@@ -534,6 +534,10 @@ def _bedrock_complete_for_graph_rag(
     #   judge (evals/judge/runner)   — eu.anthropic.claude-sonnet-5
     # Defaults are CODE defaults on purpose: railway.toml [deploy.envs] has
     # never applied, so anything that must survive a Railway deploy lives here.
+    #
+    # R328.2: those three are 403 on the current key (measured 2026-08-13), so
+    # ``complete_with_fallback`` degrades within the family per call. The pins
+    # stay put — re-minting the key restores them with no code change.
     is_stage2 = "stage 2" in (stage_name or "").lower()
     default_model = os.getenv(
         "REGENOLD_BEDROCK_MODEL", BEDROCK_RAG_MODEL
@@ -552,20 +556,28 @@ def _bedrock_complete_for_graph_rag(
     model_id = resolve_bedrock_model(model)
 
     try:
-        provider = get_bedrock_provider()
-        resp = provider.complete(
-            BedrockRequest(
-                system=system,
-                user=user,
-                model=model_id,
-                max_tokens=max_tokens or 1024,
-                temperature=temperature,
-            )
+        req = BedrockRequest(
+            system=system,
+            user=user,
+            model=model_id,
+            max_tokens=max_tokens or 1024,
+            temperature=temperature,
         )
+        # Ordered entitlement failover lives in the client so the RAG path and
+        # the judge path share ONE definition of the chain.
+        resp = complete_with_fallback(req)
+
         if resp.error or not resp.text:
             logger.warning("graph_rag.bedrock_call_failed: %s", resp.error)
             return None
-        if _looks_structurally_truncated(resp.text):
+
+        _verdict_guard = (
+            os.getenv("REGENOLD_STAGE2_VERDICT_GUARD", "1").strip().lower()
+            in ("1", "true", "yes", "on")
+        )
+        if _looks_structurally_truncated(resp.text) or (
+            _verdict_guard and _looks_incomplete_verdict(resp.text)
+        ):
             logger.warning("graph_rag.bedrock_truncated_structural: falling back")
             return None
         return resp.text

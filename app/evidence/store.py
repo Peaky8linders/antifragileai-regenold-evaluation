@@ -310,7 +310,12 @@ class InMemoryAuditStore:
                 message="Empty chain — nothing to verify",
             )
 
-        prev_hash = ""
+        # Seed from the OLDEST RETAINED row, not "". The deque is bounded
+        # (``maxlen``), so once the genesis entry evicts, rows[0] legitimately
+        # carries a non-empty previous_hash and a ""-seed fails healthy data.
+        # Row 0's payload is still verified against its recorded previous_hash
+        # below, and rows 1..n keep full linkage checking.
+        prev_hash = rows[0].previous_hash
         for idx, row in enumerate(rows):
             if row.previous_hash != prev_hash:
                 return ChainStatus(

@@ -230,7 +230,7 @@ def _call_judge_bedrock(prompt: str, timeout_s: float = 30.0) -> dict[str, Any]:
     try:
         from app.llm.bedrock_client import (
             BedrockRequest,
-            get_bedrock_provider,
+            complete_with_fallback,
             is_bedrock_provider_enabled,
             resolve_bedrock_model,
         )
@@ -239,7 +239,6 @@ def _call_judge_bedrock(prompt: str, timeout_s: float = 30.0) -> dict[str, Any]:
     if not is_bedrock_provider_enabled():
         return {"judge_error": "bedrock_not_configured"}
 
-    provider = get_bedrock_provider()
     # Precedence: explicit env pin > the CLI --model flag > the EU default.
     # The documented grounded-judge invocation passes `--model claude-sonnet-5`,
     # so the flag must reach this path or it silently grades on a model the
@@ -265,7 +264,10 @@ def _call_judge_bedrock(prompt: str, timeout_s: float = 30.0) -> dict[str, Any]:
         timeout_seconds=timeout_s,
     )
     try:
-        resp = provider.complete(req)
+        # R328.2 — same ordered entitlement failover as the RAG path. The pinned
+        # sonnet-5 judge is 403 on the current key; without this the whole batch
+        # returns `bedrock_error` and every axis goes SILENTLY UNSCORED.
+        resp = complete_with_fallback(req)
     except Exception as exc:  # noqa: BLE001
         return {"judge_error": f"call_failed: {exc}"}
     if resp is None:
@@ -960,13 +962,14 @@ def main(argv: list[str] | None = None) -> int:
     # local openai_wrapper bridge. Requires ``P2P_GRAPH_RAG_API_KEY``
     # or ``ANTHROPIC_API_KEY`` to be set.
     parser.add_argument(
-        "--provider", choices=("wrapper", "anthropic", "groq"), default="wrapper",
+        "--provider", choices=("wrapper", "anthropic", "groq", "gemini", "bedrock"), default="wrapper",
         help=(
             "Provider for the judge LLM. "
             "'wrapper' (default) routes through the local openai_wrapper bridge. "
             "'anthropic' uses the Anthropic SDK directly (requires "
             "P2P_GRAPH_RAG_API_KEY or ANTHROPIC_API_KEY). "
-            "'groq' routes through the Groq provider (requires GROQ_API_KEY)."
+            "'groq' routes through the Groq provider (requires GROQ_API_KEY). "
+            "'bedrock' routes through AWS Bedrock Converse API."
         ),
     )
     parser.add_argument(

@@ -1542,6 +1542,12 @@ def _engine_cache_key(
             # cached engine output to the branch arm — the exact R263.2 bug.
             "REGENOLD_GRAPH_TIMEOUT_MS",
             "REGENOLD_GRAPH_BREAKER",
+            "REGENOLD_BEDROCK_MODEL",
+            "REGENOLD_BEDROCK_STAGE1_MODEL",
+            "REGENOLD_BEDROCK_STAGE2_MODEL",
+            "REGENOLD_BEDROCK_COMPLEX_MODEL",
+            "BEDROCK_DEFAULT_MODEL",
+            "BEDROCK_REGION",
             # R295 — the fusion slack decides whether 2-hop refs reach the
             # candidate list at all, so it changes engine output directly.
             "REGENOLD_GRAPH_FUSE_SLACK",
