@@ -796,18 +796,27 @@ def _render_semantic_layers(question: str, refs: list[str]) -> list[str]:
     See :mod:`app.engines.graph_semantic` for why paragraph/point/subpoint are
     provision-constrained while definitions/recitals are open-domain. Default
     OFF behind ``REGENOLD_GRAPH_SEMANTIC_LAYERS``.
+
+    R329 P2 — with ``REGENOLD_SEMANTIC_COORDINATES`` on (default OFF) each
+    focused line is labelled with its LEGAL COORDINATE (``- Article 12.1: …``)
+    instead of the head-level cite plus an internal node id
+    (``- Article 12 [paragraph para_12_1]: …``). LABEL ONLY: the block's
+    non-citable framing below is unchanged, per hard rule #10.
     """
     if not question:
         return []
     try:
         from app.engines.graph_semantic import (  # noqa: PLC0415
+            coordinate_for_row,
             fetch_definition_and_recital_context,
             fetch_focused_subprovisions,
+            semantic_coordinates_enabled,
             semantic_layers_enabled,
         )
 
         if not semantic_layers_enabled():
             return []
+        coordinates_on = semantic_coordinates_enabled()
     except Exception:  # noqa: BLE001
         return []
 
@@ -822,6 +831,13 @@ def _render_semantic_layers(question: str, refs: list[str]) -> list[str]:
     for row in focused:
         text = _flat(row.get("text"), unit_chars)
         if not text:
+            continue
+        # A row whose coordinate cannot be rebuilt IN FULL keeps the existing
+        # label. Falling back is the point: a partial coordinate would relabel a
+        # sub-point's text as its parent's, which is worse than no coordinate.
+        coord = coordinate_for_row(row) if coordinates_on else None
+        if coord:
+            focus_lines.append(f"- {coord}: {text}")
             continue
         layer = str(row.get("layer") or "unit").lower()
         focus_lines.append(

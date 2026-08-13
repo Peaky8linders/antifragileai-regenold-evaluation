@@ -91,6 +91,31 @@ METRIC_PROVENANCE: dict[str, Any] = {
         "ref_correctness_strict_head_f1_proxy": "historical strict formula",
         "ref_conciseness_head_count_proxy": "historical conciseness formula",
     },
+    # R329 Wave 1 (P0 / P0b) — the hard-rule-#8 instrument. New fields, never
+    # a rebind: reported by evals.harness.easyhard_ab ALONGSIDE the canonical
+    # ref_loose / ref_strict / ref_conc axes above, never in place of them.
+    "r329_reference_diagnostics": {
+        "gold_dropped_head": (
+            "set_difference(gold_heads, pred_heads); per-arm value is a SUM "
+            "over rows, not a mean (CLAUDE.md hard rule #8: "
+            "gold_dropped = sum |expected_refs - predicted_refs|). Zero is "
+            "the merge bar; non-zero is a rejection, not a trade-off."
+        ),
+        "gold_dropped_exact": (
+            "same as gold_dropped_head but at full-coordinate grain via "
+            "_gold_exact_refs / canonical_reference_diagnostics — the grain "
+            "hard rule #8 actually means, since gold and the grounded judge "
+            "both score sub-point."
+        ),
+        "ref_crag_fine": (
+            "NICD paper Appendix C.2.2 fine-grained CRAG scale applied to "
+            "the reference set at exact-coordinate grain: "
+            "+1.0 exact match / +0.5 clean subset / 0.0 empty / "
+            "-0.5 hit-with-extras / -1.0 no-hit. Encodes that an extra wrong "
+            "reference costs more than a missing one — a gap precision and "
+            "F1 both leave unexpressed."
+        ),
+    },
 }
 
 
@@ -823,6 +848,190 @@ def reference_conciseness_head_count_proxy(
         return 0.0
     ratio = min(lp, lg) / max(lp, lg)
     return ratio * ratio
+
+
+# ── R329 Wave 1 (P0 / P0b): gold_dropped + ref_crag_fine ────────────────
+#
+# CLAUDE.md hard rule #8: "RECALL GUARD — a reference change must drop ZERO
+# gold. Measure gold_dropped FIRST; non-zero is a rejection, not a trade-off
+# ... 'Head-level recall is invariant' is NOT sufficient — gold and the
+# grounded judge both score at SUB-POINT grain." Before R329 that field
+# existed nowhere in the repo except prose (CLAUDE.md itself, two route
+# comments, two test comments, and the R327 write-up, which says outright
+# it is unmeasured) — the hard rule was unenforceable. These two functions
+# are the instrument; ``evals.harness.easyhard_ab`` wires them per-row and
+# per-arm because its ``ProbeRow.expected_refs`` is the one gold source with
+# sub-point grain and it already uses the ``*_exact_coord`` formulas below.
+
+
+def gold_dropped_head(
+    pred_refs: list[str], gold_articles: int | list[int] | list[str] | None
+) -> dict[str, Any]:
+    """Gold article/annex HEADS the prediction failed to cite.
+
+    The coarse half of the hard-rule-#8 instrument. Both gold and predicted
+    references are folded onto their article/annex HEAD before comparison —
+    ``_gold_ref_set`` already head-projects (it is the same helper
+    :func:`reference_correctness_loose` uses), and predicted refs go through
+    :func:`article_heads`. So a MORE precise prediction than gold (gold
+    ``Article 5``, predicted ``Article 5.1.f``) does NOT count as a drop
+    here: the head is covered. This is the grain at which a positional /
+    identity trimmer's damage is easiest to see and hardest to argue away —
+    R142.1's clamp lost a live pairwise judge 11-0 on exactly this shape of
+    regression.
+
+    Returns ``gold_count`` (size of the head-level gold set), ``dropped_count``
+    (what a per-arm summary sums), and ``dropped_refs`` (the actual list, so
+    a regression is diagnosable from a stored sidecar without re-running the
+    probe — this is the part CLAUDE.md's R327 write-up flagged as missing:
+    "gold_coverage=0.0 here means hard rule #8's gold_dropped is
+    UNMEASURED").
+    """
+    gold = _gold_ref_set(gold_articles)
+    pred_heads = article_heads(pred_refs)
+    dropped = sorted(gold - pred_heads)
+    return {
+        "gold_count": len(gold),
+        "dropped_count": len(dropped),
+        "dropped_refs": dropped,
+    }
+
+
+def gold_dropped_exact(
+    pred_refs: list[str], gold_articles: int | list[int] | list[str] | None
+) -> dict[str, Any]:
+    """Gold EXACT coordinates (sub-point grain) the prediction failed to cite.
+
+    The grain hard rule #8 actually means: "gold and the grounded judge both
+    score at SUB-POINT grain." A prediction that names the right article head
+    but the wrong sub-point (or drops the sub-point entirely) still loses
+    gold here even though :func:`gold_dropped_head` would call the row clean
+    — that gap between the two grains is exactly how a positional clamp can
+    look safe on a head-level check and still be destroying sub-point gold.
+
+    Uses :func:`_gold_exact_refs` (canonical full-coordinate gold, never
+    projected to a parent — the same helper
+    :func:`reference_correctness_strict_exact_coord` scores against) versus
+    the validated canonical predicted set from
+    :func:`canonical_reference_diagnostics`, so this stays on the same
+    exact-coordinate formulas ``easyhard_ab`` already treats as canonical
+    for its gold shape (R327: "Gold shape decides which reference formula is
+    valid ... easyhard's expected_refs DO carry sub-point grain, so it uses
+    the *_exact_coord variants").
+
+    Only meaningful where gold carries sub-point coordinates. Against
+    head-level gold (davidath's ``relevant_article``), every entry in
+    ``_gold_exact_refs`` is already head-shaped, so the two grains coincide
+    and this degenerates to :func:`gold_dropped_head`.
+
+    Returns ``gold_count`` / ``dropped_count`` / ``dropped_refs`` in the same
+    shape as :func:`gold_dropped_head`.
+    """
+    gold = _gold_exact_refs(gold_articles)
+    diag = canonical_reference_diagnostics(pred_refs)
+    pred = set(diag["canonical_refs"])
+    dropped = sorted(gold - pred)
+    return {
+        "gold_count": len(gold),
+        "dropped_count": len(dropped),
+        "dropped_refs": dropped,
+    }
+
+
+def reference_crag_fine(
+    pred_refs: list[str], gold_articles: int | list[int] | list[str] | None
+) -> float:
+    """Fine-grained CRAG score applied to the REFERENCE SET.
+
+    Source: Wedge, Stutter, Dixon & Cala, "Reducing Hallucinations in Complex
+    Question Answering using Simple Graph-based Retrieval-Augmented
+    Generation" (NICD / Newcastle University), Appendix C.2.2 — the
+    fine-grained CRAG (Comprehensive RAG) truthfulness scale. The paper
+    applies it to decomposed answer claims; here it is applied to the set of
+    cited references instead, because the repo's own over-citation defect
+    lives entirely in that set.
+
+    NEW metric name — this is a rebind of nothing. R327's lesson, verbatim:
+    "if you change a formula, change its NAME" — an uncommitted pass once
+    redefined ``ref_correctness_strict`` and ``ref_conciseness`` IN PLACE
+    under their canonical names while also collapsing the reference budget,
+    which would have let the bench "confirm" the clamp using a scorer built
+    to like it. ``ref_crag_fine`` reports ALONGSIDE the canonical axes, never
+    replacing them.
+
+    Operates at the CANONICAL EXACT-COORDINATE grain — the same grain
+    :func:`reference_correctness_strict_exact_coord` and
+    :func:`gold_dropped_exact` use — so it is only meaningful where gold
+    carries sub-point coordinates (easyhard's ``expected_refs``); against
+    head-level gold it will under-score a more-precise-than-gold prediction,
+    the same caveat that formula already carries.
+
+    Scale (asymmetric BY DESIGN — an extra WRONG reference costs MORE than a
+    missing one):
+
+        +1.0  predicted set == gold set                 (exact match)
+        +0.5  predicted (non-empty) subset of gold, no extras   (partial, clean)
+         0.0  no references emitted                       (uninformative)
+        -0.5  at least one gold hit, but extras present    (over-citation)
+        -1.0  no gold hit at all, and refs WERE emitted    (wrong-footed)
+
+    Rationale for the asymmetry, not precision or F1:
+
+    * Precision alone rewards citing nothing — a 0-recall, 0-wrong
+      prediction scores a perfect 1.0 precision. That is exactly the
+      hard-rule-#8 hazard: a trimmer can "win" a precision-only ruler by
+      silently dropping gold, which is why :func:`gold_dropped_exact` exists
+      as a separate, mandatory guard rather than being folded into this
+      score.
+    * F1 blunts the asymmetry by construction — the harmonic mean treats one
+      false positive and one false negative identically, so it cannot tell
+      "cited one wrong extra" from "missed one gold" apart.
+    * The repo's own measurements say the asymmetry is real:
+      CLAUDE.md's rank/wrong-rate table (wrong-rate by rank: 1 -> 0.22,
+      2 -> 0.45, 3 -> 0.60, 5 -> 0.88) shows extra tail references are
+      overwhelmingly wrong, and "an oracle dropping every non-gold ref
+      gains Ref Strict +0.215 / Ref Conciseness +0.229 at unchanged recall"
+      — i.e. removing wrong extras helps more than the recall those same
+      rows already have. No metric in this module encoded that lopsided
+      cost before this one.
+
+    Empty prediction returns 0.0 unconditionally (uninformative, not
+    penalised as wrong) even when gold is also empty — "no references
+    emitted" is checked before set equality so it never collides with the
+    +1.0 empty==empty case. "No references emitted" is judged on the RAW
+    proposed count (``diag["raw_count"]``), not the validated canonical
+    set — see the fabrication note below.
+
+    ⚠ A FABRICATED reference (fails ``provision_exists`` /
+    ``get_provision_text`` — see :func:`_canonical_ref`) is invisible to a
+    naive set comparison: ``canonical_reference_diagnostics`` drops it from
+    ``canonical_refs`` entirely, so ``pred`` never contains it. Left
+    unhandled, that means "one correct hit plus one hallucinated citation"
+    would set-equal a clean exact match and score +1.0 — precisely backwards
+    for a metric whose entire point is that a wrong reference costs more
+    than a missing one, and precisely the failure mode hard rule #4 names
+    ("A confidently-wrong summary loses more than a missing one"). So any
+    invalid ref present forces the ``extras present`` branch (blocks the
+    +1.0 exact-match case even when the VALID subset equals gold exactly,
+    and blocks the +0.5 clean-subset case the same way) — a fabricated
+    citation is treated as the worst kind of extra, not a no-op.
+    """
+    diag = canonical_reference_diagnostics(pred_refs)
+    pred = set(diag["canonical_refs"])
+    gold = _gold_exact_refs(gold_articles)
+    raw_emitted = int(diag["raw_count"])
+    has_invalid = int(diag["invalid_count"]) > 0
+    if raw_emitted == 0:
+        return 0.0
+    if pred == gold and not has_invalid:
+        return 1.0
+    hit = pred & gold
+    if not hit:
+        return -1.0
+    extras_present = bool(pred - gold) or has_invalid
+    if not extras_present:
+        return 0.5
+    return -0.5
 
 
 # ── 8: Regulatory tone ───────────────────────────────────────────────────
