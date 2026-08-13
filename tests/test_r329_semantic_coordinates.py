@@ -95,18 +95,30 @@ def _focus_lines(parts):
 
 # ── The flag ────────────────────────────────────────────────────────────────
 
-def test_flag_defaults_off():
-    """Default OFF. R329 P2 ships dark and is gated by ``easyhard_ab``."""
-    assert semantic_coordinates_enabled() is False
+def test_flag_defaults_on():
+    """Default ON as of 2026-08-13 (operator decision).
+
+    Railway's ``[deploy.envs]`` has never applied, so a default-OFF flag never
+    reaches the deployment — a code default is the only delivery mechanism.
+    The flag survives as an off-switch and so ``easyhard_ab`` can still A/B it.
+    """
+    assert semantic_coordinates_enabled() is True
 
 
-@pytest.mark.parametrize("value", ["1", "true", "TRUE", "yes", "on", " on "])
+@pytest.mark.parametrize(
+    "value", ["1", "true", "TRUE", "yes", "on", " on ", "", "maybe"]
+)
 def test_flag_truthy_spellings(monkeypatch, value):
+    """Negative-form flag: anything that is not an explicit off-value is ON.
+
+    ``""`` and ``"maybe"`` are ON here, matching the other default-ON engine
+    flags (``REGENOLD_KG_CONTEXT``, ``REGENOLD_SUBPARAGRAPH_ATTRIBUTION``).
+    """
     monkeypatch.setenv("REGENOLD_SEMANTIC_COORDINATES", value)
     assert semantic_coordinates_enabled() is True
 
 
-@pytest.mark.parametrize("value", ["0", "false", "off", "no", "", "maybe"])
+@pytest.mark.parametrize("value", ["0", "false", "off", "no", "OFF", " 0 "])
 def test_flag_falsy_spellings(monkeypatch, value):
     monkeypatch.setenv("REGENOLD_SEMANTIC_COORDINATES", value)
     assert semantic_coordinates_enabled() is False
@@ -114,6 +126,7 @@ def test_flag_falsy_spellings(monkeypatch, value):
 
 def test_flag_is_read_fresh_per_call(monkeypatch):
     """R263.2 — a module-level constant makes the in-process A/B inert."""
+    monkeypatch.setenv("REGENOLD_SEMANTIC_COORDINATES", "0")
     assert semantic_coordinates_enabled() is False
     monkeypatch.setenv("REGENOLD_SEMANTIC_COORDINATES", "1")
     assert semantic_coordinates_enabled() is True
@@ -123,12 +136,16 @@ def test_flag_is_read_fresh_per_call(monkeypatch):
 
 # ── OFF — the critical regression guard ─────────────────────────────────────
 
-def test_off_rendering_is_byte_identical(stub_focus):
+def test_off_rendering_is_byte_identical(monkeypatch, stub_focus):
     """Flag OFF ⇒ the pre-R329 label, character for character.
 
     The rows carry ``para``/``letter``/``roman`` precisely so that a renderer
     which quietly used them regardless of the flag would fail here.
+
+    The flag is set explicitly now that the DEFAULT is ON — this is the
+    rollback path, and it must still reproduce the pre-R329 wire exactly.
     """
+    monkeypatch.setenv("REGENOLD_SEMANTIC_COORDINATES", "0")
     stub_focus(ROWS)
     parts = _render_semantic_layers("who must keep logs?", ["Article 12"])
     assert _focus_lines(parts) == [
@@ -142,6 +159,7 @@ def test_off_rendering_is_byte_identical(stub_focus):
 def test_off_uses_the_untouched_cypher(monkeypatch):
     """OFF must issue the exact query R327.1 gated, not the P2 variant."""
     seen: list[str] = []
+    monkeypatch.setenv("REGENOLD_SEMANTIC_COORDINATES", "0")
     monkeypatch.setattr(kg_context, "kg_context_enabled", lambda: True)
     monkeypatch.setattr(kg_context, "_node_ids", lambda refs, limit: ["article_12"])
     monkeypatch.setattr(

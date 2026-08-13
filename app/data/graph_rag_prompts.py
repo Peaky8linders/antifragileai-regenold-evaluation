@@ -526,8 +526,10 @@ USER_REF_MINIMALITY_CLAUSE = (
 # arm that turns this ON must read the RECONCILE DROP RATE in the same run, not
 # only the reference axes.
 #
-# DEFAULT OFF, its own flag (``REGENOLD_REF_UNCERTAINTY``) so it can be A/B'd
-# separately from R329 P3a's CITABLE PROVISIONS block.
+# DEFAULT ON as of 2026-08-13 (operator decision, UNGATED), keeping its own flag
+# (``REGENOLD_REF_UNCERTAINTY``) so it can still be A/B'd separately from R329
+# P3a's CITABLE PROVISIONS block. Default-ON because Railway's ``[deploy.envs]``
+# has never applied, so an opt-in flag never reaches the deployment.
 USER_REF_UNCERTAINTY_CLAUSE = (
     " REFERENCE UNCERTAINTY: If you are not certain a provision is on point, "
     "omit it: an incorrect citation costs more than a missing one.\n"
@@ -537,7 +539,7 @@ USER_REF_UNCERTAINTY_CLAUSE = (
 def user_ref_uncertainty_enabled() -> bool:
     """R329 P3b — deliver the CRAG uncertainty sentence on the user channel.
 
-    DEFAULT OFF. Set ``REGENOLD_REF_UNCERTAINTY=1`` to enable.
+    DEFAULT **ON**. Off-switch: ``REGENOLD_REF_UNCERTAINTY=0``.
 
     Fresh env read per call so an in-process two-arm A/B is valid (R263.2); a
     module-level constant would make the branch arm inert.
@@ -546,8 +548,8 @@ def user_ref_uncertainty_enabled() -> bool:
     """
     import os
 
-    return os.environ.get("REGENOLD_REF_UNCERTAINTY", "0").strip().lower() in {
-        "1", "true", "yes", "on",
+    return os.environ.get("REGENOLD_REF_UNCERTAINTY", "1").strip().lower() not in {
+        "0", "false", "no", "off",
     }
 
 

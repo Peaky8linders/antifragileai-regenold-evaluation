@@ -12,8 +12,27 @@ wastes hours.
 
 | repo | role |
 | --- | --- |
-| `antifragileai-regenold-evaluation` (**this one**) | the **re-evaluation surface**: the graded 2026-07-07 code lineage with bugfixes applied. **Deploys nowhere.** |
+| `antifragileai-regenold-evaluation` (**this one**) | the **re-evaluation surface**: the graded 2026-07-07 code lineage with bugfixes applied. **Deploys to its own Railway service** — see below. |
 | `regenold-eu-ai-act-rag` (`D:/Claude Projects/regenold-eu-ai-act-rag`) | **deploys to production.** Runs its own rounds. |
+
+⚠ **CORRECTED 2026-08-13.** This table used to say this repo "Deploys nowhere",
+and the bullet below used to say "nothing merged here is live". **Both were
+wrong**, and the file contradicted itself in three other places while saying so:
+`railway.toml` + `Procfile` are committed here, `R328.1` was a *Railway boot
+fix* landed here, the provider table below says the Bedrock path "is what
+Railway runs", and `railway.toml`'s own R306 note records probing **"the
+deployed endpoint"** live on 2026-08-03. Merging to `main` here reaches a real
+service:
+
+```
+project      e19dc6ef-b463-4a54-9662-4a5085ae00c9
+service      0086ff18-f642-46c8-8127-57c913ca1c53
+environment  2f6298dd-881c-4848-81eb-5017a8a64c32
+```
+
+Treat a merge to `main` in this repo as **shipping**, not as a bench artefact.
+That is exactly the reason `railway.toml [deploy.envs]` being inert matters so
+much (see the gotchas): config here must be a CODE default or it never arrives.
 
 * The July-7 machinery exists **only here** —
   `evals/regenold/_official_batch_20260707.json` (110 questions),
@@ -26,7 +45,11 @@ wastes hours.
   warning. Verified by materialising the merge tree. Sync by **cherry-pick**.
 * **Round numbers collide.** Both repos have an "R318"/"R319" and they are
   different work. Prefix a shared reference with the repo name.
-* Production runs the RAG repo, so **nothing merged here is live**.
+* The RAG repo runs the **production** deployment; this repo runs its **own**
+  Railway service (IDs above). So the two deploy independently — a change here
+  is live on this service and is NOT live on production until cherry-picked,
+  and vice versa. ⚠ The older claim that "nothing merged here is live" was
+  wrong; do not rely on it when judging blast radius.
 
 ## What this repo is
 
@@ -525,6 +548,19 @@ Defaults are the CODE default, re-measured 2026-08-09.
 | `REGENOLD_MINIMAL_REF_BUDGET` | **OFF** | R327 — collapses every scenario budget to 5. This is the top-N clamp family; awaits `easyhard_ab` + `gold_dropped` |
 | `REGENOLD_COMPONENT_D_CITABLE_ONLY` | **OFF** | R327 — Component D promotes only retrieval-grounded refs |
 | `REGENOLD_CITABLE_BASE_GUARD` | ON | R327 — restricts prose-promotion to the retrieved citation universe (only ever REMOVES an ungrounded promotion) |
+| `REGENOLD_SEMANTIC_COORDINATES` | **ON** | R329 P2 — the constrained sub-provision block renders the legal coordinate (`Article 12.2.a`) instead of the internal node label (`[paragraph para_12_1]`). LABEL only: the block stays non-citable, so hard rule #10 holds. Guards a real fabrication — `build_hierarchy_payload` synthesises a Paragraph `1` for single-block lettered provisions, so naive reconstruction emitted `Article 16.1.a`, which does not exist (3 of 658 nodes; those fall back head-level via `get_provision_text`, NOT the head-lax `provision_exists`). Off-switch `=0` |
+| `REGENOLD_CITABLE_UNIVERSE_BLOCK` | **ON** | R329 P3a — emits an explicit `CITABLE PROVISIONS:` list and repoints the citation instruction at it. Fixes a scope statement that named a block also containing GDPR/MDR bridging, multi-hop synthesis, legal-AST output, three KG sections, verbatim text and recitals, each with its own "do NOT cite" clause. Sub-points of a listed provision stay permitted. Off-switch `=0` |
+| `REGENOLD_REF_UNCERTAINTY` | **ON** | R329 P3b — one user-channel sentence on the UNCERTAINTY axis, which `USER_REF_MINIMALITY_CLAUSE` (ON since R298) does not state; it argues relevance. Pulls against system rule 10 ("Unmentioned citations are severely penalized") — read the reconcile drop rate in any arm that moves it. Off-switch `=0` |
+
+⚠ **The three R329 flags were flipped to default-ON on 2026-08-13 by operator
+decision and are UNGATED.** The reason they are code defaults rather than env
+opt-ins is the standing `railway.toml [deploy.envs]` finding: an env-gated
+default-OFF flag never reaches the deployment at all. Each keeps a `=0`
+off-switch and remains a flag so `ab_judge` / `easyhard_ab` can still A/B it.
+**Consequence: the "Current baseline" block above was measured with all three
+OFF and no longer describes the default-configuration system.** Re-measure
+before grading anything against it. This is the R327 shape (an ungated change
+shipped ON) entered deliberately and with the risk recorded, not by accident.
 | `GROUNDED_JUDGE_STRICT_GROUNDING` | **OFF** | R327 — ON makes answer-correctness unscorable on the July-7 batch (it has no gold at all) |
 | `NEO4J_AUTO_SEED` | **OFF unless `1`** | R327 — now opt-IN, and even then only seeds a graph proven to have 0 nodes. Hard rule #12 |
 | `BEDROCK_REGION` | **`eu-central-1`** | R328 — Bedrock source Region. Also reads `AWS_DEFAULT_REGION` / `AWS_REGION`. NOT `us-east-1`: an `eu.` profile is unresolvable there |

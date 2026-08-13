@@ -240,12 +240,27 @@ def _looks_structurally_truncated(text: str | None) -> bool:
     stripped = text.rstrip()
     if not stripped:
         return False
+
+    # R328.3 — a MARKDOWN TABLE ROW is a structurally complete ending. Long
+    # enumerative answers (role × obligation matrices) legitimately end on one,
+    # and its terminal ``|`` is a row close, not a mid-clause stop.
+    last_line = stripped.splitlines()[-1].strip()
+    if last_line.startswith("|") and last_line.endswith("|") and len(last_line) > 2:
+        return False
+
     # Peel trailing closing wrappers a complete sentence may carry after
     # its terminator: e.g. ``(see Annex IV).`` ends ``).`` → peel ``)``
     # is unnecessary because the terminator is already last; but ``…IV.)``
     # ends ``)`` → peel to reach the ``.``. Quotes/brackets likewise.
+    #
+    # R328.3 — markdown emphasis/code markers belong in this set for exactly
+    # the same reason: they WRAP text rather than end it. Measured live on
+    # Bedrock, a COMPLETE answer (stopReason=end_turn, 2215 of 4096 tokens)
+    # ending ``*Sources: … Recitals 46-59.*`` was judged truncated on its
+    # closing ``*`` and discarded — which also re-armed the 3-sentence cap via
+    # ``set_answer_no_cap``. A formatting character is not a truncation.
     tail = stripped
-    while tail and tail[-1] in ")]}\"”’'":
+    while tail and tail[-1] in ")]}\"”’'*_`~":
         tail = tail[:-1].rstrip()
     if not tail:
         return False
@@ -556,12 +571,35 @@ def _bedrock_complete_for_graph_rag(
     model_id = resolve_bedrock_model(model)
 
     try:
+        # R328.3 — Bedrock HONOURS maxTokens; the Claude-Max wrapper ignores it.
+        # So the caller's budget (settings.graph_rag.max_tokens = 1536), which is
+        # merely advisory on the wrapper, is a HARD mid-word cut here. Measured
+        # 2026-08-13 at 1536: 3 of 4 enumerative questions returned
+        # stopReason=max_tokens, ending mid-word ("…Assistive"). Those then fail
+        # `_looks_structurally_truncated`, so Stage-2 is discarded entirely AND
+        # `set_answer_no_cap` re-arms the 3-sentence cap — a truncation costs the
+        # polish twice over. The ceiling must never be the thing that stops the
+        # model; verbosity is the prompt's job. Worst measured case used 3411.
+        from app.engines.graph_semantic import _float_env, _int_env
+
+        _ceiling = _int_env("REGENOLD_BEDROCK_MAX_TOKENS", 4096, 512, 32000)
+        _effective_max = max(int(max_tokens or 0), _ceiling)
+
+        # A bigger ceiling needs a bigger read budget or the cut just moves to
+        # the socket: the worst case took 70 s to emit 3411 tokens against a
+        # 60 s default read_timeout, which surfaced as ReadTimeoutError — a
+        # truncation wearing a different hat. Scale with the budget.
+        _timeout_s = _float_env(
+            "REGENOLD_BEDROCK_STAGE2_TIMEOUT_S", 180.0, 30.0, 600.0
+        )
+
         req = BedrockRequest(
             system=system,
             user=user,
             model=model_id,
-            max_tokens=max_tokens or 1024,
+            max_tokens=_effective_max,
             temperature=temperature,
+            timeout_seconds=_timeout_s,
         )
         # Ordered entitlement failover lives in the client so the RAG path and
         # the judge path share ONE definition of the chain.
@@ -598,6 +636,31 @@ def _bedrock_complete_for_graph_rag(
                 "graph_rag.bedrock_served_by_fallback: %s requested=%s served_by=%s",
                 stage_name, model_id, _served,
             )
+
+        # R328.3 — the PRECISE truncation signal, which this path never read.
+        # Bedrock reports stopReason honestly (unlike the Claude-Max wrapper,
+        # whose lie is the entire reason `_looks_incomplete_verdict` exists), and
+        # the wrapper / Anthropic / Gemini branches all check their equivalent.
+        # Checking it first means a real cut is caught exactly, instead of being
+        # left to a prose heuristic that only fires if the cut happens to land
+        # somewhere suspicious.
+        if (resp.finish_reason or "").strip().lower() in ("max_tokens", "length"):
+            logger.warning(
+                "graph_rag.bedrock_truncated_max_tokens — stopReason=%s model=%s "
+                "out_tokens=%d requested_max=%d. RAISE REGENOLD_BEDROCK_MAX_TOKENS; "
+                "the answer was cut mid-generation, not merely shaped.",
+                resp.finish_reason, _served, resp.output_tokens, _effective_max,
+            )
+            try:
+                from app.integrations.regenold.reasoning_trace import record_note
+
+                record_note(
+                    f"stage2_truncated_max_tokens out={resp.output_tokens} "
+                    f"cap={_effective_max}"
+                )
+            except Exception:
+                pass
+            return None
 
         _verdict_guard = (
             os.getenv("REGENOLD_STAGE2_VERDICT_GUARD", "1").strip().lower()
@@ -6657,8 +6720,11 @@ def _context_article_refs(context: GraphContext | None) -> list[str]:
 # applies — so the list can never name a provision whose stub was cut out of the
 # block it is supposed to summarise.
 #
-# DEFAULT OFF. ``REGENOLD_CITABLE_UNIVERSE_BLOCK=1`` enables it; the env is read
-# FRESH per call (the R263.2 doctrine) so an in-process two-arm A/B is valid.
+# DEFAULT ON as of 2026-08-13 (operator decision, UNGATED). Railway's
+# ``[deploy.envs]`` has never applied, so a default-OFF flag never reaches the
+# deployment at all — a code default is the only delivery mechanism. Off-switch
+# ``REGENOLD_CITABLE_UNIVERSE_BLOCK=0``; the env is read FRESH per call (the
+# R263.2 doctrine) so an in-process two-arm A/B is still valid.
 #
 # ⚠ ENGINE-LEVEL FLAG. It changes the Stage-2 input, so it MUST be registered in
 # ``_engine_cache_key``'s env tuple (app/routes/regenold.py) before any
@@ -6677,11 +6743,23 @@ _CITABLE_ARTICLE_RE = re.compile(r"\b(?:Art\.?|Articles?)\s*(\d{1,3})\b", re.IGN
 
 
 def _citable_universe_enabled() -> bool:
-    """R329 P3a — emit the explicit CITABLE PROVISIONS list? Default OFF.
+    """R329 P3a — emit the explicit CITABLE PROVISIONS list? Default **ON**.
 
-    Off-switch / on-switch: ``REGENOLD_CITABLE_UNIVERSE_BLOCK``.
+    Off-switch: ``REGENOLD_CITABLE_UNIVERSE_BLOCK=0``.
+
+    Uses the negative form rather than ``_env_enabled`` deliberately: that helper
+    matches POSITIVELY, so with a ``"1"`` default any unrecognised value ("yep",
+    "") would silently read as OFF. Every other default-ON engine flag in this
+    repo (``REGENOLD_KG_CONTEXT``, ``REGENOLD_SUBPARAGRAPH_ATTRIBUTION``) uses
+    the negative form, where only an explicit off-value disables. One concept,
+    one definition.
     """
-    return _env_enabled("REGENOLD_CITABLE_UNIVERSE_BLOCK", "0")
+    return os.getenv("REGENOLD_CITABLE_UNIVERSE_BLOCK", "1").strip().lower() not in (
+        "0",
+        "false",
+        "no",
+        "off",
+    )
 
 
 def _citable_universe_refs(context: GraphContext | None) -> list[str]:
