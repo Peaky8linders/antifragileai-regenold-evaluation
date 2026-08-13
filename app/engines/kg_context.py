@@ -86,14 +86,35 @@ __all__ = [
     "reset_kg_context_memo",
 ]
 
-_DEFAULT_MAX_REFS = 8
-_DEFAULT_MAX_UNITS = 24
-_DEFAULT_UNIT_CHARS = 900
+# R328.4 — operator directive: no truncation of the context handed to any stage.
+# Every number below was raised from a measurement, not a guess (2026-08-13):
+#
+#   refs=8  -> 25,505 chars against a 26,000 ceiling (98.1%), 1 section dropped
+#   refs=12 -> 25,999 chars against a 26,000 ceiling (100.0%), 2 sections dropped
+#
+# CLAUDE.md records scenarios averaging 9.88 refs/row, i.e. live traffic sat
+# exactly where whole sections fall off the end. For scale, 26,000 chars is
+# ~6.5k tokens — about 3% of the model's 200k window, so the ceiling was
+# costing load-bearing provision text to save context nobody needed saving.
+_DEFAULT_MAX_REFS = 12
+"""Was 8. Scenarios carry a mean 9.88 gold refs, so an 8-ref cap silently
+excluded the tail of a typical scenario's own citations."""
+
+_DEFAULT_MAX_UNITS = 70
+"""Was 24 — which rendered Article 3 as 24 of its 68 definitions under a heading
+that reads "PROVISION STRUCTURE", dropping 3(4)-3(8) (deployer / authorised
+representative / importer / distributor / operator): the five role definitions
+the role-obligation questions turn on. 70 covers the longest provision."""
+
+_DEFAULT_UNIT_CHARS = 2000
+"""Was 900, which cut mid-sentence inside a single paragraph."""
+
 _DEFAULT_MAX_RECITALS = 5
 #: Total ceiling across every block ``render_kg_context`` returns (R323, ported
 #: from the RAG repo in R325). Without it a 12-ref scenario can inject an
 #: unbounded wall of provision text that crowds the rest of the Stage-2 prompt.
-_DEFAULT_MAX_CHARS = 16000
+#: R328.4 — was 16000. See the measurement note above the defaults block.
+_DEFAULT_MAX_CHARS = 48000
 #: R327 — ceiling used only when the semantic vector layers contribute a block.
 #:
 #: Sized from measurement, not taste. At 5 refs the layers need ~8.4k while the
@@ -105,7 +126,14 @@ _DEFAULT_MAX_CHARS = 16000
 #: intact, so the layers-ON arm is a strict superset of the layers-OFF arm and
 #: any A/B delta is attributable to the added context alone.
 #: Override with ``REGENOLD_KG_SEMANTIC_MAX_CHARS``.
-_DEFAULT_SEMANTIC_MAX_CHARS = 26000
+#:
+#: R328.4 — 26,000 was sized to make the layers-ON arm a strict superset of the
+#: layers-OFF arm at **5 refs**. Measured at the ref counts live traffic
+#: actually carries it saturates: 98.1% at 8 refs, 100.0% at 12, dropping whole
+#: sections. Raised to 80,000 (~20k tokens, ~10% of the model window) so the
+#: superset property holds across the whole range rather than only at the count
+#: it was tuned on.
+_DEFAULT_SEMANTIC_MAX_CHARS = 80000
 
 
 def kg_context_enabled() -> bool:
@@ -552,7 +580,7 @@ _ENUM_OPENER_RE = re.compile(r"(?:\(?a\)\s|\(?1\)\s|1\.\s)")
 #: Hard ceiling for a single unit once the enumeration guard has extended it.
 #: Bounds the worst case so one pathological provision cannot dominate the
 #: Stage-2 budget.
-_UNIT_HARD_CEILING = 2600
+_UNIT_HARD_CEILING = 9000
 
 
 def _flat(text: object, limit: int) -> str:
@@ -611,7 +639,7 @@ def fetch_provision_hierarchy(refs: list[str]) -> list[dict]:
     """
     if not kg_context_enabled():
         return []
-    ids = _node_ids(refs or [], _int_env("REGENOLD_KG_MAX_REFS", _DEFAULT_MAX_REFS, 1, 10))
+    ids = _node_ids(refs or [], _int_env("REGENOLD_KG_MAX_REFS", _DEFAULT_MAX_REFS, 1, 24))
     if not ids:
         return []
     # R318 — ceiling raised 30 -> 70. The old clamp made the cap UNTUNABLE for the
@@ -635,7 +663,7 @@ def fetch_recital_anchors(refs: list[str]) -> list[dict]:
     """Recitals anchored to the cited provisions (interpretive context only)."""
     if not kg_context_enabled():
         return []
-    ids = _node_ids(refs or [], _int_env("REGENOLD_KG_MAX_REFS", _DEFAULT_MAX_REFS, 1, 10))
+    ids = _node_ids(refs or [], _int_env("REGENOLD_KG_MAX_REFS", _DEFAULT_MAX_REFS, 1, 24))
     if not ids:
         return []
     limit = _int_env("REGENOLD_KG_MAX_RECITALS", _DEFAULT_MAX_RECITALS, 0, 10)
@@ -654,7 +682,7 @@ def fetch_subpoint_detail(refs: list[str]) -> list[dict]:
     """Sub-point leaves of cited provisions, without inferring legal effect."""
     if not kg_context_enabled():
         return []
-    ids = _node_ids(refs or [], _int_env("REGENOLD_KG_MAX_REFS", _DEFAULT_MAX_REFS, 1, 10))
+    ids = _node_ids(refs or [], _int_env("REGENOLD_KG_MAX_REFS", _DEFAULT_MAX_REFS, 1, 24))
     if not ids:
         return []
     cached = _memo_get("subpoint", ids, 24)
@@ -676,7 +704,7 @@ def fetch_deontic_context(refs: list[str]) -> list[dict]:
     """Prohibited practices / Annex III categories / role duties / phases."""
     if not kg_context_enabled():
         return []
-    ids = _node_ids(refs or [], _int_env("REGENOLD_KG_MAX_REFS", _DEFAULT_MAX_REFS, 1, 10))
+    ids = _node_ids(refs or [], _int_env("REGENOLD_KG_MAX_REFS", _DEFAULT_MAX_REFS, 1, 24))
     if not ids:
         return []
     cached = _memo_get("deontic", ids, 12)
@@ -838,7 +866,7 @@ def _render_semantic_layers(question: str, refs: list[str]) -> list[str]:
         return []
 
     parts: list[str] = []
-    unit_chars = _int_env("REGENOLD_KG_UNIT_CHARS", _DEFAULT_UNIT_CHARS, 80, 1200)
+    unit_chars = _int_env("REGENOLD_KG_UNIT_CHARS", _DEFAULT_UNIT_CHARS, 80, 6000)
 
     try:
         focused = fetch_focused_subprovisions(question, refs)
@@ -918,7 +946,7 @@ def render_kg_context(refs: list[str], question: str = "") -> list[str]:
     if not kg_context_enabled():
         return []
     parts: list[str] = []
-    unit_chars = _int_env("REGENOLD_KG_UNIT_CHARS", _DEFAULT_UNIT_CHARS, 80, 1200)
+    unit_chars = _int_env("REGENOLD_KG_UNIT_CHARS", _DEFAULT_UNIT_CHARS, 80, 6000)
 
     try:
         rows = fetch_provision_hierarchy(refs)
@@ -1090,10 +1118,10 @@ def render_kg_context(refs: list[str], question: str = "") -> list[str]:
         )
     ):
         max_chars = _int_env(
-            "REGENOLD_KG_SEMANTIC_MAX_CHARS", _DEFAULT_SEMANTIC_MAX_CHARS, 1200, 60000
+            "REGENOLD_KG_SEMANTIC_MAX_CHARS", _DEFAULT_SEMANTIC_MAX_CHARS, 1200, 200000
         )
     else:
-        max_chars = _int_env("REGENOLD_KG_MAX_CHARS", _DEFAULT_MAX_CHARS, 1200, 60000)
+        max_chars = _int_env("REGENOLD_KG_MAX_CHARS", _DEFAULT_MAX_CHARS, 1200, 200000)
     parts, dropped = _budget_context_parts(parts, max_chars)
 
     if parts:

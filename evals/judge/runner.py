@@ -210,7 +210,7 @@ def _call_judge_sonnet(prompt: str, timeout_s: float = 30.0) -> dict[str, Any]:
         system=_JUDGE_SYSTEM,
         user=prompt,
         model=_JUDGE_MODEL,
-        max_tokens=400,
+        max_tokens=_judge_max_tokens(),
         temperature=0.0,
         timeout_seconds=timeout_s,
     )
@@ -223,6 +223,29 @@ def _call_judge_sonnet(prompt: str, timeout_s: float = 30.0) -> dict[str, Any]:
     if resp.error:
         return {"judge_error": f"wrapper_error: {resp.error[:160]}"}
     return _parse_judge_json(resp.text or "")
+
+
+# R328.4 — ONE judge output budget, for every transport.
+#
+# R328 diagnosed this precisely for Bedrock ("at 400 tokens it gets cut off
+# mid-reasoning and the row comes back `no_json`, i.e. a SILENTLY UNSCORED axis
+# rather than a visible failure") and then raised exactly one of five call
+# sites. The wrapper path — the default, and the only transport `legal_v2`
+# permits — stayed at a hard-coded 400 with no override. A truncated judge
+# reply becomes `unbalanced_json`, which is in `_NON_RETRYABLE_ERROR_SUBSTRINGS`,
+# so it never retries, and `pass_rate` divides by total rows: the axis scores a
+# silent zero. Raising the budget is the fix; the retry list is not.
+def _judge_max_tokens(default: int = 1600) -> int:
+    """Judge output ceiling. ``REGENOLD_JUDGE_MAX_TOKENS`` overrides all
+    transports; ``REGENOLD_BEDROCK_JUDGE_MAX_TOKENS`` still wins on Bedrock."""
+    for var in ("REGENOLD_JUDGE_MAX_TOKENS",):
+        raw = os.getenv(var, "").strip()
+        if raw:
+            try:
+                return max(200, min(8000, int(raw)))
+            except ValueError:
+                pass
+    return default
 
 
 def _call_judge_bedrock(prompt: str, timeout_s: float = 30.0) -> dict[str, Any]:
@@ -254,7 +277,8 @@ def _call_judge_bedrock(prompt: str, timeout_s: float = 30.0) -> dict[str, Any]:
     # Measured on the refs axis, eu.anthropic.claude-sonnet-4-6, 2026-08-11.
     # This is a truncation fix, not a rubric change — the prompts and the
     # parsed formulas are untouched.
-    max_tokens = int(os.getenv("REGENOLD_BEDROCK_JUDGE_MAX_TOKENS", "1600"))
+    max_tokens = int(os.getenv("REGENOLD_BEDROCK_JUDGE_MAX_TOKENS", "").strip()
+                      or _judge_max_tokens())
     req = BedrockRequest(
         system=_JUDGE_SYSTEM,
         user=prompt,
@@ -352,7 +376,7 @@ def _call_judge_groq(prompt: str, timeout_s: float = 30.0) -> dict[str, Any]:
         system=_JUDGE_SYSTEM,
         user=prompt,
         model=model,
-        max_tokens=800,
+        max_tokens=_judge_max_tokens(),
         temperature=0.0,
         timeout_seconds=timeout_s,
     )
@@ -411,7 +435,7 @@ def _call_judge_gemini(prompt: str, timeout_s: float = 30.0) -> dict[str, Any]:
         system=_JUDGE_SYSTEM,
         user=prompt,
         model=model,
-        max_tokens=1000,
+        max_tokens=_judge_max_tokens(),
         temperature=0.0,
         timeout_seconds=timeout_s,
     )
@@ -471,7 +495,7 @@ def _call_judge_anthropic(prompt: str, timeout_s: float = 30.0) -> dict[str, Any
             model=_JUDGE_MODEL,
             system=_JUDGE_SYSTEM,
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=400,
+            max_tokens=_judge_max_tokens(),
             temperature=0.0,
         )
     except Exception as exc:  # noqa: BLE001 — fail-soft contract

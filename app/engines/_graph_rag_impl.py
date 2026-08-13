@@ -6144,10 +6144,10 @@ def _grounding_text_enabled() -> bool:
     )
 
 
-_GROUNDING_MAX_REFS = 8
+_GROUNDING_MAX_REFS = 12
 _GROUNDING_MAX_ANNEX_RECITALS = 4
 _GROUNDING_MAX_CHARS = 400
-_GROUNDING_REF_CHARS = 1200
+_GROUNDING_REF_CHARS = 3000
 # R288.1 — the ``[Art. N] <sentence>`` tag regex belonged to the abandoned Arm 0
 # (which parsed pre-tagged ``semantically_relevant_statements``). Arm 1 fetches
 # provisions by ref and never parses a tag, so the regex had zero readers.
@@ -6179,7 +6179,7 @@ def _grounding_max_refs() -> int:
     (R263.2).
     """
     try:
-        return max(1, min(12, int(os.getenv("REGENOLD_GROUNDING_MAX_REFS", ""))))
+        return max(1, min(24, int(os.getenv("REGENOLD_GROUNDING_MAX_REFS", ""))))
     except (TypeError, ValueError):
         return _GROUNDING_MAX_REFS
 
@@ -6195,7 +6195,7 @@ def _grounding_ref_budget() -> int:
     have reported "no effect" for every budget.
     """
     try:
-        return max(200, min(4000, int(os.getenv("REGENOLD_GROUNDING_REF_CHARS", ""))))
+        return max(200, min(12000, int(os.getenv("REGENOLD_GROUNDING_REF_CHARS", ""))))
     except (TypeError, ValueError):
         return _GROUNDING_REF_CHARS
 

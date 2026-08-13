@@ -92,7 +92,7 @@ _DEFAULT_MIN_SIM = 0.30
 #: constraint is selective, so the fan-out has to be wide enough that units of a
 #: cited provision actually appear in the global top-k.
 _DEFAULT_ANN_FANOUT = 60
-_DEFAULT_UNITS_KEPT = 6
+_DEFAULT_UNITS_KEPT = 16
 #: Max units drawn from any ONE cited provision, so a single provision cannot
 #: consume the whole focused block (see the B.2 roll-up note on _FOCUS_CYPHER).
 _DEFAULT_UNITS_PER_PROVISION = 2
@@ -564,7 +564,7 @@ def fetch_focused_subprovisions(question: str, refs: list[str]) -> list[dict]:
                     "REGENOLD_SEMANTIC_MIN_SIM", _DEFAULT_MIN_SIM, 0.0, 1.0
                 ),
                 "limit": _int_env(
-                    "REGENOLD_SEMANTIC_UNITS", _DEFAULT_UNITS_KEPT, 1, 20
+                    "REGENOLD_SEMANTIC_UNITS", _DEFAULT_UNITS_KEPT, 1, 60
                 ),
                 "per_provision": _int_env(
                     "REGENOLD_SEMANTIC_UNITS_PER_PROVISION",
