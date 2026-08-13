@@ -175,7 +175,14 @@ def semantic_layers_enabled() -> bool:
 
 
 def semantic_coordinates_enabled() -> bool:
-    """``REGENOLD_SEMANTIC_COORDINATES`` — default **OFF**. R329 P2.
+    """``REGENOLD_SEMANTIC_COORDINATES`` — default **ON**. R329 P2.
+
+    ⚠ DEFAULT FLIPPED ON by operator decision (2026-08-13), UNGATED. Railway's
+    ``[deploy.envs]`` has never applied, so a default-OFF flag is dead code in
+    production — the only way this reaches the deployment is as a code default.
+    Off-switch ``REGENOLD_SEMANTIC_COORDINATES=0`` for instant rollback, and the
+    flag stays so ``easyhard_ab`` can still A/B OFF↔ON. The measured baseline in
+    CLAUDE.md predates this and no longer describes the running system.
 
     THE DEFECT THIS GATES. The constrained block exists to attribute a duty to
     the right SUB-provision, yet it could not express a sub-provision citation.
@@ -210,11 +217,11 @@ def semantic_coordinates_enabled() -> bool:
     ``_engine_cache_key`` in ``app/routes/regenold.py`` beside
     ``REGENOLD_GRAPH_SEMANTIC_LAYERS``, or the paired A/B replays arm A's cache.
     """
-    return os.getenv("REGENOLD_SEMANTIC_COORDINATES", "0").strip().lower() in (
-        "1",
-        "true",
-        "yes",
-        "on",
+    return os.getenv("REGENOLD_SEMANTIC_COORDINATES", "1").strip().lower() not in (
+        "0",
+        "false",
+        "no",
+        "off",
     )
 
 

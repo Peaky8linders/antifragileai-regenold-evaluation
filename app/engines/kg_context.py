@@ -715,11 +715,17 @@ def _fit_complete_lines(block: str, budget: int) -> str:
     if len(block) <= budget:
         return block
 
+    # We only get here when the block does NOT fit, so a truncation marker is
+    # certain — reserve its cost before fitting rather than appending past the
+    # ceiling afterwards (which would blow the very budget being enforced).
+    _MARK = "  [...]"
+    fit_budget = max(0, budget - len(_MARK) - 1)
+
     kept: list[str] = []
     used = 0
     for line in block.splitlines():
         cost = len(line) + (1 if kept else 0)
-        if used + cost > budget:
+        if used + cost > fit_budget:
             break
         kept.append(line)
         used += cost
@@ -729,7 +735,18 @@ def _fit_complete_lines(block: str, budget: int) -> str:
     while kept and kept[-1].lstrip().startswith("- ") and kept[-1].rstrip().endswith(":"):
         kept.pop()
     if len([line for line in kept if line.strip()]) < 2:
-        return ""
+        # Returning "" here ANNIHILATES the block — up to the whole provision
+        # hierarchy vanishing with no marker anywhere in the text the model
+        # sees. That is CLAUDE.md's "a ceiling that falls back to a smaller
+        # limit is a switch, not a ceiling": the caller reads "" as "nothing to
+        # say" rather than "this was cut". Do what ``_flat`` already does —
+        # cut AT the ceiling and MARK it, so the model is told the context is
+        # partial instead of silently reasoning over a hole.
+        head = block.splitlines()[0] if block.splitlines() else ""
+        if head and len(head) + len(_MARK) <= budget:
+            return head + _MARK
+        return block[: max(0, budget - len(_MARK))] + _MARK if budget > len(_MARK) else ""
+    kept.append(_MARK)
     return "\n".join(kept)
 
 

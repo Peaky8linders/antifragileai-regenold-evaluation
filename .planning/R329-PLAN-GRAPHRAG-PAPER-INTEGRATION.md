@@ -9,12 +9,50 @@ and Appendix C — the agent and CRAG judge prompts verbatim).
 
 Written 2026-08-13 at `13d83c7`. Read [`CLAUDE.md`](../CLAUDE.md) first.
 
+---
+
+## STATUS — updated 2026-08-13, after the merge
+
+Waves 1–3 are **implemented and merged** (PR #7, `431021a`). The text below is
+the plan as written; two things have changed since.
+
+**1. The three new flags are now default-ON, ungated** (operator decision,
+2026-08-13). They were built default-OFF as the plan specifies, then flipped,
+because `railway.toml [deploy.envs]` has never applied — an env-gated,
+default-OFF flag never reaches the deployment, so a code default is the only
+delivery mechanism. Each keeps a `=0` off-switch and stays a flag so
+`ab_judge` / `easyhard_ab` can still A/B it OFF↔ON.
+
+| item | flag | default now |
+| --- | --- | --- |
+| P2 sub-provision coordinates | `REGENOLD_SEMANTIC_COORDINATES` | **ON** |
+| P3a citable universe | `REGENOLD_CITABLE_UNIVERSE_BLOCK` | **ON** |
+| P3b uncertainty clause | `REGENOLD_REF_UNCERTAINTY` | **ON** |
+| P3c duplicate-clause dedupe | — | unconditional |
+| P0/P0b `gold_dropped`, `reference_crag_fine` | — | always reported |
+
+⚠ **This is the R327 shape — an ungated change shipped ON — entered
+deliberately.** Two consequences that must not be forgotten:
+* CLAUDE.md's "Current baseline" block was measured with all three OFF and **no
+  longer describes the default-configuration system**. Re-measure before
+  grading anything against it.
+* The measurement protocol in §4 below is now a *post-hoc* validation, not a
+  gate. If a wave measures negative, the off-switch is the rollback.
+
+**2. P1 is NOT flipped.** `REGENOLD_COMPONENT_D_CITABLE_ONLY` stays OFF — see
+the risk note under P1: Component D contributes 145 correct references, and an
+unknown share are parametric-but-right. That one genuinely needs `gold_dropped`
+first, which now exists.
+
+---
+
 ⚠ **The working tree is dirty with unrelated in-flight work** — the R328.2
 Bedrock review-fix pass (`app/llm/bedrock_client.py`, judge `--provider
 bedrock`, Bedrock keys added to `_engine_cache_key`, evidence-store genesis
 eviction), driven by
 [`docs/reviews/main-2026-08-13-13d83c7.md`](../docs/reviews/main-2026-08-13-13d83c7.md).
 Nothing in this plan touches those files. Land or stash that pass first.
+*(Resolved — that pass landed in the same PR #7; see STATUS above.)*
 
 ---
 

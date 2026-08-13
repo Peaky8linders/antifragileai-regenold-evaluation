@@ -24,10 +24,17 @@ state; it argues relevance instead.
 It was appended TWICE (two verbatim ``try/except`` pairs on the same flag), so
 ~2.1 KB of ANSWER COVERAGE landed twice in every live prompt. Now once.
 
-THE LOAD-BEARING TEST IS THE BYTE-IDENTITY ONE. Both new flags default OFF, and
-with them OFF the assembled Stage-2 user message must be byte-for-byte what it
-was before R329 — otherwise every historical baseline in CLAUDE.md is being
-graded against a different prompt.
+⚠ BOTH FLAGS WERE FLIPPED TO DEFAULT **ON** on 2026-08-13 by operator decision,
+UNGATED. Railway's ``[deploy.envs]`` has never applied, so a default-OFF flag is
+dead code in the deployment — a code default is the only delivery mechanism.
+The docstring paragraphs above describe the ORIGINAL defaults.
+
+THE LOAD-BEARING TEST IS STILL THE BYTE-IDENTITY ONE, but it now pins the
+ROLLBACK path rather than the default: with both flags explicitly ``=0`` the
+assembled Stage-2 user message must be byte-for-byte what it was before R329.
+Note the corollary — the historical baselines in CLAUDE.md were measured with
+these OFF, so they no longer describe the default-configuration system and must
+be re-measured.
 """
 
 from __future__ import annotations
@@ -151,10 +158,39 @@ def _capture(*, is_general_classification: bool = False) -> str:
 # ---------------------------------------------------------------------------
 
 
+def test_defaults_are_on_for_both_new_flags():
+    """Default ON as of 2026-08-13 (operator decision, ungated).
+
+    Railway's ``[deploy.envs]`` has never applied, so a default-OFF flag never
+    reaches the deployment — a code default is the only delivery mechanism.
+    Both keep an explicit ``=0`` off-switch for instant rollback, and both stay
+    flags so ``ab_judge`` / ``easyhard_ab`` can still A/B them OFF↔ON.
+    """
+    assert impl._citable_universe_enabled() is True
+    assert user_ref_uncertainty_enabled() is True
+
+
+@pytest.mark.parametrize(
+    "value", ["0", "false", "off", "no", "OFF", " 0 "]
+)
+def test_off_switch_spellings(monkeypatch, value):
+    """Negative-form flags: only an explicit off-value disables."""
+    monkeypatch.setenv("REGENOLD_CITABLE_UNIVERSE_BLOCK", value)
+    monkeypatch.setenv("REGENOLD_REF_UNCERTAINTY", value)
+    assert impl._citable_universe_enabled() is False
+    assert user_ref_uncertainty_enabled() is False
+
+
 class TestFlagsOffAreByteIdentical:
-    def test_default_is_off_for_both_new_flags(self):
-        assert impl._citable_universe_enabled() is False
-        assert user_ref_uncertainty_enabled() is False
+    """The ROLLBACK path. With both flags explicitly OFF the assembled Stage-2
+    user message must be byte-for-byte the pre-R329 prompt — otherwise every
+    historical baseline in CLAUDE.md is graded against a different prompt."""
+
+    @pytest.fixture(autouse=True)
+    def _force_flags_off(self, monkeypatch):
+        # Explicit now that the DEFAULT is ON; this class tests the off-switch.
+        monkeypatch.setenv("REGENOLD_CITABLE_UNIVERSE_BLOCK", "0")
+        monkeypatch.setenv("REGENOLD_REF_UNCERTAINTY", "0")
 
     @pytest.mark.parametrize("classify", [False, True])
     def test_no_new_text_leaks_when_off(self, classify: bool):
@@ -360,6 +396,7 @@ class TestCitableUniverseInThePrompt:
 
     def test_env_is_read_fresh_per_call(self):
         """R263.2 — a module-level constant makes an in-process A/B inert."""
+        os.environ["REGENOLD_CITABLE_UNIVERSE_BLOCK"] = "0"
         assert impl._citable_universe_enabled() is False
         os.environ["REGENOLD_CITABLE_UNIVERSE_BLOCK"] = "1"
         assert impl._citable_universe_enabled() is True
@@ -392,6 +429,7 @@ class TestRefUncertaintyClause:
         assert user.count(USER_REF_UNCERTAINTY_CLAUSE) == 1
 
     def test_env_is_read_fresh_per_call(self):
+        os.environ["REGENOLD_REF_UNCERTAINTY"] = "0"
         assert user_ref_uncertainty_enabled() is False
         os.environ["REGENOLD_REF_UNCERTAINTY"] = "1"
         assert user_ref_uncertainty_enabled() is True

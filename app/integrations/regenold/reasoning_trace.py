@@ -333,8 +333,17 @@ def record_note(text: str) -> None:
     trace = current()
     if trace is None or not text:
         return
-    if len(trace.notes) < 32:  # cap at 32 — full-detail analysis mode
+    # R328.3 — was 32, silently. Every truncation/clamp in the pipeline reports
+    # itself HERE and nowhere else (`stage2_model=`, `adaptive_ref_clamp_to=`,
+    # `stage2_truncated_max_tokens`, `dropped_over_budget`), so a 32-note cap
+    # meant the audit trail truncated before the thing it was auditing — and
+    # silently, which is the failure mode these notes exist to expose. Raised,
+    # and when it does fill it now says so instead of just stopping.
+    _cap = 128
+    if len(trace.notes) < _cap:
         trace.notes.append(text)  # no truncation; full reasoning output
+    elif len(trace.notes) == _cap:
+        trace.notes.append(f"[notes truncated at {_cap} — further notes dropped]")
 
 
 def record_llm_thinking(thinking_text: str, stage: str = "Stage") -> None:

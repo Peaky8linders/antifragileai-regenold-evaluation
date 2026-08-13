@@ -525,6 +525,19 @@ Defaults are the CODE default, re-measured 2026-08-09.
 | `REGENOLD_MINIMAL_REF_BUDGET` | **OFF** | R327 — collapses every scenario budget to 5. This is the top-N clamp family; awaits `easyhard_ab` + `gold_dropped` |
 | `REGENOLD_COMPONENT_D_CITABLE_ONLY` | **OFF** | R327 — Component D promotes only retrieval-grounded refs |
 | `REGENOLD_CITABLE_BASE_GUARD` | ON | R327 — restricts prose-promotion to the retrieved citation universe (only ever REMOVES an ungrounded promotion) |
+| `REGENOLD_SEMANTIC_COORDINATES` | **ON** | R329 P2 — the constrained sub-provision block renders the legal coordinate (`Article 12.2.a`) instead of the internal node label (`[paragraph para_12_1]`). LABEL only: the block stays non-citable, so hard rule #10 holds. Guards a real fabrication — `build_hierarchy_payload` synthesises a Paragraph `1` for single-block lettered provisions, so naive reconstruction emitted `Article 16.1.a`, which does not exist (3 of 658 nodes; those fall back head-level via `get_provision_text`, NOT the head-lax `provision_exists`). Off-switch `=0` |
+| `REGENOLD_CITABLE_UNIVERSE_BLOCK` | **ON** | R329 P3a — emits an explicit `CITABLE PROVISIONS:` list and repoints the citation instruction at it. Fixes a scope statement that named a block also containing GDPR/MDR bridging, multi-hop synthesis, legal-AST output, three KG sections, verbatim text and recitals, each with its own "do NOT cite" clause. Sub-points of a listed provision stay permitted. Off-switch `=0` |
+| `REGENOLD_REF_UNCERTAINTY` | **ON** | R329 P3b — one user-channel sentence on the UNCERTAINTY axis, which `USER_REF_MINIMALITY_CLAUSE` (ON since R298) does not state; it argues relevance. Pulls against system rule 10 ("Unmentioned citations are severely penalized") — read the reconcile drop rate in any arm that moves it. Off-switch `=0` |
+
+⚠ **The three R329 flags were flipped to default-ON on 2026-08-13 by operator
+decision and are UNGATED.** The reason they are code defaults rather than env
+opt-ins is the standing `railway.toml [deploy.envs]` finding: an env-gated
+default-OFF flag never reaches the deployment at all. Each keeps a `=0`
+off-switch and remains a flag so `ab_judge` / `easyhard_ab` can still A/B it.
+**Consequence: the "Current baseline" block above was measured with all three
+OFF and no longer describes the default-configuration system.** Re-measure
+before grading anything against it. This is the R327 shape (an ungated change
+shipped ON) entered deliberately and with the risk recorded, not by accident.
 | `GROUNDED_JUDGE_STRICT_GROUNDING` | **OFF** | R327 — ON makes answer-correctness unscorable on the July-7 batch (it has no gold at all) |
 | `NEO4J_AUTO_SEED` | **OFF unless `1`** | R327 — now opt-IN, and even then only seeds a graph proven to have 0 nodes. Hard rule #12 |
 | `BEDROCK_REGION` | **`eu-central-1`** | R328 — Bedrock source Region. Also reads `AWS_DEFAULT_REGION` / `AWS_REGION`. NOT `us-east-1`: an `eu.` profile is unresolvable there |
