@@ -12,8 +12,27 @@ wastes hours.
 
 | repo | role |
 | --- | --- |
-| `antifragileai-regenold-evaluation` (**this one**) | the **re-evaluation surface**: the graded 2026-07-07 code lineage with bugfixes applied. **Deploys nowhere.** |
+| `antifragileai-regenold-evaluation` (**this one**) | the **re-evaluation surface**: the graded 2026-07-07 code lineage with bugfixes applied. **Deploys to its own Railway service** — see below. |
 | `regenold-eu-ai-act-rag` (`D:/Claude Projects/regenold-eu-ai-act-rag`) | **deploys to production.** Runs its own rounds. |
+
+⚠ **CORRECTED 2026-08-13.** This table used to say this repo "Deploys nowhere",
+and the bullet below used to say "nothing merged here is live". **Both were
+wrong**, and the file contradicted itself in three other places while saying so:
+`railway.toml` + `Procfile` are committed here, `R328.1` was a *Railway boot
+fix* landed here, the provider table below says the Bedrock path "is what
+Railway runs", and `railway.toml`'s own R306 note records probing **"the
+deployed endpoint"** live on 2026-08-03. Merging to `main` here reaches a real
+service:
+
+```
+project      e19dc6ef-b463-4a54-9662-4a5085ae00c9
+service      0086ff18-f642-46c8-8127-57c913ca1c53
+environment  2f6298dd-881c-4848-81eb-5017a8a64c32
+```
+
+Treat a merge to `main` in this repo as **shipping**, not as a bench artefact.
+That is exactly the reason `railway.toml [deploy.envs]` being inert matters so
+much (see the gotchas): config here must be a CODE default or it never arrives.
 
 * The July-7 machinery exists **only here** —
   `evals/regenold/_official_batch_20260707.json` (110 questions),
@@ -26,7 +45,11 @@ wastes hours.
   warning. Verified by materialising the merge tree. Sync by **cherry-pick**.
 * **Round numbers collide.** Both repos have an "R318"/"R319" and they are
   different work. Prefix a shared reference with the repo name.
-* Production runs the RAG repo, so **nothing merged here is live**.
+* The RAG repo runs the **production** deployment; this repo runs its **own**
+  Railway service (IDs above). So the two deploy independently — a change here
+  is live on this service and is NOT live on production until cherry-picked,
+  and vice versa. ⚠ The older claim that "nothing merged here is live" was
+  wrong; do not rely on it when judging blast radius.
 
 ## What this repo is
 
