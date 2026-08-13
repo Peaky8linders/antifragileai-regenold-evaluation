@@ -915,3 +915,339 @@ class TestTimeoutClientCaching:
         assert first is second is third
         assert calls == [45.0]
         bc._reset_bedrock_provider_for_tests()
+
+
+# ── R328.2 entitlement fallback ──────────────────────────────────────────────
+
+
+class _StubProvider:
+    """Provider whose ``complete`` is driven by a model_id -> response map."""
+
+    def __init__(self, outcomes: dict[str, str | None]) -> None:
+        self.outcomes = outcomes
+        self.calls: list[str] = []
+
+    def complete(self, req):  # type: ignore[no-untyped-def]
+        from app.llm.bedrock_client import BedrockResponse
+
+        self.calls.append(req.model)
+        err = self.outcomes.get(req.model, "api_access_denied_403")
+        if err is None:
+            return BedrockResponse(text="OK", model=req.model)
+        return BedrockResponse(error=err, model=req.model)
+
+
+@pytest.fixture()
+def _clean_entitlement_cache():
+    import app.llm.bedrock_client as bc
+
+    bc.reset_bedrock_entitlement_cache()
+    yield
+    bc.reset_bedrock_entitlement_cache()
+
+
+class TestEntitlementFallback:
+    def test_is_entitlement_error_matches_real_classifier_output(self) -> None:
+        """The markers must match what ``_classify_client_error`` actually emits.
+
+        A fallback that greps for a string the classifier never produces is the
+        inert-feature trap this whole path exists to avoid.
+        """
+        from app.llm.bedrock_client import is_entitlement_error, is_skippable_error
+
+        # DURABLE per-model denials — safe to remember for the TTL.
+        assert is_entitlement_error("api_access_denied_403")
+        assert is_entitlement_error("api_resource_not_found_404")
+
+        # ValidationException skips the model but is NOT durable: it also means
+        # "this REQUEST is bad", which would be true of every model in the chain.
+        assert is_skippable_error("api_validation_400")
+        assert not is_entitlement_error("api_validation_400")
+
+        # Transient failures must NOT burn the chain at all.
+        for transient in (
+            "api_throttled_429",
+            "botocore_error: ReadTimeoutError",
+            None,
+            "",
+        ):
+            assert not is_entitlement_error(transient)
+            assert not is_skippable_error(transient)
+
+    def test_fallback_target_differs_from_pinned_default(self) -> None:
+        """Regression: the chain head must not equal its own fallback.
+
+        The 2026-08-13 working tree downgraded the default to the fallback
+        target, making the failover a no-op on the exact tier it guarded.
+        """
+        from app.llm.bedrock_client import (
+            BEDROCK_FALLBACK_CHAINS,
+            _resolve_default_model,
+        )
+
+        opus = BEDROCK_FALLBACK_CHAINS["opus"]
+        assert opus[0] == _resolve_default_model()
+        assert len(set(opus)) == len(opus) >= 2
+        assert opus[0] != opus[-1]
+
+    def test_degrades_to_first_invocable_model(
+        self, monkeypatch, _clean_entitlement_cache
+    ) -> None:
+        import app.llm.bedrock_client as bc
+
+        stub = _StubProvider(
+            {
+                "eu.anthropic.claude-opus-4-8": "api_access_denied_403",
+                "eu.anthropic.claude-opus-5": "api_access_denied_403",
+                "eu.anthropic.claude-opus-4-6-v1": None,
+            }
+        )
+        monkeypatch.setattr(bc, "get_bedrock_provider", lambda: stub)
+
+        resp = bc.complete_with_fallback(
+            bc.BedrockRequest(user="hi", model="eu.anthropic.claude-opus-4-8")
+        )
+
+        assert resp.error is None
+        assert resp.model == "eu.anthropic.claude-opus-4-6-v1"
+        assert stub.calls == [
+            "eu.anthropic.claude-opus-4-8",
+            "eu.anthropic.claude-opus-5",
+            "eu.anthropic.claude-opus-4-6-v1",
+        ]
+
+    def test_does_not_burn_chain_on_transient_error(
+        self, monkeypatch, _clean_entitlement_cache
+    ) -> None:
+        import app.llm.bedrock_client as bc
+
+        stub = _StubProvider({"eu.anthropic.claude-opus-4-8": "api_throttled_429"})
+        monkeypatch.setattr(bc, "get_bedrock_provider", lambda: stub)
+
+        resp = bc.complete_with_fallback(
+            bc.BedrockRequest(user="hi", model="eu.anthropic.claude-opus-4-8")
+        )
+
+        assert resp.error == "api_throttled_429"
+        assert stub.calls == ["eu.anthropic.claude-opus-4-8"]
+
+    def test_denied_model_skipped_on_subsequent_calls(
+        self, monkeypatch, _clean_entitlement_cache
+    ) -> None:
+        """The 403 round-trip is paid once per TTL, not once per request."""
+        import app.llm.bedrock_client as bc
+
+        stub = _StubProvider(
+            {
+                "eu.anthropic.claude-opus-4-8": "api_access_denied_403",
+                "eu.anthropic.claude-opus-5": "api_access_denied_403",
+                "eu.anthropic.claude-opus-4-6-v1": None,
+            }
+        )
+        monkeypatch.setattr(bc, "get_bedrock_provider", lambda: stub)
+        req = bc.BedrockRequest(user="hi", model="eu.anthropic.claude-opus-4-8")
+
+        bc.complete_with_fallback(req)
+        stub.calls.clear()
+        resp = bc.complete_with_fallback(req)
+
+        assert resp.error is None
+        assert stub.calls == ["eu.anthropic.claude-opus-4-6-v1"]
+
+    def test_caller_request_is_not_mutated(
+        self, monkeypatch, _clean_entitlement_cache
+    ) -> None:
+        import app.llm.bedrock_client as bc
+
+        stub = _StubProvider(
+            {
+                "eu.anthropic.claude-opus-4-8": "api_access_denied_403",
+                "eu.anthropic.claude-opus-5": None,
+            }
+        )
+        monkeypatch.setattr(bc, "get_bedrock_provider", lambda: stub)
+        req = bc.BedrockRequest(user="hi", model="eu.anthropic.claude-opus-4-8")
+
+        bc.complete_with_fallback(req)
+
+        assert req.model == "eu.anthropic.claude-opus-4-8"
+
+    def test_all_denied_returns_last_real_error(
+        self, monkeypatch, _clean_entitlement_cache
+    ) -> None:
+        import app.llm.bedrock_client as bc
+
+        stub = _StubProvider({})  # everything 403s
+        monkeypatch.setattr(bc, "get_bedrock_provider", lambda: stub)
+
+        resp = bc.complete_with_fallback(
+            bc.BedrockRequest(user="hi", model="eu.anthropic.claude-opus-4-8")
+        )
+
+        assert resp.error == "api_access_denied_403"
+        assert len(stub.calls) == 3
+
+    def test_unknown_family_has_no_invented_substitute(self) -> None:
+        from app.llm.bedrock_client import fallback_chain_for
+
+        assert fallback_chain_for("eu.meta.llama-3-70b") == ()
+        assert fallback_chain_for("") == ()
+        # A model in a known family but absent from its chain has an unknown
+        # rank, so we cannot say what "degrading" means — no substitute.
+        assert fallback_chain_for("eu.anthropic.claude-sonnet-9-v9:9") == ()
+        # The chain head degrades to everything below it, and only below it.
+        assert fallback_chain_for("eu.anthropic.claude-sonnet-5") == (
+            "eu.anthropic.claude-sonnet-4-6",
+            "eu.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        )
+
+    def test_ttl_expiry_lets_a_reminted_key_heal(
+        self, monkeypatch, _clean_entitlement_cache
+    ) -> None:
+        """A re-minted key must heal without a redeploy.
+
+        Drives ``complete_with_fallback`` end-to-end rather than asserting
+        ``_is_denied`` with ``_is_denied`` — the earlier version of this test
+        proved nothing about healing, and monkeypatched stdlib
+        ``time.monotonic`` with a lambda that raised KeyError once the TTL
+        branch deleted the key it read.
+        """
+        import app.llm.bedrock_client as bc
+
+        pinned = "eu.anthropic.claude-opus-4-8"
+        state = {"denied": True}
+
+        class _Healing:
+            def __init__(self) -> None:
+                self.calls: list[str] = []
+
+            def complete(self, req):
+                self.calls.append(req.model)
+                if req.model == pinned and state["denied"]:
+                    return bc.BedrockResponse(
+                        error="api_access_denied_403", model=req.model
+                    )
+                return bc.BedrockResponse(text="OK", model=req.model)
+
+        stub = _Healing()
+        monkeypatch.setattr(bc, "get_bedrock_provider", lambda: stub)
+        req = bc.BedrockRequest(user="hi", model=pinned)
+
+        # 1) pinned tier denied -> chain degrades, denial remembered
+        assert bc.complete_with_fallback(req).model != pinned
+
+        # 2) key is re-minted, but the memo still hides the pinned tier
+        state["denied"] = False
+        stub.calls.clear()
+        assert bc.complete_with_fallback(req).model != pinned
+        assert pinned not in stub.calls, "cached denial should skip the pin"
+
+        # 3) TTL lapses -> the pinned tier is re-probed and now serves
+        clock = [bc.time.monotonic() + bc._DENIED_TTL_SECONDS + 1]
+        monkeypatch.setattr(bc.time, "monotonic", lambda: clock[0])
+        stub.calls.clear()
+
+        assert bc.complete_with_fallback(req).model == pinned
+        assert stub.calls[0] == pinned
+
+    # ── R328.2 hardening (found by the outside voice) ──────────────────────
+
+    def test_non_head_pin_never_escalates_upward(self) -> None:
+        """Pinning a cheaper model must not silently promote to a dearer one."""
+        from app.llm.bedrock_client import fallback_chain_for
+
+        chain = fallback_chain_for("eu.anthropic.claude-sonnet-4-6")
+
+        assert "eu.anthropic.claude-sonnet-5" not in chain
+        assert chain == ("eu.anthropic.claude-sonnet-4-5-20250929-v1:0",)
+
+    def test_chain_tail_has_nowhere_to_degrade(self) -> None:
+        from app.llm.bedrock_client import fallback_chain_for
+
+        assert fallback_chain_for("eu.anthropic.claude-opus-4-6-v1") == ()
+
+    def test_code_bug_is_not_mistaken_for_an_entitlement_error(self) -> None:
+        """The blanket ``except Exception`` formats free-form type names.
+
+        ``ParamValidationError`` contains the substring "validation"; treating
+        it as an entitlement failure would burn the whole chain on a code bug.
+        """
+        from app.llm.bedrock_client import is_entitlement_error, is_skippable_error
+
+        for err in (
+            "unexpected_error: ParamValidationError: bad param",
+            "unexpected_error: ValidationError: nope",
+        ):
+            assert not is_entitlement_error(err)
+            assert not is_skippable_error(err)
+
+    def test_validation_advances_chain_but_is_not_remembered(
+        self, monkeypatch, _clean_entitlement_cache
+    ) -> None:
+        """One oversized prompt must not evict the working model for 15 min.
+
+        ``ValidationException`` covers both "profile unresolvable here" (per
+        model) and "input too long" (per request), so it may skip but must
+        never be cached.
+        """
+        import app.llm.bedrock_client as bc
+
+        stub = _StubProvider({
+            "eu.anthropic.claude-opus-4-8": "api_validation_400",
+            "eu.anthropic.claude-opus-5": "api_validation_400",
+            "eu.anthropic.claude-opus-4-6-v1": "api_validation_400",
+        })
+        monkeypatch.setattr(bc, "get_bedrock_provider", lambda: stub)
+        req = bc.BedrockRequest(user="x" * 99, model="eu.anthropic.claude-opus-4-8")
+
+        bc.complete_with_fallback(req)
+
+        assert bc._DENIED_MODELS == {}, "a per-request error was cached per-model"
+
+    def test_all_denied_reprobes_the_tail_not_the_dead_head(
+        self, monkeypatch, _clean_entitlement_cache
+    ) -> None:
+        """The head is 403 by construction; re-probing it burns the round-trip."""
+        import app.llm.bedrock_client as bc
+
+        for m in (
+            "eu.anthropic.claude-opus-4-8",
+            "eu.anthropic.claude-opus-5",
+            "eu.anthropic.claude-opus-4-6-v1",
+        ):
+            bc._note_denied(m)
+
+        stub = _StubProvider({"eu.anthropic.claude-opus-4-6-v1": None})
+        monkeypatch.setattr(bc, "get_bedrock_provider", lambda: stub)
+
+        resp = bc.complete_with_fallback(
+            bc.BedrockRequest(user="hi", model="eu.anthropic.claude-opus-4-8")
+        )
+
+        assert stub.calls == ["eu.anthropic.claude-opus-4-6-v1"]
+        assert resp.error is None
+
+    def test_reasoning_content_populates_thinking(self) -> None:
+        from app.llm.bedrock_client import _parse_converse_response
+
+        resp = _parse_converse_response(
+            {
+                "output": {
+                    "message": {
+                        "content": [
+                            {"reasoningContent": {"reasoningText": {"text": "step 1"}}},
+                            {"text": "final answer"},
+                        ]
+                    }
+                },
+                "usage": {"inputTokens": 3, "outputTokens": 4},
+                "stopReason": "end_turn",
+            },
+            "eu.anthropic.claude-opus-4-8",
+            12,
+        )
+
+        assert resp.text == "final answer"
+        assert resp.thinking == "step 1"
+        assert resp.prompt_tokens == 3
+        assert resp.completion_tokens == 4

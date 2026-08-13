@@ -1542,6 +1542,18 @@ def _engine_cache_key(
             # cached engine output to the branch arm — the exact R263.2 bug.
             "REGENOLD_GRAPH_TIMEOUT_MS",
             "REGENOLD_GRAPH_BREAKER",
+            "REGENOLD_BEDROCK_MODEL",
+            "REGENOLD_BEDROCK_STAGE1_MODEL",
+            "REGENOLD_BEDROCK_STAGE2_MODEL",
+            "REGENOLD_BEDROCK_COMPLEX_MODEL",
+            "BEDROCK_DEFAULT_MODEL",
+            "BEDROCK_REGION",
+            # R328.2 — this gates whether Stage-2 LANDS AT ALL (a rejected
+            # verdict falls back to deterministic Stage-1), so it changes both
+            # the answer and the references. It was missing from this list while
+            # governing two provider paths, which makes an OFF<->ON A/B of it
+            # serve arm A's cached engine output to arm B — R263.2 verbatim.
+            "REGENOLD_STAGE2_VERDICT_GUARD",
             # R295 — the fusion slack decides whether 2-hop refs reach the
             # candidate list at all, so it changes engine output directly.
             "REGENOLD_GRAPH_FUSE_SLACK",

@@ -42,12 +42,20 @@ if hasattr(sys.stdout, "reconfigure"):
 load_dotenv()
 
 # ── Requested configuration ──────────────────────────────────────────────────
-REGION = "eu-central-1"
-RAG_MODEL = "eu.anthropic.claude-opus-4-8"
-COMPLEX_MODEL = "eu.anthropic.claude-opus-5"
-JUDGE_MODEL = "eu.anthropic.claude-sonnet-5"
+# IMPORTED, never re-declared. A local copy of these constants is how the
+# preflight ends up certifying a tier production does not call — it passed on
+# opus-4-6 while the engine routed complex questions to opus-5.
+from app.engines._graph_rag_impl import (  # noqa: E402
+    BEDROCK_COMPLEX_MODEL as COMPLEX_MODEL,
+)
+from app.engines._graph_rag_impl import (  # noqa: E402
+    BEDROCK_RAG_MODEL as RAG_MODEL,
+)
 
-# Newest tier this account was measured to be ENTITLED to (2026-08-11). Used
+REGION = "eu-central-1"
+JUDGE_MODEL = os.getenv("REGENOLD_BEDROCK_JUDGE_MODEL", "").strip() or "eu.anthropic.claude-sonnet-5"
+
+# Newest tier this account was measured to be ENTITLED to (2026-08-13). Used
 # only with --fallback, to prove the pipeline while entitlement is pending.
 RAG_FALLBACK = "eu.anthropic.claude-opus-4-6-v1"
 COMPLEX_FALLBACK = "eu.anthropic.claude-opus-4-6-v1"
