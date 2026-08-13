@@ -526,9 +526,9 @@ Defaults are the CODE default, re-measured 2026-08-09.
 | `P2P_GRAPH_RAG_ENABLE_STAGE2` | **ON** | Stage-2 polish master gate |
 | `REGENOLD_ANSWER_NO_CAP` | **ON** | removes sentence + char caps live (hard rule #2) |
 | `REGENOLD_KG_CONTEXT` | **ON** | graph context into Stage-2 |
-| `REGENOLD_KG_MAX_CHARS` | 16000 | total graph-context ceiling |
-| `REGENOLD_KG_MAX_UNITS` | 24 (env ceiling 70) | units per provision |
-| `REGENOLD_KG_UNIT_CHARS` | 900 | per-unit budget; `_UNIT_HARD_CEILING` 2600 for enumerations |
+| `REGENOLD_KG_MAX_CHARS` | **48000** | total graph-context ceiling. R328.4 — was 16000 |
+| `REGENOLD_KG_MAX_UNITS` | **70** | units per provision. R328.4 — was 24, which rendered Article 3 as 24 of its 68 definitions with 3(4)-3(8) (the five OPERATOR ROLE definitions) absent and unmarked |
+| `REGENOLD_KG_UNIT_CHARS` | **2000** | per-unit budget; `_UNIT_HARD_CEILING` **9000** for enumerations. R328.4 — were 900 / 2600 |
 | `REGENOLD_GRAPH_BACKEND` | `neo4j` | `embedded` = in-process SQLite, no external service |
 | `REGENOLD_GRAPH_TIMEOUT_MS` | **750** | one budget + breaker for every graph read |
 | `REGENOLD_GROUNDING_TEXT` | ON | verbatim paragraphs of cited refs into Stage-2 |
@@ -541,8 +541,11 @@ Defaults are the CODE default, re-measured 2026-08-09.
 | `REGENOLD_VECTOR_MIN_SIM` | 0.35 | R326 — similarity floor for vector recall hits |
 | `REGENOLD_GRAPH_SEMANTIC_LAYERS` | **ON** | R327.1 — reads the other 5 vector indexes as non-citable Stage-2 context. **GATED ON**: constrained-only measured citation faithfulness 0.900→**0.960** at baseline reference precision (micro 0.611→0.614, wrong refs 51→49). Off-switch `=0` |
 | `REGENOLD_SEMANTIC_GLOSS` | **OFF** | R327.1 — the OPEN-DOMAIN half (definitions + recitals). Running it too cost micro precision 0.614→0.583 for NO extra gain, so it is off. `=1` restores the both-halves arm |
-| `REGENOLD_KG_SEMANTIC_MAX_CHARS` | 26000 | R327 — total KG ceiling used ONLY when the semantic layers contribute. See the budget note below |
-| `REGENOLD_SEMANTIC_UNITS` / `_UNITS_PER_PROVISION` | 6 / 2 | R327 — focused sub-provision block size, and the per-provision cap |
+| `REGENOLD_KG_SEMANTIC_MAX_CHARS` | **80000** | R327 — total KG ceiling used ONLY when the semantic layers contribute. R328.4 — was 26000, sized at 5 refs; measured 98.1% full at 8 refs and 100% at 12, dropping whole sections |
+| `REGENOLD_SEMANTIC_UNITS` / `_UNITS_PER_PROVISION` | **16** / 2 | R327 — focused sub-provision block size, and the per-provision cap. R328.4 — was 6, so a global `LIMIT 6` let at most 3 of 8 cited provisions receive a sub-provision, defeating the per-provision cap directly above it |
+| `REGENOLD_KG_MAX_REFS` | **12** | R328.4 — was 8; scenarios carry a mean 9.88 gold refs. ⚠ Four call sites clamped it to 10, so a raised default read as 10 — a clamp below its own default silently coerces the default down |
+| `REGENOLD_GROUNDING_MAX_REFS` / `_REF_CHARS` | **12** / **3000** | R328.4 — were 8 / 1200; the 9th cited provision got no verbatim text at all while the prompt demanded exact statutory terminology |
+| `REGENOLD_JUDGE_MAX_TOKENS` | **1600** | R328.4 — ONE judge output budget for every transport. Was 400 hard-coded on wrapper/Anthropic, 800 Groq, 1000 Gemini, env-overridable on Bedrock alone; a truncated judge reply becomes `unbalanced_json`, which is non-retryable, and `pass_rate` divides by total rows — a SILENT ZERO |
 | `REGENOLD_SEMANTIC_DEFINITIONS` / `_RECITALS` | 3 / 3 | R327 — per-layer quotas. They must be SEPARATE: recitals score ~0.70 vs definitions ~0.62, so a shared LIMIT returned **zero** definitions |
 | `REGENOLD_KG_MAX_INFLIGHT` | 4 | R327 — graph worker slots. Was 2 with a NON-BLOCKING acquire, which hard-dropped every concurrent read past the second |
 | `REGENOLD_MINIMAL_REF_BUDGET` | **OFF** | R327 — collapses every scenario budget to 5. This is the top-N clamp family; awaits `easyhard_ab` + `gold_dropped` |

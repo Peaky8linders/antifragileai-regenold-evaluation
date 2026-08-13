@@ -152,13 +152,37 @@ class TestOrderingFix:
         monkeypatch.setenv("REGENOLD_KG_MAX_UNITS", "68")
         assert kg._int_env("REGENOLD_KG_MAX_UNITS", 24, 1, 70) == 68
 
-    def test_default_unit_cap_is_unchanged(self, monkeypatch):
-        """The DEFAULT must not move: raising it adds Stage-2 prompt budget on
-        Answer-Conciseness (the one rubric axis with zero headroom) with no A/B.
-        The ordering fix already recovers what mattered."""
+    def test_default_unit_cap_covers_the_longest_provision(self, monkeypatch):
+        """R328.4 — the default MOVED, 24 -> 70, on an explicit operator call.
+
+        This test previously pinned 24 with the rationale: "The DEFAULT must not
+        move: raising it adds Stage-2 prompt budget on Answer-Conciseness (the
+        one rubric axis with zero headroom) with no A/B." That reasoning is
+        still live and is NOT retracted — it is why the pin existed, and why the
+        change is recorded here rather than quietly deleted.
+
+        What overrode it: an operator directive (2026-08-13) that no stage may
+        receive truncated context. At 24 the graph rendered Article 3 as 24 of
+        its 68 definitions under a heading reading "PROVISION STRUCTURE" — with
+        3(4)-3(8) absent, i.e. deployer / authorised representative / importer /
+        distributor / operator, the five role definitions the role-obligation
+        questions turn on. Silently. 70 covers the longest provision.
+
+        The conciseness cost this pin was protecting is REAL and UNMEASURED at
+        the new default. It needs an `ab_judge` run; `_DEFAULT_MAX_UNITS = 24`
+        restores the old behaviour exactly if that run goes against us.
+        """
         monkeypatch.delenv("REGENOLD_KG_MAX_UNITS", raising=False)
-        assert kg._DEFAULT_MAX_UNITS == 24
-        assert kg._int_env("REGENOLD_KG_MAX_UNITS", kg._DEFAULT_MAX_UNITS, 1, 70) == 24
+        assert kg._DEFAULT_MAX_UNITS == 70
+        assert kg._int_env("REGENOLD_KG_MAX_UNITS", kg._DEFAULT_MAX_UNITS, 1, 70) == 70
+
+    def test_article_3_definitions_are_not_silently_cut(self):
+        """The concrete regression the raised cap fixes.
+
+        68 definitions must not render as 24 with no marker — a reader (or the
+        model) cannot tell a complete list from a truncated one.
+        """
+        assert kg._DEFAULT_MAX_UNITS >= 68
 
 
 # ── 2. Budget + breaker ──────────────────────────────────────────────────────

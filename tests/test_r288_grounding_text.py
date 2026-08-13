@@ -134,10 +134,25 @@ class TestFailSoft:
 
 class TestBudget:
     def test_env_override_is_clamped(self, monkeypatch):
+        # R328.4 — upper clamp 4000 -> 12000. The clamp still EXISTS (a runaway
+        # value must not blow the Stage-2 prompt), it just no longer sits below
+        # a budget the operator may legitimately want: the directive is that no
+        # stage receives truncated context, and 4000 chars is roughly one long
+        # article of verbatim text.
         monkeypatch.setenv("REGENOLD_GROUNDING_REF_CHARS", "999999")
-        assert G._grounding_ref_budget() <= 4000
+        assert G._grounding_ref_budget() <= 12000
         monkeypatch.setenv("REGENOLD_GROUNDING_REF_CHARS", "1")
         assert G._grounding_ref_budget() >= 200
+
+    def test_clamp_is_never_below_the_default(self):
+        """A clamp under its own default silently coerces the default down.
+
+        That is exactly how REGENOLD_KG_MAX_REFS shipped: default raised to 12
+        while four call sites still clamped to 10, so the new default read as
+        10 everywhere and the change looked inert.
+        """
+        monkey_free_default = G._GROUNDING_REF_CHARS
+        assert monkey_free_default <= 12000
 
     def test_garbage_env_falls_back_to_default(self, monkeypatch):
         monkeypatch.setenv("REGENOLD_GROUNDING_REF_CHARS", "not-a-number")
