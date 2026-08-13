@@ -512,7 +512,7 @@ def _bedrock_complete_for_graph_rag(
     try:
         from app.llm.bedrock_client import (
             BedrockRequest,
-            get_bedrock_provider,
+            complete_with_fallback,
             is_bedrock_provider_enabled,
             resolve_bedrock_model,
         )
@@ -534,6 +534,10 @@ def _bedrock_complete_for_graph_rag(
     #   judge (evals/judge/runner)   — eu.anthropic.claude-sonnet-5
     # Defaults are CODE defaults on purpose: railway.toml [deploy.envs] has
     # never applied, so anything that must survive a Railway deploy lives here.
+    #
+    # R328.2: those three are 403 on the current key (measured 2026-08-13), so
+    # ``complete_with_fallback`` degrades within the family per call. The pins
+    # stay put — re-minting the key restores them with no code change.
     is_stage2 = "stage 2" in (stage_name or "").lower()
     default_model = os.getenv(
         "REGENOLD_BEDROCK_MODEL", BEDROCK_RAG_MODEL
@@ -552,21 +556,60 @@ def _bedrock_complete_for_graph_rag(
     model_id = resolve_bedrock_model(model)
 
     try:
-        provider = get_bedrock_provider()
-        resp = provider.complete(
-            BedrockRequest(
-                system=system,
-                user=user,
-                model=model_id,
-                max_tokens=max_tokens or 1024,
-                temperature=temperature,
-            )
+        req = BedrockRequest(
+            system=system,
+            user=user,
+            model=model_id,
+            max_tokens=max_tokens or 1024,
+            temperature=temperature,
         )
+        # Ordered entitlement failover lives in the client so the RAG path and
+        # the judge path share ONE definition of the chain.
+        resp = complete_with_fallback(req)
+
         if resp.error or not resp.text:
-            logger.warning("graph_rag.bedrock_call_failed: %s", resp.error)
+            logger.warning(
+                "graph_rag.bedrock_call_failed: requested=%s error=%s",
+                model_id, resp.error,
+            )
             return None
-        if _looks_structurally_truncated(resp.text):
-            logger.warning("graph_rag.bedrock_truncated_structural: falling back")
+
+        # Record WHICH model answered, into the REASONING TRACE — not just the
+        # log. `run_official_batch._provenance` scrapes `stage2_model=` out of
+        # the trace notes and aggregates `stage2_models` precisely to catch a
+        # silently degraded Stage-2 provider; the wrapper and Anthropic paths
+        # both emit it. Emitting only a log line here would leave the durable
+        # sidecar asserting the PINNED model for a row the chain generated one
+        # tier down — the instrument trap, in the artifact that outlives the run.
+        _served = resp.model or model_id
+        try:
+            from app.integrations.regenold.reasoning_trace import record_note
+
+            record_note(f"stage2_model={_served} complex={complex_question}")
+            if _served != model_id:
+                record_note(
+                    f"bedrock_fallback requested={model_id} served_by={_served}"
+                )
+        except Exception:
+            pass
+
+        if _served != model_id:
+            logger.warning(
+                "graph_rag.bedrock_served_by_fallback: %s requested=%s served_by=%s",
+                stage_name, model_id, _served,
+            )
+
+        _verdict_guard = (
+            os.getenv("REGENOLD_STAGE2_VERDICT_GUARD", "1").strip().lower()
+            in ("1", "true", "yes", "on")
+        )
+        if _looks_structurally_truncated(resp.text) or (
+            _verdict_guard and _looks_incomplete_verdict(resp.text)
+        ):
+            logger.warning(
+                "graph_rag.bedrock_truncated_structural: falling back (model=%s)",
+                resp.model or model_id,
+            )
             return None
         return resp.text
     except Exception as exc:

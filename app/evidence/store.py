@@ -178,6 +178,12 @@ class InMemoryAuditStore:
     def __init__(self, *, max_records: int = _DEFAULT_MAX_RECORDS) -> None:
         self._records: deque[EvidenceEntry] = deque(maxlen=max_records)
         self._lock = threading.Lock()
+        self._evicted_tip: str | None = None
+        """``data_hash`` of the most recently evicted row, or ``None`` while the
+        genesis entry is still retained. This is the anchor ``verify_chain``
+        needs once the deque starts dropping history — without it, verification
+        must trust the oldest surviving row's own claim about its predecessor,
+        which a truncation attack satisfies trivially."""
 
     # ── Public API ───────────────────────────────────────────────────
 
@@ -229,6 +235,13 @@ class InMemoryAuditStore:
                 created_by=created_by,
                 tenant_id=tenant_id,
             )
+            # Remember the hash of the row we are ABOUT to evict. That single
+            # value is what lets verify_chain keep detecting a deleted prefix:
+            # seeding verification from rows[0].previous_hash alone would make
+            # arbitrary history truncation verify clean, because a forged head
+            # vouches for itself.
+            if self._records.maxlen is not None and len(self._records) == self._records.maxlen:
+                self._evicted_tip = self._records[0].data_hash
             self._records.append(entry)
 
         logger.debug(
@@ -300,7 +313,11 @@ class InMemoryAuditStore:
         the first broken entry. Empty chains are trivially valid.
         """
         with self._lock:
+            # Snapshot the rows AND the eviction anchor together — read apart,
+            # a concurrent record() that evicts between them would pair the new
+            # tip with the old rows and fail a healthy chain.
             rows = list(self._records)
+            evicted_tip = self._evicted_tip
 
         if not rows:
             return ChainStatus(
@@ -310,7 +327,13 @@ class InMemoryAuditStore:
                 message="Empty chain — nothing to verify",
             )
 
-        prev_hash = ""
+        # Seed from what we INDEPENDENTLY know preceded rows[0]:
+        #   * nothing evicted yet -> "" (the genesis sentinel), as before;
+        #   * rows evicted        -> the remembered hash of the last evicted row.
+        # Seeding from ``rows[0].previous_hash`` instead would let the oldest
+        # surviving row vouch for itself, so deleting a prefix would verify
+        # clean and be indistinguishable from natural eviction.
+        prev_hash = evicted_tip if evicted_tip is not None else ""
         for idx, row in enumerate(rows):
             if row.previous_hash != prev_hash:
                 return ChainStatus(

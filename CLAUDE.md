@@ -528,9 +528,10 @@ Defaults are the CODE default, re-measured 2026-08-09.
 | `GROUNDED_JUDGE_STRICT_GROUNDING` | **OFF** | R327 — ON makes answer-correctness unscorable on the July-7 batch (it has no gold at all) |
 | `NEO4J_AUTO_SEED` | **OFF unless `1`** | R327 — now opt-IN, and even then only seeds a graph proven to have 0 nodes. Hard rule #12 |
 | `BEDROCK_REGION` | **`eu-central-1`** | R328 — Bedrock source Region. Also reads `AWS_DEFAULT_REGION` / `AWS_REGION`. NOT `us-east-1`: an `eu.` profile is unresolvable there |
-| `REGENOLD_BEDROCK_MODEL` | `eu.anthropic.claude-opus-4-8` | R328 — Stage-1 + Stage-2 main RAG tier |
-| `REGENOLD_BEDROCK_COMPLEX_MODEL` | `eu.anthropic.claude-opus-5` | R328 — the `complex_question` tier |
-| `REGENOLD_BEDROCK_JUDGE_MODEL` | `eu.anthropic.claude-sonnet-5` | R328 — judge. Precedence: this env > the CLI `--model` flag > the default |
+| `REGENOLD_BEDROCK_MODEL` | `eu.anthropic.claude-opus-4-8` | R328 — Stage-1 + Stage-2 main RAG tier. 403 on the current key; R328.2 degrades to `opus-4-6-v1` |
+| `REGENOLD_BEDROCK_COMPLEX_MODEL` | `eu.anthropic.claude-opus-5` | R328 — the `complex_question` tier. Also 403; same chain |
+| `REGENOLD_BEDROCK_JUDGE_MODEL` | `eu.anthropic.claude-sonnet-5` | R328 — judge. Precedence: this env > the CLI `--model` flag > the default. Also 403; degrades to `sonnet-4-6` |
+| `REGENOLD_STAGE2_VERDICT_GUARD` | **ON** | Rejects a Stage-2 answer that stops mid-verdict, on BOTH the wrapper and (since 2026-08-13) the Bedrock path. `=0` disables |
 | `REGENOLD_BEDROCK_JUDGE_MAX_TOKENS` | **1600** | R328 — NOT the wrapper's 400. Bedrock honours the system prompt (the wrapper drops it), so the judge reasons in prose before its JSON; at 400 it truncates and the axis returns `no_json` — a SILENTLY UNSCORED axis, not a visible failure |
 
 Stage-2 models (`app/config.py`): parse `claude-sonnet-5`, Stage-2
@@ -590,6 +591,98 @@ never applied — hard-won; see the gotchas):
 `REGENOLD_BEDROCK_MODEL` = `eu.anthropic.claude-opus-4-8` (Stage-1 + Stage-2),
 `REGENOLD_BEDROCK_COMPLEX_MODEL` = `eu.anthropic.claude-opus-5`,
 `REGENOLD_BEDROCK_JUDGE_MODEL` = `eu.anthropic.claude-sonnet-5`.
+
+### R328.2 — the pins are the ASPIRATION; a fallback chain is what ships
+
+⚠ **Measured live 2026-08-13 with the current `ABSK…` key, ALL THREE pinned
+targets are `AccessDeniedException`** — not just `opus-4-8` as R328 recorded:
+
+| profile | invoke |
+| --- | --- |
+| `eu.anthropic.claude-opus-4-8` | **DENY 403** |
+| `eu.anthropic.claude-opus-5` | **DENY 403** |
+| `eu.anthropic.claude-sonnet-5` | **DENY 403** |
+| `eu.anthropic.claude-opus-4-6-v1` | OK |
+| `eu.anthropic.claude-sonnet-4-6` | OK |
+| `eu.anthropic.claude-sonnet-4-5-20250929-v1:0` | OK |
+
+Per the key-vintage note above this is a **credential** boundary, not an account
+block, so the pins stay put and `complete_with_fallback`
+(`app/llm/bedrock_client.py`) degrades **within the family** per call:
+`BEDROCK_FALLBACK_CHAINS` = opus-4-8 → opus-5 → opus-4-6-v1, and sonnet-5 →
+sonnet-4-6 → sonnet-4-5. Re-mint the key and the pinned tier resumes with **zero
+code change**; leave it and every request still succeeds one tier down.
+
+Both the RAG path (`_bedrock_complete_for_graph_rag`) and the judge path
+(`_call_judge_bedrock`) call the SAME function — one concept, one definition.
+
+* **It degrades, never escalates.** `fallback_chain_for` returns the chain
+  SUFFIX below the requested model, not the whole chain. Returning the whole
+  chain meant pinning `sonnet-4-6` retried on `sonnet-5` — silently promoting
+  to a costlier tier the operator specifically did not choose. A model in a
+  known family but absent from its chain has unknown rank and gets **no**
+  fallback; we never guess a substitute we have not verified.
+* Failover advances **only** on an entitlement error. Two classes, and the
+  difference matters:
+  * `api_access_denied` / `api_resource_not_found` — **durable per-model**;
+    skipped AND remembered.
+  * `api_validation` — **skipped but NEVER remembered.** `ValidationException`
+    is overloaded: it covers "profile unresolvable in this Region" (per-model)
+    *and* "input too long / bad maxTokens" (per-request). Caching the
+    per-request case as a model denial let ONE oversized prompt evict the only
+    invocable model for the whole TTL — a single long row poisoning the rest of
+    a judge batch.
+  * A throttle or timeout returns immediately: the next model would hit the
+    same wall, so burning the chain turns one blip into N failed calls.
+* ⚠ Markers are anchored on the `api_` prefix that `_classify_client_error`
+  emits, NOT bare substrings. The blanket `except Exception` formats errors as
+  `unexpected_error: {TypeName}: {msg}`, so a bare `"validation"` match made a
+  botocore `ParamValidationError` — a *code bug*, identical on every model —
+  read as an entitlement failure and burn the chain.
+* When the whole chain is cached-denied it re-probes the **tail**, not the
+  head: the head is 403 by construction, so re-probing it just burns the
+  round-trip the cache exists to avoid.
+* A denied model is remembered for **15 min** (`_DENIED_TTL_SECONDS`), so the
+  403 round-trip is paid once per TTL, not once per request. Measured live:
+  first call 7,485 ms, second **2,297 ms**. The TTL is bounded on purpose — an
+  unbounded memo would pin the degraded tier until redeploy.
+* Watch `bedrock_entitlement_fallback_used primary=… served_by=…` in the logs.
+  If that line is absent, the pinned tier is working again.
+
+⚠ **Do NOT "fix" the 403 by lowering the defaults.** The 2026-08-13 working tree
+did exactly that *and* added a fallback pointing at the new default, so
+`fallback_id == model_id` and the failover was unreachable on the tier it
+guarded — the inert-feature trap, in the one place it costs production. The
+regression test is `test_fallback_target_differs_from_pinned_default`.
+
+### ⚠ A silent model swap is a MEASUREMENT bug before it is a cost bug
+
+The chain changes which model answers. In a repo whose product IS the
+measurement, that must reach the **durable artifact**, not just a log line —
+nothing in the eval pipeline reads logs.
+
+* **Stage-2 / RAG.** `_bedrock_complete_for_graph_rag` records
+  `stage2_model=<served>` into the reasoning trace, the same note the wrapper
+  and Anthropic paths emit, because `run_official_batch._provenance` scrapes
+  exactly that string and aggregates `stage2_models` *specifically* to catch a
+  silently degraded Stage-2 provider. It also records
+  `bedrock_fallback requested=… served_by=…` when the chain moved. Without
+  this the sidecar asserted the PINNED model for every row.
+* **Judge.** `_call_judge_bedrock` returns `_judge_model_served`;
+  `evals/judge/grounded.py` aggregates it into `judge_model_served` +
+  `judge_model_comparable` and prints a loud `judge model DEGRADED` line.
+  `judge_model` alone records what was REQUESTED — on a degraded run that is an
+  *active false attribution*, which is worse than no record.
+
+⚠ **The July-7 baseline is graded by `sonnet-5` via the wrapper.** A Bedrock
+re-run degrades the grader to `sonnet-4-6` — which is also `_DEFAULT_JUDGE_MODEL`,
+so the two configurations are trivially confusable. **Check
+`judge_model_comparable` before grading anything against the baseline block.**
+
+⚠ **A model A/B over `REGENOLD_BEDROCK_MODEL` is currently INERT** while the
+pins are 403: distinct cache keys, distinct arms, but the chain serves
+`opus-4-6-v1` for all of them. Read `stage2_models` in the aggregate before
+believing any model-tier comparison.
 
 The wrapper lives at `D:\Claude Projects\claude-code-openai-wrapper` (not this
 repo) and bills the flat Max subscription. Evals MUST use it, not SDK-direct.

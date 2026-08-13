@@ -40,7 +40,7 @@ import os
 import threading
 import time
 from collections.abc import AsyncGenerator, Iterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 import boto3
@@ -89,8 +89,19 @@ class BedrockResponse:
     output_tokens: int = 0
     elapsed_ms: int = 0
     finish_reason: str | None = None
+    thinking: str | None = None
     tool_use: list[dict[str, Any]] = field(default_factory=list)
     """Parsed tool use blocks from the Converse response, if any."""
+
+    @property
+    def prompt_tokens(self) -> int:
+        """Alias for input_tokens (OpenAIWrapperResponse parity)."""
+        return self.input_tokens
+
+    @property
+    def completion_tokens(self) -> int:
+        """Alias for output_tokens (OpenAIWrapperResponse parity)."""
+        return self.output_tokens
 
 
 # ── Credential resolution ────────────────────────────────────────────────────
@@ -505,29 +516,42 @@ def _parse_converse_response(
     response: dict[str, Any], model_id: str, elapsed_ms: int
 ) -> BedrockResponse:
     """Parse a Converse API response into a ``BedrockResponse``."""
-    output = response.get("output", {})
-    message = output.get("message", {})
-    content_blocks = message.get("content", [])
+    output = response.get("output") or {}
+    message = output.get("message") or {}
+    content_blocks = message.get("content") or []
 
     text_parts: list[str] = []
     tool_use_blocks: list[dict[str, Any]] = []
+    thinking_parts: list[str] = []
 
     for block in content_blocks:
-        if "text" in block:
-            text_parts.append(block["text"])
-        elif "toolUse" in block:
-            tool_use_blocks.append(block["toolUse"])
+        if isinstance(block, dict):
+            if "text" in block and block["text"] is not None:
+                text_parts.append(str(block["text"]))
+            elif "toolUse" in block and block["toolUse"] is not None:
+                tool_use_blocks.append(block["toolUse"])
+            elif block.get("reasoningContent"):
+                # Extended-thinking blocks arrive as
+                # {"reasoningContent": {"reasoningText": {"text": ...}}}.
+                # Capture them so ``thinking`` is a real field rather than a
+                # declared-but-never-populated one.
+                reasoning = block["reasoningContent"]
+                if isinstance(reasoning, dict):
+                    rt = reasoning.get("reasoningText")
+                    if isinstance(rt, dict) and rt.get("text"):
+                        thinking_parts.append(str(rt["text"]))
 
-    usage = response.get("usage", {})
+    usage = response.get("usage") or {}
     stop_reason = response.get("stopReason", "")
 
     return BedrockResponse(
         text="\n".join(text_parts),
         model=model_id,
-        input_tokens=usage.get("inputTokens", 0),
-        output_tokens=usage.get("outputTokens", 0),
+        input_tokens=usage.get("inputTokens", 0) if isinstance(usage, dict) else 0,
+        output_tokens=usage.get("outputTokens", 0) if isinstance(usage, dict) else 0,
         elapsed_ms=elapsed_ms,
         finish_reason=stop_reason or None,
+        thinking="\n".join(thinking_parts) or None,
         tool_use=tool_use_blocks,
     )
 
@@ -590,6 +614,20 @@ class BedrockProvider:
             error_str = f"botocore_error: {type(exc).__name__}"
             logger.error(
                 "bedrock_converse_botocore_error model=%s error=%s elapsed_ms=%d",
+                model_id,
+                error_str,
+                elapsed_ms,
+            )
+            return BedrockResponse(
+                error=error_str,
+                model=model_id,
+                elapsed_ms=elapsed_ms,
+            )
+        except Exception as exc:
+            elapsed_ms = int((time.monotonic() - t0) * 1000)
+            error_str = f"unexpected_error: {type(exc).__name__}: {exc}"
+            logger.error(
+                "bedrock_converse_unexpected_error model=%s error=%s elapsed_ms=%d",
                 model_id,
                 error_str,
                 elapsed_ms,
@@ -672,16 +710,14 @@ class BedrockProvider:
             return _get_runtime_client()
 
         key = float(timeout_seconds)
-        client = _TIMEOUT_CLIENTS.get(key)
-        if client is None:
-            with _TIMEOUT_CLIENT_LOCK:
-                client = _TIMEOUT_CLIENTS.get(key)
-                if client is None:
-                    client = _create_client_with_auth(
-                        "bedrock-runtime", key, _DEFAULT_MAX_POOL
-                    )
-                    _TIMEOUT_CLIENTS[key] = client
-        return client
+        with _TIMEOUT_CLIENT_LOCK:
+            client = _TIMEOUT_CLIENTS.get(key)
+            if client is None:
+                client = _create_client_with_auth(
+                    "bedrock-runtime", key, _DEFAULT_MAX_POOL
+                )
+                _TIMEOUT_CLIENTS[key] = client
+            return client
 
     def __repr__(self) -> str:
         # Resolve the region the SAME way client construction does, so the repr
@@ -778,3 +814,192 @@ def _reset_bedrock_provider_for_tests() -> None:
     with _BEDROCK_SINGLETON_LOCK:
         _BEDROCK_SINGLETON = None
     _reset_bedrock_singletons_for_tests()
+
+
+# ── Entitlement fallback (R328.2) ────────────────────────────────────────────
+#
+# The R328 operator targets (opus-4-8 / opus-5 / sonnet-5) stay the pinned code
+# defaults. Measured 2026-08-13 against the live ABSK key, ALL THREE return
+# ``AccessDeniedException`` while opus-4-6-v1 / sonnet-4-6 invoke fine — a
+# credential-vintage artefact, not an account block: a Bedrock API key carries
+# an IAM policy fixed at creation, and granting model access afterwards does not
+# widen an existing key.
+#
+# So the pins are the ASPIRATION and this chain is what actually ships: re-mint
+# the key and the pinned tier resumes with zero code change; leave it and every
+# request still succeeds one tier down. Both halves must be real — a fallback
+# whose target equals the primary is the inert-feature trap.
+
+# Anchored on the ``api_`` prefix that ``_classify_client_error`` emits. A bare
+# substring match is unsafe: the blanket ``except Exception`` handler formats
+# errors as ``unexpected_error: {TypeName}: {msg}``, so a botocore
+# ``ParamValidationError`` or a pydantic ``ValidationError`` — a CODE BUG that
+# fails identically on every model — would otherwise read as "entitlement" and
+# burn the whole chain.
+BEDROCK_ENTITLEMENT_ERROR_MARKERS: tuple[str, ...] = (
+    "api_access_denied",       # 403 — this key lacks the entitlement
+    "api_resource_not_found",  # 404 — the profile does not exist here
+)
+"""Per-MODEL failures. Durable for this credential → safe to remember."""
+
+BEDROCK_TRANSIENT_SKIP_MARKERS: tuple[str, ...] = (
+    "api_validation",  # 400
+)
+"""Advance the chain but DO NOT remember. ``ValidationException`` is overloaded:
+it covers "this profile is unresolvable in this Region" (per-model) AND
+"input too long / bad maxTokens / bad temperature" (per-REQUEST). Caching the
+per-request case as a model denial lets ONE oversized prompt evict the only
+invocable model for the whole TTL — a single long row poisoning the rest of a
+judge batch."""
+
+BEDROCK_FALLBACK_CHAINS: dict[str, tuple[str, ...]] = {
+    "opus": (
+        "eu.anthropic.claude-opus-4-8",
+        "eu.anthropic.claude-opus-5",
+        "eu.anthropic.claude-opus-4-6-v1",
+    ),
+    "sonnet": (
+        "eu.anthropic.claude-sonnet-5",
+        "eu.anthropic.claude-sonnet-4-6",
+        "eu.anthropic.claude-sonnet-4-5-20250929-v1:0",
+    ),
+}
+"""Ordered degradation chains, most-capable first. Verified invocable tail as of
+2026-08-13; the head entries are the R328 pins."""
+
+_DENIED_TTL_SECONDS = 900.0
+"""How long a 403 is remembered. Bounded so a re-minted key heals the process
+without a redeploy — an unbounded memo would pin the degraded tier forever."""
+
+_DENIED_MODELS: dict[str, float] = {}
+_DENIED_LOCK = threading.Lock()
+
+
+def is_entitlement_error(error: str | None) -> bool:
+    """True when ``error`` is a DURABLE per-model entitlement failure.
+
+    These are the only errors worth REMEMBERING: a throttle or a timeout will
+    hit the next model in the chain just as hard, so burning the chain on one
+    would turn a transient blip into N failed calls.
+    """
+    if not error:
+        return False
+    low = error.lower()
+    return any(marker in low for marker in BEDROCK_ENTITLEMENT_ERROR_MARKERS)
+
+
+def is_skippable_error(error: str | None) -> bool:
+    """True when ``error`` should advance the chain, durable or not."""
+    if not error:
+        return False
+    low = error.lower()
+    return is_entitlement_error(error) or any(
+        marker in low for marker in BEDROCK_TRANSIENT_SKIP_MARKERS
+    )
+
+
+def _note_denied(model_id: str) -> None:
+    with _DENIED_LOCK:
+        _DENIED_MODELS[model_id] = time.monotonic()
+
+
+def _is_denied(model_id: str) -> bool:
+    with _DENIED_LOCK:
+        at = _DENIED_MODELS.get(model_id)
+        if at is None:
+            return False
+        if (time.monotonic() - at) > _DENIED_TTL_SECONDS:
+            del _DENIED_MODELS[model_id]
+            return False
+        return True
+
+
+def reset_bedrock_entitlement_cache() -> None:
+    """Forget every remembered 403. Test-only / operator escape hatch."""
+    with _DENIED_LOCK:
+        _DENIED_MODELS.clear()
+
+
+def fallback_chain_for(model_id: str) -> tuple[str, ...]:
+    """Return the candidates to DEGRADE to, strictly below ``model_id``.
+
+    The chain is ordered most-capable first, so the fallbacks for a model are
+    the SUFFIX after its own position — never the whole chain. Returning the
+    whole chain would ESCALATE a non-head pin: pinning sonnet-4-6 would retry
+    on sonnet-5, i.e. silently promote to a costlier model the operator
+    specifically did not choose.
+
+    Unknown families, and models absent from their family's chain, get an empty
+    tuple — we never guess a substitute for a model whose rank we do not know.
+    """
+    low = (model_id or "").lower()
+    for family, chain in BEDROCK_FALLBACK_CHAINS.items():
+        if family not in low:
+            continue
+        lowered = [c.lower() for c in chain]
+        if low in lowered:
+            return chain[lowered.index(low) + 1:]
+        return ()
+    return ()
+
+
+def complete_with_fallback(
+    req: BedrockRequest, *, fallbacks: tuple[str, ...] | None = None
+) -> BedrockResponse:
+    """``BedrockProvider.complete`` plus ordered entitlement failover.
+
+    Tries the request's own model first, then each remaining candidate in its
+    family chain, advancing ONLY on an entitlement error. Models already proven
+    denied in this process are skipped outright, so the 403 round-trip is paid
+    once per TTL rather than once per request.
+
+    Returns the first success; otherwise the LAST response, so the caller still
+    sees a real error string rather than a synthetic one.
+    """
+    provider = get_bedrock_provider()
+    primary = resolve_bedrock_model(req.model) if req.model else _resolve_default_model()
+
+    chain = fallbacks if fallbacks is not None else fallback_chain_for(primary)
+
+    ordered: list[str] = []
+    for candidate in (primary, *chain):
+        resolved = resolve_bedrock_model(candidate)
+        if resolved not in ordered:
+            ordered.append(resolved)
+
+    # Skip known-denied models, but never skip everything. When the whole chain
+    # is cached-denied, re-probe the LAST entry, not the first: the head is the
+    # pinned tier that is 403 by construction, so re-probing it just burns the
+    # round-trip we cached to avoid. The tail is the most-likely-invocable.
+    live = [m for m in ordered if not _is_denied(m)] or ordered[-1:]
+
+    last: BedrockResponse | None = None
+    for idx, model_id in enumerate(live):
+        resp = provider.complete(replace(req, model=model_id))
+        if not resp.error:
+            if model_id != primary:
+                logger.warning(
+                    "bedrock_entitlement_fallback_used primary=%s served_by=%s",
+                    primary,
+                    model_id,
+                )
+            return resp
+        last = resp
+        if not is_skippable_error(resp.error):
+            return resp
+        # Only DURABLE denials are remembered. A ValidationException may be
+        # about this request, not this model — caching it would evict a
+        # working model for the whole TTL.
+        if is_entitlement_error(resp.error):
+            _note_denied(model_id)
+        logger.warning(
+            "bedrock_model_skipped model=%s error=%s durable=%s remaining=%d",
+            model_id,
+            resp.error,
+            is_entitlement_error(resp.error),
+            len(live) - idx - 1,
+        )
+
+    return last or BedrockResponse(
+        error="no_invocable_model", model=primary
+    )
