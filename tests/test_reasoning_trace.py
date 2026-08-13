@@ -130,15 +130,31 @@ class TestRecorders:
         ]
 
     def test_record_note_caps_count_and_length(self) -> None:
-        # R112.3 raised the cap 12 → 32 (full-detail analysis mode) and
-        # dropped per-note truncation; the count cap is the only bound.
-        for i in range(50):
+        # R112.3 raised the cap 12 → 32; R328.3 raised it 32 → 128 and made the
+        # overflow SAY SO. Every truncation/clamp in the pipeline reports itself
+        # only via a note (`stage2_model=`, `adaptive_ref_clamp_to=`,
+        # `stage2_truncated_max_tokens`), so a cap that silently stops recording
+        # truncates the audit trail before the thing it audits.
+        for i in range(200):
             record_note(f"note {i}")
-        assert len(self.trace.notes) == 32  # cap enforced
+
+        # 128 real notes + one explicit overflow marker.
+        assert len(self.trace.notes) == 129
+        assert self.trace.notes[:128] == [f"note {i}" for i in range(128)]
+        assert "truncated" in self.trace.notes[-1]
+        assert "128" in self.trace.notes[-1]
+
         long = "x" * 500
-        record_note(long)  # would be #33 — dropped
-        assert len(self.trace.notes) == 32
+        record_note(long)  # past the cap — still dropped
+        assert len(self.trace.notes) == 129
         assert long not in self.trace.notes
+
+    def test_record_note_under_cap_adds_no_marker(self) -> None:
+        for i in range(10):
+            record_note(f"note {i}")
+
+        assert len(self.trace.notes) == 10
+        assert not any("truncated" in n for n in self.trace.notes)
 
     def test_record_confidence_rounds(self) -> None:
         record_confidence(0.81234567)
