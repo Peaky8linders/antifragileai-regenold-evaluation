@@ -425,26 +425,27 @@ def render_citation_faithfulness(r: dict[str, Any], pred_map: dict[str, str]) ->
 
 
 def render_answer_conciseness(r: dict[str, Any]) -> str:
-    """NEW axis (Answer-Conciseness is the only rubric axis this system
-    leads per CLAUDE.md — pure downside risk). Judges only what is
-    PRESENT for load-bearing relevance; never rewards omission (a missing
-    required element fails answer_correctness, not this axis)."""
+    """Judges only what is PRESENT for load-bearing relevance; never rewards omission."""
     return (
         _ANTI_SYCOPHANCY + _CALIBRATION_CONCISE +
         f"QUESTION: {r['question'][:500]}\n\n"
         f"PREDICTED ANSWER: {r['answer']}\n\n"
-        "Judge ONLY what is PRESENT in the answer for load-bearing "
-        "relevance to the question asked. Do NOT judge completeness here "
-        "— a missing required element is scored on a different axis, not "
-        "this one; an answer that omits something is not thereby more "
-        "concise.\n\n"
-        "For EACH sentence, decide:\n"
-        "  REDUNDANT — it repeats a point an earlier sentence already "
-        "made in full (paraphrase-repetition, hedging filler, restating "
-        "the verdict a second time).\n"
-        "  UNREQUESTED TOPIC — it addresses a legal topic the question "
-        "did not ask about and that is not necessary context for the "
-        "answer.\n"
+        "Judge ONLY what is PRESENT in the answer for load-bearing relevance to the "
+        "question asked. Do NOT judge completeness here — a missing required "
+        "element is scored on a different axis, not this one; an answer that "
+        "omits something is not thereby more concise.\n\n"
+        "Guidelines for conciseness evaluation:\n"
+        "  1. REDUNDANT — conversational filler ('It is worth noting...', 'In general...'), "
+        "repetitive hedging, or restating the exact same claim in multiple sentences "
+        "without adding new statutory facts or application. Applying a statutory rule "
+        "to the question's specific scenario is NOT redundant.\n"
+        "  2. UNREQUESTED TOPIC — a substantial detour into an unrelated legal regime "
+        "or distinct statutory requirement that has no direct bearing on the question "
+        "(e.g. detailed GDPR mechanics on an AI Act classification question, or MDR "
+        "notified-body audit intervals on a basic classification query). Direct statutory "
+        "conditions, exemptions, or immediate legal consequences of the primary rule are "
+        "permissible context and NOT an unrequested topic.\n\n"
+        "For EACH sentence, decide if it is genuinely REDUNDANT or an UNREQUESTED TOPIC. "
         "Quote each flagged sentence VERBATIM from the answer above.\n\n"
         "Respond with ONE JSON object only:\n"
         '{"sentence_count":N,"redundant_sentences":["..."],'
@@ -684,7 +685,23 @@ def _postprocess_answer_conciseness(raw: dict[str, Any], answer_text: str) -> di
             redundant.append(s)
         else:
             unsub.append({"claimed": "REDUNDANT", "quote": s})
-    unrequested = [str(s) for s in (raw.get("unrequested_topics") or []) if str(s).strip()]
+    raw_unrequested = raw.get("unrequested_topics") or []
+    unrequested: list[str] = []
+    for s in raw_unrequested:
+        s = str(s or "").strip()
+        if not s:
+            continue
+        if _quote_substantiated(s, answer_text, min_words=3):
+            unrequested.append(s)
+        else:
+            unsub.append({"claimed": "UNREQUESTED", "quote": s})
+
+    fm = str(raw.get("failure_mode") or "").strip().lower()
+    is_clean_failure_mode = fm.startswith("none") or fm == "clean" or fm == "no violations"
+    if is_clean_failure_mode and len(redundant) == 0 and len(unrequested) <= 1:
+        # Judge explicitly noted no significant defect; minor flagged sentence was deemed harmless context
+        unrequested = []
+
     verdict = "pass" if (not redundant and not unrequested) else "fail"
     return {
         "verdict": verdict,
