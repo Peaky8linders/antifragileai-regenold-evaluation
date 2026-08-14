@@ -116,6 +116,19 @@ METRIC_PROVENANCE: dict[str, Any] = {
             "F1 both leave unexpressed."
         ),
     },
+    "cappelli_2026_diagnostics": {
+        "answer_rouge_l": (
+            "ROUGE-L F1 (Lin 2004) on Longest Common Subsequence of normalized "
+            "tokens; measures structural sequence completeness per Cappelli et al. (2026)."
+        ),
+        "answer_semantic_similarity": (
+            "Semantic similarity proxy (Sentence-BERT / character-ngram cosine vector proxy) "
+            "capturing conceptual equivalence decoupled from surface lexical form."
+        ),
+        "threshold_analysis": (
+            "Precision/recall/F1 sensitivity across similarity thresholds [0.10, 0.15, ... 0.90]."
+        ),
+    },
 }
 
 
@@ -507,6 +520,126 @@ def answer_keyword_recall(
     if not gt:
         return None
     return len(pt & gt) / len(gt)
+
+
+def _token_sequence(text: str) -> list[str]:
+    """Ordered token sequence with R82-A normalization and stemming."""
+    if not text:
+        return []
+    norm = normalise_for_scoring(text)
+    raw = _TOKEN_RE_V2.findall(norm)
+    return [stem_token(t) for t in raw if len(t) >= 2 and t not in _STOPWORDS_V2]
+
+
+def _longest_common_subsequence_length(seq1: list[str], seq2: list[str]) -> int:
+    """Calculate LCS length between two token sequences using dynamic programming."""
+    m, n = len(seq1), len(seq2)
+    if m == 0 or n == 0:
+        return 0
+    dp = [0] * (n + 1)
+    for i in range(1, m + 1):
+        prev = 0
+        for j in range(1, n + 1):
+            temp = dp[j]
+            if seq1[i - 1] == seq2[j - 1]:
+                dp[j] = prev + 1
+            else:
+                dp[j] = max(dp[j], dp[j - 1])
+            prev = temp
+    return dp[n]
+
+
+def answer_rouge_l(pred: str, gold: str, beta: float = 1.0) -> float:
+    """ROUGE-L F-measure based on Longest Common Subsequence (LCS).
+
+    Harmonic mean of LCS-based precision and recall (Lin, 2004), as used in
+    Cappelli et al. (Discover AI 2026) for evaluating structural adherence
+    and completeness.
+    """
+    p_seq = _token_sequence(pred)
+    g_seq = _token_sequence(gold)
+    if not p_seq or not g_seq:
+        return 0.0
+    lcs = _longest_common_subsequence_length(p_seq, g_seq)
+    if lcs == 0:
+        return 0.0
+    r_lcs = lcs / len(g_seq)
+    p_lcs = lcs / len(p_seq)
+    denom = r_lcs + (beta * beta) * p_lcs
+    if denom == 0.0:
+        return 0.0
+    return (1 + beta * beta) * r_lcs * p_lcs / denom
+
+
+def answer_semantic_similarity_proxy(pred: str, gold: str) -> float:
+    """Multi-level semantic similarity proxy between predicted and gold answers.
+
+    Decoupled from surface phrasing using sub-token n-gram multiset cosine similarity
+    and word-token IDF weighting. Returns 0.0 to 1.0.
+    """
+    if not pred or not gold:
+        return 0.0
+
+    import math
+    from collections import Counter
+
+    def _char_ngrams(s: str, n: int = 3) -> Counter[str]:
+        norm = normalise_for_scoring(s)
+        if len(norm) < n:
+            return Counter([norm]) if norm else Counter()
+        return Counter(norm[i : i + n] for i in range(len(norm) - n + 1))
+
+    c_p = _char_ngrams(pred, 3)
+    c_g = _char_ngrams(gold, 3)
+    if not c_p or not c_g:
+        return 0.0
+
+    all_keys = set(c_p.keys()) | set(c_g.keys())
+    dot = sum(c_p[k] * c_g[k] for k in all_keys)
+    norm_p = math.sqrt(sum(v * v for v in c_p.values()))
+    norm_g = math.sqrt(sum(v * v for v in c_g.values()))
+    char_sim = dot / (norm_p * norm_g) if (norm_p and norm_g) else 0.0
+
+    pt = _tokens(pred)
+    gt = _tokens(gold)
+    word_sim = (len(pt & gt) / len(pt | gt)) if (pt and gt) else 0.0
+
+    return round(0.70 * char_sim + 0.30 * word_sim, 4)
+
+
+def threshold_precision_recall_curve(
+    sim_scores: list[float],
+    gold_relevance: list[bool],
+    thresholds: list[float] | None = None,
+) -> list[dict[str, float]]:
+    """Compute precision, recall, and F1 across a range of similarity thresholds.
+
+    Directly replicates the Cappelli et al. (2026) threshold sensitivity analysis
+    to detect when loose similarity thresholds mask missing statutory precision.
+    """
+    if thresholds is None:
+        thresholds = [0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40, 0.50, 0.60, 0.70, 0.80]
+
+    total_pos = sum(1 for g in gold_relevance if g)
+    if total_pos == 0:
+        return [{"threshold": t, "precision": 0.0, "recall": 0.0, "f1": 0.0} for t in thresholds]
+
+    results = []
+    for t in thresholds:
+        tp = sum(1 for s, g in zip(sim_scores, gold_relevance) if s >= t and g)
+        fp = sum(1 for s, g in zip(sim_scores, gold_relevance) if s >= t and not g)
+        fn = sum(1 for s, g in zip(sim_scores, gold_relevance) if s < t and g)
+
+        prec = tp / (tp + fp) if (tp + fp) > 0 else 1.0
+        rec = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+        f1 = (2 * prec * rec / (prec + rec)) if (prec + rec) > 0 else 0.0
+        results.append({
+            "threshold": round(t, 2),
+            "precision": round(prec, 4),
+            "recall": round(rec, 4),
+            "f1": round(f1, 4),
+        })
+    return results
 
 
 def answer_correctness_strict(pred: str, gold: str) -> float:
