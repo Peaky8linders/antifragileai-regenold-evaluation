@@ -1901,6 +1901,54 @@ def _engine_cache_key(
             # is cached; without it in the identity a same-process A/B serves the
             # baseline arm's response to the branch arm (the R263.2 bug).
             "REGENOLD_GENERAL_VERDICT_V2",
+            # ── R334 — the thirteen engine flags that were still missing ────
+            #
+            # Found by diffing this tuple against every `os.getenv` read under
+            # `app/engines/`. Each one below is read INSIDE the engine and moves
+            # `GraphRAGResponse`, so a mid-process flip served the other arm's
+            # cached response and the A/B measured nothing — the exact inert-A/B
+            # class that made R326/R327 and three R329 reranker placements ship
+            # clean `+0.0000` runs on features that never executed.
+            #
+            # `tests/test_r334_engine_cache_key.py` asserts each flag CHANGES the
+            # key, so this list cannot silently rot again.
+            #
+            # Deliberately still EXCLUDED, and why the asymmetry is load-bearing:
+            # `REGENOLD_CLARA_*` (MODEL/TIMEOUT/FAILURE_THRESHOLD/FAILURE_WINDOW)
+            # live under `app/engines/` but are consumed from the ROUTE
+            # (`clara_logic.analyse`, called at the Component-D stage), and route
+            # post-processing re-runs on every cache hit — so folding them in
+            # would only shatter the cache and destroy the paired A/B this key
+            # exists to enable. `P2P_GRAPH_RAG_PROVIDER` is likewise absent here
+            # because it is already folded in above as `provider_bit`.
+            #
+            # Stage-2 gating — each flips whether the polish runs at all, which
+            # is the difference between an uncapped answer and one re-armed to
+            # MAX_ANSWER_SENTENCES by `set_answer_no_cap`.
+            "REGENOLD_CURATED_STAGE2_SKIP",
+            "REGENOLD_DEFINITIONAL_STAGE2_SKIP",
+            "REGENOLD_STAGE2_ANSWER_HEADROOM",
+            # Complexity gating — both feed `is_complex_question`, which selects
+            # the Stage-2 tier (complex model + extended thinking vs standard).
+            # `REGENOLD_COMPLEXITY_ABBREV_FIX` is already above for exactly this
+            # reason; these two were its siblings and were missed.
+            "REGENOLD_COMPLEX_GATE_WIDE",
+            "REGENOLD_COMPLEX_SENTENCE_CAP",
+            # Retrieval — all reachable from the engine's retrieve phase, so they
+            # move `GraphRAGResponse.references`.
+            "REGENOLD_GRAPH_EXPANSION",
+            "REGENOLD_FUSION_MIN_CANDIDATES",
+            "REGENOLD_FUSION_TIMEOUT",
+            # PPR tuning. `REGENOLD_GRAPH_PPR` (the gate) was already in the key
+            # while the two knobs that decide what it RETURNS were not — the same
+            # gate-without-its-parameters gap that `REGENOLD_ENTITY_BOOST` and its
+            # two factor overrides already close above.
+            "REGENOLD_PPR_DAMPING",
+            "REGENOLD_PPR_MAX_ITER",
+            # Answer/reference assembly inside the engine.
+            "REGENOLD_QA_LEAD_RANK",
+            "REGENOLD_ROLE_DUTY_ZRF",
+            "REGENOLD_NLI_API",
         )
     )
     import json
