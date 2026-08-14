@@ -1039,11 +1039,9 @@ def _detect_gpai_signal(text: str) -> bool:
 # refs that the davidath dataset commonly includes in its gold reference
 # set.
 _RISK_ARTICLES: dict[str, tuple[str, ...]] = {
-    # Prohibited scenarios in the davidath dataset commonly cite [5, 10,
-    # 16/26, 27, 50]: the prohibition itself + data-governance + the
-    # role's primary obligation article + FRIA + transparency. Cover all
-    # five so loose recall hits even when the gold set is broader.
-    "prohibited": ("Art. 5", "Art. 10", "Art. 27", "Art. 50"),
+    # Prohibited practices are governed exclusively by Article 5 prohibitions
+    # and Article 99 administrative fines / penalties.
+    "prohibited": ("Art. 5", "Art. 99"),
     # High-risk scenarios commonly cite the Section 2 essential-requirement
     # spine + Art. 6 classification + role-specific anchors.
     "high-risk": (
@@ -1097,12 +1095,9 @@ _ROLE_HIGHRISK_ARTICLES: dict[str, tuple[str, ...]] = {
 
 
 _ROLE_PROHIBITED_ARTICLES: dict[str, tuple[str, ...]] = {
-    # Prohibited scenarios still carry the role's primary obligation
-    # anchor (Art. 16 for provider, Art. 26 for deployer) because the
-    # gold sets in davidath scenarios.json mix Art. 5 with the role
-    # primary article more often than not.
-    "provider": ("Art. 16",),
-    "deployer": ("Art. 26",),
+    # Prohibited practices apply uniformly to all operators under Art. 5.
+    "provider": ("Art. 5",),
+    "deployer": ("Art. 5",),
 }
 
 
@@ -1208,14 +1203,12 @@ def _build_answer(role: str, risk_level: str) -> str:
     if risk_level == "prohibited":
         return (
             "This system is classified as a prohibited AI practice under "
-            "Article 5 and may not be placed on the market or put into "
-            f"service. {role_phrase} must immediately cease deployment, "
-            "conduct a risk assessment covering identification, evaluation "
-            "and mitigation of risks to fundamental rights, and document "
-            "the rationale for decommissioning (Article 5). The provider "
-            "must verify that no other AI activities exhibit prohibited "
-            "practices and retain the assessment for market-surveillance "
-            "review under Article 10."
+            "Article 5 and may not be placed on the market, put into "
+            f"service, or used in the Union. {role_phrase} must ensure that "
+            "the prohibited AI practice is not placed on the market or deployed "
+            "(Article 5). Infringements of prohibitions in Article 5 are subject "
+            "to administrative fines of up to EUR 35 000 000 or 7 % of total "
+            "worldwide annual turnover under Article 99."
         )
     if risk_level == "high-risk":
         return (

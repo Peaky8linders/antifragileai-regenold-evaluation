@@ -30,7 +30,7 @@ from dataclasses import dataclass, field
 # (Art. 25(2) cooperation-duty re-anchor + real 25(4) written-agreement
 # clause, Art. 99(4) closed enumeration, Art. 79/109 Reg-2019/1020
 # Art. 3(19) qualification).
-KB_VERSION = "2024.1689.v19"
+KB_VERSION = "2024.1689.v21"
 
 
 @dataclass(frozen=True)
@@ -969,12 +969,15 @@ EC_CHECKER_OBLIGATION_MAP: dict[str, dict[str, str]] = {
         ),
     },
     "Art. 72": {
-        "dimension": "tech_docs",
+        "dimension": "post_market",
         "summary": (
-            "Requires a post-market monitoring plan + system documenting AI-system "
-            "performance throughout its lifetime, with data collection, analysis, "
-            "corrective-action workflows, and feedback into the risk-management "
-            "system."
+            "Requires providers of high-risk AI systems to establish and document "
+            "a post-market monitoring system proportionate to the nature and risks of "
+            "the AI system (Article 72(1)). The system actively collects, documents, "
+            "and analyses performance data throughout the system's lifetime to evaluate "
+            "continuous compliance with Chapter III Section 2 requirements (Article 72(2)), "
+            "based on a post-market monitoring plan that forms part of the technical "
+            "documentation under Annex IV (Article 72(3))."
         ),
     },
     "Art. 99": {
@@ -1404,18 +1407,13 @@ EC_CHECKER_OBLIGATION_MAP: dict[str, dict[str, str]] = {
     "Art. 73": {
         "dimension": "post_market",
         "summary": (
-            "Requires providers of high-risk AI systems placed on the EU "
-            "market to report serious incidents to market-surveillance "
-            "authorities of the Member State where the incident occurred — "
-            "tiered deadlines: immediately for widespread infringement or "
-            "critical-infrastructure disruption (and ≤ 2 days after "
-            "awareness); ≤ 10 days for death; ≤ 15 days for other serious "
-            "incidents (or immediately on established causal link). "
-            "'Serious incident' (Art. 3(49)) covers death, serious "
-            "irreversible critical-infrastructure disruption, fundamental-"
-            "rights violation, or serious property / environmental harm. "
-            "Dual reporting exemption for medical devices (Reg. 2017/745) "
-            "and IVDs (Reg. 2017/746) except fundamental-rights infringements."
+            "Requires providers of high-risk AI systems to report any serious incident "
+            "to the market-surveillance authorities of the Member States where that incident "
+            "occurred (Article 73(1)). Providers must submit reports immediately after establishing "
+            "a causal link (and not later than 15 days after becoming aware), within 2 days in the "
+            "case of critical-infrastructure disruptions or widespread infringements, and within 10 days "
+            "in the case of a person's death (Article 73(2)-(4)). Providers must conduct necessary "
+            "investigations and adopt corrective measures."
         ),
     },
     "Art. 74": {
