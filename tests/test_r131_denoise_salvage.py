@@ -27,6 +27,25 @@ import pytest
 from app.routes import regenold as r
 
 
+@pytest.fixture(autouse=True)
+def _wrapper_provider_available(monkeypatch):
+    """R330 — un-pin the ``cli`` provider for this module.
+
+    Same defect as ``test_r86_query_denoiser_and_deployer_hop.py``:
+    ``is_openai_wrapper_enabled()`` is False under
+    ``P2P_GRAPH_RAG_PROVIDER=cli`` (R127), which CLAUDE.md's documented gate env
+    sets for the whole run. With no provider candidates,
+    ``_rewrite_multiturn_query`` returns at ``fallback_reason="no_provider"``.
+
+    That is especially corrosive HERE, because these tests are about the
+    *provider-failure salvage* path: the salvage only runs from
+    ``_salvage_on_provider_failure``, which the ``no_provider`` exit never
+    reaches. So the tests asserting "salvaged" were failing, and the ones
+    asserting ``None`` were passing without exercising the salvage logic at all.
+    """
+    monkeypatch.setenv("P2P_GRAPH_RAG_PROVIDER", "openai_wrapper")
+
+
 # ── _live_turn_is_self_contained ─────────────────────────────────────────
 
 

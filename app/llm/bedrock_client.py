@@ -875,6 +875,126 @@ _DENIED_MODELS: dict[str, float] = {}
 _DENIED_LOCK = threading.Lock()
 
 
+# ── Cross-PROVIDER last resort — ported from `regenold-eu-ai-act-rag` ────────
+#
+# The entitlement chain above degrades WITHIN the Bedrock family. When every
+# member of the chain is unusable — the whole EU geography throttling, the key
+# revoked, the endpoint unreachable — Bedrock has nothing left to offer and the
+# RAG path returns None, which drops Stage-2 entirely.
+#
+# The sibling repo answers that with a fail-soft hop to the Claude-Max wrapper.
+# Ported here, but placed at the END of `complete_with_fallback` rather than
+# inside `BedrockProvider.complete`'s two exception handlers (where the sibling
+# put it). Two reasons: it keeps ONE definition of "we have exhausted Bedrock"
+# instead of two, and it guarantees the entitlement chain is fully spent before
+# we leave the provider — the sibling's placement can hop to the wrapper on the
+# FIRST model's throttle while a perfectly invocable tier sits further down.
+#
+# ⚠ THIS IS A MEASUREMENT EVENT, NOT JUST A RESILIENCE EVENT, and that is why it
+# is louder here than in the sibling. The two providers are NOT interchangeable:
+#   * Bedrock HONOURS the system prompt; the Claude-Max wrapper DROPS it 100% of
+#     the time (claude_agent_sdk 0.2.82 discards a `{"type":"text"}` dict — see
+#     CLAUDE.md and `.planning/R282-CHECKPOINT.md`; re-verified live 2026-08-14
+#     with the ARRR probe: system slot -> "4", user slot -> "ARRR").
+#   * So a silent hop changes ~12.8K tokens of delivered instruction. In a repo
+#     whose PRODUCT is the measurement, that must reach the durable artifact.
+# We therefore return the wrapper's answer with `model` prefixed `wrapper:`,
+# which makes the EXISTING provenance in `_bedrock_complete_for_graph_rag` fire
+# unchanged (`_served != model_id` -> `stage2_model=` + `bedrock_fallback` notes
+# in the reasoning trace, which `run_official_batch._provenance` scrapes).
+_WRAPPER_FALLBACK_MODELS: tuple[tuple[str, str], ...] = (
+    ("opus-4-6", "claude-opus-4-6"),
+    ("opus-4.6", "claude-opus-4-6"),
+    ("sonnet-4-6", "claude-sonnet-4-6"),
+    ("sonnet-4.6", "claude-sonnet-4-6"),
+    ("opus", "claude-opus-4-8"),
+    ("sonnet", "claude-sonnet-4-6"),
+)
+"""Bedrock profile substring -> wrapper model name. Ordered MOST specific first:
+a bare `opus`/`sonnet` entry placed before `opus-4-6` would swallow it."""
+
+
+def wrapper_fallback_enabled() -> bool:
+    """R330 — hop to the Claude-Max wrapper when the whole Bedrock chain fails.
+
+    DEFAULT **ON**. Off-switch: ``REGENOLD_BEDROCK_WRAPPER_FALLBACK=0``.
+
+    Default-ON as a CODE default because `railway.toml [deploy.envs]` has never
+    applied (CLAUDE.md gotcha), so an opt-in resilience flag would never reach
+    the deployment — which is the one place it matters.
+
+    Fresh env read per call so an in-process A/B is valid (R263.2 doctrine).
+    """
+    return os.environ.get(
+        "REGENOLD_BEDROCK_WRAPPER_FALLBACK", "1"
+    ).strip().lower() not in {"0", "false", "no", "off"}
+
+
+def wrapper_model_for(bedrock_model_id: str) -> str:
+    """Map a Bedrock EU profile id onto the wrapper's model name."""
+    low = (bedrock_model_id or "").lower()
+    for needle, wrapper_model in _WRAPPER_FALLBACK_MODELS:
+        if needle in low:
+            return wrapper_model
+    return "claude-sonnet-4-6"
+
+
+def _try_wrapper_fallback(
+    req: BedrockRequest, primary: str, last: BedrockResponse | None
+) -> BedrockResponse | None:
+    """Last resort: serve this request from the Claude-Max wrapper.
+
+    Returns ``None`` when the hop is disabled, the wrapper is not wired, or it
+    also fails — in which case the caller keeps Bedrock's real error string.
+    """
+    if not wrapper_fallback_enabled():
+        return None
+    try:
+        from app.llm.openai_wrapper_provider import (  # noqa: PLC0415
+            OpenAIWrapperRequest,
+            get_openai_wrapper_provider,
+            is_openai_wrapper_enabled,
+        )
+
+        if not is_openai_wrapper_enabled():
+            return None
+        target = wrapper_model_for(req.model or primary)
+        resp = get_openai_wrapper_provider().complete(
+            OpenAIWrapperRequest(
+                user=req.user,
+                system=req.system,
+                model=target,
+                max_tokens=req.max_tokens,
+                temperature=req.temperature,
+            )
+        )
+        if resp.error or not resp.text:
+            logger.warning(
+                "bedrock_wrapper_fallback_failed primary=%s target=%s error=%s",
+                primary, target, resp.error,
+            )
+            return None
+        # LOUD, and greppable. `served_by=wrapper:` is the string to alert on:
+        # its presence means the answer was NOT produced under the Bedrock
+        # prompt contract, so the row is not comparable to a Bedrock-served one.
+        logger.warning(
+            "bedrock_wrapper_fallback_used primary=%s served_by=wrapper:%s "
+            "bedrock_error=%s SYSTEM_PROMPT_DROPPED=1",
+            primary, target, (last.error if last else "unknown"),
+        )
+        return BedrockResponse(
+            text=resp.text,
+            model=f"wrapper:{resp.model or target}",
+            input_tokens=resp.prompt_tokens,
+            output_tokens=resp.completion_tokens,
+            elapsed_ms=resp.elapsed_ms,
+            finish_reason=resp.finish_reason,
+        )
+    except Exception as exc:  # noqa: BLE001 — a fallback must never raise
+        logger.debug("bedrock_wrapper_fallback_error: %s", exc)
+        return None
+
+
 def is_entitlement_error(error: str | None) -> bool:
     """True when ``error`` is a DURABLE per-model entitlement failure.
 
@@ -999,6 +1119,12 @@ def complete_with_fallback(
             is_entitlement_error(resp.error),
             len(live) - idx - 1,
         )
+
+    # Bedrock is exhausted. Try the cross-provider last resort before giving up
+    # — but only now, so a working lower tier is never skipped in its favour.
+    hopped = _try_wrapper_fallback(req, primary, last)
+    if hopped is not None:
+        return hopped
 
     return last or BedrockResponse(
         error="no_invocable_model", model=primary

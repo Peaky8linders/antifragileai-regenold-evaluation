@@ -19,10 +19,17 @@ wastes hours.
 and the bullet below used to say "nothing merged here is live". **Both were
 wrong**, and the file contradicted itself in three other places while saying so:
 `railway.toml` + `Procfile` are committed here, `R328.1` was a *Railway boot
-fix* landed here, the provider table below says the Bedrock path "is what
-Railway runs", and `railway.toml`'s own R306 note records probing **"the
+fix* landed here, and `railway.toml`'s own R306 note records probing **"the
 deployed endpoint"** live on 2026-08-03. Merging to `main` here reaches a real
 service:
+
+⚠ **One leg of that argument was retracted 2026-08-14.** This paragraph used to
+also cite "the provider table below says the Bedrock path *is what Railway
+runs*". That claim was never verified and has been removed from the table — see
+the provider section. The conclusion (**a merge here ships**) is unaffected; it
+rests on the three remaining items. But *which provider* the deployed service
+runs is a separate, still-open question, and the two must not be conflated
+again.
 
 ```
 project      e19dc6ef-b463-4a54-9662-4a5085ae00c9
@@ -571,6 +578,7 @@ shipped ON) entered deliberately and with the risk recorded, not by accident.
 | `REGENOLD_BEDROCK_MAX_TOKENS` | **4096** | R328.3 — the Stage-2 answer ceiling on Bedrock. NOT `settings.graph_rag.max_tokens` (1536), which is advisory on the wrapper and a HARD mid-word cut here. Worst measured enumerative answer used 3411 |
 | `REGENOLD_BEDROCK_STAGE2_TIMEOUT_S` | **180** | R328.3 — per-call read budget for Stage-2. The 60 s default turned a bigger token ceiling into `ReadTimeoutError` (the worst case emits 3411 tokens in ~70 s) — the same truncation, one layer down |
 | `REGENOLD_BEDROCK_JUDGE_MAX_TOKENS` | **1600** | R328 — NOT the wrapper's 400. Bedrock honours the system prompt (the wrapper drops it), so the judge reasons in prose before its JSON; at 400 it truncates and the axis returns `no_json` — a SILENTLY UNSCORED axis, not a visible failure |
+| `REGENOLD_BEDROCK_WRAPPER_FALLBACK` | **ON** | R330 — cross-PROVIDER last resort ported from the RAG repo: when the WHOLE Bedrock entitlement chain is spent, serve from the Claude-Max wrapper instead of dropping Stage-2. Placed at the END of `complete_with_fallback`, not inside `BedrockProvider.complete` as upstream has it — upstream's placement can hop on the FIRST model's throttle while an invocable tier sits further down the chain. ⚠ **The two providers are not interchangeable: Bedrock honours the system prompt, the wrapper drops it 100%**, so a hop silently changes ~12.8K tokens of delivered instruction. It therefore returns `model="wrapper:<name>"`, which makes the existing `_bedrock_complete_for_graph_rag` provenance fire unchanged — `stage2_models` in the sidecar shows `wrapper:…`, never the pin. Alert on `served_by=wrapper:`. Off-switch `=0` |
 
 Stage-2 models (`app/config.py`): parse `claude-sonnet-5`, Stage-2
 `claude-opus-5`, complex `claude-opus-5`, complex thinking 4000, max_tokens
@@ -584,14 +592,40 @@ model A/B, and note the trace reports the model actually sent.
 
 | Value | Behaviour | Setup |
 | --- | --- | --- |
-| `cli` / `auto`* | Pure deterministic, no LLM, sub-10 ms. **This is what davidath runs.** | none |
+| `cli` | Pure deterministic, no LLM, sub-10 ms. **This is what davidath runs.** | none |
 | `anthropic` | Stage-1 + Stage-2 via Anthropic SDK (per-token billing) | `P2P_GRAPH_RAG_API_KEY=sk-ant-…` |
-| `openai_wrapper` | Stage-1 + Stage-2 + Stage-0 intent via the local Claude Code Max wrapper | wrapper on `127.0.0.1:8000` + `OPENAI_API_BASE` |
-| `bedrock` | Stage-1 + Stage-2 + judge via AWS Bedrock **EU cross-region inference** (R328). This is what **Railway** runs. | `AWS_BEARER_TOKEN_BEDROCK` (or `AWS_ACCESS_KEY_ID`/`_SECRET_ACCESS_KEY`) |
+| `openai_wrapper` / `auto`* | Stage-1 + Stage-2 + Stage-0 intent via the Claude Code Max wrapper | wrapper on `127.0.0.1:8000` or the tunnel + `OPENAI_API_BASE` |
+| `bedrock` | Stage-1 + Stage-2 + judge via AWS Bedrock **EU cross-region inference** (R328). | `AWS_BEARER_TOKEN_BEDROCK` (or `AWS_ACCESS_KEY_ID`/`_SECRET_ACCESS_KEY`) |
 
-`* auto` → `anthropic` when a key is set, else `cli`. Every sub-pipeline falls
-back to a deterministic equivalent on error, so the route never 500s on a
-downed LLM.
+⚠ **CORRECTED 2026-08-14.** `* auto` (and unset, and empty) resolves to
+**`openai_wrapper`**, NOT to "`anthropic` when a key is set, else `cli`" as this
+table claimed for months. `resolve_provider` defaults `default_when_auto="openai_wrapper"`
+(`app/llm/__init__.py:16,32`) and **every** call site passes that value explicitly
+(`_graph_rag_impl.py:217`, `main.py:34,90,1025`). An AWS credential alone never
+selects Bedrock: every dispatch site is an equality test on the literal string
+`"bedrock"`, and `is_bedrock_provider_enabled()` is consulted only *inside* that
+branch. Every sub-pipeline falls back to a deterministic equivalent on error, so
+the route never 500s on a downed LLM.
+
+⚠ **"Bedrock is what Railway runs" was an UNVERIFIED claim and has been removed
+from the table.** Nothing in this repo establishes the deployed provider:
+
+* the code default with no env var set is `openai_wrapper` (above);
+* `railway.toml [deploy.envs]` **has never applied** (its own header says so),
+  and the string `bedrock` appears nowhere in `railway.toml` — what that inert
+  block actually assigns is `P2P_GRAPH_RAG_PROVIDER = "openai_wrapper"`;
+* `.env` is gitignored, so the deployed container ships no dotenv;
+* `Procfile` / `railpack.json` set only the uvicorn command.
+
+So production is on Bedrock **only if** a Railway *service variable* was set from
+the dashboard/CLI, which is not in the repo and cannot be verified from it.
+`.kiro/steering/railway-redeploy.md` does not even record this service's public
+domain — it sends you to the dashboard. **Treat the deployed provider as UNKNOWN
+until someone runs `railway variables` against service
+`0086ff18-f642-46c8-8127-57c913ca1c53`, or POSTs the live endpoint and reads the
+`stage2_model=` note in the reasoning trace.** Any argument of the shape
+"Bedrock honours the system prompt ⇒ production has the four-sentence cap" is
+unsupported until then, because its middle link is this unverified claim.
 
 ### Bedrock — the EU cross-region path (R328)
 
@@ -643,6 +677,18 @@ targets are `AccessDeniedException`** — not just `opus-4-8` as R328 recorded:
 | `eu.anthropic.claude-opus-4-6-v1` | OK |
 | `eu.anthropic.claude-sonnet-4-6` | OK |
 | `eu.anthropic.claude-sonnet-4-5-20250929-v1:0` | OK |
+
+✅ **RE-VERIFIED LIVE 2026-08-14 — unchanged, all six rows reproduce exactly.**
+Real 5-token invokes against each profile with the current `.env` key: the three
+pins return `api_access_denied_403` (1595 / 275 / 292 ms), the three older tiers
+return `OK` (1370 / 1042 / 1529 ms). `fallback_chain_for` returns the correct
+SUFFIX for each pin (opus-4-8 → opus-5 → opus-4-6-v1; opus-5 → opus-4-6-v1;
+sonnet-5 → sonnet-4-6 → sonnet-4-5). A full `scripts/e2e_bedrock_rag_judge_test.py
+--fallback` run passed **4/4 judge axes** with `_judge_model_served =
+eu.anthropic.claude-sonnet-4-6`. So the degraded tier is healthy and the R328.2
+failover is doing exactly what it was built to do — but note the judge served is
+`sonnet-4-6`, i.e. `judge_model_comparable` is FALSE against the sonnet-5-graded
+July-7 baseline.
 
 Per the key-vintage note above this is a **credential** boundary, not an account
 block, so the pins stay put and `complete_with_fallback`

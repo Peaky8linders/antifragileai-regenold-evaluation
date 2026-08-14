@@ -7762,10 +7762,25 @@ def _claude_max_enhance_answer(
             pass
         # R329 P3c — the block above was DUPLICATED verbatim (two identical
         # try/except pairs, both gated on the same ``answer_coverage_enabled()``),
-        # so ~2.1 KB of ANSWER COVERAGE landed TWICE in every live Stage-2 user
-        # message. Cache-inert (one flag drove both copies), but R282 measured
-        # that instruction volume on the delivered channel is itself harmful, and
-        # a repeated rule shifts emphasis. One copy only. Do not re-add.
+        # so ~2.2 KB of ANSWER COVERAGE landed TWICE in every live Stage-2 user
+        # message. Cache-inert (one flag drove both copies). One copy only.
+        #
+        # ⚠ CORRECTED 2026-08-14 — P3c IS NOT A MEASUREMENT, and this comment used
+        # to read like one. It is an unflagged dedupe bugfix: shipped with no env
+        # gate and no A/B, and no P3c sidecar or result artifact exists anywhere in
+        # the repo. The duplicate shipped live from R308 (2026-08-03) through R329
+        # (2026-08-13) and NOBODY MEASURED WHAT IT COST. Do not cite "R329 P3c
+        # measured a duplicated block as harmful" as evidence for anything — using
+        # it as a risk constraint manufactures evidence.
+        #
+        # The old justification also misattributed R282: R282 varied the SYSTEM
+        # slot (0 -> ~12.8K tokens via two wrapper instances), never the user
+        # channel, so it cannot speak to a repeated user-channel clause. See the
+        # corrected note in ``app/data/graph_rag_prompts.py``.
+        #
+        # Deduping is still right on first principles — one concept, one
+        # definition; a repeated rule shifts emphasis for zero added information.
+        # That is a design argument, not a measurement. Do not re-add.
 
         try:
             max_tokens = settings.graph_rag.max_tokens
