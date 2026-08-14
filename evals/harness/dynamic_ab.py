@@ -519,6 +519,39 @@ def _analyse(
     }
     for g in gold:
         gold[g]["delta"] = gold[g]["branch"] - gold[g]["baseline"]
+
+    # R337 — GOLD SHAPE decides which veto grain is valid, and getting this
+    # wrong rejects correct work.
+    #
+    # `gold_dropped` is a VETO (hard rule #8), so it is meant to be read without
+    # argument. But `gold_dropped_exact` compares full coordinates, and this
+    # probe set's gold carries NO sub-points (measured: 208 gold refs over 129
+    # rows, 0 leaf-grained). Against head-level gold, a MORE precise citation
+    # scores as a dropped head:
+    #
+    #     gold_dropped_exact(["Article 6.1"], gold=["Article 6"]) -> dropped 1
+    #     gold_dropped_head (["Article 6.1"], gold=["Article 6"]) -> dropped 0
+    #
+    # So on head-level gold the exact veto does not measure "did we lose gold",
+    # it measures "did we get more precise" with the sign inverted. Measured on
+    # R333's sub-point fix: exact said 10 -> 5 (apparently double the drops)
+    # while head said +0 and every axis was exactly 0.0000. Read literally, the
+    # veto rejects a change that dropped nothing.
+    #
+    # Report the grain rather than a misleading number: when no gold ref carries
+    # a sub-point, the exact veto is not applicable and says so.
+    gold_refs = [
+        str(x)
+        for i in common
+        for x in ((b[i].get("row") or {}).get("expected_refs")
+                  if isinstance(b[i].get("row"), dict)
+                  else getattr(b[i].get("row"), "expected_refs", None)) or ()
+    ]
+    leaf_grained = sum(1 for x in gold_refs if "." in x)
+    gold["gold_dropped_exact"]["applicable"] = bool(leaf_grained)
+    gold["gold_dropped_exact"]["gold_leaf_grained"] = leaf_grained
+    gold["gold_dropped_exact"]["gold_refs_total"] = len(gold_refs)
+    gold["gold_dropped_head"]["applicable"] = True
     return {"axes": axes, "gold": gold, "n_scored": len(common)}
 
 
@@ -540,10 +573,20 @@ def _report(res: dict[str, Any], emit: Callable[[str], None] = print) -> None:
              f"{v['delta']:>+9.4f} {ci:>20}  {v['verdict']}")
     emit("")
     for g, v in res["gold"].items():
+        # R337 — an inapplicable veto prints its REASON, never a number. On
+        # head-level gold the exact-grain drop counts precision GAINS as losses,
+        # so showing the figure invites a rejection of correct work.
+        if not v.get("applicable", True):
+            emit(f"  {g:<20} {'n/a':>6} — gold is head-level "
+                 f"({v.get('gold_refs_total', 0)} refs, "
+                 f"{v.get('gold_leaf_grained', 0)} with a sub-point); "
+                 f"exact-grain veto does not apply")
+            continue
         flag = "  <-- HARD RULE #8 VETO" if v["delta"] > 0 else ""
         emit(f"  {g:<20} {v['baseline']:>6.0f} -> {v['branch']:>6.0f} "
              f"({v['delta']:+.0f}){flag}")
-    if any(v["delta"] > 0 for v in res["gold"].values()):
+    if any(v["delta"] > 0 for v in res["gold"].values()
+           if v.get("applicable", True)):
         emit("")
         emit("  REJECTED: the branch drops gold references. Hard rule #8 is a "
              "veto, not a")
