@@ -216,6 +216,25 @@ class _BM25Index:
     b: float = 0.75
 
 
+def _ontology_risk_docs_enabled() -> bool:
+    """R331 — gate the six AIRO registries feeding the BM25 corpus.
+
+    ``REGENOLD_ONTOLOGY_RISK_DOCS=0`` restores the pre-938933a corpus
+    (345 docs). DEFAULT **ON** — see the long note at the gate itself for why
+    default-ON is the honest choice for an already-shipped change.
+
+    Fresh env read per call (R263.2) so an in-process two-arm A/B is valid.
+    ⚠ The BM25 index is ``lru_cache``d, so a harness flipping this mid-process
+    must also clear that cache — otherwise arm B replays arm A's corpus and the
+    A/B measures nothing, which is the R327 inert-lever signature.
+    """
+    import os
+
+    return os.getenv("REGENOLD_ONTOLOGY_RISK_DOCS", "1").strip().lower() not in {
+        "0", "false", "no", "off",
+    }
+
+
 def _build_ontology_docs() -> list[tuple[str, DocSource, str]]:
     """Build ``(article_key, source, raw_text)`` triples for every ontology entry.
 
@@ -303,6 +322,31 @@ def _build_ontology_docs() -> list[tuple[str, DocSource, str]]:
         # force phase document.
         text_parts.extend(phase.articles)
         rows.append((anchor, "ontology", " ".join(text_parts)))
+
+    # ── R331 GATE — the six AIRO registries added by 938933a ────────────────
+    #
+    # Everything ABOVE this line is the pre-938933a corpus (Practice, Annex III,
+    # Phase). Everything BELOW adds RiskScenario / RiskControl / GPAI /
+    # ConformityRoute / FRIA / SeriousIncident documents to the BM25 index.
+    #
+    # That is a LIVE-PATH RETRIEVAL CHANGE and it shipped UNGATED: the corpus
+    # went 345 -> 373 documents (48 ontology docs, up from 20), which changes
+    # BM25 scoring for every question, not only the ones these entries describe.
+    # CLAUDE.md's merge gate (hard rules #6/#7/#8) requires such a change to be
+    # env-gated so `ab_judge`/`easyhard_ab` can A/B OFF<->ON, run against the
+    # FULL 476 rather than `--qa-only`, and show `gold_dropped == 0`. None of
+    # that was done, and the regenerated `turboquant_precomputed.npz` is simply
+    # the fingerprint of the corpus having moved underneath the index.
+    #
+    # DEFAULT ON, deliberately: these documents are already committed and live,
+    # so defaulting OFF would itself be an unmeasured retrieval change in the
+    # opposite direction. The gate exists to make the measurement POSSIBLE and
+    # to give an instant rollback — not to assert the feature is good.
+    #
+    # ⚠ STILL UNMEASURED. Do not quote a scorecard produced with this ON as
+    # evidence for it until the A/B above has actually been run.
+    if not _ontology_risk_docs_enabled():
+        return rows
 
     # Causal Risk Scenarios (AIRO / ISO 23894) — keyed by the primary
     # statutory violation article (e.g. "Art. 10", "Art. 15").

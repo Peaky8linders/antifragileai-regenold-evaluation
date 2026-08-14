@@ -1425,6 +1425,13 @@ def _engine_cache_key(
             "REGENOLD_VERIFY_REF_CHARS",
             # R315 — BM25 fallback k & Knowledge Graph context caps.
             "REGENOLD_BM25_FALLBACK_K",
+            # R331 — the six AIRO registries feeding the BM25 corpus
+            # (345 -> 373 docs). It changes which provisions are RETRIEVED, so
+            # it changes the answer and its references: engine-level, must be
+            # keyed. Note the index itself is lru_cached, so a harness flipping
+            # this mid-process must clear that cache too — the key alone is
+            # necessary, not sufficient.
+            "REGENOLD_ONTOLOGY_RISK_DOCS",
             "REGENOLD_KG_CONTEXT",
             "REGENOLD_KG_MAX_REFS",
             "REGENOLD_KG_MAX_UNITS",
@@ -1450,6 +1457,20 @@ def _engine_cache_key(
             # The char ceilings decide how much of that context survives, so they
             # belong here for the same reason as the VERIFY budget knobs above.
             "REGENOLD_GRAPH_SEMANTIC_LAYERS",
+            # R331 — the Cohere cross-encoder reorder of the KG-context ref
+            # list. It changes WHICH provisions' verbatim text survives
+            # `_node_ids(refs, limit=max_refs)` and therefore changes the
+            # Stage-2 prompt, so it is ENGINE-level and must be keyed. Without
+            # it an in-process A/B has arm B replay arm A's cached
+            # GraphRAGResponse and every axis reads exactly +0.0000 — which is
+            # ALSO what a genuinely inert lever looks like, making the run
+            # unfalsifiable rather than merely wrong. That already happened
+            # three times to this exact feature in the sibling repo.
+            # The model id is keyed too: it selects the ranker that writes the
+            # order, and a model id is not exempt for being a string (the R289
+            # lesson).
+            "REGENOLD_COHERE_RERANK",
+            "REGENOLD_COHERE_RERANK_MODEL",
             # R327 gate — the open-domain half of the semantic layers, separable
             # so constrained-only can be measured. Engine-level (it changes the
             # Stage-2 grounding block), so it must be keyed like its master.

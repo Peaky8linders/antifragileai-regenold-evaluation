@@ -44,10 +44,127 @@
 
 
 # =============================================================================
-# CLASSES — Specialized Regulatory & Risk Constructs
+# CLASSES — Prohibited Practices (Article 5(1)(a)-(h))
 # =============================================================================
 
-### GPAI & Systemic Risk (Articles 51–56)
+:ProhibitedPractice rdf:type owl:Class ;
+    rdfs:subClassOf airo:Risk ;
+    rdfs:label "Article 5 Prohibited AI Practice"@en ;
+    rdfs:comment "An AI practice placing unacceptable risk upon fundamental rights, health, or safety, prohibited under Article 5(1)."@en ;
+    skos:prefLabel "Prohibited Practice"@en .
+
+:SubliminalManipulation rdf:type owl:Class ;
+    rdfs:subClassOf :ProhibitedPractice ;
+    rdfs:label "Subliminal / Manipulative / Deceptive Techniques (Art. 5(1)(a))"@en .
+
+:VulnerabilityExploitation rdf:type owl:Class ;
+    rdfs:subClassOf :ProhibitedPractice ;
+    rdfs:label "Exploitation of Vulnerabilities (Art. 5(1)(b))"@en .
+
+:SocialScoring rdf:type owl:Class ;
+    rdfs:subClassOf :ProhibitedPractice ;
+    rdfs:label "Social Scoring by Public/Private Entities (Art. 5(1)(c))"@en .
+
+:PredictivePolicing rdf:type owl:Class ;
+    rdfs:subClassOf :ProhibitedPractice ;
+    rdfs:label "Individual Criminal Risk Assessment by Profiling (Art. 5(1)(d))"@en .
+
+:UntargetedFacialScraping rdf:type owl:Class ;
+    rdfs:subClassOf :ProhibitedPractice ;
+    rdfs:label "Untargeted Facial Image Scraping for Databases (Art. 5(1)(e))"@en .
+
+:EmotionRecognitionWorkplaceEducation rdf:type owl:Class ;
+    rdfs:subClassOf :ProhibitedPractice ;
+    rdfs:label "Emotion Recognition in Workplace and Education (Art. 5(1)(f))"@en .
+
+:SensitiveBiometricCategorisation rdf:type owl:Class ;
+    rdfs:subClassOf :ProhibitedPractice ;
+    rdfs:label "Biometric Categorisation by Sensitive Attributes (Art. 5(1)(g))"@en .
+
+:RealTimeRBIInPublicSpaces rdf:type owl:Class ;
+    rdfs:subClassOf :ProhibitedPractice ;
+    rdfs:label "Real-Time Remote Biometric ID in Public Spaces by Law Enforcement (Art. 5(1)(h))"@en .
+
+
+# =============================================================================
+# CLASSES — Annex III High-Risk Categories (Annex III.1 - III.8)
+# =============================================================================
+
+:AnnexIIIHighRiskCategory rdf:type owl:Class ;
+    rdfs:subClassOf airo:Domain ;
+    rdfs:label "Annex III High-Risk Use Case Category"@en ;
+    rdfs:comment "One of the eight high-risk use-case categories enumerated in Annex III under Article 6(2)."@en ;
+    skos:prefLabel "High-Risk Category"@en .
+
+:BiometricsHighRiskCategory rdf:type owl:Class ;
+    rdfs:subClassOf :AnnexIIIHighRiskCategory ;
+    rdfs:label "Annex III(1) Biometrics (Post-RBI, Emotion, Categorisation)"@en .
+
+:CriticalInfrastructureCategory rdf:type owl:Class ;
+    rdfs:subClassOf :AnnexIIIHighRiskCategory ;
+    rdfs:label "Annex III(2) Critical Digital & Physical Infrastructure"@en .
+
+:EducationVocationalTrainingCategory rdf:type owl:Class ;
+    rdfs:subClassOf :AnnexIIIHighRiskCategory ;
+    rdfs:label "Annex III(3) Education and Vocational Training"@en .
+
+:EmploymentWorkerManagementCategory rdf:type owl:Class ;
+    rdfs:subClassOf :AnnexIIIHighRiskCategory ;
+    rdfs:label "Annex III(4) Employment, Recruitment & Worker Management"@en .
+
+:EssentialServicesCategory rdf:type owl:Class ;
+    rdfs:subClassOf :AnnexIIIHighRiskCategory ;
+    rdfs:label "Annex III(5) Essential Public & Private Services (Credit, Insurance, Triage)"@en .
+
+:LawEnforcementCategory rdf:type owl:Class ;
+    rdfs:subClassOf :AnnexIIIHighRiskCategory ;
+    rdfs:label "Annex III(6) Law Enforcement Systems"@en .
+
+:MigrationAsylumCategory rdf:type owl:Class ;
+    rdfs:subClassOf :AnnexIIIHighRiskCategory ;
+    rdfs:label "Annex III(7) Migration, Asylum, and Border Control Management"@en .
+
+:AdministrationOfJusticeCategory rdf:type owl:Class ;
+    rdfs:subClassOf :AnnexIIIHighRiskCategory ;
+    rdfs:label "Annex III(8) Administration of Justice and Democratic Processes"@en .
+
+
+# =============================================================================
+# CLASSES — Chapter III Section 2 Provider Requirements (Articles 8–15)
+# =============================================================================
+
+:RiskManagementSystem rdf:type owl:Class ;
+    rdfs:subClassOf codexai:Control ;
+    rdfs:label "Risk Management System (Article 9)"@en .
+
+:DataGovernanceSystem rdf:type owl:Class ;
+    rdfs:subClassOf codexai:Control ;
+    rdfs:label "Data Governance and Bias Mitigation (Article 10)"@en .
+
+:TechnicalDocumentation rdf:type owl:Class ;
+    rdfs:subClassOf prov:Entity ;
+    rdfs:label "Technical Documentation (Article 11 & Annex IV)"@en .
+
+:AutomaticLoggingSystem rdf:type owl:Class ;
+    rdfs:subClassOf codexai:Control ;
+    rdfs:label "Record-Keeping & Automatic Logging (Article 12)"@en .
+
+:TransparencyInstructions rdf:type owl:Class ;
+    rdfs:subClassOf prov:Entity ;
+    rdfs:label "Transparency and Instructions for Use (Article 13)"@en .
+
+:HumanOversightMeasure rdf:type owl:Class ;
+    rdfs:subClassOf codexai:Control ;
+    rdfs:label "Human Oversight Protocol & Interface (Article 14)"@en .
+
+:AccuracyRobustnessCybersecurity rdf:type owl:Class ;
+    rdfs:subClassOf codexai:Control ;
+    rdfs:label "Accuracy, Robustness, and Cybersecurity Safeguards (Article 15)"@en .
+
+
+# =============================================================================
+# CLASSES — GPAI & Systemic Risk (Articles 51–56)
+# =============================================================================
 
 :GPAIModel rdf:type owl:Class ;
     rdfs:subClassOf airo:AIModel ;
@@ -62,7 +179,9 @@
     skos:prefLabel "Systemic GPAI Model"@en .
 
 
-### Article 6(3) Derogation Filter
+# =============================================================================
+# CLASSES — Article 6(3) Derogation Filter
+# =============================================================================
 
 :DerogationEvaluation rdf:type owl:Class ;
     rdfs:label "Article 6(3) High-Risk Derogation Evaluation"@en ;
@@ -70,7 +189,9 @@
     skos:prefLabel "Derogation Evaluation"@en .
 
 
-### Conformity Assessment Pathways (Article 43)
+# =============================================================================
+# CLASSES — Conformity Assessment Pathways (Article 43)
+# =============================================================================
 
 :ConformityAssessmentRoute rdf:type owl:Class ;
     rdfs:label "Conformity Assessment Pathway"@en ;
@@ -93,7 +214,9 @@
     skos:prefLabel "Sectoral Route"@en .
 
 
-### Fundamental Rights Impact Assessment (Article 27)
+# =============================================================================
+# CLASSES — Fundamental Rights Impact Assessment (Article 27)
+# =============================================================================
 
 :FundamentalRightsImpactAssessment rdf:type owl:Class ;
     rdfs:subClassOf prov:Activity ;
@@ -102,13 +225,34 @@
     skos:prefLabel "FRIA Activity"@en .
 
 
-### Post-Market Monitoring & Incidents (Articles 72 & 73)
+# =============================================================================
+# CLASSES — Post-Market Monitoring & Incidents (Articles 72 & 73)
+# =============================================================================
 
 :SeriousIncident rdf:type owl:Class ;
     rdfs:subClassOf airo:Failure ;
     rdfs:label "Serious Incident (Article 73)"@en ;
     rdfs:comment "An incident that leads to death, critical infrastructure breakdown, or fundamental rights breach."@en ;
     skos:prefLabel "Serious Incident"@en .
+
+# ⚠ CORRECTED 2026-08-14. These three labels previously encoded a fabricated
+# 72-hour deadline (a GDPR Art. 33 figure — no 72-hour period exists anywhere in
+# the AI Act), had the death and critical-infrastructure deadlines SWAPPED, and
+# shifted every paragraph attribution by one. Verified against pinned CELEX
+# 32024R1689: 73(2) = 15 days, 73(3) = two days, 73(4) = 10 days. A label is not
+# decoration here — it is the human-readable statement of the obligation, and an
+# RDF consumer has no way to know it disagrees with the Act.
+:FatalIncident rdf:type owl:Class ;
+    rdfs:subClassOf :SeriousIncident ;
+    rdfs:label "Incident Resulting in the Death of a Person (Art. 73(4) - 10-day / 240h SLA)"@en .
+
+:CriticalInfrastructureIncident rdf:type owl:Class ;
+    rdfs:subClassOf :SeriousIncident ;
+    rdfs:label "Widespread Infringement or Critical Infrastructure Disruption (Art. 73(3) - 2-day / 48h SLA)"@en .
+
+:GeneralSeriousIncident rdf:type owl:Class ;
+    rdfs:subClassOf :SeriousIncident ;
+    rdfs:label "General Serious Incident (Art. 73(2) - 15-day / 360h SLA)"@en .
 
 :PostMarketMonitoringPlan rdf:type owl:Class ;
     rdfs:subClassOf codexai:Control ;
@@ -154,6 +298,16 @@
     rdfs:label "notified to authority"@en ;
     rdfs:domain :FundamentalRightsImpactAssessment ;
     rdfs:range airo:NationalSupervisoryAuthority .
+
+:mitigatesRisk rdf:type owl:ObjectProperty ;
+    rdfs:label "mitigates risk"@en ;
+    rdfs:domain codexai:Control ;
+    rdfs:range airo:Risk .
+
+:evidencedByArtifact rdf:type owl:ObjectProperty ;
+    rdfs:label "evidenced by artifact"@en ;
+    rdfs:domain codexai:Control ;
+    rdfs:range prov:Entity .
 
 
 # =============================================================================

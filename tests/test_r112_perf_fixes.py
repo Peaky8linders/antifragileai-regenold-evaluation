@@ -400,11 +400,23 @@ _EXPECTED_BM25_ONLY: dict[str, list[str]] = {
     "What records must deployers retain and for how long?": [
         "Art. 26", "Art. 61", "Annex IX", "Annex X", "Art. 10",
     ],
-    # R263 Fix 3 — see the matching comment above; the lengthened bare
-    # ``Art. 50`` doc's diluted BM25 score now drops it out of this row's
-    # top-5, replaced by ``Art. 96`` (Right to lodge a complaint).
+    # ⚠ R331 — THIS ROW MOVED BECAUSE THE CORPUS MOVED, NOT BECAUSE OF R263.
+    #
+    # The tail slot was updated in place from ``Art. 96`` to ``Art. 57`` while
+    # the comment above it still explained the R263 ``Art. 50`` dilution and
+    # still named ``Art. 96`` as the replacement. Comment and assertion
+    # disagreed, which is the worst state for a GOLDEN REGRESSION GUARD: this
+    # table exists to CATCH retrieval drift, and it had been edited to accept
+    # it, with a stale rationale making the edit look explained.
+    #
+    # The real cause is 938933a adding six AIRO registries to the BM25 corpus
+    # (345 -> 373 docs). That is now gated — `REGENOLD_ONTOLOGY_RISK_DOCS`,
+    # default ON — so these expectations pin the GATE-ON corpus. If the gate is
+    # flipped OFF, this row returns to ``Art. 96`` and this table must be read
+    # as asserting a different corpus. Say which corpus a golden table pins, or
+    # the next person cannot tell drift from intent.
     "transparency obligations for limited-risk systems": [
-        "Art. 13", "Art. 6", "Art. 1", "Art. 2", "Art. 96",
+        "Art. 13", "Art. 6", "Art. 1", "Art. 2", "Art. 57",
     ],
     "What is the definition of a general-purpose AI model?": [
         "Art. 53", "Art. 3", "Art. 51", "Art. 90", "Art. 92",
@@ -415,7 +427,7 @@ _EXPECTED_BM25_ONLY: dict[str, list[str]] = {
 # ON, repo assets present) — exercises the full fused path.
 _EXPECTED_DEFAULT_ENV: dict[str, list[str]] = {
     "What are the obligations of importers of high-risk AI systems?": [
-        "Art. 23", "Art. 20", "Art. 6", "Art. 95", "Art. 13",
+        "Art. 23", "Art. 20", "Art. 6", "Art. 95", "Art. 12",
     ],
     # R263 Fix 3 — see the matching comment in ``_EXPECTED_BM25_ONLY``
     # above; same re-rank, different tail slot (the dense paths fill the

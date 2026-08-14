@@ -58,6 +58,13 @@ NODE_QUESTION: Final = "Question"
 # Lawstronaut official legal provenance and guidelines layer
 NODE_LEGAL_INSTRUMENT: Final = "LegalInstrument"
 NODE_GUIDELINE: Final = "Guideline"
+# SOTA AIRO & EU AI Act Governance Ontology
+NODE_RISK_SCENARIO: Final = "RiskScenario"
+NODE_RISK_CONTROL: Final = "RiskControl"
+NODE_GPAI_MODEL_PROFILE: Final = "GPAIModelProfile"
+NODE_CONFORMITY_ROUTE: Final = "ConformityRoute"
+NODE_FRIA_WORKFLOW: Final = "FRIAWorkflow"
+NODE_SERIOUS_INCIDENT_SLA: Final = "SeriousIncidentSLA"
 
 #: Every node label the seeder writes. The single source of truth.
 SEEDED_NODE_LABELS: Final[frozenset[str]] = frozenset(
@@ -80,6 +87,12 @@ SEEDED_NODE_LABELS: Final[frozenset[str]] = frozenset(
         NODE_QUESTION,
         NODE_LEGAL_INSTRUMENT,
         NODE_GUIDELINE,
+        NODE_RISK_SCENARIO,
+        NODE_RISK_CONTROL,
+        NODE_GPAI_MODEL_PROFILE,
+        NODE_CONFORMITY_ROUTE,
+        NODE_FRIA_WORKFLOW,
+        NODE_SERIOUS_INCIDENT_SLA,
     }
 )
 
@@ -107,6 +120,10 @@ REL_ASSESSES: Final = "ASSESSES"  # Question → Obligation
 # Lawstronaut provenance & official guidance edges
 REL_HAS_PROVENANCE: Final = "HAS_PROVENANCE"  # Article/Annex → LegalInstrument
 REL_INTERPRETS: Final = "INTERPRETS"  # Guideline → Practice/Article
+# SOTA AIRO & EU AI Act Governance edges
+REL_REQUIRES_CONTROL: Final = "REQUIRES_CONTROL"  # RiskScenario → RiskControl
+REL_VIOLATES: Final = "VIOLATES"  # RiskScenario → Article/Annex
+REL_GOVERNED_BY: Final = "GOVERNED_BY"  # RiskControl/GPAI/Conformity/FRIA/Incident → Article/Annex
 
 #: Every relationship type the seeder writes. The single source of truth.
 #: NOTE: ``REQUIRES`` is deliberately ABSENT — the seeder never creates it
@@ -130,6 +147,9 @@ SEEDED_REL_TYPES: Final[frozenset[str]] = frozenset(
         REL_ASSESSES,
         REL_HAS_PROVENANCE,
         REL_INTERPRETS,
+        REL_REQUIRES_CONTROL,
+        REL_VIOLATES,
+        REL_GOVERNED_BY,
     }
 )
 

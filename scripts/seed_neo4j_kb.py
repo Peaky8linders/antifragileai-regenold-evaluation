@@ -73,7 +73,17 @@ from app.data.provision_hierarchy import (
     HierarchyPayload,
     build_hierarchy_payload,
 )
-from app.data.ontology import PRACTICE_REGISTRY, PHASE_REGISTRY, ANNEX_III_REGISTRY
+from app.data.ontology import (
+    ANNEX_III_REGISTRY,
+    CONFORMITY_ROUTE_REGISTRY,
+    FRIA_REGISTRY,
+    GPAI_REGISTRY,
+    PHASE_REGISTRY,
+    PRACTICE_REGISTRY,
+    RISK_CONTROL_REGISTRY,
+    RISK_SCENARIO_REGISTRY,
+    SERIOUS_INCIDENT_REGISTRY,
+)
 
 # ── SEED-02 fix: reconcile MATURITY_DIMENSIONS ids vs DIMENSION_TO_ARTICLES keys ──
 # The upstream module uses 'conformity_assessment' but MATURITY_DIMENSIONS uses 'conformity'.
@@ -123,7 +133,7 @@ logger = logging.getLogger(__name__)
 #: new edge type, removed source, etc.). Surfaces in the ``KBMetadata``
 #: node so consumers can detect a graph that's stale relative to the
 #: currently-running code.
-SEED_VERSION = "2026-07-24-r291-fullseed"
+SEED_VERSION = "2026-08-14-sota-airo-fullseed"
 
 #: Cap on per-transaction batch size to stay well clear of the Neo4j
 #: 4194304-byte default transaction limit. The shape of our payloads
@@ -315,6 +325,16 @@ class SeedPayload:
     has_obligation_article_edges: list[dict] = dataclasses.field(default_factory=list)
     has_provenance_edges: list[dict] = dataclasses.field(default_factory=list)
     interprets_edges: list[dict] = dataclasses.field(default_factory=list)
+    # SOTA AIRO & EU AI Act Governance layers
+    risk_scenario_nodes: list[dict] = dataclasses.field(default_factory=list)
+    risk_control_nodes: list[dict] = dataclasses.field(default_factory=list)
+    gpai_profile_nodes: list[dict] = dataclasses.field(default_factory=list)
+    conformity_route_nodes: list[dict] = dataclasses.field(default_factory=list)
+    fria_workflow_nodes: list[dict] = dataclasses.field(default_factory=list)
+    serious_incident_nodes: list[dict] = dataclasses.field(default_factory=list)
+    requires_control_edges: list[dict] = dataclasses.field(default_factory=list)
+    violates_edges: list[dict] = dataclasses.field(default_factory=list)
+    governed_by_edges: list[dict] = dataclasses.field(default_factory=list)
     hierarchy: "HierarchyPayload | None" = None
 
     def _hier_counts(self) -> dict[str, int]:
@@ -343,6 +363,12 @@ class SeedPayload:
             + len(self.phase_nodes)
             + len(self.legal_instrument_nodes)
             + len(self.guideline_nodes)
+            + len(self.risk_scenario_nodes)
+            + len(self.risk_control_nodes)
+            + len(self.gpai_profile_nodes)
+            + len(self.conformity_route_nodes)
+            + len(self.fria_workflow_nodes)
+            + len(self.serious_incident_nodes)
             + h["Paragraph"] + h["Point"] + h["SubPoint"]
             + 1  # metadata
         )
@@ -364,6 +390,9 @@ class SeedPayload:
             + len(self.has_obligation_article_edges)
             + len(self.has_provenance_edges)
             + len(self.interprets_edges)
+            + len(self.requires_control_edges)
+            + len(self.violates_edges)
+            + len(self.governed_by_edges)
             + h["HAS_PARAGRAPH"] + h["HAS_POINT"] + h["HAS_SUBPOINT"]
         )
 
@@ -383,6 +412,12 @@ class SeedPayload:
             "LifecyclePhase": len(self.phase_nodes),
             "LegalInstrument": len(self.legal_instrument_nodes),
             "Guideline": len(self.guideline_nodes),
+            "RiskScenario": len(self.risk_scenario_nodes),
+            "RiskControl": len(self.risk_control_nodes),
+            "GPAIModelProfile": len(self.gpai_profile_nodes),
+            "ConformityRoute": len(self.conformity_route_nodes),
+            "FRIAWorkflow": len(self.fria_workflow_nodes),
+            "SeriousIncidentSLA": len(self.serious_incident_nodes),
             "KBMetadata": 1,
             "HAS_OBLIGATION": len(self.has_obligation_edges),
             "HAS_DEFINITION": len(self.has_definition_edges),
@@ -397,6 +432,9 @@ class SeedPayload:
             "HAS_OBLIGATION_ARTICLE": len(self.has_obligation_article_edges),
             "HAS_PROVENANCE": len(self.has_provenance_edges),
             "INTERPRETS": len(self.interprets_edges),
+            "REQUIRES_CONTROL": len(self.requires_control_edges),
+            "VIOLATES": len(self.violates_edges),
+            "GOVERNED_BY": len(self.governed_by_edges),
         }
         # NOTE: the Paragraph/Point/SubPoint hierarchy is intentionally NOT in
         # ``counts()`` — that dict is the per-label write ledger ``seed_graph``
@@ -837,6 +875,201 @@ def build_payload() -> SeedPayload:
                     {"source_id": str(g["id"]), "target_id": target}
                 )
 
+    # ── SOTA AIRO & EU AI Act Governance Entities ──────────────────────
+    def _existing_target_id(short_ref: str) -> str | None:
+        raw = short_ref.split("(")[0].strip()
+        if raw.startswith("Art. "):
+            base = "Art. " + raw[len("Art. "):].split(".")[0].strip()
+            return _article_id(base) if base in ARTICLE_EXISTENCE else None
+        elif raw.startswith("Annex "):
+            m = _ANNEX_NUMBER_RE.match(raw)
+            if m:
+                annex_ref = f"Annex {m.group(1).upper()}"
+                return _article_id(annex_ref) if annex_ref in ARTICLE_EXISTENCE else None
+        return None
+
+    # RiskScenario nodes
+    risk_scenario_nodes = [
+        {
+            "id": s.id,
+            "short_name": s.short_name,
+            "hazard_or_threat": s.hazard_or_threat,
+            "vulnerability": s.vulnerability,
+            "risk_event": s.risk_event,
+            "impact_area": s.impact_area,
+            "severity_level": s.severity_level,
+            "statutory_violation": list(s.statutory_violation),
+            "description": s.description,
+            "keywords": list(s.keywords),
+        }
+        for s in RISK_SCENARIO_REGISTRY.values()
+    ]
+
+    # RiskControl nodes
+    risk_control_nodes = [
+        {
+            "id": c.id,
+            "name": c.name,
+            "control_type": c.control_type,
+            "lifecycle_phase": c.lifecycle_phase,
+            "mitigates_risk_id": c.mitigates_risk_id,
+            "evidenced_by": list(c.evidenced_by),
+            "standards_ref": list(c.standards_ref),
+            "articles": list(c.articles),
+            "description": c.description,
+            "keywords": list(c.keywords),
+        }
+        for c in RISK_CONTROL_REGISTRY.values()
+    ]
+
+    # GPAIModelProfile nodes
+    gpai_profile_nodes = [
+        {
+            "id": g.id,
+            "model_name": g.model_name,
+            "training_compute_flops": float(g.training_compute_flops),
+            "is_open_source": bool(g.is_open_source),
+            "has_systemic_risk": bool(g.has_systemic_risk),
+            "mandatory_obligations": list(g.mandatory_obligations),
+            "technical_doc_annex": g.technical_doc_annex,
+            "downstream_info_annex": g.downstream_info_annex,
+            "description": g.description,
+            "keywords": list(g.keywords),
+        }
+        for g in GPAI_REGISTRY.values()
+    ]
+
+    # ConformityRoute nodes
+    conformity_route_nodes = [
+        {
+            "id": cr.id,
+            "route_type": cr.route_type.value if hasattr(cr.route_type, "value") else str(cr.route_type),
+            "governing_articles": list(cr.governing_articles),
+            "applicable_annex": cr.applicable_annex,
+            "requires_notified_body": bool(cr.requires_notified_body),
+            "description": cr.description,
+            "keywords": list(cr.keywords),
+        }
+        for cr in CONFORMITY_ROUTE_REGISTRY.values()
+    ]
+
+    # FRIAWorkflow nodes
+    fria_workflow_nodes = [
+        {
+            "id": f.id,
+            "deployer_category": f.deployer_category,
+            "governing_articles": list(f.governing_articles),
+            "required_steps": list(f.required_steps),
+            "mandatory_reporting_authority": f.mandatory_reporting_authority,
+            "description": f.description,
+            "keywords": list(f.keywords),
+        }
+        for f in FRIA_REGISTRY.values()
+    ]
+
+    # SeriousIncidentSLA nodes
+    serious_incident_nodes = [
+        {
+            "id": i.id,
+            "incident_type": i.incident_type,
+            "deadline_hours": int(i.deadline_hours),
+            "statutory_basis": list(i.statutory_basis),
+            "qms_update_required": bool(i.qms_update_required),
+            "description": i.description,
+            "keywords": list(i.keywords),
+        }
+        for i in SERIOUS_INCIDENT_REGISTRY.values()
+    ]
+
+    # REQUIRES_CONTROL edges (RiskScenario -> RiskControl)
+    requires_control_edges: list[dict] = []
+    for s in RISK_SCENARIO_REGISTRY.values():
+        for ctrl_id in s.required_controls:
+            if ctrl_id in RISK_CONTROL_REGISTRY:
+                requires_control_edges.append({
+                    "source_id": s.id,
+                    "target_id": ctrl_id,
+                })
+
+    # VIOLATES edges (RiskScenario -> Article/Annex)
+    violates_edges: list[dict] = []
+    seen_violates: set[tuple[str, str]] = set()
+    for s in RISK_SCENARIO_REGISTRY.values():
+        for ref in s.statutory_violation:
+            target = _existing_target_id(ref)
+            if target is not None:
+                pair = (s.id, target)
+                if pair not in seen_violates:
+                    seen_violates.add(pair)
+                    violates_edges.append({
+                        "source_id": s.id,
+                        "target_id": target,
+                    })
+
+    # GOVERNED_BY edges (RiskControl/GPAI/Conformity/FRIA/Incident -> Article/Annex)
+    governed_by_edges: list[dict] = []
+    seen_governed: set[tuple[str, str]] = set()
+
+    for c in RISK_CONTROL_REGISTRY.values():
+        for ref in c.articles:
+            target = _existing_target_id(ref)
+            if target is not None:
+                pair = (c.id, target)
+                if pair not in seen_governed:
+                    seen_governed.add(pair)
+                    governed_by_edges.append({
+                        "source_id": c.id,
+                        "target_id": target,
+                    })
+
+    for g in GPAI_REGISTRY.values():
+        for ref in g.mandatory_obligations:
+            target = _existing_target_id(ref)
+            if target is not None:
+                pair = (g.id, target)
+                if pair not in seen_governed:
+                    seen_governed.add(pair)
+                    governed_by_edges.append({
+                        "source_id": g.id,
+                        "target_id": target,
+                    })
+
+    for cr in CONFORMITY_ROUTE_REGISTRY.values():
+        for ref in cr.governing_articles:
+            target = _existing_target_id(ref)
+            if target is not None:
+                pair = (cr.id, target)
+                if pair not in seen_governed:
+                    seen_governed.add(pair)
+                    governed_by_edges.append({
+                        "source_id": cr.id,
+                        "target_id": target,
+                    })
+
+    for f in FRIA_REGISTRY.values():
+        for ref in f.governing_articles:
+            target = _existing_target_id(ref)
+            if target is not None:
+                pair = (f.id, target)
+                if pair not in seen_governed:
+                    seen_governed.add(pair)
+                    governed_by_edges.append({
+                        "source_id": f.id,
+                        "target_id": target,
+                    })
+
+    for i in SERIOUS_INCIDENT_REGISTRY.values():
+        for ref in i.statutory_basis:
+            target = _existing_target_id(ref)
+            if target is not None:
+                pair = (i.id, target)
+                if pair not in seen_governed:
+                    seen_governed.add(pair)
+                    governed_by_edges.append({
+                        "source_id": i.id,
+                        "target_id": target,
+                    })
+
     # ── Provision hierarchy (Article/Annex → Paragraph → Point → SubPoint) ─
     # Folded into the payload so ``--dry-run`` accounts for the FULL graph
     # (the R290 audit's G4 gap: the hierarchy previously wrote ~⅓ of the
@@ -870,6 +1103,12 @@ def build_payload() -> SeedPayload:
         phase_nodes=phase_nodes,
         legal_instrument_nodes=legal_instrument_nodes,
         guideline_nodes=guideline_nodes,
+        risk_scenario_nodes=risk_scenario_nodes,
+        risk_control_nodes=risk_control_nodes,
+        gpai_profile_nodes=gpai_profile_nodes,
+        conformity_route_nodes=conformity_route_nodes,
+        fria_workflow_nodes=fria_workflow_nodes,
+        serious_incident_nodes=serious_incident_nodes,
         metadata_node=metadata_node,
         has_obligation_edges=has_obligation_edges,
         has_definition_edges=has_definition_edges,
@@ -884,6 +1123,9 @@ def build_payload() -> SeedPayload:
         interprets_edges=interprets_edges,
         applies_to_phase_edges=applies_to_phase_edges,
         has_obligation_article_edges=has_obligation_article_edges,
+        requires_control_edges=requires_control_edges,
+        violates_edges=violates_edges,
+        governed_by_edges=governed_by_edges,
         hierarchy=hierarchy,
     )
     # Backfill the counts now that everything else is settled.
@@ -1149,6 +1391,109 @@ MERGE (role)-[r:HAS_OBLIGATION_ARTICLE]->(a)
 SET r.tier = $tier
 """
 
+# ── SOTA AIRO & EU AI Act Governance Templates ────────────────────────────
+
+_CYPHER_RISK_SCENARIO = """
+MERGE (s:RiskScenario {id: $id})
+SET s.short_name = $short_name,
+    s.hazard_or_threat = $hazard_or_threat,
+    s.vulnerability = $vulnerability,
+    s.risk_event = $risk_event,
+    s.impact_area = $impact_area,
+    s.severity_level = $severity_level,
+    s.statutory_violation = $statutory_violation,
+    s.description = $description,
+    s.keywords = $keywords
+"""
+
+_CYPHER_RISK_CONTROL = """
+MERGE (c:RiskControl {id: $id})
+SET c.name = $name,
+    c.control_type = $control_type,
+    c.lifecycle_phase = $lifecycle_phase,
+    c.mitigates_risk_id = $mitigates_risk_id,
+    c.evidenced_by = $evidenced_by,
+    c.standards_ref = $standards_ref,
+    c.articles = $articles,
+    c.description = $description,
+    c.keywords = $keywords
+"""
+
+_CYPHER_GPAI_MODEL_PROFILE = """
+MERGE (g:GPAIModelProfile {id: $id})
+SET g.model_name = $model_name,
+    g.training_compute_flops = $training_compute_flops,
+    g.is_open_source = $is_open_source,
+    g.has_systemic_risk = $has_systemic_risk,
+    g.mandatory_obligations = $mandatory_obligations,
+    g.technical_doc_annex = $technical_doc_annex,
+    g.downstream_info_annex = $downstream_info_annex,
+    g.description = $description,
+    g.keywords = $keywords
+"""
+
+_CYPHER_CONFORMITY_ROUTE = """
+MERGE (cr:ConformityRoute {id: $id})
+SET cr.route_type = $route_type,
+    cr.governing_articles = $governing_articles,
+    cr.applicable_annex = $applicable_annex,
+    cr.requires_notified_body = $requires_notified_body,
+    cr.description = $description,
+    cr.keywords = $keywords
+"""
+
+_CYPHER_FRIA_WORKFLOW = """
+MERGE (f:FRIAWorkflow {id: $id})
+SET f.deployer_category = $deployer_category,
+    f.governing_articles = $governing_articles,
+    f.required_steps = $required_steps,
+    f.mandatory_reporting_authority = $mandatory_reporting_authority,
+    f.description = $description,
+    f.keywords = $keywords
+"""
+
+_CYPHER_SERIOUS_INCIDENT = """
+MERGE (i:SeriousIncidentSLA {id: $id})
+SET i.incident_type = $incident_type,
+    i.deadline_hours = $deadline_hours,
+    i.statutory_basis = $statutory_basis,
+    i.qms_update_required = $qms_update_required,
+    i.description = $description,
+    i.keywords = $keywords
+"""
+
+_CYPHER_REQUIRES_CONTROL = """
+MATCH (s:RiskScenario {id: $source_id})
+MATCH (c:RiskControl {id: $target_id})
+MERGE (s)-[:REQUIRES_CONTROL]->(c)
+"""
+
+_CYPHER_VIOLATES_ARTICLE = """
+MATCH (s:RiskScenario {id: $source_id})
+MATCH (a:Article {id: $target_id})
+MERGE (s)-[:VIOLATES]->(a)
+"""
+
+_CYPHER_VIOLATES_ANNEX = """
+MATCH (s:RiskScenario {id: $source_id})
+MATCH (a:Annex {id: $target_id})
+MERGE (s)-[:VIOLATES]->(a)
+"""
+
+_CYPHER_GOVERNED_BY_ARTICLE = """
+MATCH (s {id: $source_id})
+WHERE s:RiskControl OR s:GPAIModelProfile OR s:ConformityRoute OR s:FRIAWorkflow OR s:SeriousIncidentSLA
+MATCH (a:Article {id: $target_id})
+MERGE (s)-[:GOVERNED_BY]->(a)
+"""
+
+_CYPHER_GOVERNED_BY_ANNEX = """
+MATCH (s {id: $source_id})
+WHERE s:RiskControl OR s:GPAIModelProfile OR s:ConformityRoute OR s:FRIAWorkflow OR s:SeriousIncidentSLA
+MATCH (a:Annex {id: $target_id})
+MERGE (s)-[:GOVERNED_BY]->(a)
+"""
+
 
 # ─── Runner ──────────────────────────────────────────────────────────────
 
@@ -1261,6 +1606,31 @@ def seed_graph(
         client, _CYPHER_GUIDELINE, payload.guideline_nodes,
         batch_size=batch_size, label="Guideline", verbose=verbose,
     )
+    # SOTA AIRO & Governance nodes
+    counts["RiskScenario"] = _write_rows(
+        client, _CYPHER_RISK_SCENARIO, payload.risk_scenario_nodes,
+        batch_size=batch_size, label="RiskScenario", verbose=verbose,
+    )
+    counts["RiskControl"] = _write_rows(
+        client, _CYPHER_RISK_CONTROL, payload.risk_control_nodes,
+        batch_size=batch_size, label="RiskControl", verbose=verbose,
+    )
+    counts["GPAIModelProfile"] = _write_rows(
+        client, _CYPHER_GPAI_MODEL_PROFILE, payload.gpai_profile_nodes,
+        batch_size=batch_size, label="GPAIModelProfile", verbose=verbose,
+    )
+    counts["ConformityRoute"] = _write_rows(
+        client, _CYPHER_CONFORMITY_ROUTE, payload.conformity_route_nodes,
+        batch_size=batch_size, label="ConformityRoute", verbose=verbose,
+    )
+    counts["FRIAWorkflow"] = _write_rows(
+        client, _CYPHER_FRIA_WORKFLOW, payload.fria_workflow_nodes,
+        batch_size=batch_size, label="FRIAWorkflow", verbose=verbose,
+    )
+    counts["SeriousIncidentSLA"] = _write_rows(
+        client, _CYPHER_SERIOUS_INCIDENT, payload.serious_incident_nodes,
+        batch_size=batch_size, label="SeriousIncidentSLA", verbose=verbose,
+    )
 
     # ── Edges ─────────────────────────────────────────────────────────
     counts["HAS_OBLIGATION"] = _write_rows(
@@ -1323,6 +1693,29 @@ def seed_graph(
         client, _CYPHER_INTERPRETS, payload.interprets_edges,
         batch_size=batch_size, label="INTERPRETS", verbose=verbose,
     )
+    # SOTA AIRO & Governance edges
+    counts["REQUIRES_CONTROL"] = _write_rows(
+        client, _CYPHER_REQUIRES_CONTROL, payload.requires_control_edges,
+        batch_size=batch_size, label="REQUIRES_CONTROL", verbose=verbose,
+    )
+    counts["VIOLATES"] = _write_rows(
+        client, _CYPHER_VIOLATES_ARTICLE,
+        [e for e in payload.violates_edges if e["target_id"] in _article_ids],
+        batch_size=batch_size, label="VIOLATES(Article)", verbose=verbose,
+    ) + _write_rows(
+        client, _CYPHER_VIOLATES_ANNEX,
+        [e for e in payload.violates_edges if e["target_id"] not in _article_ids],
+        batch_size=batch_size, label="VIOLATES(Annex)", verbose=verbose,
+    )
+    counts["GOVERNED_BY"] = _write_rows(
+        client, _CYPHER_GOVERNED_BY_ARTICLE,
+        [e for e in payload.governed_by_edges if e["target_id"] in _article_ids],
+        batch_size=batch_size, label="GOVERNED_BY(Article)", verbose=verbose,
+    ) + _write_rows(
+        client, _CYPHER_GOVERNED_BY_ANNEX,
+        [e for e in payload.governed_by_edges if e["target_id"] not in _article_ids],
+        batch_size=batch_size, label="GOVERNED_BY(Annex)", verbose=verbose,
+    )
 
     return counts
 
@@ -1350,6 +1743,12 @@ def validate_payload(payload: SeedPayload) -> list[str]:
         payload.phase_nodes,
         payload.legal_instrument_nodes,
         payload.guideline_nodes,
+        payload.risk_scenario_nodes,
+        payload.risk_control_nodes,
+        payload.gpai_profile_nodes,
+        payload.conformity_route_nodes,
+        payload.fria_workflow_nodes,
+        payload.serious_incident_nodes,
     ):
         for row in bucket:
             node_ids.add(row["id"])
@@ -1370,6 +1769,9 @@ def validate_payload(payload: SeedPayload) -> list[str]:
         ("HAS_OBLIGATION_ARTICLE", payload.has_obligation_article_edges),
         ("HAS_PROVENANCE", payload.has_provenance_edges),
         ("INTERPRETS", payload.interprets_edges),
+        ("REQUIRES_CONTROL", payload.requires_control_edges),
+        ("VIOLATES", payload.violates_edges),
+        ("GOVERNED_BY", payload.governed_by_edges),
     )
     for name, edges in edge_buckets:
         for row in edges:
@@ -1717,6 +2119,37 @@ def main(argv: list[str] | None = None) -> int:
         print("\n--dry-run: no writes performed. Exiting 0.")
         return 0
 
+    # ⚠ DO NOT ADD load_dotenv() HERE. Reverted 2026-08-14.
+    #
+    # An uncommitted change had put `load_dotenv()` on this line, one statement
+    # before the driver is constructed. It reads as a convenience. It is not:
+    # it removes the only barrier standing between a casual `py -3.12
+    # scripts/seed_neo4j_kb.py` and a MERGE-write against the SHARED production
+    # Aura instance.
+    #
+    # The chain, each link verified:
+    #   * `.env` (gitignored, present on developer machines) carries
+    #     NEO4J_URI = the live Aura host, plus NEO4J_PASSWORD.
+    #   * `app/graph/config.py` GraphSettings has NO `env_file` — it reads
+    #     os.environ only, so `load_dotenv()` is precisely what activates it.
+    #   * `app/graph/client.py` gates activation on `os.environ["NEO4J_URI"]`
+    #     being present — nothing else.
+    #   * this script accepts `--clear`, which DETACH DELETEs every node.
+    #   * the seeder never reads NEO4J_AUTO_SEED (its only consumer is
+    #     app/main.py), so hard rule #12's pin gives ZERO protection here.
+    #
+    # CLAUDE.md files "Scripts don't load .env" under gotchas, as an
+    # annoyance. It is not an annoyance — it is the ENFORCEMENT MECHANISM for
+    # hard rule #12. Before this line existed, a bare run from a clean shell
+    # exited with "GraphClient is disabled — set NEO4J_URI". After it, the
+    # identical command silently authenticates against production and writes.
+    # The failure is silent by construction: the seed succeeds, /healthz/graph
+    # stays green, and answers just get worse.
+    #
+    # If the ergonomics are genuinely wanted, they must be UNREACHABLE BY
+    # ACCIDENT: an explicit `--load-dotenv` flag, plus a refusal to write when
+    # the resolved URI is the shared Aura host without a second explicit
+    # opt-in. Credentials for a real seed are exported deliberately, per run.
     _apply_env_overrides(args)
 
     # Deferred import so the offline / dry-run paths don't drag the
