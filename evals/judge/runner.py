@@ -277,8 +277,17 @@ def _call_judge_bedrock(prompt: str, timeout_s: float = 30.0) -> dict[str, Any]:
     # Measured on the refs axis, eu.anthropic.claude-sonnet-4-6, 2026-08-11.
     # This is a truncation fix, not a rubric change — the prompts and the
     # parsed formulas are untouched.
-    max_tokens = int(os.getenv("REGENOLD_BEDROCK_JUDGE_MAX_TOKENS", "").strip()
-                      or _judge_max_tokens())
+    # A malformed override must not take the judge down: a bare int() here
+    # raised ValueError on e.g. "1600 " with a stray character, killing the run
+    # instead of falling back to the shared budget. Every other env read in this
+    # module is guarded; this one was not.
+    try:
+        max_tokens = int(
+            os.getenv("REGENOLD_BEDROCK_JUDGE_MAX_TOKENS", "").strip()
+            or _judge_max_tokens()
+        )
+    except (TypeError, ValueError):
+        max_tokens = _judge_max_tokens()
     req = BedrockRequest(
         system=_JUDGE_SYSTEM,
         user=prompt,
@@ -639,12 +648,40 @@ def _parse_judge_json(text: str) -> dict[str, Any]:
         else:
             i = start + 1
 
-    if candidates:
-        # Prioritize candidate object containing known judge schema keys
-        for cand in candidates:
-            if any(k in cand for k in target_keys):
-                return cand
-        return candidates[-1]
+    # ⚠ TRUNCATION MUST NOT BECOME A PASS.
+    #
+    # When the OUTER object is unbalanced (a max_tokens cut mid-reply) the
+    # scanner above restarts at ``start + 1`` and therefore descends INTO the
+    # array elements of the truncated verdict. Those elements parse cleanly, so
+    # the old tail `return candidates[-1]` handed one back as if it were the
+    # whole verdict. Measured on a realistic mid-array cut:
+    #
+    #   in : '{"classifications": [{"ref": "Article 5", "class": "WRONG", ...},
+    #          {"ref": "Article 6", "class": "WRO'
+    #   out: {'ref': 'Article 5', 'class': 'WRONG', ...}
+    #   -> reference_correctness verdict='pass', wrong_refs=[]
+    #
+    # So a judge reply that was CUT OFF mid-way through listing WRONG refs
+    # scored as a clean PASS with zero wrong refs. Truncation inflated the pass
+    # rate at the PARSER layer — below every guard built to catch it, and in the
+    # direction that flatters the system. CLAUDE.md already records the sibling
+    # failure (a truncated reply becoming `unbalanced_json`, a SILENT ZERO);
+    # this is the same class, inverted and worse, because a zero is visible and
+    # a false pass is not.
+    #
+    # An axis verdict is only ever a TOP-LEVEL object, so accept only a
+    # candidate carrying a top-level schema key, and explicitly reject the
+    # array-element shapes ({ref,class} / {ref,status} / {text,status}) that a
+    # descent can produce. No last-resort fallback: an unparseable reply is an
+    # ERROR, and an error is the honest answer.
+    _ELEMENT_SHAPES = ({"ref", "class"}, {"ref", "status"}, {"text", "status"})
+    for cand in candidates:
+        if not any(k in cand for k in target_keys):
+            continue
+        keys = set(cand)
+        if any(shape <= keys for shape in _ELEMENT_SHAPES):
+            continue  # an item lifted out of a truncated array, not a verdict
+        return cand
 
     if "{" not in s:
         return {"judge_error": "no_json", "raw": text[:200]}

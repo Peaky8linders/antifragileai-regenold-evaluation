@@ -18,12 +18,15 @@ from enum import Enum
 from pydantic import BaseModel, Field
 
 from app.graph.schema import (
+    REL_GOVERNED_BY,
     REL_HAS_DEFINITION,
     REL_HAS_OBLIGATION,
     REL_HAS_PROVENANCE,
     REL_HAS_RECITAL_ANCHOR,
     REL_INTERPRETS,
+    REL_REQUIRES_CONTROL,
     REL_TRIGGERS_HIGH_RISK_UNDER,
+    REL_VIOLATES,
 )
 
 # ─── Node Types ──────────────────────────────────────────────────────────────
@@ -43,6 +46,12 @@ class NodeType(str, Enum):
     harmonized_standard = "HarmonizedStandard"
     legal_instrument = "LegalInstrument"
     guideline = "Guideline"
+    risk_scenario = "RiskScenario"
+    risk_control = "RiskControl"
+    gpai_model_profile = "GPAIModelProfile"
+    conformity_route = "ConformityRoute"
+    fria_workflow = "FRIAWorkflow"
+    serious_incident_sla = "SeriousIncidentSLA"
     # ─── Layer 1 — Agentic-AI compound-risk taxonomy (paper §10.4) ───────
     compound_risk_type = "CompoundRiskType"
     threat_category = "ThreatCategory"
@@ -379,6 +388,10 @@ class EdgeType(str, Enum):
     # know about. Sourced from the schema single source of truth.
     has_provenance = REL_HAS_PROVENANCE     # Article/Annex → LegalInstrument
     interprets = REL_INTERPRETS             # Guideline → Article/Practice
+    # SOTA AIRO & EU AI Act Governance edges
+    requires_control = REL_REQUIRES_CONTROL
+    violates = REL_VIOLATES
+    governed_by = REL_GOVERNED_BY
     # ─── Layer 2 (tenant overlay → Layer 1) ───────────────────────────────
     # Every edge where the source is a Layer 2 node MUST have the source
     # node already scoped to the caller's tenant via tenant_scope.scoped_read.

@@ -197,19 +197,80 @@ def _quote_substantiated(quote: str, *text_blocks: str, min_words: int = 8) -> b
         # 1. Exact normalized contiguous substring match
         if nq in nb:
             return True
-        # 2. Strict contiguous 4-gram sequence matching (order-preserving)
+        # 2. Longest CONTIGUOUS run fallback, with a negation veto.
+        #
+        # ⚠ The previous fallback was labelled "strict contiguous 4-gram
+        # sequence matching (order-preserving)" and was none of those things.
+        # It collected the block's 4-grams into a SET and asked what fraction of
+        # the quote's 4-grams appeared anywhere in it, so 25% of the quote could
+        # be arbitrary invention and the matches needed no adjacency and no
+        # order. Measured against the real Article 14 sentence, all of these
+        # returned True:
+        #
+        #   * the verbatim sentence                                  (correct)
+        #   * "High-risk AI systems shall NOT be designed and developed
+        #      in such a way that they can be effectively overseen..."  ← NEGATED
+        #   * the sentence with two invented 4-grams spliced in
+        #
+        # A negation flip is the single most damaging failure this gate exists
+        # to stop: it lets the judge "substantiate" a WRONG/CONTRADICTED verdict
+        # with a quote asserting the OPPOSITE of the provision, which then reads
+        # as evidence. The gate was passing exactly the case it was built for.
+        #
+        # Now: one maximal CONTIGUOUS run of matched tokens, no substitutions,
+        # plus a hard veto whenever the quote and the matched span disagree on
+        # any negation/exception token. Coverage is measured against the run,
+        # not against a bag.
         nb_words = nb.split()
-        n = 4
-        if len(nq_words) >= n and len(nb_words) >= n:
-            nb_ngrams = {tuple(nb_words[i:i + n]) for i in range(len(nb_words) - n + 1)}
-            total_ngrams = len(nq_words) - n + 1
-            matched_ngrams = sum(
-                1 for i in range(total_ngrams)
-                if tuple(nq_words[i:i + n]) in nb_ngrams
-            )
-            if total_ngrams > 0 and (matched_ngrams / total_ngrams) >= 0.75:
-                return True
+        if len(nq_words) >= min_words and len(nb_words) >= min_words:
+            run = _longest_contiguous_run(nq_words, nb_words)
+            if run is not None:
+                start, length = run
+                covers = length / len(nq_words)
+                if covers >= 0.85:
+                    span = nb_words[start:start + length]
+                    if _negation_profile(nq_words) == _negation_profile(span):
+                        return True
     return False
+
+
+#: Tokens that invert or narrow a legal obligation. A quote that differs from
+#: the source on ANY of these is not the source, however well the rest matches.
+_NEGATION_TOKENS = frozenset({
+    "not", "no", "nor", "never", "except", "unless", "without",
+    "excluding", "exempt", "prohibited", "shall", "may", "must",
+})
+
+
+def _negation_profile(words: list[str]) -> tuple[str, ...]:
+    """Ordered negation/modality tokens — the part a paraphrase must not change."""
+    return tuple(w for w in words if w in _NEGATION_TOKENS)
+
+
+def _longest_contiguous_run(
+    quote_words: list[str], block_words: list[str]
+) -> tuple[int, int] | None:
+    """Longest run of quote tokens appearing CONTIGUOUSLY and in order in block.
+
+    Returns ``(block_start_index, length)`` for the best run, or ``None``.
+    Straight dynamic programming over the two token lists — no substitutions,
+    no gaps, which is what "contiguous" has to mean for this gate to hold.
+    """
+    if not quote_words or not block_words:
+        return None
+    best_len = 0
+    best_start = 0
+    prev = [0] * (len(block_words) + 1)
+    for qi in range(1, len(quote_words) + 1):
+        cur = [0] * (len(block_words) + 1)
+        for bi in range(1, len(block_words) + 1):
+            if quote_words[qi - 1] == block_words[bi - 1]:
+                cur[bi] = prev[bi - 1] + 1
+                if cur[bi] > best_len:
+                    best_len = cur[bi]
+                    best_start = bi - cur[bi]
+        prev = cur
+    return (best_start, best_len) if best_len else None
 
 
 # ── provision-text grounding (per-ref map, for substantiation checks) ───
@@ -516,8 +577,41 @@ def _postprocess_answer_correctness(raw: dict[str, Any], union_map: dict[str, st
     factual_score = (supported / total) if total else 0.0
     fabrication_present = contradicted > 0
     unsupported_present = not_addressed > 0
+    # ⚠ THIS THRESHOLD IS A CHOICE, NOT A CALIBRATION — and it REDEFINED an axis
+    # in place. d7be457 replaced the previous rule (`not unsupported_present`,
+    # i.e. every proposition had to be addressed) with `factual_score >= 0.70`,
+    # under the SAME axis name and with the commit message calling it a
+    # "calibrated LeMAJ threshold". Neither half of that holds up:
+    #
+    #  * There is no calibration behind 0.70. It appears nowhere else in evals/,
+    #    docs/ROUNDS.md or .planning/ — no sweep, no ROC, no companion strict
+    #    variant, no env gate.
+    #  * LeMAJ (arXiv 2510.07243) prescribes Legal-Data-Point decomposition
+    #    against a REFERENCE ANSWER and specifies no threshold. This function
+    #    uses SUPPORTED / CONTRADICTED / NOT-ADDRESSED, and the July-7 batch has
+    #    no reference answer at all, so the citation does not transfer.
+    #
+    # The effect is a strictly looser axis: a row where 30% of its propositions
+    # go unverified now PASSES where it previously failed. That is CLAUDE.md's
+    # R327 trap in its most dangerous form — "the ruler was rewritten in the
+    # SAME change as the behaviour it grades" — so any number graded across
+    # d7be457 is comparing two different rulers.
+    #
+    # Named and env-exposed so the two rulers are at least distinguishable and
+    # the old one is recoverable: `REGENOLD_JUDGE_FACTUAL_THRESHOLD=1.0`
+    # restores the pre-d7be457 "every proposition addressed" rule.
+    import os  # noqa: PLC0415
+
+    try:
+        _factual_threshold = float(
+            os.getenv("REGENOLD_JUDGE_FACTUAL_THRESHOLD", "").strip() or 0.70
+        )
+    except (TypeError, ValueError):
+        _factual_threshold = 0.70
     verdict = "pass" if (
-        contradicted == 0 and factual_score >= 0.70 and not omission_present
+        contradicted == 0
+        and factual_score >= _factual_threshold
+        and not omission_present
     ) else "fail"
     return {
         "verdict": verdict,
@@ -696,11 +790,43 @@ def _postprocess_answer_conciseness(raw: dict[str, Any], answer_text: str) -> di
         else:
             unsub.append({"claimed": "UNREQUESTED", "quote": s})
 
-    fm = str(raw.get("failure_mode") or "").strip().lower()
-    is_clean_failure_mode = fm.startswith("none") or fm == "clean" or fm == "no violations"
-    if is_clean_failure_mode and len(redundant) == 0 and len(unrequested) <= 1:
-        # Judge explicitly noted no significant defect; minor flagged sentence was deemed harmless context
-        unrequested = []
+    # ⚠ ONE-SIDED LENIENCY — now gated, DEFAULT OFF.
+    #
+    # This block deletes a conciseness violation that the judge ALREADY
+    # SUBSTANTIATED (the quote cleared `_quote_substantiated` two lines above)
+    # because a free-text `failure_mode` field says "none". Three problems, and
+    # they compound:
+    #
+    #  1. It can only ever move a row fail -> pass. There is no symmetric rule
+    #     turning a pass into a fail, so it is a one-directional thumb on the
+    #     scale, in the flattering direction.
+    #  2. It ranks an unstructured prose field ABOVE structured, quote-verified
+    #     evidence. `failure_mode` is a free-text summary the judge writes last;
+    #     `unrequested_topics` are quote-anchored and were just validated
+    #     against the answer text. Trusting the summary over the evidence
+    #     inverts the whole point of the substantiation gate.
+    #  3. Conciseness is the ONE axis the official scorecard says we LEAD, with
+    #     zero headroom (CLAUDE.md, "Where we stand"). A silent rubric change
+    #     there is the most consequential place in the repo to make one — and
+    #     this shipped in an uncommitted diff with no A/B and no flag.
+    #
+    # CLAUDE.md's R327 lesson applies verbatim: "if you change a formula, change
+    # its NAME" — an unnamed, ungated redefinition of an axis under its own name
+    # is how a bench comes to confirm a change using a scorer built to like it.
+    #
+    # Default OFF restores the pre-diff behaviour. `=1` re-enables it so it can
+    # be A/B'd on its own, which is the only way it earns a default.
+    import os  # noqa: PLC0415
+
+    if os.getenv("REGENOLD_JUDGE_CONCISENESS_LENIENCY", "0").strip().lower() in {
+        "1", "true", "yes", "on",
+    }:
+        fm = str(raw.get("failure_mode") or "").strip().lower()
+        is_clean_failure_mode = (
+            fm.startswith("none") or fm == "clean" or fm == "no violations"
+        )
+        if is_clean_failure_mode and len(redundant) == 0 and len(unrequested) <= 1:
+            unrequested = []
 
     verdict = "pass" if (not redundant and not unrequested) else "fail"
     return {

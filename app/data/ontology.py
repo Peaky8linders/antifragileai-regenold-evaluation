@@ -462,11 +462,29 @@ ANNEX_III_REGISTRY: dict[str, AnnexIIICategory] = {
             "AI systems intended to be used for remote biometric identification "
             "of natural persons (post-incident or not in public spaces — "
             "real-time RBI in public spaces is PROHIBITED under Art. 5(1)(h)), "
-            "biometric categorisation by non-sensitive attributes, or emotion "
+            "biometric categorisation according to sensitive or protected "
+            "attributes or characteristics, or emotion "
             "recognition outside workplaces and educational institutions."
         ),
+        # ⚠ CORRECTED 2026-08-14 — (1)(b) previously read "biometric
+        # categorisation by NON-SENSITIVE attributes", which negates the Act.
+        # Annex III(1)(b) verbatim: "AI systems intended to be used for
+        # biometric categorisation, according to SENSITIVE OR PROTECTED
+        # attributes or characteristics based on the inference of those
+        # attributes or characteristics."
+        #
+        # The old wording did not merely lose nuance, it inverted the test a
+        # reader applies: it implied a system categorising on sensitive traits
+        # falls OUTSIDE Annex III(1)(b), when that is exactly what puts it in.
+        # The genuine boundary is against Art. 5(1)(g), which PROHIBITS
+        # categorisation inferring a narrower closed set (race, political
+        # opinions, trade-union membership, religious or philosophical beliefs,
+        # sex life, sexual orientation). Annex III(1)(b) is the broader
+        # high-risk tier beneath that prohibition — not its complement.
         sub_points=("(1)(a) Remote biometric ID (non-real-time / not public-space)",
-                    "(1)(b) Biometric categorisation by non-sensitive attributes",
+                    "(1)(b) Biometric categorisation according to sensitive or "
+                    "protected attributes (Art. 5(1)(g) prohibits the narrower "
+                    "inferred-trait set outright)",
                     "(1)(c) Emotion recognition outside workplace/education"),
         related_prohibitions=("real_time_rbi", "biometric_categorisation_sensitive",
                               "emotion_recognition_workplace"),
@@ -730,6 +748,57 @@ RISK_SCENARIO_REGISTRY: dict[str, RiskScenario] = {
         keywords=("deepfake election", "synthetic media politics", "voter deception",
                   "ai disinformation", "election manipulation", "synthetic audio deepfake"),
     ),
+    "biometric_categorisation_discrimination": RiskScenario(
+        id="biometric_categorisation_discrimination",
+        short_name="Sensitive attribute inference from biometric data",
+        hazard_or_threat="Inferring protected sensitive attributes (race, beliefs, sexual orientation) from facial or acoustic features",
+        vulnerability="Latent feature correlation and lack of attribute disentanglement in embedding space",
+        risk_event="Unlawful demographic categorization or sorting in violation of Article 5(1)(g) and Annex III(1)(b)",
+        impact_area="Fundamental Rights: Human Dignity, Non-discrimination (Charter Art. 21) & Privacy",
+        severity_level="critical",
+        statutory_violation=("Art. 5", "Art. 10", "Annex III"),
+        required_controls=("biometric_attribute_sanitization", "counterfactual_fairness_audit"),
+        description=(
+            "AI systems deducing sensitive traits (political views, religious beliefs, race, sexual orientation) "
+            "from biometric data, triggering the Article 5(1)(g) prohibition or Annex III(1)(b) high-risk controls."
+        ),
+        keywords=("biometric categorization", "sensitive attribute inference", "biometric discrimination",
+                  "facial trait inference", "prohibited categorization"),
+    ),
+    "critical_infrastructure_cps_failure": RiskScenario(
+        id="critical_infrastructure_cps_failure",
+        short_name="Cyber-physical critical infrastructure failure",
+        hazard_or_threat="Adversarial perturbation or telemetry timing drift in physical grid/traffic safety control components",
+        vulnerability="Lack of deterministic fail-safe override and physical sensor cross-validation",
+        risk_event="Uncontrolled shutdown or dangerous actuation in electricity grid, water supply, or road traffic control",
+        impact_area="Health and Safety & Critical Public Infrastructure Resilience",
+        severity_level="critical",
+        statutory_violation=("Art. 9", "Art. 15", "Annex III"),
+        required_controls=("fail_safe_redundant_fallback", "runtime_drift_telemetry_monitoring"),
+        description=(
+            "Safety components in critical digital infrastructure, electricity, water, or traffic management "
+            "failing under unexpected operating regimes, violating Article 9 risk management and Article 15 robustness."
+        ),
+        keywords=("critical infrastructure failure", "cps safety failure", "grid control ai",
+                  "water supply ai failure", "traffic control safety component"),
+    ),
+    "unlogged_automated_decision_forensics": RiskScenario(
+        id="unlogged_automated_decision_forensics",
+        short_name="Opaque unlogged high-risk automated decision",
+        hazard_or_threat="Autonomous model decision execution without tamper-evident audit trail",
+        vulnerability="Ephemeral in-memory logging lacking cryptographically verifiable provenance",
+        risk_event="Inability to audit post-incident causality or fulfill Article 86 right to explanation requests",
+        impact_area="Rule of Law & Right to an Effective Remedy (Charter Art. 47 / AI Act Arts. 85-86)",
+        severity_level="high",
+        statutory_violation=("Art. 12", "Art. 73", "Art. 86"),
+        required_controls=("prov_o_audit_logging",),
+        description=(
+            "Failure to automatically record event logs throughout the lifecycle of high-risk AI systems, "
+            "violating Article 12 record-keeping, Article 73 incident reporting, and Article 86 explanation rights."
+        ),
+        keywords=("unlogged decision", "missing audit log", "article 12 failure",
+                  "logging violation", "forensic audit failure"),
+    ),
 }
 
 RISK_CONTROL_REGISTRY: dict[str, RiskControl] = {
@@ -817,6 +886,30 @@ RISK_CONTROL_REGISTRY: dict[str, RiskControl] = {
         description="Automated logging of inputs, outputs, timestamps, and operator identity matching Article 12 record-keeping requirements.",
         keywords=("audit logging", "record keeping", "prov-o logging", "tamper evident log", "decision log"),
     ),
+    "biometric_attribute_sanitization": RiskControl(
+        id="biometric_attribute_sanitization",
+        name="Biometric Attribute Disentanglement & Latent Sanitization",
+        control_type="technical",
+        lifecycle_phase="development",
+        mitigates_risk_id="biometric_categorisation_discrimination",
+        evidenced_by=("attribute_orthogonalization_report", "embedding_leakage_audit"),
+        standards_ref=("ISO/IEC 23894:2023 §8.5", "ISO/IEC 42001:2023 §A.6"),
+        articles=("Art. 10", "Art. 15"),
+        description="Disentanglement filters and orthogonal subspace projections removing sensitive attribute proxies from biometric embeddings.",
+        keywords=("biometric sanitization", "attribute disentanglement", "latent sanitization", "sensitive attribute removal"),
+    ),
+    "fail_safe_redundant_fallback": RiskControl(
+        id="fail_safe_redundant_fallback",
+        name="Deterministic Fail-Safe & Redundant Fallback Architecture",
+        control_type="technical",
+        lifecycle_phase="operation",
+        mitigates_risk_id="critical_infrastructure_cps_failure",
+        evidenced_by=("failover_verification_report", "safety_instrumented_system_audit"),
+        standards_ref=("IEC 61508 SIL-3", "ISO/IEC 42001:2023 §A.7"),
+        articles=("Art. 9", "Art. 15"),
+        description="Hardware-level and deterministic software interlocks ensuring graceful degradation and fail-safe shutdown in critical infrastructure.",
+        keywords=("fail safe", "redundant fallback", "deterministic fallback", "cps failover"),
+    ),
 }
 
 
@@ -900,6 +993,23 @@ GPAI_REGISTRY: dict[str, GPAIModelProfile] = {
         keywords=("systemic gpai", "systemic risk", "10^25 flops", "frontier model",
                   "article 55", "adversarial red teaming", "systemic model evaluation"),
     ),
+    "systemic_gpai_open_weights": GPAIModelProfile(
+        id="systemic_gpai_open_weights",
+        model_name="Open-Weights Frontier GPAI Model with Systemic Risk (≥10^25 FLOPs)",
+        training_compute_flops=1.0e26,
+        is_open_source=True,
+        has_systemic_risk=True,
+        mandatory_obligations=("Art. 53", "Art. 55", "Annex XI", "Annex XII", "Annex XIII"),
+        technical_doc_annex="Annex XI",
+        downstream_info_annex="Annex XII",
+        description=(
+            "Frontier open-weights/open-source GPAI model with cumulative training compute exceeding 10^25 FLOPs. "
+            "Per Article 53(2) proviso, open-source carve-outs DO NOT apply to models with systemic risk. "
+            "Subject to all Article 53 technical documentation and Article 55 systemic risk duties."
+        ),
+        keywords=("open weights systemic", "open source systemic gpai", "frontier open weights",
+                  "article 53(2) systemic exception", "open source frontier model"),
+    ),
 }
 
 
@@ -981,16 +1091,52 @@ def resolve_conformity_path(
     uses_harmonised_standards: bool = True,
     is_biometric: bool = False,
 ) -> ConformityRoute:
-    """Determine the mandatory conformity assessment pathway under Article 43.
+    """Determine the conformity assessment pathway under Article 43.
 
-    - Annex I safety components follow sectoral product legislation (`ANNEX_I_SECTORAL`).
-    - Annex III(1) biometrics without harmonised standards MUST go to Notified Body (`ANNEX_VII_NOTIFIED_BODY`).
-    - Standard Annex III systems (and biometrics applying harmonised standards) use Internal Control (`ANNEX_VI_INTERNAL_CONTROL`).
+    Verified against the pinned CELEX 32024R1689 text:
+
+    * **Art. 43(3)** — a system covered by the Union harmonisation legislation
+      in Annex I Section A follows THAT act's procedure (``ANNEX_I_SECTORAL``).
+    * **Art. 43(1)** — Annex III **point 1** (biometrics): where harmonised
+      standards were applied the provider MAY choose Annex VI or Annex VII;
+      where they do not exist or were not applied, Annex VII is MANDATORY.
+    * **Art. 43(2)** — Annex III **points 2 to 8**: internal control under
+      Annex VI, "which does not provide for the involvement of a notified body".
+
+    ⚠ CORRECTED 2026-08-14. The previous implementation opened with::
+
+        if category_id == "critical_infrastructure" or category_id == "annex_i":
+            return ConformityRoute.ANNEX_I_SECTORAL
+
+    ``critical_infrastructure`` is **Annex III point 2**
+    (``ANNEX_III_REGISTRY["critical_infrastructure"].number == 2``) — an Annex III
+    USE CASE, not an Annex I product-safety case. Article 43(2) names points 2
+    to 8 explicitly and rules out a notified body, yet the registry entry this
+    returned carries ``requires_notified_body=True``. So the function told a
+    critical-infrastructure provider it needed third-party assessment when the
+    Act says the opposite: legally inverted, and inverted in the costly
+    direction. The confusion is understandable — Annex III(2) is about safety
+    components, and so is Annex I — but they are different regimes.
+
+    The route is now derived from ``ANNEX_III_REGISTRY[...].number`` rather than
+    a hardcoded id, so adding or renaming a category cannot silently re-route it.
+    An Annex I system is signalled by the explicit ``"annex_i"`` id, because it
+    is not an Annex III category at all.
     """
-    if category_id == "critical_infrastructure" or category_id == "annex_i":
+    if category_id == "annex_i":
         return ConformityRoute.ANNEX_I_SECTORAL
-    if is_biometric and not uses_harmonised_standards:
+
+    category = ANNEX_III_REGISTRY.get(category_id)
+    point = category.number if category is not None else None
+
+    # Annex III point 1 — biometrics. Art. 43(1).
+    if point == 1 or (point is None and is_biometric):
+        if uses_harmonised_standards:
+            # The provider MAY opt for either; Annex VI is the lighter default.
+            return ConformityRoute.ANNEX_VI_INTERNAL_CONTROL
         return ConformityRoute.ANNEX_VII_NOTIFIED_BODY
+
+    # Annex III points 2-8 — Art. 43(2), internal control, no notified body.
     return ConformityRoute.ANNEX_VI_INTERNAL_CONTROL
 
 
@@ -1015,12 +1161,12 @@ FRIA_REGISTRY: dict[str, FRIAWorkflow] = {
         deployer_category="Public bodies, banking, credit, and life/health insurance deployers",
         governing_articles=("Art. 27", "Art. 26", "Art. 14"),
         required_steps=(
-            "1. Description of deployer's processes in which high-risk AI will be used",
-            "2. Identification of specific categories of natural persons and vulnerable groups affected",
-            "3. Assessment of specific risks of harm to fundamental rights in concrete context of use",
-            "4. Description of human oversight measures implemented per Article 14",
-            "5. Detailed measures to be taken in case risk materialises (complaints & redress mechanisms)",
-            "6. Formal submission of assessment questionnaire summary to Market Surveillance Authority",
+            "1. Description of deployer's processes and intended purpose of high-risk AI use (Art. 27(1)(a))",
+            "2. Period of time and operational frequency of high-risk AI system deployment (Art. 27(1)(b))",
+            "3. Identification of specific categories of natural persons and vulnerable groups affected (Art. 27(1)(c))",
+            "4. Assessment of specific risks of harm to fundamental rights in the concrete context of use (Art. 27(1)(d))",
+            "5. Description of human oversight implementation per provider instructions and Article 14 (Art. 27(1)(e))",
+            "6. Detailed mitigation measures, internal governance, complaints, and redress mechanisms upon risk materialisation (Art. 27(1)(f))",
         ),
         mandatory_reporting_authority="National Market Surveillance Authority & AI Office",
         description=(
@@ -1049,34 +1195,89 @@ class SeriousIncidentSLA:
     keywords: tuple[str, ...] = ()
 
 
+# ⚠ CORRECTED 2026-08-14 — every entry below was wrong, and the errors were
+# mutually reinforcing. Verified verbatim against the pinned CELEX 32024R1689
+# text via ``app.data.provision_text.get_provision_text("Article 73.N")``:
+#
+#   73(2)  general — "not later than 15 days"                        -> 360 h
+#   73(3)  widespread infringement OR a serious incident as defined
+#          in Article 3(49)(b) [irreversible disruption of critical
+#          infrastructure] — "not later than two days"               ->  48 h
+#   73(4)  death of a person — "not later than 10 days"              -> 240 h
+#
+# What the previous version asserted, and why each is a hard-rule-#4 breach
+# ("KB stubs ship faithful regulatory prose, never speculation — a confidently
+# wrong summary loses more than a missing one"):
+#
+#  1. DEATH carried a 72-hour deadline citing "Article 73(3)". No 72-hour
+#     period appears anywhere in Article 73, or anywhere in the Act. 72 hours
+#     is the GDPR Article 33 personal-data-breach window — a DIFFERENT
+#     instrument. That is cross-regulation contamination stated as AI Act law.
+#  2. The death and critical-infrastructure deadlines were SWAPPED: death got
+#     the infrastructure paragraph's treatment and infrastructure got 10 days,
+#     which is the death deadline. Both were therefore wrong even ignoring (1).
+#  3. Every paragraph attribution was shifted by one — 73(3)/(4)/(5) where the
+#     Act has 73(4)/(3)/(2). 73(5) is the incomplete-initial-report rule and
+#     carries no deadline at all.
+#
+# The lint floor could not catch any of this: `ARTICLE_EXISTENCE` resolves
+# "Art. 73" fine, so the citations were wire-legal while the CONTENT was false
+# — exactly the caveat recorded under hard rule #5.
+#
+# These records are indexed into BM25 by ``kb_search._build_ontology_docs`` and
+# seeded into Neo4j as node properties, so a wrong value here propagates into
+# retrieval AND outlives the code fix in any graph seeded from it.
 SERIOUS_INCIDENT_REGISTRY: dict[str, SeriousIncidentSLA] = {
-    "critical_death_or_infrastructure": SeriousIncidentSLA(
-        id="critical_death_or_infrastructure",
-        incident_type="Incident resulting in death or critical infrastructure disruption",
-        deadline_hours=72,
+    "death_of_a_person": SeriousIncidentSLA(
+        id="death_of_a_person",
+        incident_type="Serious incident resulting in the death of a person",
+        deadline_hours=240,  # 10 days — Art. 73(4)
         statutory_basis=("Art. 73", "Art. 72", "Art. 17"),
         qms_update_required=True,
         description=(
-            "Under Article 73(3), serious incidents that result in the death of a person or serious "
-            "harm to a person's health, or critical infrastructure disruption, must be reported immediately "
-            "and at the latest within 72 hours of the provider becoming aware of the incident."
+            "Under Article 73(4), in the event of the death of a person the report must be provided "
+            "immediately after the provider or deployer has established, or as soon as it suspects, a "
+            "causal relationship between the high-risk AI system and the serious incident, and in any "
+            "event not later than 10 days after the date on which it became aware of the incident."
         ),
-        keywords=("serious incident 72 hours", "critical infrastructure incident",
-                  "death reporting ai", "article 73 72h", "immediate incident report"),
+        keywords=("death reporting ai", "article 73 death", "incident death 10 days",
+                  "fatality incident report", "serious incident death deadline"),
+    ),
+    "widespread_infringement_or_infrastructure": SeriousIncidentSLA(
+        id="widespread_infringement_or_infrastructure",
+        incident_type=(
+            "Widespread infringement, or a serious and irreversible disruption of the management "
+            "or operation of critical infrastructure (Article 3(49)(b))"
+        ),
+        deadline_hours=48,  # 2 days — Art. 73(3)
+        statutory_basis=("Art. 73", "Art. 72", "Art. 17"),
+        qms_update_required=True,
+        description=(
+            "Under Article 73(3), in the event of a widespread infringement or a serious incident as "
+            "defined in Article 3, point (49)(b) — a serious and irreversible disruption of the "
+            "management or operation of critical infrastructure — the report must be provided "
+            "immediately, and not later than two days after the provider or deployer becomes aware "
+            "of that incident."
+        ),
+        keywords=("critical infrastructure incident", "article 73 two days",
+                  "widespread infringement reporting", "infrastructure disruption 2 days",
+                  "incident 48 hours"),
     ),
     "general_serious_incident": SeriousIncidentSLA(
         id="general_serious_incident",
-        incident_type="General serious incident or breach of fundamental rights",
-        deadline_hours=360,  # 15 calendar days = 360 hours
+        incident_type="General serious incident (default reporting deadline)",
+        deadline_hours=360,  # 15 days — Art. 73(2)
         statutory_basis=("Art. 73", "Art. 72", "Art. 17"),
         qms_update_required=True,
         description=(
-            "Under Article 73(4), general serious incidents involving fundamental rights breaches or "
-            "significant property damage must be notified to the market surveillance authority without "
-            "undue delay and at the latest within 15 calendar days."
+            "Under Article 73(2), the report must be made immediately after the provider has "
+            "established a causal link between the AI system and the serious incident, or the "
+            "reasonable likelihood of such a link, and in any event not later than 15 days after the "
+            "provider or, where applicable, the deployer becomes aware of it. The reporting period "
+            "takes account of the severity of the serious incident."
         ),
         keywords=("serious incident 15 days", "incident reporting deadline",
-                  "article 73 incident", "fundamental rights breach reporting"),
+                  "article 73 incident", "fundamental rights breach reporting", "article 73 15 days"),
     ),
 }
 
@@ -1166,13 +1367,13 @@ ROLE_OBLIGATIONS: dict[ActorRole, dict[RiskClass, tuple[str, ...]]] = {
             "Art. 6", "Art. 8", "Art. 9", "Art. 10", "Art. 11", "Art. 12",
             "Art. 13", "Art. 14", "Art. 15", "Art. 16", "Art. 17",
             "Art. 43", "Art. 47", "Art. 48", "Art. 49", "Art. 72",
-            "Annex I", "Annex IV",
+            "Annex I", "Annex IV", "Annex VI",
         ),
         RiskClass.HIGH_RISK_ANNEX_III: (
             "Art. 6", "Art. 8", "Art. 9", "Art. 10", "Art. 11", "Art. 12",
             "Art. 13", "Art. 14", "Art. 15", "Art. 16", "Art. 17",
             "Art. 43", "Art. 47", "Art. 48", "Art. 49", "Art. 72",
-            "Annex III", "Annex IV",
+            "Annex III", "Annex IV", "Annex VI",
         ),
         RiskClass.LIMITED_RISK: (
             "Art. 50",  # Transparency obligations only

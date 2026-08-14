@@ -159,7 +159,18 @@ def _answer_grounding_block(r: dict[str, Any]) -> str:
         parts.append(_provision_block(r["pred_refs"], _GOLD_TEXT_CAP, _MAX_GOLD_REFS))
     if gold_answer:
         parts.append(f"[INDEPENDENT GOLD ANSWER] {gold_answer}")
-    return "\n\n".join(parts) if parts else "  (none)"
+    # ⚠ EMPTY MEANS EMPTY. This used to return the literal ``"  (none)"``, which
+    # is a truthy string once stripped ("(none)"). `legal_v2`'s unscorable guard
+    # tests `bool(_answer_grounding_block(r).strip())` as one of its OR'd
+    # conditions, so that sentinel made the condition CONSTANT TRUE and the
+    # whole guard permanently dead: a row with no gold answer, no gold refs, no
+    # pred refs and no context was still sent to the judge, whose verbatim
+    # evidence section then read "VERBATIM EU AI ACT TEXT: (none)" — and its
+    # unverified SUPPORTED claims scored factual 1.0.
+    #
+    # A sentinel that reads as "nothing" to a human and as "something" to code
+    # is the bug. Callers that want the literal marker render it themselves.
+    return "\n\n".join(parts)
 
 
 def _answer_grounding_source(r: dict[str, Any]) -> str:
@@ -246,7 +257,10 @@ def render_answer_correctness(r: dict[str, Any]) -> str:
     # Ground on the UNION of gold + predicted provisions so the judge can verify
     # every provision the answer relies on (not just the gold ones — the gold
     # labels can be incomplete, and the answer may correctly cite beyond them).
-    gold_text = _answer_grounding_block(r)
+    # Render the human marker HERE, so the empty case stays falsy for code that
+    # has to decide whether this row is scorable at all (see the note on
+    # `_answer_grounding_block`).
+    gold_text = _answer_grounding_block(r) or "  (none)"
     return (
         "You are an independent EU AI Act legal examiner. Judge the ANSWER's "
         "correctness STRICTLY against the verbatim Regulation text below — do "

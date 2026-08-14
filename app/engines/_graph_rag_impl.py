@@ -6505,12 +6505,48 @@ def _render_supplementary_sections(
             # R327 — the question is passed so the semantic vector layers can
             # rank sub-provisions against it. ``render_kg_context`` keeps it
             # optional, so a caller without a question keeps the R326 behaviour.
-            parts.extend(
-                render_kg_context(
-                    _context_article_refs(context),
-                    question=getattr(context, "question", "") or "",
+            _kg_refs = list(_context_article_refs(context))
+            _kg_question = getattr(context, "question", "") or ""
+
+            # R331 — CROSS-ENCODER REORDER OF THE KG-CONTEXT REF LIST.
+            #
+            # Ported from the sibling repo (`app/engines/cohere_rerank.py`),
+            # which is the working implementation; this repo's own 534-line
+            # `cohere_reranker.py` was a second, unwired definition of the same
+            # concept and has been deleted.
+            #
+            # WHY THIS PLACEMENT AND NO OTHER. `render_kg_context` cuts each
+            # section with `_node_ids(refs, limit=max_refs)` — a cut by LIST
+            # POSITION. So whenever the context carries more refs than the cap,
+            # THIS list's order decides which provisions' verbatim paragraph and
+            # sub-point text reach Stage-2. That makes the reorder a genuine
+            # content change rather than a permutation of the output — which is
+            # exactly the property the three refuted R329 placements lacked.
+            #
+            # WHAT IT CANNOT DO, and why hard rule #10 still holds: the graph
+            # blocks are NON-CITABLE. This renders Stage-2 prompt text only; the
+            # wire reference list is not on this path. So it cannot add, drop or
+            # reorder a citation, and cannot drop a gold reference. It targets
+            # Answer Correctness, never reference precision. Reordering the
+            # EMITTED reference list is a DIFFERENT intervention, separately
+            # measured in the sibling repo and REFUTED (-0.019) — do not
+            # conflate the two, and do not "extend" this to the wire refs.
+            #
+            # ⚠ ASSERT IT FIRES. `rerank_stats()["attempts"] > 0` is the only
+            # proof this ran; three prior placements read +0.0000 on every axis
+            # because they never issued a call, and that is indistinguishable
+            # from "the lever does nothing". Default OFF
+            # (`REGENOLD_COHERE_RERANK=1` to enable), gate is in
+            # `_engine_cache_key`, and with the gate off `rerank_references`
+            # returns its input unchanged so this block is byte-identical.
+            if _kg_question.strip() and len(_kg_refs) > 1:
+                from app.engines.cohere_rerank import (  # noqa: PLC0415
+                    rerank_references,
                 )
-            )
+
+                _kg_refs = rerank_references(_kg_question, _kg_refs)
+
+            parts.extend(render_kg_context(_kg_refs, question=_kg_question))
         except Exception:  # noqa: BLE001 — the graph must never break an answer
             logger.debug("kg_context render failed", exc_info=True)
     return parts
