@@ -595,6 +595,492 @@ ANNEX_III_REGISTRY: dict[str, AnnexIIICategory] = {
 }
 
 
+# ── AIRO Causal Risk Entities (ISO 31000 / ISO/IEC 23894 / AIRO) ─────────
+
+
+@dataclass(frozen=True)
+class RiskScenario:
+    """Represents an AIRO-aligned causal risk chain.
+
+    Maps Hazard/Threat → Vulnerability → Risk Event → Impact/Harm →
+    Protected Legal Interest (AreaOfImpact) → Statutory Articles.
+    """
+
+    id: str
+    short_name: str
+    hazard_or_threat: str  # e.g. "Sampling bias / demographic underrepresentation"
+    vulnerability: str     # e.g. "Uncalibrated classification boundary across protected groups"
+    risk_event: str        # e.g. "Disparate false rejection rate in automated recruitment"
+    impact_area: str       # e.g. "Fundamental rights: Non-discrimination (EU Charter Art. 21)"
+    severity_level: str    # "low" | "medium" | "high" | "critical"
+    statutory_violation: tuple[str, ...]  # Canonical article refs
+    required_controls: tuple[str, ...]    # Pointers to RiskControl ids
+    description: str
+    keywords: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class RiskControl:
+    """A technical or organizational measure modifying AI risk (AIRO/CodexAI).
+
+    Connects risk mitigation to engineering telemetry, verification
+    artifacts (evidenced_by), and harmonised standards.
+    """
+
+    id: str
+    name: str
+    control_type: str      # "technical" | "organizational"
+    lifecycle_phase: str   # "development" | "validation" | "deployment" | "operation"
+    mitigates_risk_id: str
+    evidenced_by: tuple[str, ...]   # Required test reports / logs
+    standards_ref: tuple[str, ...]  # e.g. ("ISO/IEC 42001:2023 §A.6", "ISO/IEC 23894:2023 §8")
+    articles: tuple[str, ...] = ()
+    description: str = ""
+    keywords: tuple[str, ...] = ()
+
+
+RISK_SCENARIO_REGISTRY: dict[str, RiskScenario] = {
+    "sampling_bias_recruitment": RiskScenario(
+        id="sampling_bias_recruitment",
+        short_name="Sampling bias in candidate screening",
+        hazard_or_threat="Demographic underrepresentation and historical bias in training corpus",
+        vulnerability="Feature correlation with protected characteristics (gender, ethnicity)",
+        risk_event="Automated rejection or ranking penalty for underrepresented applicants",
+        impact_area="Fundamental Rights: Non-discrimination (Charter Art. 21) & Equal Treatment",
+        severity_level="high",
+        statutory_violation=("Art. 10", "Art. 15", "Annex III"),
+        required_controls=("demographic_parity_regularization", "counterfactual_fairness_audit"),
+        description=(
+            "AI systems for recruitment or candidate selection that exhibit "
+            "demographic disparities due to unrepresentative training data, "
+            "violating Article 10 data governance and Article 15 accuracy standards."
+        ),
+        keywords=("recruitment bias", "hiring disparity", "cv screening bias",
+                  "sampling bias", "demographic disparity", "resume bias"),
+    ),
+    "prompt_injection_safety_bypass": RiskScenario(
+        id="prompt_injection_safety_bypass",
+        short_name="Adversarial prompt injection and guardrail bypass",
+        hazard_or_threat="Malicious user prompt crafting or indirect data poisoning",
+        vulnerability="Inadequate system-prompt isolation and unconstrained tool execution",
+        risk_event="Unauthorized output generation, data exfiltration, or safety guardrail bypass",
+        impact_area="Health, Safety & Cybersecurity Integrity",
+        severity_level="critical",
+        statutory_violation=("Art. 15", "Art. 55"),
+        required_controls=("adversarial_red_teaming_guardrail", "runtime_drift_telemetry_monitoring"),
+        description=(
+            "Adversarial threats against GPAI or conversational AI systems where "
+            "crafted inputs bypass alignment filters or trigger unauthorized actions, "
+            "violating Article 15 cybersecurity and Article 55 systemic mitigation requirements."
+        ),
+        keywords=("prompt injection", "jailbreak", "adversarial attack",
+                  "guardrail bypass", "indirect prompt injection", "model extraction"),
+    ),
+    "unmonitored_drift_clinical_triage": RiskScenario(
+        id="unmonitored_drift_clinical_triage",
+        short_name="Clinical distribution drift in triage AI",
+        hazard_or_threat="Covariate shift between training population and operational clinical setting",
+        vulnerability="Lack of continuous telemetry and automated calibration drift alerting",
+        risk_event="Misclassification of patient urgency in emergency medical triage",
+        impact_area="Health and Safety & Life Integrity",
+        severity_level="critical",
+        statutory_violation=("Art. 9", "Art. 14", "Art. 72", "Annex III"),
+        required_controls=("runtime_drift_telemetry_monitoring", "human_in_the_loop_override_gate"),
+        description=(
+            "AI systems used in emergency dispatch or clinical patient triage that suffer "
+            "performance degradation due to patient demographic shift without post-market monitoring, "
+            "violating Article 9 risk management, Article 14 human oversight, and Article 72 post-market monitoring."
+        ),
+        keywords=("clinical triage drift", "patient triage failure", "distribution drift",
+                  "covariate shift", "emergency dispatch error", "medical triage failure"),
+    ),
+    "opaque_credit_scoring_discrimination": RiskScenario(
+        id="opaque_credit_scoring_discrimination",
+        short_name="Opaque discriminatory credit scoring",
+        hazard_or_threat="Complex non-linear proxy variables for socioeconomic vulnerability",
+        vulnerability="Black-box decision boundaries lacking interpretability and explanation telemetry",
+        risk_event="Unjustified credit denial without meaningful explanation to affected person",
+        impact_area="Fundamental Rights & Access to Essential Private Services (Charter Art. 34)",
+        severity_level="high",
+        statutory_violation=("Art. 13", "Art. 86", "Annex III"),
+        required_controls=("human_in_the_loop_override_gate", "prov_o_audit_logging"),
+        description=(
+            "Credit-scoring AI systems using opaque proxy variables that result in discriminatory "
+            "credit denial, violating Article 13 transparency, Article 86 right to explanation, "
+            "and Annex III(5)(b) high-risk requirements."
+        ),
+        keywords=("credit scoring discrimination", "loan denial explanation",
+                  "credit score opacity", "creditworthiness bias", "credit denial"),
+    ),
+    "deepfake_election_disinformation": RiskScenario(
+        id="deepfake_election_disinformation",
+        short_name="Synthetic media election manipulation",
+        hazard_or_threat="Generative synthesis of realistic audiovisual content of political figures",
+        vulnerability="Missing machine-readable watermarking and provenance metadata",
+        risk_event="Voter deception and democratic process distortion via undetected synthetic media",
+        impact_area="Democracy and Rule of Law & Electoral Integrity",
+        severity_level="critical",
+        statutory_violation=("Art. 50", "Art. 55", "Annex III"),
+        required_controls=("output_watermarking_verification", "prov_o_audit_logging"),
+        description=(
+            "Generation and dissemination of synthetic audio/visual content intended to influence "
+            "elections without transparent labeling, violating Article 50 transparency obligations "
+            "and Annex III(8) democratic process protections."
+        ),
+        keywords=("deepfake election", "synthetic media politics", "voter deception",
+                  "ai disinformation", "election manipulation", "synthetic audio deepfake"),
+    ),
+}
+
+RISK_CONTROL_REGISTRY: dict[str, RiskControl] = {
+    "demographic_parity_regularization": RiskControl(
+        id="demographic_parity_regularization",
+        name="Demographic Parity Loss Regularization",
+        control_type="technical",
+        lifecycle_phase="development",
+        mitigates_risk_id="sampling_bias_recruitment",
+        evidenced_by=("disparate_impact_ratio_report", "fairness_metrics_log"),
+        standards_ref=("ISO/IEC 23894:2023 §8.2", "ISO/IEC 42001:2023 §A.6.2"),
+        articles=("Art. 10", "Art. 15"),
+        description="Algorithmic penalty enforcing statistical parity across protected demographic groups during model training.",
+        keywords=("demographic parity", "fairness regularization", "debiasing loss", "fairness loss"),
+    ),
+    "counterfactual_fairness_audit": RiskControl(
+        id="counterfactual_fairness_audit",
+        name="Counterfactual Fairness Auditing & Perturbation Testing",
+        control_type="technical",
+        lifecycle_phase="validation",
+        mitigates_risk_id="sampling_bias_recruitment",
+        evidenced_by=("counterfactual_testing_log", "bias_audit_certificate"),
+        standards_ref=("ISO/IEC 23894:2023 §8.4", "CEN/CENELEC JTC 21 WG4"),
+        articles=("Art. 10", "Art. 15"),
+        description="Systematic perturbation of sensitive attributes to verify output invariance across counterfactual twins.",
+        keywords=("counterfactual audit", "fairness testing", "bias audit", "counterfactual test"),
+    ),
+    "adversarial_red_teaming_guardrail": RiskControl(
+        id="adversarial_red_teaming_guardrail",
+        name="Adversarial Red-Teaming & Input Guardrails",
+        control_type="technical",
+        lifecycle_phase="validation",
+        mitigates_risk_id="prompt_injection_safety_bypass",
+        evidenced_by=("red_teaming_report", "guardrail_coverage_matrix"),
+        standards_ref=("ISO/IEC 23894:2023 §9.1", "NIST AI 100-2 §4"),
+        articles=("Art. 15", "Art. 55"),
+        description="Structured red-teaming and input sanitization layers preventing prompt injection and adversarial jailbreaks.",
+        keywords=("red teaming", "adversarial testing", "input guardrail", "jailbreak defense"),
+    ),
+    "runtime_drift_telemetry_monitoring": RiskControl(
+        id="runtime_drift_telemetry_monitoring",
+        name="Runtime Covariate Drift & Telemetry Monitoring",
+        control_type="technical",
+        lifecycle_phase="operation",
+        mitigates_risk_id="unmonitored_drift_clinical_triage",
+        evidenced_by=("drift_telemetry_dashboard", "ks_test_drift_alerts"),
+        standards_ref=("ISO/IEC 42001:2023 §A.9.3", "ISO/IEC 23894:2023 §10"),
+        articles=("Art. 9", "Art. 72"),
+        description="Continuous statistical monitoring of input distributions and accuracy degradation with automated alert triggers.",
+        keywords=("drift monitoring", "runtime telemetry", "covariate drift alert", "telemetry monitoring"),
+    ),
+    "human_in_the_loop_override_gate": RiskControl(
+        id="human_in_the_loop_override_gate",
+        name="Human-in-the-Loop Override & Escalation Protocol",
+        control_type="organizational",
+        lifecycle_phase="operation",
+        mitigates_risk_id="unmonitored_drift_clinical_triage",
+        evidenced_by=("human_override_audit_trail", "operator_competency_record"),
+        standards_ref=("ISO/IEC 22989:2022 §5.5", "ISO/IEC 42001:2023 §A.8"),
+        articles=("Art. 14", "Art. 26"),
+        description="Formal procedures enabling human overseers to intervene, halt, or override automated high-risk decisions.",
+        keywords=("human in the loop", "human oversight", "override protocol", "hitl gate", "human escalation"),
+    ),
+    "output_watermarking_verification": RiskControl(
+        id="output_watermarking_verification",
+        name="Cryptographic Watermarking & Provenance Tagging",
+        control_type="technical",
+        lifecycle_phase="deployment",
+        mitigates_risk_id="deepfake_election_disinformation",
+        evidenced_by=("c2pa_metadata_manifest", "watermark_detection_log"),
+        standards_ref=("C2PA Technical Specification v1.3", "ISO/IEC 23894:2023 §8.6"),
+        articles=("Art. 50", "Art. 55"),
+        description="Machine-readable, cryptographically verifiable watermarking of AI-generated audiovisual content per Article 50.",
+        keywords=("watermarking", "synthetic content marking", "c2pa", "provenance metadata", "ai watermark"),
+    ),
+    "prov_o_audit_logging": RiskControl(
+        id="prov_o_audit_logging",
+        name="Tamper-Evident PROV-O Activity & Decision Logging",
+        control_type="technical",
+        lifecycle_phase="operation",
+        mitigates_risk_id="opaque_credit_scoring_discrimination",
+        evidenced_by=("tamper_evident_event_log", "prov_o_activity_graph"),
+        standards_ref=("W3C PROV-O Recommendation", "ISO/IEC 42001:2023 §A.9.2"),
+        articles=("Art. 12", "Art. 86"),
+        description="Automated logging of inputs, outputs, timestamps, and operator identity matching Article 12 record-keeping requirements.",
+        keywords=("audit logging", "record keeping", "prov-o logging", "tamper evident log", "decision log"),
+    ),
+}
+
+
+# ── General-Purpose AI (GPAI) Governance (Articles 51–56) ────────────────
+
+@dataclass(frozen=True)
+class GPAIModelProfile:
+    """Specialized governance profile for General-Purpose AI models.
+
+    Models compute FLOP thresholds (≥10^25 FLOPs triggers systemic designation
+    under Art. 51(2)), open-source carve-outs (Art. 53(2)), and documentation bindings.
+    """
+
+    id: str
+    model_name: str
+    training_compute_flops: float        # e.g. 1.0e25
+    is_open_source: bool                 # Triggers Art. 53(2) exemptions
+    has_systemic_risk: bool              # Art. 51 systemic designation
+    mandatory_obligations: tuple[str, ...]
+    technical_doc_annex: str             # "Annex XI"
+    downstream_info_annex: str           # "Annex XII"
+    description: str
+    keywords: tuple[str, ...] = ()
+
+
+GPAI_REGISTRY: dict[str, GPAIModelProfile] = {
+    "standard_gpai_proprietary": GPAIModelProfile(
+        id="standard_gpai_proprietary",
+        model_name="Standard Proprietary GPAI Model (<10^25 FLOPs)",
+        training_compute_flops=1.0e24,
+        is_open_source=False,
+        has_systemic_risk=False,
+        mandatory_obligations=("Art. 53", "Annex XI", "Annex XII"),
+        technical_doc_annex="Annex XI",
+        downstream_info_annex="Annex XII",
+        description=(
+            "General-purpose AI model developed under proprietary license with training compute "
+            "below 10^25 FLOPs. Requires technical documentation per Annex XI, downstream provider "
+            "information per Annex XII, copyright compliance policy (Art. 53(1)(c)), and public "
+            "training data summary (Art. 53(1)(d))."
+        ),
+        keywords=("standard gpai", "proprietary gpai", "gpai technical documentation",
+                  "annex xi", "annex xii", "training data summary", "copyright policy"),
+    ),
+    "standard_gpai_open_source": GPAIModelProfile(
+        id="standard_gpai_open_source",
+        model_name="Open-Source / Free & Open License GPAI Model (<10^25 FLOPs)",
+        training_compute_flops=1.0e24,
+        is_open_source=True,
+        has_systemic_risk=False,
+        # Art. 53(2) carve-out: open-source GPAI without systemic risk is EXEMPT from
+        # Annex XI technical documentation and Annex XII downstream provider information,
+        # but MUST still provide the copyright policy and training-data summary.
+        mandatory_obligations=("Art. 53",),
+        technical_doc_annex="",
+        downstream_info_annex="",
+        description=(
+            "General-purpose AI model released under a free and open-source license without "
+            "systemic risk. Benefits from Article 53(2) carve-out: exempt from Annex XI technical "
+            "documentation and Annex XII downstream information, but still subject to Article "
+            "53(1)(c) copyright policy and Article 53(1)(d) training content summary."
+        ),
+        keywords=("open source gpai", "open-source exemption", "article 53(2)",
+                  "free and open license", "open weights gpai"),
+    ),
+    "systemic_gpai_frontier": GPAIModelProfile(
+        id="systemic_gpai_frontier",
+        model_name="Frontier GPAI Model with Systemic Risk (≥10^25 FLOPs)",
+        training_compute_flops=1.0e26,
+        is_open_source=False,
+        has_systemic_risk=True,
+        mandatory_obligations=("Art. 53", "Art. 55", "Annex XI", "Annex XII", "Annex XIII"),
+        technical_doc_annex="Annex XI",
+        downstream_info_annex="Annex XII",
+        description=(
+            "Frontier GPAI model with cumulative training compute exceeding 10^25 FLOPs or designated "
+            "by the Commission under Article 51. Subject to all standard GPAI obligations plus Article 55 "
+            "systemic duties: model evaluations, adversarial red-teaming, tracking and reporting serious "
+            "incidents to AI Office, cybersecurity protections, and energy consumption reporting per Annex XI/XIII."
+        ),
+        keywords=("systemic gpai", "systemic risk", "10^25 flops", "frontier model",
+                  "article 55", "adversarial red teaming", "systemic model evaluation"),
+    ),
+}
+
+
+# ── Conformity Assessment Routes (Articles 43, 47, 48 & Annexes VI/VII) ──
+
+class ConformityRoute(str, Enum):
+    """The three statutory conformity assessment routes under Article 43."""
+
+    ANNEX_VI_INTERNAL_CONTROL = "annex_vi_internal_control"
+    ANNEX_VII_NOTIFIED_BODY = "annex_vii_notified_body"
+    ANNEX_I_SECTORAL = "annex_i_sectoral_harmonisation"
+
+
+@dataclass(frozen=True)
+class ConformityAssessmentRoute:
+    """Detailed specifications for an EU AI Act conformity assessment pathway."""
+
+    id: str
+    route_type: ConformityRoute
+    governing_articles: tuple[str, ...]
+    applicable_annex: str
+    requires_notified_body: bool
+    description: str
+    keywords: tuple[str, ...] = ()
+
+
+CONFORMITY_ROUTE_REGISTRY: dict[str, ConformityAssessmentRoute] = {
+    "annex_vi_internal_control": ConformityAssessmentRoute(
+        id="annex_vi_internal_control",
+        route_type=ConformityRoute.ANNEX_VI_INTERNAL_CONTROL,
+        governing_articles=("Art. 43", "Art. 47", "Art. 48", "Annex VI"),
+        applicable_annex="Annex VI",
+        requires_notified_body=False,
+        description=(
+            "Conformity assessment based on internal control (Annex VI). The provider verifies "
+            "and documents compliance of the quality management system, technical documentation, "
+            "and post-market monitoring without mandatory third-party notified body involvement. "
+            "Applies to most Annex III high-risk systems (points 2 through 8), and biometric systems "
+            "where harmonised standards are fully applied."
+        ),
+        keywords=("internal control", "annex vi", "self assessment",
+                  "conformity assessment internal", "declaration of conformity"),
+    ),
+    "annex_vii_notified_body": ConformityAssessmentRoute(
+        id="annex_vii_notified_body",
+        route_type=ConformityRoute.ANNEX_VII_NOTIFIED_BODY,
+        governing_articles=("Art. 43", "Art. 31", "Art. 33", "Art. 34", "Art. 47", "Art. 48", "Annex VII"),
+        applicable_annex="Annex VII",
+        requires_notified_body=True,
+        description=(
+            "Conformity assessment based on quality management system assessment and technical "
+            "documentation assessment involving a third-party Notified Body (Annex VII). Mandatory "
+            "for Annex III(1) biometric systems where harmonised standards do not exist or have "
+            "not been fully applied."
+        ),
+        keywords=("notified body", "annex vii", "third party conformity",
+                  "notified body assessment", "notified body audit"),
+    ),
+    "annex_i_sectoral": ConformityAssessmentRoute(
+        id="annex_i_sectoral",
+        route_type=ConformityRoute.ANNEX_I_SECTORAL,
+        governing_articles=("Art. 6", "Art. 43", "Annex I"),
+        applicable_annex="Annex I",
+        requires_notified_body=True,
+        description=(
+            "Conformity assessment for AI systems that are safety components of products covered by "
+            "Union harmonisation legislation listed in Annex I (e.g. Medical Devices MDR/IVDR, Machinery, "
+            "Civil Aviation, Vehicles). Follows the specific conformity assessment procedures defined "
+            "under the corresponding sectoral directive/regulation."
+        ),
+        keywords=("annex i conformity", "sectoral conformity", "mdr conformity",
+                  "machinery directive ai", "medical device ai conformity"),
+    ),
+}
+
+
+def resolve_conformity_path(
+    category_id: str,
+    uses_harmonised_standards: bool = True,
+    is_biometric: bool = False,
+) -> ConformityRoute:
+    """Determine the mandatory conformity assessment pathway under Article 43.
+
+    - Annex I safety components follow sectoral product legislation (`ANNEX_I_SECTORAL`).
+    - Annex III(1) biometrics without harmonised standards MUST go to Notified Body (`ANNEX_VII_NOTIFIED_BODY`).
+    - Standard Annex III systems (and biometrics applying harmonised standards) use Internal Control (`ANNEX_VI_INTERNAL_CONTROL`).
+    """
+    if category_id == "critical_infrastructure" or category_id == "annex_i":
+        return ConformityRoute.ANNEX_I_SECTORAL
+    if is_biometric and not uses_harmonised_standards:
+        return ConformityRoute.ANNEX_VII_NOTIFIED_BODY
+    return ConformityRoute.ANNEX_VI_INTERNAL_CONTROL
+
+
+# ── Fundamental Rights Impact Assessment (FRIA - Article 27) ─────────────
+
+@dataclass(frozen=True)
+class FRIAWorkflow:
+    """Six-step procedural FRIA requirements binding deployers under Article 27."""
+
+    id: str
+    deployer_category: str
+    governing_articles: tuple[str, ...]
+    required_steps: tuple[str, ...]
+    mandatory_reporting_authority: str
+    description: str
+    keywords: tuple[str, ...] = ()
+
+
+FRIA_REGISTRY: dict[str, FRIAWorkflow] = {
+    "fria_public_and_essential": FRIAWorkflow(
+        id="fria_public_and_essential",
+        deployer_category="Public bodies, banking, credit, and life/health insurance deployers",
+        governing_articles=("Art. 27", "Art. 26", "Art. 14"),
+        required_steps=(
+            "1. Description of deployer's processes in which high-risk AI will be used",
+            "2. Identification of specific categories of natural persons and vulnerable groups affected",
+            "3. Assessment of specific risks of harm to fundamental rights in concrete context of use",
+            "4. Description of human oversight measures implemented per Article 14",
+            "5. Detailed measures to be taken in case risk materialises (complaints & redress mechanisms)",
+            "6. Formal submission of assessment questionnaire summary to Market Surveillance Authority",
+        ),
+        mandatory_reporting_authority="National Market Surveillance Authority & AI Office",
+        description=(
+            "Mandatory 6-step Fundamental Rights Impact Assessment under Article 27 that public "
+            "authorities and deployers of high-risk AI in banking, creditworthiness, and life/health "
+            "insurance must complete and notify prior to putting a high-risk AI system into service."
+        ),
+        keywords=("fria", "fundamental rights impact assessment", "article 27 fria",
+                  "fria steps", "fria deployer", "fria questionnaire"),
+    ),
+}
+
+
+# ── Serious Incident Reporting SLAs (Article 73) ─────────────────────────
+
+@dataclass(frozen=True)
+class SeriousIncidentSLA:
+    """Statutory incident reporting deadlines and triage obligations under Article 73."""
+
+    id: str
+    incident_type: str
+    deadline_hours: int
+    statutory_basis: tuple[str, ...]
+    qms_update_required: bool
+    description: str
+    keywords: tuple[str, ...] = ()
+
+
+SERIOUS_INCIDENT_REGISTRY: dict[str, SeriousIncidentSLA] = {
+    "critical_death_or_infrastructure": SeriousIncidentSLA(
+        id="critical_death_or_infrastructure",
+        incident_type="Incident resulting in death or critical infrastructure disruption",
+        deadline_hours=72,
+        statutory_basis=("Art. 73", "Art. 72", "Art. 17"),
+        qms_update_required=True,
+        description=(
+            "Under Article 73(3), serious incidents that result in the death of a person or serious "
+            "harm to a person's health, or critical infrastructure disruption, must be reported immediately "
+            "and at the latest within 72 hours of the provider becoming aware of the incident."
+        ),
+        keywords=("serious incident 72 hours", "critical infrastructure incident",
+                  "death reporting ai", "article 73 72h", "immediate incident report"),
+    ),
+    "general_serious_incident": SeriousIncidentSLA(
+        id="general_serious_incident",
+        incident_type="General serious incident or breach of fundamental rights",
+        deadline_hours=360,  # 15 calendar days = 360 hours
+        statutory_basis=("Art. 73", "Art. 72", "Art. 17"),
+        qms_update_required=True,
+        description=(
+            "Under Article 73(4), general serious incidents involving fundamental rights breaches or "
+            "significant property damage must be notified to the market surveillance authority without "
+            "undue delay and at the latest within 15 calendar days."
+        ),
+        keywords=("serious incident 15 days", "incident reporting deadline",
+                  "article 73 incident", "fundamental rights breach reporting"),
+    ),
+}
+
+
 # ── Cross-entity helpers ─────────────────────────────────────────────────
 
 
@@ -637,14 +1123,23 @@ def all_articles_referenced() -> frozenset[str]:
         if practice.related_high_risk_anchor:
             refs.add(practice.related_high_risk_anchor)
     for _category in ANNEX_III_REGISTRY.values():
-        # The Annex III registry doesn't carry citations on the dataclass
-        # because every category is implicitly Annex III + Art. 6.2 +
-        # Chapter III Section 2 — but we treat "Annex III" + "Art. 6" as
-        # the canonical anchor set.
         refs.update({"Annex III", "Art. 6"})
     for phase in PHASE_REGISTRY.values():
         refs.update(phase.articles)
+    for scenario in RISK_SCENARIO_REGISTRY.values():
+        refs.update(scenario.statutory_violation)
+    for control in RISK_CONTROL_REGISTRY.values():
+        refs.update(control.articles)
+    for gpai in GPAI_REGISTRY.values():
+        refs.update(gpai.mandatory_obligations)
+    for route in CONFORMITY_ROUTE_REGISTRY.values():
+        refs.update(route.governing_articles)
+    for fria in FRIA_REGISTRY.values():
+        refs.update(fria.governing_articles)
+    for incident in SERIOUS_INCIDENT_REGISTRY.values():
+        refs.update(incident.statutory_basis)
     return frozenset(refs)
+
 
 
 # ── Role → obligation matrix ─────────────────────────────────────────────
@@ -806,19 +1301,34 @@ __all__ = [
     # Enums
     "ActorRole",
     "RiskClass",
+    "ConformityRoute",
     # Dataclasses
     "Practice",
     "AnnexIIICategory",
     "Phase",
+    "RiskScenario",
+    "RiskControl",
+    "GPAIModelProfile",
+    "ConformityAssessmentRoute",
+    "FRIAWorkflow",
+    "SeriousIncidentSLA",
     # Registries
     "PRACTICE_REGISTRY",
     "ANNEX_III_REGISTRY",
     "PHASE_REGISTRY",
     "ROLE_OBLIGATIONS",
+    "RISK_SCENARIO_REGISTRY",
+    "RISK_CONTROL_REGISTRY",
+    "GPAI_REGISTRY",
+    "CONFORMITY_ROUTE_REGISTRY",
+    "FRIA_REGISTRY",
+    "SERIOUS_INCIDENT_REGISTRY",
     # Helpers
     "practice_for_keyword",
     "category_for_keyword",
     "all_articles_referenced",
     "obligations_for",
     "validate_legal_triple",
+    "resolve_conformity_path",
 ]
+

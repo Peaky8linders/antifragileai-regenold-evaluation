@@ -125,12 +125,19 @@ from app.data.kb import EC_CHECKER_OBLIGATION_MAP
 logger = logging.getLogger(__name__)
 from app.data.ontology import (
     ANNEX_III_REGISTRY,
+    CONFORMITY_ROUTE_REGISTRY,
+    FRIA_REGISTRY,
+    GPAI_REGISTRY,
     PHASE_REGISTRY,
     PRACTICE_REGISTRY,
+    RISK_CONTROL_REGISTRY,
+    RISK_SCENARIO_REGISTRY,
+    SERIOUS_INCIDENT_REGISTRY,
 )
 from app.engines.entity_extractor import boosted_articles
 
 DocSource = Literal["kb", "ontology", "corpus", "definition"]
+
 
 
 # Domain-tuned stopwords. Keeps `bias`, `fairness`, `data` (informative)
@@ -297,7 +304,101 @@ def _build_ontology_docs() -> list[tuple[str, DocSource, str]]:
         text_parts.extend(phase.articles)
         rows.append((anchor, "ontology", " ".join(text_parts)))
 
+    # Causal Risk Scenarios (AIRO / ISO 23894) — keyed by the primary
+    # statutory violation article (e.g. "Art. 10", "Art. 15").
+    for scenario in RISK_SCENARIO_REGISTRY.values():
+        if not scenario.statutory_violation:
+            continue
+        anchor = scenario.statutory_violation[0]
+        text_parts = [
+            anchor,
+            scenario.short_name,
+            scenario.hazard_or_threat,
+            scenario.vulnerability,
+            scenario.risk_event,
+            scenario.impact_area,
+            scenario.description,
+        ]
+        text_parts.extend(scenario.statutory_violation)
+        text_parts.extend(scenario.keywords)
+        text_parts.extend(scenario.keywords)  # 2x weight
+        rows.append((anchor, "ontology", " ".join(text_parts)))
+
+    # Risk Controls (AIRO / CodexAI) — keyed by the first governing article.
+    for control in RISK_CONTROL_REGISTRY.values():
+        anchor = control.articles[0] if control.articles else "Art. 9"
+        text_parts = [
+            anchor,
+            control.name,
+            control.control_type,
+            control.lifecycle_phase,
+            control.description,
+        ]
+        text_parts.extend(control.standards_ref)
+        text_parts.extend(control.evidenced_by)
+        text_parts.extend(control.articles)
+        text_parts.extend(control.keywords)
+        rows.append((anchor, "ontology", " ".join(text_parts)))
+
+    # GPAI Governance Profiles (Articles 51–56) — keyed by primary obligation (e.g. "Art. 53").
+    for gpai in GPAI_REGISTRY.values():
+        if not gpai.mandatory_obligations:
+            continue
+        anchor = gpai.mandatory_obligations[0]
+        text_parts = [
+            anchor,
+            gpai.model_name,
+            gpai.technical_doc_annex,
+            gpai.downstream_info_annex,
+            gpai.description,
+        ]
+        text_parts.extend(gpai.mandatory_obligations)
+        text_parts.extend(gpai.keywords)
+        text_parts.extend(gpai.keywords)  # 2x weight
+        rows.append((anchor, "ontology", " ".join(text_parts)))
+
+    # Conformity Assessment Routes (Articles 43, 47, 48) — keyed by "Art. 43".
+    for route in CONFORMITY_ROUTE_REGISTRY.values():
+        anchor = route.governing_articles[0] if route.governing_articles else "Art. 43"
+        text_parts = [
+            anchor,
+            route.route_type.value,
+            route.applicable_annex,
+            route.description,
+        ]
+        text_parts.extend(route.governing_articles)
+        text_parts.extend(route.keywords)
+        rows.append((anchor, "ontology", " ".join(text_parts)))
+
+    # FRIA Workflows (Article 27) — keyed by "Art. 27".
+    for fria in FRIA_REGISTRY.values():
+        anchor = fria.governing_articles[0] if fria.governing_articles else "Art. 27"
+        text_parts = [
+            anchor,
+            fria.deployer_category,
+            fria.mandatory_reporting_authority,
+            fria.description,
+        ]
+        text_parts.extend(fria.required_steps)
+        text_parts.extend(fria.governing_articles)
+        text_parts.extend(fria.keywords)
+        text_parts.extend(fria.keywords)  # 2x weight
+        rows.append((anchor, "ontology", " ".join(text_parts)))
+
+    # Serious Incidents SLAs (Article 73) — keyed by "Art. 73".
+    for incident in SERIOUS_INCIDENT_REGISTRY.values():
+        anchor = incident.statutory_basis[0] if incident.statutory_basis else "Art. 73"
+        text_parts = [
+            anchor,
+            incident.incident_type,
+            incident.description,
+        ]
+        text_parts.extend(incident.statutory_basis)
+        text_parts.extend(incident.keywords)
+        rows.append((anchor, "ontology", " ".join(text_parts)))
+
     return rows
+
 
 
 @lru_cache(maxsize=1)

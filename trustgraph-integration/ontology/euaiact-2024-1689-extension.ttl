@@ -1,0 +1,176 @@
+@prefix : <https://w3id.org/codexai/eu-aiact#> .
+@prefix codexai-eu: <https://w3id.org/codexai/eu-aiact#> .
+@prefix codexai: <https://w3id.org/codexai#> .
+@prefix airo: <https://w3id.org/airo#> .
+@prefix vair: <https://w3id.org/vair#> .
+@prefix eu-aiact: <https://w3id.org/dpv/legal/eu/aiact#> .
+@prefix dpv: <https://w3id.org/dpv#> .
+@prefix prov: <http://www.w3.org/ns/prov#> .
+@prefix dqv: <http://www.w3.org/ns/dqv#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix dct: <http://purl.org/dc/terms/> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+
+# =============================================================================
+# EU AI Act (Regulation (EU) 2024/1689) SOTA Formal Extension Ontology
+#
+# Extends:
+#   - AIRO (AI Risk Ontology) — https://w3id.org/airo
+#   - VAIR (Vocabulary of AI Risks) — https://w3id.org/vair
+#   - CodexAI Compliance Ontology — https://w3id.org/codexai
+#   - W3C DPV EU-AIAct Extension — https://w3id.org/dpv/legal/eu/aiact
+#
+# License: Apache 2.0
+# =============================================================================
+
+<https://w3id.org/codexai/eu-aiact> rdf:type owl:Ontology ;
+    owl:versionIRI <https://w3id.org/codexai/eu-aiact/1.0> ;
+    owl:imports <https://w3id.org/airo> ,
+                <https://w3id.org/vair> ,
+                <https://w3id.org/codexai> ;
+    dct:title "EU AI Act (Regulation (EU) 2024/1689) Comprehensive Compliance Ontology Extension"@en ;
+    dct:description """
+        A formal OWL 2 DL ontology extending AIRO, VAIR, and CodexAI to capture the full
+        governance, risk, conformity assessment, and post-market monitoring requirements
+        under the finalized Regulation (EU) 2024/1689.
+    """@en ;
+    dct:created "2026-08-14"^^xsd:date ;
+    dct:license <https://www.apache.org/licenses/LICENSE-2.0> ;
+    rdfs:label "EU AI Act 2024/1689 Compliance Ontology Extension"@en ;
+    owl:versionInfo "1.0"@en .
+
+
+# =============================================================================
+# CLASSES — Specialized Regulatory & Risk Constructs
+# =============================================================================
+
+### GPAI & Systemic Risk (Articles 51–56)
+
+:GPAIModel rdf:type owl:Class ;
+    rdfs:subClassOf airo:AIModel ;
+    rdfs:label "General-Purpose AI Model"@en ;
+    rdfs:comment "An AI model trained using a large amount of data with broad capabilities (Art. 3(63))."@en ;
+    skos:prefLabel "GPAI Model"@en .
+
+:GPAISystemicModel rdf:type owl:Class ;
+    rdfs:subClassOf :GPAIModel ;
+    rdfs:label "GPAI Model with Systemic Risk"@en ;
+    rdfs:comment "A GPAI model with cumulative compute >= 10^25 FLOPs or designated by Commission (Art. 51)."@en ;
+    skos:prefLabel "Systemic GPAI Model"@en .
+
+
+### Article 6(3) Derogation Filter
+
+:DerogationEvaluation rdf:type owl:Class ;
+    rdfs:label "Article 6(3) High-Risk Derogation Evaluation"@en ;
+    rdfs:comment "Evaluation confirming whether an Annex III system qualifies for derogation from high-risk classification."@en ;
+    skos:prefLabel "Derogation Evaluation"@en .
+
+
+### Conformity Assessment Pathways (Article 43)
+
+:ConformityAssessmentRoute rdf:type owl:Class ;
+    rdfs:label "Conformity Assessment Pathway"@en ;
+    rdfs:comment "A formal procedure under Article 43 and Annexes VI/VII/I to demonstrate conformity."@en ;
+    skos:prefLabel "Conformity Assessment Route"@en .
+
+:InternalControlRoute rdf:type owl:Class ;
+    rdfs:subClassOf :ConformityAssessmentRoute ;
+    rdfs:label "Conformity Assessment based on Internal Control (Annex VI)"@en ;
+    skos:prefLabel "Internal Control Route"@en .
+
+:NotifiedBodyRoute rdf:type owl:Class ;
+    rdfs:subClassOf :ConformityAssessmentRoute ;
+    rdfs:label "Conformity Assessment with Notified Body (Annex VII)"@en ;
+    skos:prefLabel "Notified Body Route"@en .
+
+:SectoralHarmonisationRoute rdf:type owl:Class ;
+    rdfs:subClassOf :ConformityAssessmentRoute ;
+    rdfs:label "Sectoral Harmonisation Conformity Assessment (Annex I)"@en ;
+    skos:prefLabel "Sectoral Route"@en .
+
+
+### Fundamental Rights Impact Assessment (Article 27)
+
+:FundamentalRightsImpactAssessment rdf:type owl:Class ;
+    rdfs:subClassOf prov:Activity ;
+    rdfs:label "Fundamental Rights Impact Assessment (FRIA)"@en ;
+    rdfs:comment "Mandatory six-step impact assessment performed by deployers under Article 27."@en ;
+    skos:prefLabel "FRIA Activity"@en .
+
+
+### Post-Market Monitoring & Incidents (Articles 72 & 73)
+
+:SeriousIncident rdf:type owl:Class ;
+    rdfs:subClassOf airo:Failure ;
+    rdfs:label "Serious Incident (Article 73)"@en ;
+    rdfs:comment "An incident that leads to death, critical infrastructure breakdown, or fundamental rights breach."@en ;
+    skos:prefLabel "Serious Incident"@en .
+
+:PostMarketMonitoringPlan rdf:type owl:Class ;
+    rdfs:subClassOf codexai:Control ;
+    rdfs:label "Post-Market Monitoring Plan (Article 72)"@en ;
+    skos:prefLabel "Post-Market Monitoring Plan"@en .
+
+
+# =============================================================================
+# OBJECT & DATATYPE PROPERTIES
+# =============================================================================
+
+:trainingComputeFLOPs rdf:type owl:DatatypeProperty ;
+    rdfs:label "training compute FLOPs"@en ;
+    rdfs:domain :GPAIModel ;
+    rdfs:range xsd:double .
+
+:isOpenSourceLicensed rdf:type owl:DatatypeProperty ;
+    rdfs:label "is open source licensed"@en ;
+    rdfs:domain :GPAIModel ;
+    rdfs:range xsd:boolean .
+
+:hasSystemicRiskDesignation rdf:type owl:DatatypeProperty ;
+    rdfs:label "has systemic risk designation"@en ;
+    rdfs:domain :GPAIModel ;
+    rdfs:range xsd:boolean .
+
+:reportingDeadlineHours rdf:type owl:DatatypeProperty ;
+    rdfs:label "reporting deadline hours"@en ;
+    rdfs:domain :SeriousIncident ;
+    rdfs:range xsd:integer .
+
+:requiresNotifiedBody rdf:type owl:DatatypeProperty ;
+    rdfs:label "requires notified body"@en ;
+    rdfs:domain :ConformityAssessmentRoute ;
+    rdfs:range xsd:boolean .
+
+:hasMandatoryConformityRoute rdf:type owl:ObjectProperty ;
+    rdfs:label "has mandatory conformity route"@en ;
+    rdfs:domain airo:AISystem ;
+    rdfs:range :ConformityAssessmentRoute .
+
+:notifiedToAuthority rdf:type owl:ObjectProperty ;
+    rdfs:label "notified to authority"@en ;
+    rdfs:domain :FundamentalRightsImpactAssessment ;
+    rdfs:range airo:NationalSupervisoryAuthority .
+
+
+# =============================================================================
+# INDIVIDUALS & INSTANTIATION EXAMPLES
+# =============================================================================
+
+:Route_AnnexVI_InternalControl rdf:type :InternalControlRoute ;
+    rdfs:label "Annex VI Internal Control Procedure"@en ;
+    :requiresNotifiedBody "false"^^xsd:boolean ;
+    dct:source <http://data.europa.eu/eli/reg/2024/1689/annex_6/oj> .
+
+:Route_AnnexVII_NotifiedBody rdf:type :NotifiedBodyRoute ;
+    rdfs:label "Annex VII Notified Body QMS and Technical Assessment"@en ;
+    :requiresNotifiedBody "true"^^xsd:boolean ;
+    dct:source <http://data.europa.eu/eli/reg/2024/1689/annex_7/oj> .
+
+:Route_AnnexI_Sectoral rdf:type :SectoralHarmonisationRoute ;
+    rdfs:label "Annex I Sectoral Product Conformity Route"@en ;
+    :requiresNotifiedBody "true"^^xsd:boolean ;
+    dct:source <http://data.europa.eu/eli/reg/2024/1689/annex_1/oj> .
