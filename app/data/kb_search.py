@@ -235,7 +235,9 @@ def _ontology_risk_docs_enabled() -> bool:
     }
 
 
-def _build_ontology_docs() -> list[tuple[str, DocSource, str]]:
+def _build_ontology_docs(
+    ontology_risk_docs: bool | None = None,
+) -> list[tuple[str, DocSource, str]]:
     """Build ``(article_key, source, raw_text)`` triples for every ontology entry.
 
     Returns a list rather than a generator so the caller can take its
@@ -345,7 +347,9 @@ def _build_ontology_docs() -> list[tuple[str, DocSource, str]]:
     #
     # ⚠ STILL UNMEASURED. Do not quote a scorecard produced with this ON as
     # evidence for it until the A/B above has actually been run.
-    if not _ontology_risk_docs_enabled():
+    if ontology_risk_docs is None:
+        ontology_risk_docs = _ontology_risk_docs_enabled()
+    if not ontology_risk_docs:
         return rows
 
     # Causal Risk Scenarios (AIRO / ISO 23894) — keyed by the primary
@@ -445,8 +449,32 @@ def _build_ontology_docs() -> list[tuple[str, DocSource, str]]:
 
 
 
-@lru_cache(maxsize=1)
+@lru_cache(maxsize=2)
+def _build_index_cached(ontology_risk_docs: bool) -> _BM25Index:
+    """The real builder. Keyed on the gate so both corpora can coexist.
+
+    ⚠ ``maxsize=2``, and the gate is an explicit PARAMETER rather than an env
+    read inside the body. That is what makes an in-process A/B possible at all.
+    Measured before this change, flipping ``REGENOLD_ONTOLOGY_RISK_DOCS``
+    mid-process was a NO-OP — `_index_stats()` returned
+    ``{'total': 373, 'ontology': 48}`` and the identical top-5 for both arms,
+    because ``lru_cache(maxsize=1)`` had already memoised the first corpus and
+    nothing in the key mentioned the gate.
+    ``evals/harness/easyhard_ab.py`` mutates ``os.environ`` in-process (:224-225)
+    and clears no cache, so the A/B would have read +0.0000 on every axis — the
+    signature CLAUDE.md warns is indistinguishable from a lever that does not
+    work. The flag being in ``_engine_cache_key`` does not help here: that guards
+    the ANSWER cache, one layer above this one.
+    """
+    return _build_index_impl(ontology_risk_docs)
+
+
 def _build_index() -> _BM25Index:
+    """Env-facing wrapper — resolves the gate on every call, then hits the cache."""
+    return _build_index_cached(_ontology_risk_docs_enabled())
+
+
+def _build_index_impl(ontology_risk_docs: bool) -> _BM25Index:
     """Build the BM25 index from :data:`EC_CHECKER_OBLIGATION_MAP` +
     the typed ontology registries.
 
@@ -489,7 +517,7 @@ def _build_index() -> _BM25Index:
     # gap on lay phrasings of Art. 5 prohibitions, Annex III categories
     # and rollout-date questions. Duplicates of KB article keys are
     # allowed; BM25 scores documents independently.
-    for article_ref, source, text in _build_ontology_docs():
+    for article_ref, source, text in _build_ontology_docs(ontology_risk_docs):
         _add(article_ref, source, text)
 
     # Round 25 — upstream EUR-Lex corpus. Adds full prose for the 126

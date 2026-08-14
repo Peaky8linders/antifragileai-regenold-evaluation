@@ -277,7 +277,12 @@ class TestIndexWarmupHook:
         m._run_index_warmup_in_thread()
 
         # Later/earlier steps still populated the lazy caches.
-        assert kb_search._build_index.cache_info().currsize == 1
+        # R331.2 — the memo moved to `_build_index_cached`, which is keyed on
+        # the `REGENOLD_ONTOLOGY_RISK_DOCS` gate so the two corpora (345 vs 373
+        # docs) can coexist and an in-process A/B is not a no-op.
+        # `_build_index` is now the env-facing wrapper and carries no cache of
+        # its own; assert on the thing that actually memoises.
+        assert kb_search._build_index_cached.cache_info().currsize == 1
         from app.engines.sentence_index import _all_sentence_indexes
 
         assert _all_sentence_indexes.cache_info().currsize == 1

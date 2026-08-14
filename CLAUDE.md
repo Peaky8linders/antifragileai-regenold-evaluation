@@ -161,9 +161,11 @@ them**.
    resolve there. `tests/test_kb_consistency.py` enforces it.
    ⚠ It cannot catch a *wire-legal* fabrication: a foreign instrument's
    Article 5 collides with AI Act Article 5 and passes the lint. See rule #11.
-6. **A/B (`ab_judge`) IS THE MERGE GATE — davidath is NOT.** See Validation
-   policy. Never ship an answer / Stage-2 / prompt / reference / scope change
-   on "davidath byte-identical" alone.
+6. **`dynamic_ab` IS THE MERGE GATE. davidath is RETIRED — do not run it.**
+   See Validation policy. Never ship on "davidath byte-identical": it runs
+   `provider=cli` with no Stage-2, so for most changes it is not a weak signal,
+   it is *no signal*. And never accept `+0.0000` as "safe" without a FIRE
+   CHECK — a flat A/B and a dead feature are the same picture.
 7. **`--qa-only` is NOT a gate for a reference change — use the FULL 476.**
    davidath QA gold is single-article (mean 1.00 refs/row) and structurally
    cannot show a chain-dropping defect; scenarios carry mean **9.88**. A top-5
@@ -190,34 +192,90 @@ them**.
     `SEED_VERSION` mismatch without checking which side is newer, and this
     repo's seeder is OLDER than the live graph.
 
-## Validation policy — `ab_judge`, not davidath, is the merge gate
+## Validation policy — `dynamic_ab` is the gate. **davidath is RETIRED.**
 
-Ship on the live pairwise `evals.harness.ab_judge`. davidath is a **regression
-guard only** — it runs `provider=cli` with no Stage-2 and token-overlap metrics
-that measurably *diverge* from the live judge. "davidath byte-identical" means
-**inert on the bench**, not "no regression" and never "a win".
+⚠ **RETIRED 2026-08-14 (operator directive). Do NOT run `evals.bench.runner`
+(davidath 476) as a gate, and do NOT report its numbers as evidence.** It gets
+in the way: it produces a confident, precise, *irrelevant* answer, and reading
+it costs more than it informs.
+
+Why it is worse than useless rather than merely weak:
+
+* It runs `P2P_GRAPH_RAG_PROVIDER=cli` — **no Stage-2 at all**. Every prompt
+  change, every judge change, the Cohere reranker and the whole KG-context block
+  are invisible to it *by construction*.
+* R331 is the case in point: davidath reported "baseline reproduces, all deltas
+  ≤ 0.0007, Scenarios byte-identical" on a change set containing four judge
+  fixes, a reranker and three legal corrections. Every one of those was outside
+  what the instrument can observe. A green davidath there is not reassurance —
+  it is the instrument trap, and quoting it invites the reader to believe the
+  change was measured when it was not.
+* Its gold is head-level and single-article (mean 1.00 refs/row), so it
+  structurally cannot show a chain-dropping defect (hard rule #7), and it is
+  BM25-saturated, so retrieval levers read flat *because it is blind*.
+
+**Use `evals.harness.dynamic_ab`.** It is built around the one property every
+inert A/B in this repo's history lacked:
+
+1. **FIRE CHECK BEFORE ANY NUMBER.** It runs both arms, asserts they actually
+   diverge, and **ABORTS with `INERT`** — printing no axis table at all — when
+   they do not. A flat result and a dead feature are the same picture, so
+   `+0.0000` is reported as *unmeasured*, never as *safe*. R326, R327 and three
+   R329 reranker placements all shipped clean `+0.0000` runs on features that
+   never executed; this is the fix for that class.
+2. **Sample size follows observed variance, not a constant.** Rows run in
+   batches; each axis gets a bootstrap CI, and the run stops when every axis is
+   resolved. Verdicts distinguish **NULL** (tight CI around zero — a real null)
+   from **UNDERPOWERED** (CI spans zero and is wide — say so). A 0.003 delta on
+   9 effective rows is UNDERPOWERED, not a finding.
+3. **Live path by default** (Stage-2 on), because that is where the product is.
+4. **`gold_dropped` on both grains, as a VETO** — hard rule #8 is not an axis to
+   trade against.
+5. **Genuinely stratified sampling.** `probe_set` is ordered by source, so the
+   `[:n]` slice earlier runs called "stratified" took whole sources and dropped
+   others; `_stratified()` round-robins across sources instead.
+
+```bash
+py -3.12 -m evals.harness.dynamic_ab --flag REGENOLD_COHERE_RERANK --label x
+py -3.12 -m evals.harness.dynamic_ab --branch-env REGENOLD_ONTOLOGY_RISK_DOCS=0 --label y
+```
 
 Gate for any change that can move an answer, a reference, the tone, or a scope
 decision:
 
 1. **Live verification first** — probe the real failing case. A reference /
    Stage-2 / scope change MUST be seen working LIVE.
-2. **`evals.harness.ab_judge`** — position-swapped pairwise, baseline-OFF vs
-   branch-ON, per-axis win-rate + sign test. **This is the merge gate.**
-   For a reference change prefer **`evals.harness.easyhard_ab`**: it scores ref
-   conciseness as a count-ratio against gold, which `ab_judge` lacks — that gap
-   is how R142.1 slipped through.
-3. davidath + 276-runner + OOS probe — cheap regression guards only.
+2. **`evals.harness.dynamic_ab`** — fire-checked, adaptively sized, with the
+   `gold_dropped` veto. **This is the merge gate.**
+3. `evals.harness.ab_judge` when you specifically want a pairwise LLM judgement
+   on answer quality (it has a conciseness axis and is length-aware, though
+   `_ab_block` truncates at 1400 chars so it is tail-blind).
+4. 276-runner + OOS probe — cheap regression guards.
 
-Env-gate every such change (default-ON in code) so `ab_judge` can A/B OFF↔ON,
-and keep the off-switch for instant rollback.
+Env-gate every such change (default-ON in code) so the A/B can flip OFF↔ON, and
+keep the off-switch for instant rollback. ⚠ An env gate is necessary but not
+sufficient: a module-level `lru_cache` outliving the flip makes the A/B inert
+even with the flag in `_engine_cache_key` (measured on
+`REGENOLD_ONTOLOGY_RISK_DOCS`, R332 — the index memo had to be keyed on the gate
+before the arms differed at all). The fire check is what catches this.
 
-## Current baseline — the single authoritative source
+## Current baseline — HISTORICAL ONLY, not a grading target
 
-Measured at `c6db579` (2026-08-09), deterministic env
-`OPENAI_API_BASE=http://127.0.0.1:1/v1 P2P_GRAPH_RAG_PROVIDER=cli REGENOLD_EXTERNAL_EMBEDDINGS=0`.
+⚠ **RETIRED 2026-08-14 with davidath itself. Do NOT grade a change against this
+table.** It is kept because older round entries reference it, not because it
+answers anything.
 
-**Grade every run against THIS block, never against a number in `docs/ROUNDS.md`.**
+The block below is a `provider=cli` measurement: no Stage-2, head-level
+single-article gold, BM25-saturated. Reproducing it tells you the deterministic
+retrieval/answer-assembly path is unchanged and **nothing else** — not the
+prompts, not Stage-2, not the judge, not the reranker, not the graph context.
+R331 reproduced it to ≤0.0007 while changing all four, which is exactly the
+false comfort this retirement exists to remove.
+
+Grade a change with `evals.harness.dynamic_ab` instead: it fire-checks, sizes
+itself to the observed variance, and vetoes on `gold_dropped`.
+
+<details><summary>historical davidath numbers at <code>c6db579</code> (2026-08-09)</summary>
 
 | davidath | Ans Loose | Ans Strict | Ans Conc | Ref Loose | Ref Strict | Ref Conc | Tone |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -225,7 +283,13 @@ Measured at `c6db579` (2026-08-09), deterministic env
 | QA (137) | 0.1407 | 0.4072 | 0.1961 | 0.8394 | 0.5536 | 0.4390 | 1.0 |
 | Scenarios (339) | 0.2076 | 0.3332 | 0.7833 | 0.4992 | 0.4429 | 0.4290 | 1.0 |
 
-Multi-turn **20/20 coherent**.
+Re-measured 2026-08-14 at R331 (`e66577d`): OVERALL 0.1885 / 0.3552 / 0.6148 /
+0.5971 / 0.4747 / 0.4319 / 1.0; Scenarios byte-identical; multi-turn 20/20. So
+it still reproduces — and that fact carried no information about the change.
+
+</details>
+
+Multi-turn coherence and the OOS probe remain useful cheap guards.
 
 Other gates: `evals.regenold.runner` **255/255**, RISK_F1 macro **1.00**, 28/28
 categories · OOS probe (`--oos-suite all`, 51 rows) **49 pass, 0 scope leaks**
@@ -323,8 +387,9 @@ seeder succeeds, `/healthz/graph` still reports ok, answers just get worse.
 * **Three separate scorecards. Never conflate them.** (a) The OFFICIAL regenold
   report — we beat 0 baselines, `Overall` is a **geometric mean** so the worst
   axis dominates, and **Answer-Conciseness is the only axis we lead** (zero
-  headroom). (b) **davidath = regression guard**. (c) The **frontier
-  head-to-head** = the "are we SOTA?" measure.
+  headroom). (b) **`dynamic_ab` = the change gate** (davidath, which used to sit
+  here as "regression guard", is RETIRED — see Validation policy). (c) The
+  **frontier head-to-head** = the "are we SOTA?" measure.
 * **Frontier standing** (132 paired rows): we win Ref Loose and keyword recall;
   we lose **Ref Strict and Ref Conciseness — the same defect, over-citation**.
 * **Over-citation is the whole remaining gap.** An oracle dropping every
@@ -857,12 +922,20 @@ $env:P2P_GRAPH_RAG_PROVIDER = "openai_wrapper"
 OPENAI_API_BASE=http://127.0.0.1:1/v1 P2P_GRAPH_RAG_PROVIDER=cli REGENOLD_EXTERNAL_EMBEDDINGS=0
 
 py -3.12 -m pytest tests/ -q -p no:cacheprovider          # full suite (judge the SET)
-py -3.12 -m evals.bench.runner                            # davidath 476
+
+# THE MERGE GATE — fire-checked, adaptively sized, gold_dropped veto.
+py -3.12 -m evals.harness.dynamic_ab --flag <FLAG> --label <L>
+py -3.12 -m evals.harness.dynamic_ab --branch-env <K>=<V> --label <L>
+
 py -3.12 -m evals.regenold.runner                         # 276 scenarios
 py -3.12 -m evals.regenold.runner_v2 --local --probe-oos --oos-suite all --label X
 py -3.12 scripts/check_legal_version_drift.py             # exit 0 = no legal drift
-py -3.12 -m evals.harness.ab_judge                        # THE MERGE GATE
+py -3.12 -m evals.harness.ab_judge                        # pairwise LLM judgement
 ```
+
+⚠ `evals.bench.runner` (davidath 476) is **RETIRED** — see Validation policy. It
+is `provider=cli`, so it cannot observe Stage-2, prompts, the judge or the
+reranker, and a green run on such a change is the instrument trap, not a pass.
 
 The July-7 re-evaluation (this repo's reason to exist):
 
