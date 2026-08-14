@@ -246,7 +246,22 @@ class TestAnswerCoverageClause:
         # lettered articles), which are what tell the model WHAT to refuse.
         # 2241 chars remains an order of magnitude under the measured-neutral
         # 3.2K, and the ceiling still guards against unbounded creep.
-        assert 900 <= len(USER_ANSWER_COVERAGE_CLAUSE) <= 2300
+        # R337 — ceiling raised 2300 -> 2900. The clause grew to 2697 when it
+        # gained the two enumerations the expert reviewer's completeness
+        # findings demanded: the Annex IV technical-documentation components
+        # (technical file, risk-management file, data-governance records, human
+        # oversight protocol, logging, post-market monitoring plan, DoC, CE
+        # marking) and the Article 27 FRIA assessed-rights + deployer
+        # mitigations. Both are exactly the "closed set stated partially" defect
+        # the review kept flagging, so trimming them to satisfy a number would
+        # re-open the finding this clause exists to close.
+        #
+        # 2900 is chosen against the measured evidence already cited above, not
+        # to fit: 3.2K is the measured-NEUTRAL size, so 2900 stays 300 under it
+        # while leaving ~200 chars of headroom. The ceiling therefore still
+        # guards unbounded creep — which is its actual job — instead of pinning
+        # the clause to whatever it happened to be on the day it was written.
+        assert 900 <= len(USER_ANSWER_COVERAGE_CLAUSE) <= 2900
 
 
 class TestClauseIsActuallyDelivered:
