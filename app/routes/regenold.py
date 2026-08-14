@@ -6303,7 +6303,9 @@ _DENOISE_SALVAGE_ENV = "REGENOLD_DENOISE_SALVAGE"
 _DENOISE_LEADING_COREF_RE = re.compile(
     r"^(?:and\s+|but\s+|so\s+|then\s+|also\s+|ok(?:ay)?,?\s+)?"
     r"(?:what about|how about|and what about|what if|and if|what then|"
-    r"in that case|does (?:it|that|this|she|he|they)\b|do (?:they|we)\b|"
+    r"in that case|given (?:that|this|the|those)\b|based on (?:that|this|the above)\b|"
+    r"under (?:that|this)\b|for (?:this|that|such)\b|in light of\b|"
+    r"does (?:it|that|this|she|he|they)\b|do (?:they|we)\b|"
     r"is (?:it|that|this)\b|are (?:these|those|they)\b|can (?:we|it|they)\b|"
     r"would (?:it|that|they)\b|will (?:it|that|they)\b)",
     re.IGNORECASE,
@@ -6315,6 +6317,9 @@ _DENOISE_COREF_MARKERS: tuple[str, ...] = (
     "you mentioned", "as we discussed", "as discussed", "carry over",
     "carries over", "still apply", "those checks", "these checks",
     "the same", "as above", "like i said", "as i said",
+    "given that", "given the", "given this", "that classification",
+    "this classification", "such a system", "such systems",
+    "those obligations", "these obligations", "the above",
 )
 
 

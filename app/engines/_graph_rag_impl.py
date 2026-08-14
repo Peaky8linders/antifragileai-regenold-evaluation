@@ -5398,7 +5398,28 @@ def _deterministic_answer(question: str, context: GraphContext) -> str:
 
     if is_qa_shape and context.obligations:
         qa_parts = []
-        for obl in _lead_rank_obligations(question, context.obligations)[:3]:
+        explicit_article_nums = re.findall(
+            r"\b(?:Art\.?|Article)\s*(\d{1,3})\b", question, re.IGNORECASE,
+        )
+        explicit_annex_romans = re.findall(
+            r"\bAnnex\s+([IVXLC]+)\b", question, re.IGNORECASE,
+        )
+        selected_obls = []
+        if explicit_article_nums or explicit_annex_romans:
+            explicit_anchors = {
+                *(f"Art. {n}" for n in explicit_article_nums),
+                *(f"Article {n}" for n in explicit_article_nums),
+                *(f"Annex {r.upper()}" for r in explicit_annex_romans),
+            }
+            for obl in context.obligations:
+                art = str(obl.get("article", "") or "").strip()
+                if any(art.startswith(ea) or ea.startswith(art) for ea in explicit_anchors):
+                    if not obl.get("id", "").startswith("kb-xref-"):
+                        selected_obls.append(obl)
+        if not selected_obls:
+            selected_obls = _lead_rank_obligations(question, context.obligations)[:3]
+
+        for obl in selected_obls[:2]:
             text = obl.get("text", "N/A").strip()
             cleaned_text = re.sub(r"^\s*(?:Art\.?|Article|Annex)\s+[IVXLCDM\d]+(?:\([^)]+\))?\s*:\s*", "", text, flags=re.IGNORECASE)
             qa_parts.append(cleaned_text)
@@ -5922,9 +5943,19 @@ def _retrieve_from_kb(
     try:
         from app.data.kb_xrefs import cross_refs
         seen_articles = {o["article"] for o in context.obligations}
+        _q_raw = query.raw_question or ""
+        is_deployer_query = bool(re.search(r"\bdeployer(?:s|\'s)?\b", _q_raw, re.I))
+        is_provider_query = bool(re.search(r"\bprovider(?:s|\'s)?\b", _q_raw, re.I))
+        _PROVIDER_ONLY_ARTS = {"Art. 16", "Art. 17", "Art. 18", "Art. 19", "Art. 43", "Art. 47", "Art. 48", "Art. 49"}
+        _DEPLOYER_ONLY_ARTS = {"Art. 26", "Art. 27"}
+
         for primary in list(query.entities):
             for xref in cross_refs(primary, limit=2):
                 if xref in seen_articles:
+                    continue
+                if is_deployer_query and not is_provider_query and xref in _PROVIDER_ONLY_ARTS:
+                    continue
+                if is_provider_query and not is_deployer_query and xref in _DEPLOYER_ONLY_ARTS:
                     continue
                 xref_mapping = EC_CHECKER_OBLIGATION_MAP.get(xref)
                 if not xref_mapping:
@@ -8875,7 +8906,7 @@ def ask_compliance_question(request: GraphRAGRequest) -> GraphRAGResponse:
 
     # Stage 1 + 2 — Generate
     resolved_q = getattr(request, "resolved_question", None) or request.question
-    kg_answer = _deterministic_answer(resolved_q, context)
+    kg_answer = _deterministic_answer(request.question, context)
     answer_text, stage2_used = _two_stage_generate(
         request.question, context, query, request.system_description,
         history_turn_count=getattr(request, "history_turn_count", 1) or 1,
