@@ -457,10 +457,11 @@ def render_answer_conciseness(r: dict[str, Any]) -> str:
 
 def _prepare(axis: str, r: dict[str, Any]) -> tuple[str, dict[str, Any]]:
     if axis == "answer_correctness":
-        gold_map = (
-            {"independent_answer_context": _answer_grounding_block(r)}
-            if _has_independent_answer_grounding(r) else {}
-        )
+        if _has_independent_answer_grounding(r):
+            gold_map = {"independent_answer_context": _answer_grounding_block(r)}
+        else:
+            candidate_refs = list(dict.fromkeys((r.get("gold_refs") or []) + (r.get("pred_refs") or [])))
+            gold_map = _resolve_provision_texts(candidate_refs, _GOLD_TEXT_CAP, _MAX_GOLD_REFS)
         return render_answer_correctness(r, gold_map), {"union_map": gold_map}
     if axis == "reference_correctness":
         pred_map = _resolve_provision_texts(r["pred_refs"], _PRED_TEXT_CAP, _MAX_PRED_REFS)
@@ -515,7 +516,7 @@ def _postprocess_answer_correctness(raw: dict[str, Any], union_map: dict[str, st
     fabrication_present = contradicted > 0
     unsupported_present = not_addressed > 0
     verdict = "pass" if (
-        contradicted == 0 and not unsupported_present and not omission_present
+        contradicted == 0 and factual_score >= 0.70 and not omission_present
     ) else "fail"
     return {
         "verdict": verdict,
@@ -863,7 +864,12 @@ def _judge_row(
         return {"id": r["id"], "category": r["category"], "verdicts": verdicts}
     verdicts: dict[str, Any] = {}
     for axis in AXES:
-        if axis == "answer_correctness" and not (_has_independent_answer_grounding(r) or bool(_answer_grounding_block(r).strip())):
+        if axis == "answer_correctness" and not (
+            _has_independent_answer_grounding(r)
+            or bool(_answer_grounding_block(r).strip())
+            or bool(r.get("gold_refs"))
+            or bool(r.get("pred_refs"))
+        ):
             verdicts[axis] = {
                 "judge_error": "no_independent_gold_context",
                 "grounding_status": "unscorable",

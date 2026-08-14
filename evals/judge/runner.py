@@ -646,17 +646,8 @@ def _parse_judge_json(text: str) -> dict[str, Any]:
                 return cand
         return candidates[-1]
 
-    # Pass 5: Regex-based field recovery for severely mangled text
-    recovered: dict[str, Any] = {}
-    v_match = re.search(r'"verdict"\s*:\s*"([^"]+)"', s, re.IGNORECASE)
-    w_match = re.search(r'"winner"\s*:\s*"([^"]+)"', s, re.IGNORECASE)
-    if v_match:
-        recovered["verdict"] = v_match.group(1).lower()
-    if w_match:
-        recovered["winner"] = w_match.group(1).upper()
-    if recovered:
-        recovered["_recovered_via_regex"] = True
-        return recovered
+    if "{" not in s:
+        return {"judge_error": "no_json", "raw": text[:200]}
 
     return {"judge_error": "unbalanced_json", "raw": text[:200]}
 
