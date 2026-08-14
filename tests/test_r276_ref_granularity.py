@@ -125,12 +125,60 @@ class TestAutoMode:
         """The prose-signal was measured counterproductive (medtech sim:
         auto-with-prose .610 vs question-auto/parent .693 exact F1) and
         removed — a well-grounded answer nearly always names the operative
-        paragraph, so the signal fired on every cluster."""
+        paragraph, so the signal fired on every cluster.
+
+        R333 — that measurement stands, and this test still guards it, but it
+        is now explicitly a measurement of the signal-OFF regime rather than of
+        the only regime. Its assertion is unchanged; only the pin is new.
+
+        Why both regimes are legitimate: GOLD SHAPE decides which is right. The
+        medtech sim above scores against HEAD-level gold, where projecting a
+        leaf onto its head is a miss and keeping the head is correct. The
+        expert-reviewer gold this repo exists to satisfy is LEAF-grained — it
+        demands ``Annex IV.1(e)`` over ``Annex IV``, ``Annex III.1(c)`` over
+        ``Annex III``, ``Article 99(4)`` over ``Article 99`` — and against it,
+        head-only scored sub-point strict 0.000 where leaf-only scored 1.000.
+        Same code, opposite verdicts, because the rulers differ.
+        """
         monkeypatch.setenv("REGENOLD_REF_GRANULARITY", "auto")
+        monkeypatch.setenv("REGENOLD_LEAF_BODY_SIGNAL", "0")
         out = _apply_ref_granularity(
             ["Article 6.3", "Article 6", "Annex III"],
             live_question="Is deviation detection automatically high-risk?",
             answer_text="Not automatically. Article 6(3)(c) carves out systems that…",
+        )
+        assert out == ["Article 6", "Annex III"]
+
+    def test_body_named_leaf_keeps_leaves_when_signal_enabled(self, monkeypatch):
+        """R333 — the flag-ON half of the pair above, on identical input.
+
+        Guards the defect the expert reviewer flagged three times: the system
+        retrieves the right leaf, then the route deletes it in favour of the
+        umbrella head. Dropping the head costs nothing at head grain because
+        ``article_heads("Article 6.3")`` is ``"Article 6"``.
+        """
+        monkeypatch.setenv("REGENOLD_REF_GRANULARITY", "auto")
+        monkeypatch.setenv("REGENOLD_LEAF_BODY_SIGNAL", "1")
+        out = _apply_ref_granularity(
+            ["Article 6.3", "Article 6", "Annex III"],
+            live_question="Is deviation detection automatically high-risk?",
+            answer_text="Not automatically. Article 6(3)(c) carves out systems that…",
+        )
+        assert out == ["Article 6.3", "Annex III"]
+
+    def test_body_signal_does_not_fire_without_a_coordinate(self, monkeypatch):
+        """The signal must be a COORDINATE match, not a topic match.
+
+        An answer that discusses Article 6 without naming a sub-point leaves the
+        cluster exactly as the signal-off regime would — otherwise this widens
+        into the always-fires failure the R276 banner describes.
+        """
+        monkeypatch.setenv("REGENOLD_REF_GRANULARITY", "auto")
+        monkeypatch.setenv("REGENOLD_LEAF_BODY_SIGNAL", "1")
+        out = _apply_ref_granularity(
+            ["Article 6.3", "Article 6", "Annex III"],
+            live_question="Is deviation detection automatically high-risk?",
+            answer_text="Not automatically — Article 6 read with Annex III governs.",
         )
         assert out == ["Article 6", "Annex III"]
 

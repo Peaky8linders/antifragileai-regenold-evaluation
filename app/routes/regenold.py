@@ -3047,6 +3047,17 @@ def _question_names_subpoint_of(head: str, question: str) -> bool:
     return bool(re.search(pat, question, re.IGNORECASE))
 
 
+def _leaf_body_signal_enabled() -> bool:
+    """R333 — let the ANSWER BODY, not only the question, protect a leaf ref.
+
+    Code default is the load-bearing switch (``railway.toml [deploy.envs]`` has
+    never applied); ``REGENOLD_LEAF_BODY_SIGNAL=0`` is the instant rollback.
+    """
+    return os.getenv("REGENOLD_LEAF_BODY_SIGNAL", "1").strip().lower() in (
+        "1", "true", "yes", "on",
+    )
+
+
 def _apply_ref_granularity(
     refs: list[str],
     live_question: str = "",
@@ -3086,9 +3097,30 @@ def _apply_ref_granularity(
         if mode == "leaf":
             drop.add(head)
             continue
-        # mode == "auto" — question-signal ONLY (the prose-named-leaf
-        # signal was measured counterproductive; see the mode banner).
+        # mode == "auto" — the question signal, plus (R333) the ANSWER-BODY
+        # signal.
+        #
+        # Question-only was unfalsifiable in practice: `_reemit_parents_for_subpoints`
+        # (default ON) injects the parent for EVERY leaf, so `head_present` is always
+        # true and this branch always runs, while a real question essentially never
+        # writes out a sub-point coordinate ("Does the technical documentation require
+        # hardware specs?" names none). So `leaf_signal` was ~always False and the
+        # `else` deleted every leaf — shipping bare `Annex IV` where the reviewer
+        # demanded `Annex IV.1(e)`, bare `Annex III` for `Annex III.1(c)`, and bare
+        # `Article 99` for `Article 99(4)`. Measured on the 20 expert-reviewed
+        # questions: 11 of 56 citations came back imprecise for exactly this reason.
+        #
+        # Keeping the LEAF instead of the head costs nothing on the head-level
+        # reference axes, which is what makes this safe under hard rule #8:
+        # `article_heads("Article 99.4")` → `"Article 99"`, so a leaf-only citation
+        # scores identically to the bare head against head-level gold (verified
+        # 1.0/1.0/1.0), while gaining the whole sub-point axis. The reference COUNT
+        # is unchanged, so Answer/Reference-Conciseness is untouched.
         leaf_signal = _question_names_subpoint_of(head, live_question)
+        if not leaf_signal and _leaf_body_signal_enabled():
+            # Same matcher, pointed at the answer: a coordinate the prose actually
+            # discusses is as good a signal as one the question named.
+            leaf_signal = _question_names_subpoint_of(head, answer_text)
         if leaf_signal:
             drop.add(head)
         else:
@@ -4576,6 +4608,53 @@ def _question_named_heads(question: str) -> set[str]:
     return out
 
 
+def _answer_named_heads(answer: str) -> set[str]:
+    """Heads the ANSWER BODY explicitly discusses.
+
+    Same two patterns as :func:`_question_named_heads`, without the live-turn
+    split — an answer has no prior turns to guard against.
+
+    R333. The clamp's only rescue was heads named in the QUESTION, which is
+    empty for every question phrased in plain language. Measured live on
+    "What risk categories are provided for AI systems?": the answer enumerated
+    all eight Article 5 prohibitions, all eight Annex III domains, and the GPAI
+    regime, and the clamp then cut the ref list to its first five — deleting
+    Annex III, Article 51 and Article 55, each of which the body discusses at
+    length. An independent LLM judge, told nothing about any clamp, listed
+    exactly those three as missing citations.
+
+    Dropping a provision the answer DISCUSSES is the failure hard rule #8
+    forbids, and it is also the inverse of the defect the clamp exists to fix:
+    the reviewer's complaint was references that the body never addresses, so
+    "discussed in the body" is the property the budget should be spending on.
+    """
+    out: set[str] = set()
+    if not answer:
+        return out
+    for m in _CLAMP_Q_ARTICLE_RE.finditer(answer):
+        for num in re.findall(r"\d{1,3}", m.group(1)):
+            out.add(f"Article {int(num)}")
+    for m in _CLAMP_Q_ANNEX_RE.finditer(answer):
+        for rn in re.findall(r"[IVXLC]+", m.group(1)):
+            out.add(f"Annex {rn.upper()}")
+    return out
+
+
+def _clamp_body_rescue_enabled() -> bool:
+    """R333 — rescue tail refs the answer body discusses. Default ON.
+
+    Code default is the load-bearing switch (``railway.toml [deploy.envs]`` has
+    never applied), with ``REGENOLD_CLAMP_BODY_RESCUE=0`` for instant rollback.
+
+    Direction is safe by construction: this only ever RE-ADDS a reference the
+    clamp was about to drop, and only from the existing tail, so it cannot
+    invent a citation and cannot reduce gold recall.
+    """
+    return os.getenv("REGENOLD_CLAMP_BODY_RESCUE", "1").strip().lower() in (
+        "1", "true", "yes", "on",
+    )
+
+
 def _one_per_head_cap_enabled() -> bool:
     """R285 — collapse a ref list to ONE citation per article/annex head.
 
@@ -5058,6 +5137,7 @@ def adaptive_ref_clamp(
     stage2_landed: bool,
     curated_intercept: bool,
     retrieval_path: str,
+    answer_text: str = "",
 ) -> list[str]:
     """R281 — re-apply the per-question ref budget as the LAST ref pass.
 
@@ -5079,6 +5159,13 @@ def adaptive_ref_clamp(
         if effective <= 0 or len(references) <= effective:
             return references
         named = _question_named_heads(live_question)
+        # R333 — a head the ANSWER discusses is protected exactly as a head the
+        # QUESTION named. Computed HERE, above the one-per-head cap, because
+        # that cap takes the same protect set: protecting a head only at the
+        # tail-rescue step would let the cap collapse it one line earlier.
+        protected = set(named)
+        if _clamp_body_rescue_enabled():
+            protected |= _answer_named_heads(answer_text)
         # R285 — the one-per-head cap is a LAST-RESORT way to get under budget,
         # not an unconditional filter: it runs only once the list is already
         # over budget, and it never drops a reference whose head the question
@@ -5086,7 +5173,7 @@ def adaptive_ref_clamp(
         # before this gold protection, so it collapsed sub-points even when the
         # budget had room.) Default OFF pending its own A/B.
         if _one_per_head_cap_enabled():
-            references = _one_per_head(references, protect=named)
+            references = _one_per_head(references, protect=protected)
             if len(references) <= effective:
                 return references
         head = references[:effective]
@@ -5094,7 +5181,7 @@ def adaptive_ref_clamp(
         rescued = [
             r
             for r in tail
-            if (_clamp_ref_head(r) or r) in named and r not in head
+            if (_clamp_ref_head(r) or r) in protected and r not in head
         ]
         # R282 — high-risk classification pair rescue (default OFF; see
         # _clamp_pair_rescue_enabled). When a member of the Article 6 <-> Annex

@@ -30,7 +30,7 @@ from dataclasses import dataclass, field
 # (Art. 25(2) cooperation-duty re-anchor + real 25(4) written-agreement
 # clause, Art. 99(4) closed enumeration, Art. 79/109 Reg-2019/1020
 # Art. 3(19) qualification).
-KB_VERSION = "2024.1689.v18"
+KB_VERSION = "2024.1689.v19"
 
 
 @dataclass(frozen=True)
@@ -1057,10 +1057,11 @@ EC_CHECKER_OBLIGATION_MAP: dict[str, dict[str, str]] = {
     "Art. 4": {
         "dimension": "governance",
         "summary": (
-            "Requires providers and deployers to take measures to ensure a "
-            "sufficient level of AI literacy among their staff and other persons "
-            "dealing with AI systems on their behalf, considering technical "
-            "knowledge, experience, education, training, and context of use."
+            "Requires providers and deployers to take measures to ensure, to "
+            "their best extent, a sufficient level of AI literacy among their "
+            "staff and other persons dealing with the operation and use of AI "
+            "systems on their behalf, considering technical knowledge, "
+            "experience, education, training, and context of use."
         ),
     },
     # ─── Title III: High-risk providers + value chain (Arts. 7, 8, 16-25) ────
