@@ -90,8 +90,53 @@ if os.getenv("REGENOLD_TEST_ALLOW_LIVE", "").strip().lower() not in (
         "DATABASE_URL",
         "GROQ_API_KEY",
         "COHERE_API_KEY",
+        # R330 — the OTHER two denoiser providers. `_rewrite_multiturn_query`
+        # (routes/regenold.py) builds a provider CHAIN groq -> gemini -> mistral
+        # -> openai_wrapper, and `is_gemini_provider_enabled` /
+        # `is_mistral_provider_enabled` are bare key-presence checks. GROQ was
+        # neutralised here; these two were not, while BOTH sit in the developer's
+        # `.env`. So a real key inserted a live provider AHEAD of the wrapper and
+        # the denoiser tests — which patch only `get_openai_wrapper_provider` —
+        # never reached their mock and got `None`. That is the whole reason
+        # `test_denoiser_returns_rewritten_text_on_happy_path` and
+        # `test_denoiser_uses_three_second_timeout` failed in a full run and
+        # passed in isolation, and why the r131 salvage tests flapped between
+        # runs. Same class as the AWS block below.
+        "GEMINI_API_KEY",
+        "MISTRAL_API_KEY",
         "REGENOLD_INTENT_PROVIDER",
         "P2P_GRAPH_RAG_API_KEY",
+        # R330 — the AWS credential family. `_resolve_credentials` ranks the
+        # BEARER token FIRST (`bedrock_client.py:176-179`), ahead of the
+        # composite `AWS_BEDROCK_API_KEY` and the standard
+        # `AWS_ACCESS_KEY_ID`/`_SECRET_ACCESS_KEY` pair. So a real
+        # `AWS_BEARER_TOKEN_BEDROCK` in the developer's `.env` SHORT-CIRCUITS
+        # every lower-priority path and five `test_bedrock_client.py` tests fail
+        # — but ONLY when something earlier in the session has called
+        # `load_dotenv()`, which is why they pass in isolation and fail in a full
+        # run. Measured before this fix: `test_repr_does_not_contain_secrets`
+        # asserted `us-east-1` (from its own composite key) and got
+        # `eu-central-1`, because the bearer branch returns
+        # `{"region_name": _resolve_region(), ...}` and never parses the key.
+        #
+        # Neutralised here rather than per-test: the whole point of this block is
+        # that a credential present in the environment must not decide a unit
+        # test. Tests that WANT one set it explicitly with `monkeypatch.setenv`
+        # (there are 9 such call sites in `test_bedrock_client.py`), and
+        # monkeypatch restores to "" afterwards, so the isolation holds both ways.
+        "AWS_BEARER_TOKEN_BEDROCK",
+        "AWS_BEDROCK_BEARER_TOKEN",
+        "BEDROCK_BEARER_TOKEN",
+        "AWS_BEDROCK_API_KEY",
+        "AWS_ACCESS_KEY_ID",
+        "AWS_SECRET_ACCESS_KEY",
+        "AWS_SESSION_TOKEN",
+        # Region too: `_resolve_region` reads BEDROCK_REGION -> AWS_DEFAULT_REGION
+        # -> AWS_REGION -> DEFAULT_REGION, so an ambient region silently overrides
+        # the region a test embedded in its own composite key.
+        "BEDROCK_REGION",
+        "AWS_DEFAULT_REGION",
+        "AWS_REGION",
     ):
         os.environ[_var] = ""
     # Point the Claude-Max wrapper at an UNREACHABLE local port. Route tests
@@ -294,7 +339,18 @@ def _reset_llm_provider_singletons():
     if _llm_provider is not None:
         # Groq + Gemini have dedicated reset helpers (close the pooled
         # httpx.Client + null the module global).
-        for _helper in ("_reset_groq_singleton_for_tests", "_reset_gemini_singleton_for_tests"):
+        # R330 — ``_reset_mistral_singleton_for_tests`` EXISTS in the provider
+        # module (added with the R267.1 Mistral fallback) and was never called
+        # here, so ``_MISTRAL_SINGLETON`` survived every test for the life of the
+        # process while its two siblings were reset. Exactly CLAUDE.md's "one
+        # concept, one definition — when you widen a pattern, grep for its
+        # siblings". The docstring above still listed only FOUR memoised objects;
+        # there are five.
+        for _helper in (
+            "_reset_groq_singleton_for_tests",
+            "_reset_gemini_singleton_for_tests",
+            "_reset_mistral_singleton_for_tests",
+        ):
             fn = getattr(_llm_provider, _helper, None)
             if fn is not None:
                 try:

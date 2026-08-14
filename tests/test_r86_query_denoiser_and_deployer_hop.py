@@ -49,6 +49,33 @@ from app.routes.regenold import (
 # ─── R86 Query De-Noiser ───────────────────────────────────────────────────
 
 
+@pytest.fixture(autouse=True)
+def _wrapper_provider_available(monkeypatch):
+    """R330 — un-pin the ``cli`` provider for this module.
+
+    ``is_openai_wrapper_enabled()`` returns **False** whenever
+    ``P2P_GRAPH_RAG_PROVIDER == "cli"`` (R127: the cli contract is "no LLM
+    call", so the wrapper and everything gated on it must be off). CLAUDE.md's
+    documented gate env sets exactly that for the whole pytest run.
+
+    Every de-noiser test here patches ``get_openai_wrapper_provider`` and then
+    asserts the rewrite came back — but under the cli pin the provider chain
+    collects NO candidates and ``_rewrite_multiturn_query`` bails at
+    ``fallback_reason="no_provider"`` before the mock is ever consulted.
+    Measured: the two happy-path tests failed with ``out is None`` and
+    ``complete.call_count == 0``.
+
+    ⚠ Worse than the visible failures: the ``returns_none`` tests PASSED under
+    the pin for the WRONG REASON — they assert ``None``, and ``no_provider``
+    also returns ``None``, so they were green while exercising nothing. This
+    fixture is what makes them real again.
+
+    Scoped to this module and set to the provider these tests are ABOUT, so the
+    file no longer depends on how the caller invoked pytest.
+    """
+    monkeypatch.setenv("P2P_GRAPH_RAG_PROVIDER", "openai_wrapper")
+
+
 def _mk_msg(role: str, content: str):
     """Mirror the route's expected message shape (has .role + .content)."""
     m = MagicMock()

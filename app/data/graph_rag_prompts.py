@@ -488,8 +488,11 @@ def resolve_answer_system() -> str:
 # the brake on the same channel.
 #
 # Deliberately COMPACT (~90 words vs the system rule's ~230): the user message is
-# actually delivered, and R282 showed that dumping instruction volume into a
-# delivered channel is itself harmful.
+# actually delivered, so every word here is paid for on a channel that reaches
+# the model, and prompt budget competes with Answer-Conciseness (hard rule #2).
+# ⚠ Do NOT restate this as "R282 showed instruction volume on the delivered
+# channel is harmful" — R282 varied the SYSTEM slot (0 -> ~12.8K tokens), never
+# the user channel. See the corrected note on USER_REF_UNCERTAINTY_CLAUSE below.
 USER_REF_MINIMALITY_CLAUSE = (
     " REFERENCE MINIMALITY: the EU AI ACT REFERENCES block is over-retrieved "
     "candidate context, NOT an agenda. Cite and describe ONLY the provisions "
@@ -513,8 +516,26 @@ USER_REF_MINIMALITY_CLAUSE = (
 # the paper's roughly halved hallucination rate, and it matches this repo's own
 # measurement that an extra wrong reference costs more than a missing one.
 #
-# Deliberately ONE sentence. R282 measured that dumping instruction volume onto
-# the delivered user channel is itself rubric-negative (kw_recall -0.267).
+# Deliberately ONE sentence.
+#
+# ⚠ CORRECTED 2026-08-14 — this comment used to cite R282 as measuring that
+# "dumping instruction volume onto the delivered USER channel is itself
+# rubric-negative (kw_recall -0.267)". R282 measured no such thing. Its A/B ran
+# TWO WRAPPER INSTANCES (``.planning/R282-CHECKPOINT.md`` Task C): prod:8000 with
+# the SYSTEM slot dropped vs a patched :8001 with ``WRAPPER_FORWARD_SYSTEM_PROMPT``
+# forwarding it. The variable was the SYSTEM slot going 0 -> the whole ~12.8K-token
+# ``ANSWER_GENERATE_SYSTEM``; the user channel was IDENTICAL in both arms. The
+# -0.267 is real (easyhard_ab n=40/arm, plus a pairwise sweep 8/8, p~0.008) and
+# the root cause recorded there is that 12.8K tokens OVERWHELM the question.
+#
+# So R282 supports exactly one claim: do not newly deliver the accreted 51 KB
+# system prompt on any channel. It is NOT a dose-response curve, and it says
+# nothing about a marginal clause added to an already-loaded user message.
+# The repo's own evidence at the small end runs the OTHER way: R298 added 701
+# chars (``USER_REF_MINIMALITY_CLAUSE``) and 546 chars
+# (``USER_CHALLENGE_BREVITY_CLAUSE``) to THIS channel and both measured positive.
+# Keep this clause short because prompt budget competes with Answer-Conciseness
+# (hard rule #2), not because R282 forbids user-channel text.
 #
 # ⚠ IT PULLS AGAINST SYSTEM-PROMPT RULE 10 — "Unmentioned citations are severely
 # penalized" (``ANSWER_GENERATE_SYSTEM``, rule 10 near the top of this module).
