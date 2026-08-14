@@ -277,8 +277,17 @@ def _call_judge_bedrock(prompt: str, timeout_s: float = 30.0) -> dict[str, Any]:
     # Measured on the refs axis, eu.anthropic.claude-sonnet-4-6, 2026-08-11.
     # This is a truncation fix, not a rubric change — the prompts and the
     # parsed formulas are untouched.
-    max_tokens = int(os.getenv("REGENOLD_BEDROCK_JUDGE_MAX_TOKENS", "").strip()
-                      or _judge_max_tokens())
+    # A malformed override must not take the judge down: a bare int() here
+    # raised ValueError on e.g. "1600 " with a stray character, killing the run
+    # instead of falling back to the shared budget. Every other env read in this
+    # module is guarded; this one was not.
+    try:
+        max_tokens = int(
+            os.getenv("REGENOLD_BEDROCK_JUDGE_MAX_TOKENS", "").strip()
+            or _judge_max_tokens()
+        )
+    except (TypeError, ValueError):
+        max_tokens = _judge_max_tokens()
     req = BedrockRequest(
         system=_JUDGE_SYSTEM,
         user=prompt,

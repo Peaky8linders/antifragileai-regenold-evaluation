@@ -577,8 +577,41 @@ def _postprocess_answer_correctness(raw: dict[str, Any], union_map: dict[str, st
     factual_score = (supported / total) if total else 0.0
     fabrication_present = contradicted > 0
     unsupported_present = not_addressed > 0
+    # ⚠ THIS THRESHOLD IS A CHOICE, NOT A CALIBRATION — and it REDEFINED an axis
+    # in place. d7be457 replaced the previous rule (`not unsupported_present`,
+    # i.e. every proposition had to be addressed) with `factual_score >= 0.70`,
+    # under the SAME axis name and with the commit message calling it a
+    # "calibrated LeMAJ threshold". Neither half of that holds up:
+    #
+    #  * There is no calibration behind 0.70. It appears nowhere else in evals/,
+    #    docs/ROUNDS.md or .planning/ — no sweep, no ROC, no companion strict
+    #    variant, no env gate.
+    #  * LeMAJ (arXiv 2510.07243) prescribes Legal-Data-Point decomposition
+    #    against a REFERENCE ANSWER and specifies no threshold. This function
+    #    uses SUPPORTED / CONTRADICTED / NOT-ADDRESSED, and the July-7 batch has
+    #    no reference answer at all, so the citation does not transfer.
+    #
+    # The effect is a strictly looser axis: a row where 30% of its propositions
+    # go unverified now PASSES where it previously failed. That is CLAUDE.md's
+    # R327 trap in its most dangerous form — "the ruler was rewritten in the
+    # SAME change as the behaviour it grades" — so any number graded across
+    # d7be457 is comparing two different rulers.
+    #
+    # Named and env-exposed so the two rulers are at least distinguishable and
+    # the old one is recoverable: `REGENOLD_JUDGE_FACTUAL_THRESHOLD=1.0`
+    # restores the pre-d7be457 "every proposition addressed" rule.
+    import os  # noqa: PLC0415
+
+    try:
+        _factual_threshold = float(
+            os.getenv("REGENOLD_JUDGE_FACTUAL_THRESHOLD", "").strip() or 0.70
+        )
+    except (TypeError, ValueError):
+        _factual_threshold = 0.70
     verdict = "pass" if (
-        contradicted == 0 and factual_score >= 0.70 and not omission_present
+        contradicted == 0
+        and factual_score >= _factual_threshold
+        and not omission_present
     ) else "fail"
     return {
         "verdict": verdict,
@@ -757,11 +790,43 @@ def _postprocess_answer_conciseness(raw: dict[str, Any], answer_text: str) -> di
         else:
             unsub.append({"claimed": "UNREQUESTED", "quote": s})
 
-    fm = str(raw.get("failure_mode") or "").strip().lower()
-    is_clean_failure_mode = fm.startswith("none") or fm == "clean" or fm == "no violations"
-    if is_clean_failure_mode and len(redundant) == 0 and len(unrequested) <= 1:
-        # Judge explicitly noted no significant defect; minor flagged sentence was deemed harmless context
-        unrequested = []
+    # ⚠ ONE-SIDED LENIENCY — now gated, DEFAULT OFF.
+    #
+    # This block deletes a conciseness violation that the judge ALREADY
+    # SUBSTANTIATED (the quote cleared `_quote_substantiated` two lines above)
+    # because a free-text `failure_mode` field says "none". Three problems, and
+    # they compound:
+    #
+    #  1. It can only ever move a row fail -> pass. There is no symmetric rule
+    #     turning a pass into a fail, so it is a one-directional thumb on the
+    #     scale, in the flattering direction.
+    #  2. It ranks an unstructured prose field ABOVE structured, quote-verified
+    #     evidence. `failure_mode` is a free-text summary the judge writes last;
+    #     `unrequested_topics` are quote-anchored and were just validated
+    #     against the answer text. Trusting the summary over the evidence
+    #     inverts the whole point of the substantiation gate.
+    #  3. Conciseness is the ONE axis the official scorecard says we LEAD, with
+    #     zero headroom (CLAUDE.md, "Where we stand"). A silent rubric change
+    #     there is the most consequential place in the repo to make one — and
+    #     this shipped in an uncommitted diff with no A/B and no flag.
+    #
+    # CLAUDE.md's R327 lesson applies verbatim: "if you change a formula, change
+    # its NAME" — an unnamed, ungated redefinition of an axis under its own name
+    # is how a bench comes to confirm a change using a scorer built to like it.
+    #
+    # Default OFF restores the pre-diff behaviour. `=1` re-enables it so it can
+    # be A/B'd on its own, which is the only way it earns a default.
+    import os  # noqa: PLC0415
+
+    if os.getenv("REGENOLD_JUDGE_CONCISENESS_LENIENCY", "0").strip().lower() in {
+        "1", "true", "yes", "on",
+    }:
+        fm = str(raw.get("failure_mode") or "").strip().lower()
+        is_clean_failure_mode = (
+            fm.startswith("none") or fm == "clean" or fm == "no violations"
+        )
+        if is_clean_failure_mode and len(redundant) == 0 and len(unrequested) <= 1:
+            unrequested = []
 
     verdict = "pass" if (not redundant and not unrequested) else "fail"
     return {
