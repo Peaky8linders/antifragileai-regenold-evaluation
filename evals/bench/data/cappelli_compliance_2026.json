@@ -1,0 +1,222 @@
+[
+  {
+    "id": "cappelli_cs1_q1_risk_level",
+    "case_study": "cs1_recruitment",
+    "domain": "Employment and Workers Management",
+    "annex_iii_category": "Annex III.4.b",
+    "dimension": "risk_level",
+    "question": "What is the risk level of my AI-powered personnel recruitment SaaS platform (which performs automatic CV pre-screening and candidate performance prediction) under the EU AI Act?",
+    "gold_answer": "Under the EU AI Act, the AI-powered recruitment platform qualifies as a high-risk AI system pursuant to Article 6(2) and Annex III, point 4(b), because it is used for recruitment and candidate selection, which significantly impacts access to employment.",
+    "expected_refs": ["Article 6", "Annex III.4.b"],
+    "expected_keywords": ["high-risk", "Article 6", "Annex III", "recruitment", "employment"]
+  },
+  {
+    "id": "cappelli_cs1_q2_obligations",
+    "case_study": "cs1_recruitment",
+    "domain": "Employment and Workers Management",
+    "annex_iii_category": "Annex III.4.b",
+    "dimension": "regulatory_obligations",
+    "question": "What specific regulatory obligations must my organization comply with based on the EU AI Act for this high-risk recruitment AI system?",
+    "gold_answer": "As a provider of a high-risk recruitment AI system, the organization must implement a continuous risk management system (Article 9), ensure data governance and bias mitigation (Article 10), draw up comprehensive technical documentation (Article 11 and Annex IV), maintain automated logging (Article 12), ensure transparency and instructions for use (Article 13), enable human oversight with override capabilities (Article 14), ensure accuracy, robustness, and cybersecurity (Article 15), conduct a conformity assessment with CE marking (Articles 43 and 48), and establish post-market monitoring (Article 72).",
+    "expected_refs": ["Article 9", "Article 10", "Article 11", "Article 12", "Article 13", "Article 14", "Article 15", "Article 43", "Article 48", "Article 72", "Annex IV"],
+    "expected_keywords": ["risk management", "data governance", "technical documentation", "logging", "transparency", "human oversight", "accuracy", "conformity assessment", "CE marking"]
+  },
+  {
+    "id": "cappelli_cs1_q3_legal_risks",
+    "case_study": "cs1_recruitment",
+    "domain": "Employment and Workers Management",
+    "annex_iii_category": "Annex III.4.b",
+    "dimension": "legal_risks",
+    "question": "What are the potential legal risks associated with this AI recruitment tool, and what compliance measures must be implemented to mitigate these risks?",
+    "gold_answer": "The primary legal risks include violation of fundamental rights regarding non-discrimination and equality (Article 21 of the EU Charter; Article 10 of the AI Act) through unrepresentative training datasets, unlawful automated decision-making lacking human oversight (Article 14 AI Act; Article 22 GDPR), and severe regulatory fines under Article 99. Mandatory mitigations include dataset bias audits, continuous human intervention protocols, and fundamental rights risk mapping.",
+    "expected_refs": ["Article 10", "Article 14", "Article 99"],
+    "expected_keywords": ["discrimination", "bias", "fundamental rights", "human oversight", "penalties"]
+  },
+  {
+    "id": "cappelli_cs1_q4_compliance_gaps",
+    "case_study": "cs1_recruitment",
+    "domain": "Employment and Workers Management",
+    "annex_iii_category": "Annex III.4.b",
+    "dimension": "compliance_gaps",
+    "question": "Which areas of the recruitment AI system are not yet compliant with applicable regulatory obligations when bias audits, formal risk management, and decision logging are missing?",
+    "gold_answer": "The system presents critical compliance gaps under Article 9 (absence of a formal lifecycle risk management system), Article 10 (lack of bias detection audits and representative data governance), Article 12 (absence of automated logging and audit traceability), Article 14 (inadequate human oversight and override mechanisms), and Article 11 (missing technical file). These gaps require establishing documented risk procedures, statistical bias testing, tamper-proof logging, and human supervisor controls.",
+    "expected_refs": ["Article 9", "Article 10", "Article 11", "Article 12", "Article 14"],
+    "expected_keywords": ["compliance gaps", "risk management", "bias audits", "logging", "human oversight", "technical file"]
+  },
+  {
+    "id": "cappelli_cs1_q5_technical_documentation",
+    "case_study": "cs1_recruitment",
+    "domain": "Employment and Workers Management",
+    "annex_iii_category": "Annex III.4.b",
+    "dimension": "technical_documentation",
+    "question": "What mandatory technical documentation is required to demonstrate compliance with the EU AI Act for this recruitment tool, and what specific documents must be prepared?",
+    "gold_answer": "In compliance with Article 11 and Annex IV of the EU AI Act, the mandatory documentation includes: (1) the Technical File detailing system architecture and algorithms, (2) the Risk Management File under Article 9, (3) Data Governance and bias audit records under Article 10, (4) Human Oversight protocols under Article 14, (5) Automated Logging mechanism documentation under Article 12, (6) Post-Market Monitoring Plan under Article 72, (7) EU Declaration of Conformity under Article 47 and Annex V, and (8) CE Marking documentation under Article 48.",
+    "expected_refs": ["Article 11", "Article 47", "Article 48", "Article 72", "Annex IV", "Annex V"],
+    "expected_keywords": ["technical file", "risk management file", "data governance record", "human oversight protocol", "logging", "declaration of conformity", "CE marking", "Annex IV"]
+  },
+  {
+    "id": "cappelli_cs2_q1_risk_level",
+    "case_study": "cs2_medical_diagnostics",
+    "domain": "Healthcare and Medical Devices",
+    "annex_iii_category": "Annex I / MDR / Annex III",
+    "dimension": "risk_level",
+    "question": "What is the risk level of an AI system used in hospitals for medical diagnosis, treatment recommendations, patient triage, and survival prediction under the EU AI Act?",
+    "gold_answer": "The medical diagnostic and triage AI system qualifies as a high-risk AI system under Article 6(1) in conjunction with Annex I (as a safety component of a medical device subject to third-party conformity assessment under MDR 2017/745) and Article 6(2) regarding essential healthcare triage.",
+    "expected_refs": ["Article 6", "Annex I"],
+    "expected_keywords": ["high-risk", "medical", "Article 6", "MDR", "triage"]
+  },
+  {
+    "id": "cappelli_cs2_q2_obligations",
+    "case_study": "cs2_medical_diagnostics",
+    "domain": "Healthcare and Medical Devices",
+    "annex_iii_category": "Annex I / MDR",
+    "dimension": "regulatory_obligations",
+    "question": "What specific regulatory obligations must be met for this AI medical diagnostic and triage system under the EU AI Act?",
+    "gold_answer": "The provider must implement a risk management system integrated with ISO 14971 (Article 9), high-quality clinical data governance (Article 10), technical documentation aligned with MDR Annex II/III (Article 11, Annex IV), event logging (Article 12), clinical transparency and user manuals (Article 13), clinician human oversight to prevent automation bias (Article 14), accuracy and cybersecurity resilience (Article 15), joint notified body conformity assessment (Article 43(3)), and dual-track incident reporting (Article 73 for AI Act; MDR Article 87 for medical vigilance).",
+    "expected_refs": ["Article 9", "Article 10", "Article 11", "Article 12", "Article 13", "Article 14", "Article 15", "Article 43", "Article 73", "Annex IV"],
+    "expected_keywords": ["risk management", "clinical data", "technical documentation", "human oversight", "conformity assessment", "incident reporting"]
+  },
+  {
+    "id": "cappelli_cs2_q3_legal_risks",
+    "case_study": "cs2_medical_diagnostics",
+    "domain": "Healthcare and Medical Devices",
+    "annex_iii_category": "Annex I / MDR",
+    "dimension": "legal_risks",
+    "question": "What are the legal risks associated with using AI survival modeling and lifestyle-based triage in hospital care?",
+    "gold_answer": "Key legal risks involve violations of human dignity and the right to healthcare non-discrimination (EU Charter Articles 1, 21, and 35; AI Act Article 10), automation bias where doctors over-rely on automated triage without critical review (Article 14), unlawful processing of special category health data (GDPR Article 9; AI Act Article 10(5)), and civil/product liability in case of diagnostic failure.",
+    "expected_refs": ["Article 10", "Article 14"],
+    "expected_keywords": ["non-discrimination", "human dignity", "automation bias", "health data", "liability"]
+  },
+  {
+    "id": "cappelli_cs2_q4_compliance_gaps",
+    "case_study": "cs2_medical_diagnostics",
+    "domain": "Healthcare and Medical Devices",
+    "annex_iii_category": "Annex I / MDR",
+    "dimension": "compliance_gaps",
+    "question": "What compliance gaps arise if the medical diagnostic AI lacks physician override controls and clinical dataset validation across diverse demographics?",
+    "gold_answer": "Major gaps exist under Article 10(2) due to unrepresentative demographic datasets causing diagnostic disparities, Article 14 due to missing doctor override and stop mechanisms, Article 11 due to incomplete clinical validation files in technical documentation, and Article 72 due to absent post-market clinical follow-up.",
+    "expected_refs": ["Article 10", "Article 11", "Article 14", "Article 72"],
+    "expected_keywords": ["demographic bias", "override controls", "clinical validation", "post-market follow-up"]
+  },
+  {
+    "id": "cappelli_cs2_q5_technical_documentation",
+    "case_study": "cs2_medical_diagnostics",
+    "domain": "Healthcare and Medical Devices",
+    "annex_iii_category": "Annex I / MDR",
+    "dimension": "technical_documentation",
+    "question": "What technical documentation must be prepared for an AI medical diagnostic system to satisfy EU AI Act Article 11 and Annex IV requirements?",
+    "gold_answer": "The technical documentation must contain the 8 mandatory Annex IV files: detailed system architecture and neural network specifications, ISO 14971-aligned risk management file (Article 9), clinical data governance and validation records (Article 10), clinician human oversight protocol (Article 14), audit logging mechanism (Article 12), post-market monitoring plan (Article 72), EU Declaration of Conformity (Article 47), and CE marking certification (Article 48).",
+    "expected_refs": ["Article 11", "Article 47", "Article 48", "Article 72", "Annex IV"],
+    "expected_keywords": ["technical file", "system architecture", "risk management", "clinical data", "human oversight", "CE marking"]
+  },
+  {
+    "id": "cappelli_cs3_q1_risk_level",
+    "case_study": "cs3_smart_city_traffic",
+    "domain": "Critical Infrastructure",
+    "annex_iii_category": "Annex III.2.a",
+    "dimension": "risk_level",
+    "question": "What is the risk level of an AI-based intelligent traffic management system that dynamically controls city traffic lights based on live camera feeds and IoT sensors under the EU AI Act?",
+    "gold_answer": "The intelligent traffic management system is classified as a high-risk AI system pursuant to Article 6(2) and Annex III, point 2(a), as it is used as a safety component in the management and operation of road traffic and critical infrastructure.",
+    "expected_refs": ["Article 6", "Annex III.2.a"],
+    "expected_keywords": ["high-risk", "critical infrastructure", "road traffic", "Article 6", "Annex III"]
+  },
+  {
+    "id": "cappelli_cs3_q2_obligations",
+    "case_study": "cs3_smart_city_traffic",
+    "domain": "Critical Infrastructure",
+    "annex_iii_category": "Annex III.2.a",
+    "dimension": "regulatory_obligations",
+    "question": "What regulatory obligations apply to a municipal operator deploying an AI-powered road traffic management system under the EU AI Act?",
+    "gold_answer": "The provider and deployer must maintain a continuous risk management system against physical safety hazards (Article 9), ensure training data quality for camera vision models (Article 10), compile technical documentation (Article 11, Annex IV), maintain automated logs for at least 6 months (Articles 12 and 26(6)), ensure human traffic operators can override signals (Article 14), safeguard cybersecurity against remote tampering (Article 15), and comply with deployer operational oversight duties (Article 26).",
+    "expected_refs": ["Article 9", "Article 10", "Article 11", "Article 12", "Article 14", "Article 15", "Article 26", "Annex IV"],
+    "expected_keywords": ["critical infrastructure", "risk management", "human override", "cybersecurity", "logging", "deployer obligations"]
+  },
+  {
+    "id": "cappelli_cs3_q3_legal_risks",
+    "case_study": "cs3_smart_city_traffic",
+    "domain": "Critical Infrastructure",
+    "annex_iii_category": "Annex III.2.a",
+    "dimension": "legal_risks",
+    "question": "What legal and fundamental rights risks arise from using computer vision cameras and vehicle tracking in municipal traffic AI systems?",
+    "gold_answer": "Primary legal risks include mass surveillance and privacy infringements under Article 8 of the EU Charter and GDPR if vehicle license plates or facial images are captured without effective anonymization, critical safety failures causing physical traffic accidents (Article 9), and civil liability for infrastructure disruption.",
+    "expected_refs": ["Article 9", "Article 10", "Article 15"],
+    "expected_keywords": ["surveillance", "privacy", "anonymization", "physical safety", "critical infrastructure"]
+  },
+  {
+    "id": "cappelli_cs3_q4_compliance_gaps",
+    "case_study": "cs3_smart_city_traffic",
+    "domain": "Critical Infrastructure",
+    "annex_iii_category": "Annex III.2.a",
+    "dimension": "compliance_gaps",
+    "question": "What compliance gaps exist if a smart traffic AI system lacks fail-safe fallback modes and cyberattack resilience testing?",
+    "gold_answer": "The system suffers from critical gaps under Article 15 (failure to demonstrate robustness against sensor faults and cyber-attacks), Article 9 (incomplete risk evaluation for emergency vehicle routing failures), Article 14 (lack of manual override protocols for traffic operators), and Article 12 (insufficient event logging during traffic anomalies).",
+    "expected_refs": ["Article 9", "Article 12", "Article 14", "Article 15"],
+    "expected_keywords": ["robustness", "cyberattacks", "fail-safe", "manual override", "logging"]
+  },
+  {
+    "id": "cappelli_cs3_q5_technical_documentation",
+    "case_study": "cs3_smart_city_traffic",
+    "domain": "Critical Infrastructure",
+    "annex_iii_category": "Annex III.2.a",
+    "dimension": "technical_documentation",
+    "question": "What technical documentation must be established for an intelligent traffic management AI system under Article 11 and Annex IV of the EU AI Act?",
+    "gold_answer": "Mandatory technical documentation under Annex IV includes: system architecture and IoT sensor specifications, risk management file covering infrastructure safety (Article 9), validation datasets and sensor error rates (Article 10), human operator intervention protocol (Article 14), cybersecurity and redundancy test logs (Article 15), 6-month minimum logging mechanism (Article 12), EU Declaration of Conformity (Article 47), and CE marking (Article 48).",
+    "expected_refs": ["Article 11", "Article 12", "Article 15", "Article 47", "Article 48", "Annex IV"],
+    "expected_keywords": ["technical file", "sensor specifications", "risk management", "cybersecurity", "declaration of conformity", "CE marking"]
+  },
+  {
+    "id": "cappelli_cs4_q1_risk_level",
+    "case_study": "cs4_retail_facial_recognition",
+    "domain": "Biometrics and Retail",
+    "annex_iii_category": "Article 5 / Annex III.1 / Article 50",
+    "dimension": "risk_level",
+    "question": "What is the risk level of an in-store AI system using facial recognition for VIP matching, theft alerts against flagged images, and behavioral gaze analysis under the EU AI Act?",
+    "gold_answer": "The system spans multiple regulatory tiers: real-time remote biometric identification in publicly accessible spaces is prohibited under Article 5(1)(h) when conducted by law enforcement; biometric categorization for retail profiling is classified as high-risk under Article 6(2) and Annex III, point 1; emotion or interest recognition requires mandatory transparency disclosure to consumers under Article 50(3).",
+    "expected_refs": ["Article 5.1.h", "Article 6", "Article 50.3", "Annex III.1"],
+    "expected_keywords": ["prohibited", "high-risk", "biometric", "transparency", "Article 5", "Article 6", "Article 50"]
+  },
+  {
+    "id": "cappelli_cs4_q2_obligations",
+    "case_study": "cs4_retail_facial_recognition",
+    "domain": "Biometrics and Retail",
+    "annex_iii_category": "Annex III.1 / Article 50",
+    "dimension": "regulatory_obligations",
+    "question": "What obligations must a retail store fulfill when deploying AI facial recognition and behavioral analytics?",
+    "gold_answer": "The deployer must verify the system does not fall under Article 5 prohibitions, conduct a Fundamental Rights Impact Assessment prior to use (Article 27), clearly inform exposed individuals of biometric and emotion analysis (Article 50(3)), ensure explicit GDPR consent for biometric processing (GDPR Article 9; AI Act Article 10(5)), maintain human oversight on theft alerts (Article 14), and retain system logs for at least 6 months (Article 26(6)).",
+    "expected_refs": ["Article 5", "Article 14", "Article 26.6", "Article 27", "Article 50.3"],
+    "expected_keywords": ["fundamental rights impact assessment", "transparency", "consent", "human oversight", "log retention"]
+  },
+  {
+    "id": "cappelli_cs4_q3_legal_risks",
+    "case_study": "cs4_retail_facial_recognition",
+    "domain": "Biometrics and Retail",
+    "annex_iii_category": "Article 5 / Article 27",
+    "dimension": "legal_risks",
+    "question": "What legal risks arise from using retail facial recognition for theft alerting and dynamic behavior-based pricing?",
+    "gold_answer": "Severe legal risks include: (1) unlawful biometric categorization or prohibited mass surveillance (Article 5(1)(h) and Article 5(1)(c)), (2) racial, gender, or demographic bias in facial matching algorithms violating Article 21 of the EU Charter, (3) unlawful processing of biometric data without valid explicit consent under GDPR Article 9, and (4) maximum regulatory penalties of up to 35 million EUR or 7% of global annual turnover under Article 99(3).",
+    "expected_refs": ["Article 5", "Article 10", "Article 99.3"],
+    "expected_keywords": ["mass surveillance", "demographic bias", "biometric consent", "penalties", "Article 99"]
+  },
+  {
+    "id": "cappelli_cs4_q4_compliance_gaps",
+    "case_study": "cs4_retail_facial_recognition",
+    "domain": "Biometrics and Retail",
+    "annex_iii_category": "Article 27 / Article 50",
+    "dimension": "compliance_gaps",
+    "question": "What compliance gaps exist if retail facial recognition is deployed without signage, without a Fundamental Rights Impact Assessment, and automated theft alerts trigger security interventions without human confirmation?",
+    "gold_answer": "Critical deficiencies include violation of Article 50(3) (failure to provide conspicuous transparency notices to shoppers), Article 27 (failure to conduct and register a Fundamental Rights Impact Assessment before deployment), Article 14 (lack of meaningful human oversight before security actions), and Article 10 (unverified accuracy and demographic false-positive rates on facial recognition).",
+    "expected_refs": ["Article 10", "Article 14", "Article 27", "Article 50.3"],
+    "expected_keywords": ["transparency notices", "FRIA", "fundamental rights", "human oversight", "demographic accuracy"]
+  },
+  {
+    "id": "cappelli_cs4_q5_technical_documentation",
+    "case_study": "cs4_retail_facial_recognition",
+    "domain": "Biometrics and Retail",
+    "annex_iii_category": "Annex IV / Article 11",
+    "dimension": "technical_documentation",
+    "question": "What technical documentation is required for high-risk biometric identification and retail analytics systems under the EU AI Act?",
+    "gold_answer": "The technical documentation under Annex IV must include: detailed facial feature extraction algorithms and CNN models, false match rate (FMR) and false non-match rate (FNMR) accuracy benchmarks across demographic cohorts (Article 15), data governance records (Article 10), human oversight and override protocol for security staff (Article 14), 6-month log retention mechanism (Article 12), Fundamental Rights Impact Assessment report (Article 27), EU Declaration of Conformity (Article 47), and CE marking documentation (Article 48).",
+    "expected_refs": ["Article 11", "Article 14", "Article 15", "Article 27", "Article 47", "Article 48", "Annex IV"],
+    "expected_keywords": ["technical file", "accuracy benchmarks", "human oversight", "FRIA", "declaration of conformity", "CE marking", "Annex IV"]
+  }
+]

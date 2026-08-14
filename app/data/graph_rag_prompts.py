@@ -895,9 +895,14 @@ USER_ANSWER_COVERAGE_CLAUSE = (
     "point, say so as a matter of LAW -- 'the Act does not specify X' -- and "
     "NEVER as a matter of your own sources: do not mention the references, "
     "provisions or material supplied to you, what was or was not retrieved, or "
-    "how complete your inputs are. The reader sees only the answer, so a remark "
-    "about your inputs is unanswerable to them, and it is self-contradictory "
-    "whenever the answer cites the very provision it claims to be missing. "
+    "how complete your inputs are. When answering about technical documentation "
+    "(Article 11 / Annex IV), name the required components in one compact list "
+    "(technical file, risk management file, data governance records, human oversight "
+    "protocol, logging mechanism, post-market monitoring plan, declaration of conformity, "
+    "CE marking). When answering about Fundamental Rights Impact Assessment (Article 27), "
+    "name the assessed rights and deployer mitigations under the relevant Charter articles. "
+    "The reader sees only the answer, so a remark about your inputs is unanswerable to "
+    "them, and it is self-contradictory whenever the answer cites the very provision it claims to be missing. "
     # R318 — LEGAL VERSION, ported here because it was UNENFORCED anywhere else.
     #
     # The repo's "no Digital Omnibus" policy existed only as rule 2b in
