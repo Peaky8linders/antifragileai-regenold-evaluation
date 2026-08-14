@@ -413,10 +413,31 @@ def get_provision_text(ref: str) -> str | None:
             return body
         # Annex item: first sub-point token is the numbered item.
         first = spec.subpoints[0]
-        if first.isdigit():
-            item = _annex_items(body).get(int(first))
+        if not first.isdigit():
+            return None
+        item = _annex_items(body).get(int(first))
+        if item is None or len(spec.subpoints) == 1:
             return item  # None → caller falls back to full annex
-        return None
+        # Second token = lettered sub-item inside the annex item. Mirrors the
+        # article path below, and for the same two reasons.
+        #
+        # GROUNDING: without this, every leaf under an item resolved to the
+        # WHOLE item, so `Annex III.5.a` (eligibility for essential services)
+        # and `Annex III.5.d` (emergency-call triage) returned byte-identical
+        # text — the distinction a reviewer specifically corrected us on was
+        # invisible to the model we were grounding. Same for `Annex IV.1.e`
+        # (hardware) against the rest of point 1, and `Annex III.1.c`
+        # (emotion recognition) against the rest of point 1.
+        #
+        # VALIDATION: returning the parent's words for an unknown letter made
+        # this function certify coordinates that do not exist. It is the leaf
+        # validator of record — `graph_semantic._leaf_exists` and
+        # `evals.bench.metrics` both define "this leaf is real" as "this
+        # returns non-None", precisely because `provision_exists` is head-lax
+        # — so `Annex III.5.z` passed as a real citation, dressed in item 5's
+        # text. An unknown letter must be None, not the parent.
+        second = spec.subpoints[1].lower()
+        return _subpoints(item).get(second)
 
     # Article path.
     n = spec.article_number

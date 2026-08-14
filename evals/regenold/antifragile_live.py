@@ -144,21 +144,43 @@ def _parse_reasoning(raw: Any) -> dict[str, Any]:
 
 
 def _mistake_resolved(answer_low: str, pred_refs: list[str], mistake: dict) -> bool:
+    """True when a new answer has resolved one expert-flagged mistake.
+
+    ``verify.present`` are ALL required; ``verify.present_any`` needs only one
+    (for a reviewer remark that was genuinely disjunctive — "it might fall under
+    5(a) … or it might fall outside Annex III entirely" is not a demand for
+    5(a)); ``verify.absent`` must none of them appear.
+
+    Reference constraints are matched HEAD-NORMALISED, the way the sibling
+    scorer ``_ref_metrics`` already matches via ``article_heads``. Matching the
+    raw strings — as this did until R333 — broke both directions at once:
+    ``ref_absent=["Article 5"]`` did not see ``Article 5.1.f``, so q14 scored
+    RESOLVED on the exact citation the reviewer rejected, while
+    ``ref_present=["Article 25"]`` did not see ``Article 25.1``, so a MORE
+    precise citation scored as a miss. The raw refs stay in the match set so a
+    deliberately sub-point-grained constraint (``"Annex III.5"`` on q13) is
+    still expressible; the dot-prefix test is what keeps ``Annex I`` from
+    matching ``Annex III``.
+    """
     verify = mistake.get("verify", {})
-    present = verify.get("present", []) or []
-    absent = verify.get("absent", []) or []
-    if not all(_norm(p) in answer_low for p in present):
+    if not all(_norm(p) in answer_low for p in verify.get("present", []) or []):
         return False
-    if any(_norm(a) in answer_low for a in absent):
+    any_of = verify.get("present_any", []) or []
+    if any_of and not any(_norm(p) in answer_low for p in any_of):
         return False
-    pred_low = {r.lower() for r in pred_refs}
-    for r in mistake.get("ref_present", []) or []:
-        if r.lower() not in pred_low:
-            return False
-    for r in mistake.get("ref_absent", []) or []:
-        if r.lower() in pred_low:
-            return False
-    return True
+    if any(_norm(a) in answer_low for a in verify.get("absent", []) or []):
+        return False
+
+    pred_keys = {h.lower() for h in M.article_heads(pred_refs)}
+    pred_keys |= {r.lower() for r in pred_refs}
+
+    def _cited(ref: str) -> bool:
+        rl = ref.lower()
+        return any(p == rl or p.startswith(rl + ".") for p in pred_keys)
+
+    if not all(_cited(r) for r in mistake.get("ref_present", []) or []):
+        return False
+    return not any(_cited(r) for r in mistake.get("ref_absent", []) or [])
 
 
 def _score_row(qid: str, gt: dict, body: dict, latency_ms: float,

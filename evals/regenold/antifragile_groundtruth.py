@@ -37,7 +37,7 @@ ANTIFRAGILE_GT: dict[str, dict] = {
         "mistakes": [
             {"id": "q01_m1", "type": "factual_error",
              "desc": "Frames social scoring as 'by public authorities'; Art 5(1)(c) has no public-authority limit in the final Regulation.",
-             "verify": {"present": [], "absent": ["social scoring by public authorities", "scoring by public authorities"]}},
+             "verify": {"present": [], "absent": ["scoring by public authorities", "social scoring by public"]}},
             {"id": "q01_m2", "type": "incomplete_enumeration",
              "desc": "Lists only 5 of 8 Art 5 prohibitions (missing predictive-policing, facial-scraping, workplace emotion).",
              "verify": {"present": ["scrap", "emotion"], "absent": []}},
@@ -57,7 +57,8 @@ ANTIFRAGILE_GT: dict[str, dict] = {
             "Article 5 prohibits eight categories of AI practice: subliminal or "
             "manipulative techniques causing significant harm; exploitation of "
             "vulnerabilities based on age, disability or socio-economic situation; "
-            "social scoring leading to unjustified detrimental treatment; predictive "
+            "social scoring leading to detrimental treatment in unrelated contexts, or "
+            "treatment unjustified or disproportionate to the behaviour scored; predictive "
             "policing based solely on profiling; untargeted scraping of facial images "
             "to build recognition databases; emotion inference in workplaces and "
             "educational institutions; biometric categorisation inferring sensitive "
@@ -91,7 +92,7 @@ ANTIFRAGILE_GT: dict[str, dict] = {
             "systems that perform only narrow procedural, preparatory or "
             "human-review-supporting tasks, unless they profile natural persons."
         ),
-        "expected_keywords": ["two", "safety component", "Annex I", "Annex III", "conformity assessment", "Article 6(3)"],
+        "expected_keywords": ["two", "safety component", "Annex III", "conformity assessment", "Article 6(3)"],
         "lexy_refs": ["Article 6", "Annex III"],
         "mistakes": [
             {"id": "q03_m1", "type": "omission",
@@ -118,12 +119,12 @@ ANTIFRAGILE_GT: dict[str, dict] = {
             "covers AI that is a safety component of regulated products such as medical "
             "devices and machinery that require third-party conformity assessment."
         ),
-        "expected_keywords": ["Annex III", "Annex I", "eight", "biometrics", "employment", "safety component"],
+        "expected_keywords": ["Annex III", "eight", "biometrics", "employment", "safety component"],
         "lexy_refs": ["Article 6", "Annex I", "Article 25", "Annex III"],
         "mistakes": [
             {"id": "q04_m1", "type": "structural_omission",
              "desc": "Omits the Annex I product-safety route entirely.",
-             "verify": {"present": ["Annex I"], "absent": []}},
+             "verify": {"present": ["safety component"], "absent": []}},
             {"id": "q04_m2", "type": "irrelevant_citation",
              "desc": "Cites Article 25 (value-chain), unrelated to which sectors are high-risk.",
              "verify": {"present": [], "absent": []}, "ref_absent": ["Article 25"]},
@@ -173,20 +174,20 @@ ANTIFRAGILE_GT: dict[str, dict] = {
              "verify": {"present": [], "absent": []}, "ref_absent": ["Article 14", "Article 13", "Article 27", "Article 12", "Article 9"]},
             {"id": "q06_m2", "type": "partial_definition",
              "desc": "Defines minimal-risk only as 'outside the 8 high-risk categories'; misses prohibited/transparency/GPAI exclusions.",
-             "verify": {"present": ["residual"], "absent": []}},
+             "verify": {"present": ["residual", "prohibit", "transparen"], "absent": []}},
         ],
     },
     "q07": {
         "question": "What are the guiding principles established by the AI Act?",
         "verdict": "wrong_topic_shift",
-        "gold_refs": ["Article 1", "Article 4"],
+        "gold_refs": ["Article 1"],
         "gold_answer": (
-            "The Act's guiding principles for trustworthy AI, set out in Recital 27, "
-            "are: human agency and oversight; technical robustness and safety; privacy "
+            "Recital 27 recalls the seven non-binding ethical principles for trustworthy "
+            "AI developed by the AI HLEG, which the Act uses as the basis for codes of "
+            "conduct: human agency and oversight; technical robustness and safety; privacy "
             "and data governance; transparency; diversity, non-discrimination and "
             "fairness; social and environmental well-being; and accountability. These "
-            "inform the Act's purpose under Article 1 and the AI-literacy duty under "
-            "Article 4."
+            "inform the Act's human-centric purpose under Article 1."
         ),
         "expected_keywords": ["human", "oversight", "robustness", "privacy", "transparency", "non-discrimination", "accountability"],
         "lexy_refs": ["Article 54", "Article 22", "Article 3", "Article 53", "Article 47", "Article 11"],
@@ -254,7 +255,10 @@ ANTIFRAGILE_GT: dict[str, dict] = {
         "lexy_refs": ["Article 3", "Article 19", "Article 17", "Article 16"],
         "mistakes": [
             {"id": "q10_m1", "type": "suboptimal_citation",
-             "desc": "Cites Art 17 (QMS) and 19 (logs) which are provider duties, not definitions; should add Art 25 role transition.",
+             "desc": "Cites Art 17 (QMS) and 19 (logs), which are provider duties, not definitions.",
+             "verify": {"present": [], "absent": []}, "ref_absent": ["Article 17", "Article 19"]},
+            {"id": "q10_m2", "type": "missing_citation",
+             "desc": "Should add the Art 25 deployer-to-provider role transition.",
              "verify": {"present": [], "absent": []}, "ref_present": ["Article 25"]},
         ],
     },
@@ -311,15 +315,16 @@ ANTIFRAGILE_GT: dict[str, dict] = {
             "Transcribing doctor-patient conversations is neither prohibited under "
             "Article 5 nor listed as a high-risk use case in Annex III. It becomes "
             "high-risk under Article 6 only if deployed as a safety component of a "
-            "medical device covered by Annex I (MDR or IVDR). Otherwise Article 50 "
+            "product covered by Annex I Union harmonisation legislation (MDR/IVDR) that "
+            "is required to undergo third-party conformity assessment. Otherwise Article 50 "
             "transparency duties may apply where the system interacts with patients."
         ),
-        "expected_keywords": ["not prohibited", "not", "Annex III", "safety component", "medical device", "Annex I", "Article 50"],
+        "expected_keywords": ["not prohibited", "Annex III", "safety component", "medical device", "Article 50"],
         "lexy_refs": ["Annex III.5", "Annex III", "Article 6", "Article 5", "Annex I"],
         "mistakes": [
             {"id": "q13_m1", "type": "contradictory_citation",
              "desc": "Cites Annex III.5 even though the answer says the system is NOT in Annex III.",
-             "verify": {"present": [], "absent": []}, "ref_absent": []},
+             "verify": {"present": [], "absent": []}, "ref_absent": ["Annex III.5"]},
         ],
     },
     "q14": {
@@ -333,7 +338,7 @@ ANTIFRAGILE_GT: dict[str, dict] = {
             "tumour-detecting X-ray device does. Under Article 43(3) the AI Act "
             "conformity assessment is integrated into the MDR notified-body procedure "
             "as a single assessment, and the full Chapter III Section 2 obligations "
-            "(Articles 9 to 15) apply."
+            "(Articles 8 to 15) apply."
         ),
         "expected_keywords": ["high-risk", "6(1)", "notified body", "43(3)", "MDR", "integrated", "conformity assessment"],
         "lexy_refs": ["Article 6", "Article 43", "Annex I", "Annex III", "Article 5", "Article 9", "Article 10", "Article 11", "Article 12", "Article 13"],
@@ -353,8 +358,9 @@ ANTIFRAGILE_GT: dict[str, dict] = {
         "gold_answer": (
             "It depends on the function. Annex III point 5(d) covers emergency triage "
             "and dispatch, not clinical-trial selection; trial selection may instead "
-            "fall under Annex III point 5(a) (eligibility for essential healthcare "
-            "services) or outside Annex III entirely, governed by the Medical Devices "
+            "fall under Annex III point 5(a) (eligibility, by or on behalf of a public "
+            "authority, for essential public assistance benefits and services including "
+            "healthcare) or outside Annex III entirely, governed by the Medical Devices "
             "and Clinical Trials Regulations. Separately, it is prohibited under "
             "Article 5(1)(g) only if the biometric categorisation infers an attribute "
             "on the closed list: race, political opinions, trade-union membership, "
@@ -365,7 +371,7 @@ ANTIFRAGILE_GT: dict[str, dict] = {
         "mistakes": [
             {"id": "q15_m1", "type": "wrong_subpoint",
              "desc": "Anchors on Annex III 5(d) (emergency triage); clinical-trial selection is not 5(d), likely 5(a) or outside Annex III.",
-             "verify": {"present": ["5(a)"], "absent": []}},
+             "verify": {"present": [], "present_any": ["5(a)", "outside annex iii", "clinical trials regulation"], "absent": []}},
             {"id": "q15_m2", "type": "imprecise",
              "desc": "Art 5(1)(g) conditional correct but does not name the closed list of sensitive attributes.",
              "verify": {"present": ["closed list"], "absent": []}},
@@ -389,10 +395,10 @@ ANTIFRAGILE_GT: dict[str, dict] = {
         "mistakes": [
             {"id": "q16_m1", "type": "irrelevant_sentence",
              "desc": "Adds an Art 113 entry-into-force sentence unrelated to the question.",
-             "verify": {"present": [], "absent": ["entry into force", "1 august 2024", "in force"]}},
+             "verify": {"present": [], "absent": ["entry into force", "entered into force", "1 august 2024"]}},
             {"id": "q16_m2", "type": "omission",
              "desc": "Should name the Art 51 systemic-risk threshold (10^25 FLOPs) and Art 55 obligations as the gating question.",
-             "verify": {"present": ["51", "systemic"], "absent": []}},
+             "verify": {"present": ["article 51", "systemic"], "absent": []}},
         ],
     },
     "q17": {
@@ -405,8 +411,9 @@ ANTIFRAGILE_GT: dict[str, dict] = {
             "while used only for that purpose and not placed on the market or put into "
             "service. The exclusion ends on market placement or putting into service, "
             "at which point the Act's obligations attach according to the model's risk "
-            "classification; Article 2(8) separately preserves pre-market testing in "
-            "real-world conditions."
+            "classification. Article 2(8) separately exempts research, testing and "
+            "development prior to placing on the market or putting into service, but "
+            "expressly carves testing in real-world conditions out of that exemption."
         ),
         "expected_keywords": ["2(6)", "scientific research", "excludes", "market", "2(8)"],
         "lexy_refs": ["Article 2"],
@@ -427,14 +434,16 @@ ANTIFRAGILE_GT: dict[str, dict] = {
             "ensure each user is told they are interacting with an AI system, and under "
             "Article 50(2) any generated content must be marked in a machine-readable "
             "format. The hospital deploying a third-party chatbot is the deployer, so "
-            "deployer duties such as Article 50(4) attach to it."
+            "deployer duties attach to it — Article 50(4) only where the system in fact "
+            "generates deepfake content or text published to inform the public on "
+            "matters of public interest."
         ),
         "expected_keywords": ["limited-risk", "classify", "50(1)", "50(2)", "deployer", "not high-risk"],
         "lexy_refs": ["Article 13", "Article 50", "Annex III", "Annex I", "Article 6"],
         "mistakes": [
             {"id": "q18_m1", "type": "missing_classification",
              "desc": "Asserts cumulative Art 13 + Art 50 without classifying the chatbot; it is most likely limited-risk (Art 50 alone).",
-             "verify": {"present": ["limited"], "absent": []}},
+             "verify": {"present": ["limited-risk", "not high-risk"], "absent": []}},
             {"id": "q18_m2", "type": "role_confusion",
              "desc": "Uses 'operator' for both provider and deployer duties; the hospital is the deployer.",
              "verify": {"present": ["deployer"], "absent": []}},
@@ -450,10 +459,10 @@ ANTIFRAGILE_GT: dict[str, dict] = {
         "gold_answer": (
             "No. Article 5(1)(f) prohibits AI systems that infer the emotions of "
             "workers in workplace settings, and deploying one to improve manufacturing "
-            "efficiency falls squarely within the ban. The only carve-out is for "
-            "systems placed on the market strictly for medical or safety reasons, such "
-            "as fatigue detection to prevent accidents, which must be the primary "
-            "purpose at market placement; efficiency improvement does not qualify."
+            "efficiency falls squarely within the ban. The only carve-out is where the "
+            "system is intended to be put in place or placed on the market for medical "
+            "or safety reasons, such as fatigue detection to prevent accidents; "
+            "efficiency improvement does not qualify."
         ),
         "expected_keywords": ["prohibited", "5(1)(f)", "workplace", "emotion", "medical", "safety"],
         "lexy_refs": ["Article 5"],
@@ -476,7 +485,7 @@ ANTIFRAGILE_GT: dict[str, dict] = {
         "mistakes": [
             {"id": "q20_m1", "type": "generic_application",
              "desc": "Generic medical-device rule; does not engage robotic-surgery specifics (Art 14 human oversight, Art 72 post-market).",
-             "verify": {"present": ["14"], "absent": []}, "ref_present": ["Article 14", "Article 72"]},
+             "verify": {"present": ["article 14"], "absent": []}, "ref_present": ["Article 14", "Article 72"]},
         ],
     },
 }
