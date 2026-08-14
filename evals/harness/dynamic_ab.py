@@ -185,6 +185,108 @@ def fire_check(
     }
 
 
+# ── the probe sensitivity control ────────────────────────────────────────
+#
+# R336. The fire check answers "did the lever move anything?". It does NOT
+# answer "could these rows have shown me if it had?" — and those are different
+# questions with opposite remedies.
+#
+# Measured 2026-08-14, same process, one flag, two questions:
+#
+#   REGENOLD_BM25_FALLBACK_K=2   FIRES   on "if a logistics firm retrofits a
+#                                        third-party vision model…"  (15 refs)
+#   REGENOLD_BM25_FALLBACK_K=2   inert   on "what is the definition of an AI
+#                                        system?"                    (1 ref)
+#
+# The definitional row resolves through a direct KB obligation lookup
+# (`kb-governance-Art. 3`, 378 chars) and never reaches BM25 ranking, graph
+# expansion or the answer router. So a probe pool dominated by curated and
+# definitional rows is BLIND to every retrieval lever — and the A/B would have
+# reported INERT while the lever was fine and the rows simply could not see it.
+#
+# That mattered: three separate wrong diagnoses were made off exactly this
+# confusion before it was pinned down, each one sending the reader to debug a
+# feature that was not broken.
+#
+# So: before declaring INERT, flip a control flag KNOWN to be live at the same
+# layer over the SAME rows. If the control moves them, the probe can see that
+# layer and INERT is a real finding about the lever. If the control cannot move
+# them either, the instrument is blind and the verdict is BLIND_PROBE — fix the
+# probe set, not the feature.
+
+_CONTROL_FLAGS: dict[str, tuple[str, str]] = {
+    # layer -> (env var, value) for a lever measured to change engine output.
+    "retrieval": ("REGENOLD_BM25_FALLBACK_K", "2"),
+    "stage2": ("P2P_GRAPH_RAG_ENABLE_STAGE2", "0"),
+    "graph": ("REGENOLD_KG_CONTEXT", "0"),
+}
+
+# Substring -> layer. Ordered; first match wins. Crude on purpose: a wrong guess
+# is corrected by `--control-layer`, and the fallback is the retrieval control,
+# which is the layer every row must traverse to produce a reference at all.
+_LAYER_HINTS: tuple[tuple[str, str], ...] = (
+    ("STAGE2", "stage2"), ("COMPLEX", "stage2"), ("OPUS", "stage2"),
+    ("MINIMAL_COMPOSER", "stage2"), ("REF_MINIMALITY", "stage2"),
+    ("ANSWER_FIRST", "stage2"), ("CURATED", "stage2"),
+    ("KG_", "graph"), ("GRAPH", "graph"), ("SEMANTIC", "graph"),
+    ("PPR", "graph"), ("VECTOR", "graph"), ("ONTOLOGY", "graph"),
+)
+
+
+def _infer_control_layer(branch_env: dict[str, str]) -> str:
+    for name in branch_env:
+        upper = name.upper()
+        for frag, layer in _LAYER_HINTS:
+            if frag in upper:
+                return layer
+    return "retrieval"
+
+
+def resolve_control(
+    branch_env: dict[str, str], override: str | None = None
+) -> tuple[str, dict[str, str]] | None:
+    """Pick a control flag for this A/B, or None if none is usable.
+
+    Never returns a control the branch itself is manipulating — flipping the
+    same var in both arms would make the control trivially "fire" (or trivially
+    not) for reasons that have nothing to do with probe sensitivity.
+    """
+    layer = override or _infer_control_layer(branch_env)
+    candidates = [layer] + [k for k in _CONTROL_FLAGS if k != layer]
+    for cand in candidates:
+        env, val = _CONTROL_FLAGS[cand]
+        if env not in branch_env:
+            return cand, {env: val}
+    return None
+
+
+def probe_sensitivity_check(
+    rows: list[ProbeRow],
+    baseline_rows: list[dict[str, Any]],
+    control_env: dict[str, str],
+    *,
+    local: bool,
+    endpoint: str | None,
+    api_key: str | None,
+    timeout: float,
+) -> dict[str, Any]:
+    """Can these rows observe ANY change at this layer?
+
+    Re-runs the rows already used, under a known-live control flag, and reuses
+    :func:`fire_check` so "changed" means exactly what it means everywhere else.
+    """
+    control_rows = _run_rows(rows, control_env, local=local, endpoint=endpoint,
+                             api_key=api_key, timeout=timeout)
+    fired = fire_check(baseline_rows, control_rows)
+    return {
+        "control_env": control_env,
+        "sensitive": fired["fired"],
+        "rows_moved": fired["any_changed"],
+        "rows_compared": fired["common"],
+        "moved_ids": fired["changed_ids"],
+    }
+
+
 # ── the run ──────────────────────────────────────────────────────────────
 
 
@@ -271,6 +373,7 @@ def run(
     timeout: float,
     null_band: float,
     seed: int,
+    control_layer: str | None = None,
     emit: Callable[[str], None] = print,
 ) -> dict[str, Any]:
     probe = load_probe_set()
@@ -297,9 +400,60 @@ def run(
 
         # ── THE GATE: a lever that never fired gets no axis table ──────────
         if not fired["fired"] and len(base_rows) >= min(batch * 2, len(pool)):
+            # R336 — do NOT call it INERT until the probe has proven it could
+            # have seen the change. Paid only here, on the rows already run, so
+            # a firing A/B never carries the cost.
+            ran = pool[:len(base_rows)]
+            sens: dict[str, Any] | None = None
+            control = resolve_control(branch_env, control_layer)
+            if control is None:
+                emit("")
+                emit("  (no control flag available — every candidate is being "
+                     "manipulated by this A/B; sensitivity unproven)")
+            else:
+                layer, control_env = control
+                emit("")
+                emit(f"  lever flat — checking the PROBE with a known-live "
+                     f"{layer} control: {control_env}")
+                sens = probe_sensitivity_check(
+                    ran, base_rows, control_env, local=local,
+                    endpoint=endpoint, api_key=api_key, timeout=timeout)
+                sens["layer"] = layer
+                emit(f"  control moved {sens['rows_moved']}/"
+                     f"{sens['rows_compared']} of the same rows")
+
+            if sens is not None and not sens["sensitive"]:
+                emit("")
+                emit("  VERDICT: BLIND_PROBE — these rows cannot observe this "
+                     "layer AT ALL.")
+                emit("  A known-live control flag failed to move them either, "
+                     "so the flat")
+                emit("  result says nothing about your lever. Curated and "
+                     "definitional rows")
+                emit("  short-circuit to a direct KB lookup and never reach "
+                     "retrieval, the")
+                emit("  graph, or Stage-2 — a pool of them is blind by "
+                     "construction.")
+                emit("  FIX THE PROBE SET, not the feature: raise --max-rows, "
+                     "or select rows")
+                emit("  that exercise this layer, then re-run.")
+                return {
+                    "label": label, "verdict": "BLIND_PROBE", "fire": fired,
+                    "sensitivity": sens, "branch_env": branch_env,
+                    "n": len(base_rows), "baseline_rows": base_rows,
+                    "branch_rows": brch_rows,
+                }
+
             emit("")
             emit("  VERDICT: INERT — the two arms are identical on every row "
-                 "run so far.")
+                 "run so far,")
+            if sens is not None:
+                emit(f"  and the probe is NOT blind: the {sens['layer']} "
+                     f"control moved "
+                     f"{sens['rows_moved']}/{sens['rows_compared']} of these "
+                     f"same rows.")
+                emit("  So this is a real finding about the lever, not about "
+                     "the rows.")
             emit("  No axis numbers will be reported. A flat result and a dead "
                  "feature are")
             emit("  indistinguishable, so reporting +0.0000 here would be a "
@@ -310,8 +464,9 @@ def run(
                  "then re-run.")
             return {
                 "label": label, "verdict": "INERT", "fire": fired,
-                "branch_env": branch_env, "n": len(base_rows),
-                "baseline_rows": base_rows, "branch_rows": brch_rows,
+                "sensitivity": sens, "branch_env": branch_env,
+                "n": len(base_rows), "baseline_rows": base_rows,
+                "branch_rows": brch_rows,
             }
 
         # ── adaptive stop: every axis resolved? ────────────────────────────
@@ -368,7 +523,7 @@ def _analyse(
 
 
 def _report(res: dict[str, Any], emit: Callable[[str], None] = print) -> None:
-    if res.get("verdict") == "INERT":
+    if res.get("verdict") in ("INERT", "BLIND_PROBE"):
         return
     f = res.get("fire") or {}
     emit("")
@@ -410,6 +565,10 @@ def main() -> None:
     ap.add_argument("--null-band", type=float, default=0.01,
                     help="half-width under which a zero-spanning CI is a NULL")
     ap.add_argument("--seed", type=int, default=_SEED)
+    ap.add_argument("--control-layer", choices=("retrieval", "stage2", "graph"),
+                    default=None,
+                    help="force the probe-sensitivity control layer "
+                         "(default: inferred from the branch flag name)")
     args = ap.parse_args()
 
     branch_env: dict[str, str] = {}
@@ -426,6 +585,7 @@ def main() -> None:
         batch=args.batch, local=bool(args.local), endpoint=args.endpoint,
         api_key=args.api_key or None, timeout=args.timeout,
         null_band=args.null_band, seed=args.seed,
+        control_layer=args.control_layer,
     )
     _report(res)
 
@@ -437,7 +597,9 @@ def main() -> None:
     slim["branch_rows"] = res.get("branch_rows", [])
     out.write_text(json.dumps(slim, indent=2), encoding="utf-8")
     print(f"\nwrote {out}")
-    sys.exit(0 if res.get("verdict") != "INERT" else 2)
+    # 0 = measured, 2 = lever inert (fix the feature),
+    # 3 = probe blind (fix the rows) — a different action, so a different code.
+    sys.exit({"INERT": 2, "BLIND_PROBE": 3}.get(res.get("verdict"), 0))
 
 
 if __name__ == "__main__":
