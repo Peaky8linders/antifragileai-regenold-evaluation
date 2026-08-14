@@ -164,11 +164,11 @@ def _pairwise_verdict(
     b: ArmAnswer,
     caller,
     summaries: dict[str, str],
-) -> str:
+) -> tuple[str, bool]:
     """Position-swapped pairwise verdict for one axis.
 
-    Returns 'A' (baseline) / 'B' (branch) / 'tie'. A decisive win requires BOTH
-    orderings to agree; a position-flip → 'tie' (cancels position bias).
+    Returns ('A' | 'B' | 'tie', agreed: bool). A decisive win requires BOTH
+    orderings to agree; a position-flip -> 'tie' (cancels position bias).
     """
     # Order 1: prompt-A = arm-A, prompt-B = arm-B.
     p1 = pairwise_prompts.render(
@@ -184,9 +184,10 @@ def _pairwise_verdict(
     w2_raw = _judge_one(caller, p2)
     # Translate order-2 back to arm space.
     w2 = {"A": "B", "B": "A", "tie": "tie"}[w2_raw]
-    if w1 == w2 and w1 in ("A", "B"):
-        return w1
-    return "tie"
+    agreed = (w1 == w2)
+    if agreed and w1 in ("A", "B"):
+        return w1, agreed
+    return "tie", agreed
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -216,6 +217,15 @@ class AxisResult:
     wins_b: int = 0   # branch beats baseline
     wins_a: int = 0   # baseline beats branch
     ties: int = 0
+    swap_agreements: int = 0
+
+    def effective_win_rate_b(self, total_rows: int) -> float | None:
+        """Standard Tie-Aware Effective Win Rate (Chatbot Arena / Elo standard):
+        W_eff = (Wins_B + 0.5 * Ties) / Total
+        """
+        if total_rows == 0:
+            return None
+        return round((self.wins_b + 0.5 * self.ties) / total_rows, 4)
 
     def win_rate_b(self) -> float | None:
         dec = self.wins_a + self.wins_b
@@ -223,6 +233,9 @@ class AxisResult:
 
     def p_value(self) -> float:
         return _sign_test_two_sided(self.wins_b, self.wins_a)
+
+    def swap_consistency_rate(self, total_rows: int) -> float | None:
+        return round(self.swap_agreements / total_rows, 4) if total_rows > 0 else None
 
     def verdict(self) -> str:
         wr = self.win_rate_b()
@@ -352,8 +365,10 @@ def run_ab(
               "expected_refs": list(row.expected_refs)}
         row_verdicts: dict[str, str] = {}
         for ax in pairwise_prompts.AXES:
-            v = _pairwise_verdict(rd, ax, a, b, caller, summaries)
+            v, agreed = _pairwise_verdict(rd, ax, a, b, caller, summaries)
             row_verdicts[ax] = v
+            if agreed:
+                axes[ax].swap_agreements += 1
             if v == "B":
                 axes[ax].wins_b += 1
             elif v == "A":
@@ -368,6 +383,8 @@ def run_ab(
         ax: {
             "wins_branch": r.wins_b, "wins_baseline": r.wins_a, "ties": r.ties,
             "win_rate_branch": r.win_rate_b(), "p_value": r.p_value(),
+            "effective_win_rate_branch": r.effective_win_rate_b(len(rows)),
+            "swap_consistency_rate": r.swap_consistency_rate(len(rows)),
             "verdict": r.verdict(),
         }
         for ax, r in axes.items()
@@ -419,7 +436,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--limit", type=int, default=None, help="cap probe rows (cheap smoke)")
     p.add_argument("--deterministic", action="store_true",
                    help="run both arms provider=cli + exact ref/keyword scoring (no Sonnet)")
-    p.add_argument("--judge-provider", default="wrapper", choices=["wrapper", "anthropic", "groq"])
+    p.add_argument("--judge-provider", default="wrapper", choices=["wrapper", "anthropic", "groq", "bedrock"])
     p.add_argument("--timeout", type=float, default=90.0)
     args = p.parse_args(argv)
 

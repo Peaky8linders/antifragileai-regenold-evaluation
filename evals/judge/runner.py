@@ -532,34 +532,134 @@ def _call_judge_anthropic(prompt: str, timeout_s: float = 30.0) -> dict[str, Any
 
 
 def _parse_judge_json(text: str) -> dict[str, Any]:
-    """Extract the first balanced JSON object from ``text``. The
-    prompts ask for "ONE JSON object only" but Sonnet occasionally
-    wraps in markdown fences or prepends a thinking sentence."""
-    if not text:
+    """Robust multi-pass JSON extractor for LLM judge outputs.
+
+    Handles:
+    1. Markdown code fences with surrounding/trailing commentary.
+    2. Multi-root JSON (scans for objects containing schema keys).
+    3. Unescaped internal quotes and raw control chars (newlines/tabs).
+    4. Python dict literal syntax (single quotes, True/False/None).
+    5. Fallback regex recovery for partially malformed payloads.
+    """
+    import ast
+    import json
+    import re
+
+    if not text or not text.strip():
         return {"judge_error": "empty_response"}
-    # Strip a code fence if present
+
     s = text.strip()
-    if s.startswith("```"):
-        s = s.strip("`")
-        if s.startswith("json\n"):
-            s = s[5:]
-    # Find first { ... } balanced
-    start = s.find("{")
-    if start < 0:
-        return {"judge_error": "no_json", "raw": text[:200]}
-    depth = 0
-    for i in range(start, len(s)):
-        if s[i] == "{":
-            depth += 1
-        elif s[i] == "}":
-            depth -= 1
-            if depth == 0:
-                blob = s[start:i + 1]
+
+    # Pass 1: Strip markdown code fences cleanly (even if trailing prose exists)
+    fence_match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", s, flags=re.IGNORECASE)
+    if fence_match:
+        s_fence = fence_match.group(1).strip()
+        try:
+            res = json.loads(s_fence, strict=False)
+            if isinstance(res, dict):
+                return res
+        except Exception:
+            pass
+
+    # Pass 2: Direct JSON parse on whole text with strict=False (handles raw newlines)
+    try:
+        res = json.loads(s, strict=False)
+        if isinstance(res, dict):
+            return res
+    except Exception:
+        pass
+
+    # Pass 3: Python literal evaluation fallback (handles 'key': True / single quotes)
+    try:
+        res = ast.literal_eval(s)
+        if isinstance(res, dict):
+            return res
+    except Exception:
+        pass
+
+    # Pass 4: Multi-object scanning with string-aware brace balance & schema key recognition
+    target_keys = {
+        "verdict", "winner", "propositions", "classifications", "citations",
+        "sentence_count", "issues", "criteria_analysis", "candidate_a_audit",
+    }
+    candidates: list[dict[str, Any]] = []
+
+    i = 0
+    while i < len(s):
+        start = s.find("{", i)
+        if start < 0:
+            break
+
+        depth = 0
+        in_string = False
+        escaped = False
+        end = -1
+
+        for j in range(start, len(s)):
+            char = s[j]
+            if escaped:
+                escaped = False
+                continue
+            if char == "\\":
+                escaped = True
+                continue
+            if char == '"':
+                in_string = not in_string
+                continue
+            if not in_string:
+                if char == "{":
+                    depth += 1
+                elif char == "}":
+                    depth -= 1
+                    if depth == 0:
+                        end = j
+                        break
+
+        if end != -1:
+            blob = s[start:end + 1]
+            try:
+                parsed = json.loads(blob, strict=False)
+                if isinstance(parsed, dict):
+                    candidates.append(parsed)
+            except Exception:
+                # Clean trailing commas and retry
+                cleaned = re.sub(r",\s*([}\]])", r"\1", blob)
                 try:
-                    return json.loads(blob)
-                except Exception as exc:  # noqa: BLE001
-                    return {"judge_error": f"parse_failed: {exc}", "raw": blob[:200]}
+                    parsed = json.loads(cleaned, strict=False)
+                    if isinstance(parsed, dict):
+                        candidates.append(parsed)
+                except Exception:
+                    try:
+                        parsed = ast.literal_eval(blob)
+                        if isinstance(parsed, dict):
+                            candidates.append(parsed)
+                    except Exception:
+                        pass
+            i = end + 1
+        else:
+            i = start + 1
+
+    if candidates:
+        # Prioritize candidate object containing known judge schema keys
+        for cand in candidates:
+            if any(k in cand for k in target_keys):
+                return cand
+        return candidates[-1]
+
+    # Pass 5: Regex-based field recovery for severely mangled text
+    recovered: dict[str, Any] = {}
+    v_match = re.search(r'"verdict"\s*:\s*"([^"]+)"', s, re.IGNORECASE)
+    w_match = re.search(r'"winner"\s*:\s*"([^"]+)"', s, re.IGNORECASE)
+    if v_match:
+        recovered["verdict"] = v_match.group(1).lower()
+    if w_match:
+        recovered["winner"] = w_match.group(1).upper()
+    if recovered:
+        recovered["_recovered_via_regex"] = True
+        return recovered
+
     return {"judge_error": "unbalanced_json", "raw": text[:200]}
+
 
 
 # ── Retry wrapper around a single-axis judge call (R66-C) ───────────────

@@ -100,10 +100,11 @@ def _mock_caller_factory(monkeypatch, order1_winner: str, order2_winner: str):
 def _verdict(a_ans="A-ans", b_ans="B-ans"):
     a = ArmAnswer(answer=a_ans, refs=["Article 26"], latency_ms=1.0, http_status=200)
     b = ArmAnswer(answer=b_ans, refs=["Article 13"], latency_ms=1.0, http_status=200)
-    return ab_judge._pairwise_verdict(
+    v, _agreed = ab_judge._pairwise_verdict(
         {"question": "q", "expected_keywords": [], "expected_refs": []},
         "correctness", a, b, caller=object(), summaries={},
     )
+    return v
 
 
 def test_both_orders_agree_branch_wins(monkeypatch):

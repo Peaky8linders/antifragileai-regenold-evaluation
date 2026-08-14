@@ -43,7 +43,7 @@ def render_axis_correctness(row: dict[str, Any]) -> str:
         "QUESTION: " + (row.get("question") or "")[:600] + "\n"
         "GOLD ANSWER KEYWORDS: " + str(row.get("expected_keywords") or []) + "\n"
         "GOLD REFERENCES: " + str(row.get("expected_refs") or []) + "\n"
-        "PREDICTED ANSWER: " + (row.get("predicted_answer") or row.get("answer_preview") or "")[:1200] + "\n"
+        "PREDICTED ANSWER: " + (row.get("predicted_answer") or row.get("answer_preview") or "") + "\n"
         "PREDICTED REFERENCES: " + str(row.get("pred_refs") or row.get("predicted_refs") or []) + "\n"
         "\n"
         "Decompose the predicted answer into Legal Data Points (one assertion each).\n"
@@ -52,8 +52,8 @@ def render_axis_correctness(row: dict[str, Any]) -> str:
         "gold-keyword topic. Otherwise 'fail'.\n"
         "\n"
         "Respond with ONE JSON object only (no preamble, no markdown fences):\n"
-        '{"verdict":"pass"|"fail","correct":N,"incorrect":N,"irrelevant":N,'
-        '"missing":N,"failure_mode":"<one short phrase>"}'
+        '{"correct":N,"incorrect":N,"irrelevant":N,"missing":N,'
+        '"failure_mode":"<one short phrase>","verdict":"pass"|"fail"}'
     )
 
 
@@ -77,7 +77,7 @@ def render_axis_refs(row: dict[str, Any], article_summaries: dict[str, str]) -> 
         "\n"
         "QUESTION: " + (row.get("question") or "")[:500] + "\n"
         "GOLD REFERENCES: " + str(expected) + "\n"
-        "PREDICTED ANSWER: " + (row.get("predicted_answer") or row.get("answer_preview") or "")[:1000] + "\n"
+        "PREDICTED ANSWER: " + (row.get("predicted_answer") or row.get("answer_preview") or "") + "\n"
         "PREDICTED REFERENCES: " + str(pred_refs) + "\n"
         "PREDICTED REFERENCES — KB SUMMARIES:\n"
         f"{refs_block}\n"
@@ -90,8 +90,8 @@ def render_axis_refs(row: dict[str, Any], article_summaries: dict[str, str]) -> 
         "AND no load-bearing ref is mismatched.\n"
         "\n"
         "Respond with ONE JSON object only:\n"
-        '{"verdict":"pass"|"fail","faithful":N,"mismatched":N,'
-        '"failure_mode":"<one short phrase>"}'
+        '{"faithful":N,"mismatched":N,"failure_mode":"<one short phrase>",'
+        '"verdict":"pass"|"fail"}'
     )
 
 
@@ -108,7 +108,7 @@ def render_axis_conciseness(row: dict[str, Any]) -> str:
         "\n"
         "GOLD ANSWER KEYWORDS: " + str(gold_kw) + "\n"
         "PREDICTED ANSWER ("
-        f"{len(pred)} chars): " + pred[:1200] + "\n"
+        f"{len(pred)} chars): " + pred + "\n"
         "\n"
         "The competition spec encourages 1-4 sentences, professionally\n"
         "worded, with the minimal set of references. Verdict 'pass' iff:\n"
@@ -121,8 +121,8 @@ def render_axis_conciseness(row: dict[str, Any]) -> str:
         "      noun like 'provider' / 'deployer' / 'risk' / 'obligation').\n"
         "\n"
         "Respond with ONE JSON object only:\n"
-        '{"verdict":"pass"|"fail","sentences":N,"boilerplate_sents":[...],'
-        '"failure_mode":"<one short phrase>"}'
+        '{"sentences":N,"boilerplate_sents":[...],"failure_mode":"<one short phrase>",'
+        '"verdict":"pass"|"fail"}'
     )
 
 
@@ -147,7 +147,7 @@ def render_axis_tone(row: dict[str, Any]) -> str:
         "Three gold-standard regulator-voice anchor examples:\n"
         f"{anchor_block}\n"
         "\n"
-        "PREDICTED ANSWER: " + pred[:1200] + "\n"
+        "PREDICTED ANSWER: " + pred + "\n"
         "\n"
         "Does the predicted answer match this register? Verdict 'fail' if:\n"
         "  * hedging ('might', 'could', 'may possibly') outside legal\n"
@@ -159,8 +159,8 @@ def render_axis_tone(row: dict[str, Any]) -> str:
         "Otherwise 'pass'.\n"
         "\n"
         "Respond with ONE JSON object only:\n"
-        '{"verdict":"pass"|"fail","violations":[...],'
-        '"failure_mode":"<one short phrase>"}'
+        '{"violations":[...],"failure_mode":"<one short phrase>",'
+        '"verdict":"pass"|"fail"}'
     )
 
 

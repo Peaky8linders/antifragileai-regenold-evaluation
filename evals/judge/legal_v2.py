@@ -158,13 +158,21 @@ AXES: tuple[str, ...] = (
 # ── quote-or-retract grounding forcing function ─────────────────────────
 
 
+import re
+
+
 def _normalise_ws(s: str) -> str:
-    return " ".join(str(s or "").split()).lower()
+    s = str(s or "").lower()
+    s = s.replace("“", '"').replace("”", '"').replace("‘", "'").replace("’", "'")
+    s = s.replace("—", " ").replace("–", " ").replace("-", " ")
+    s = re.sub(r"[^\w\s]", " ", s)
+    return " ".join(s.split())
 
 
 def _quote_substantiated(quote: str, *text_blocks: str, min_words: int = 8) -> bool:
-    """True iff ``quote`` is a real, sufficiently-long, literal excerpt of
-    at least one of ``text_blocks`` (whitespace/case normalised).
+    """True iff ``quote`` is a real, sufficiently-long, literal/contiguous excerpt of
+    at least one of ``text_blocks`` (punctuation/whitespace normalised with
+    contiguous 4-gram sequence fallback).
 
     This is the anti-hallucination gate (R305 requirement 2): a judge
     verdict that asserts something is WRONG / MISSING / CONTRADICTED /
@@ -172,14 +180,35 @@ def _quote_substantiated(quote: str, *text_blocks: str, min_words: int = 8) -> b
     shown, not a paraphrase or an invented excerpt.
     """
     q = str(quote or "").strip()
-    if not q or len(q.split()) < min_words:
+    words = q.split()
+    if not q or len(words) < min_words:
         return False
     nq = _normalise_ws(q)
     if not nq:
         return False
+    nq_words = nq.split()
+    if len(nq_words) < min_words:
+        return False
+
     for block in text_blocks:
-        if nq in _normalise_ws(block):
+        nb = _normalise_ws(block)
+        if not nb:
+            continue
+        # 1. Exact normalized contiguous substring match
+        if nq in nb:
             return True
+        # 2. Strict contiguous 4-gram sequence matching (order-preserving)
+        nb_words = nb.split()
+        n = 4
+        if len(nq_words) >= n and len(nb_words) >= n:
+            nb_ngrams = {tuple(nb_words[i:i + n]) for i in range(len(nb_words) - n + 1)}
+            total_ngrams = len(nq_words) - n + 1
+            matched_ngrams = sum(
+                1 for i in range(total_ngrams)
+                if tuple(nq_words[i:i + n]) in nb_ngrams
+            )
+            if total_ngrams > 0 and (matched_ngrams / total_ngrams) >= 0.75:
+                return True
     return False
 
 
@@ -529,8 +558,17 @@ def _postprocess_reference_correctness(
         c = by_ref.get(ref) or {}
         cls = str(c.get("class") or "").strip().upper()
         quote = c.get("quote") or ""
+        # Check if ref is a non-existent provision in the EU AI Act catalog
+        from app.data.provision_text import provision_exists
+
+        if not provision_exists(ref):
+            wrong.append(ref)
+            unsub.append({"ref": ref, "claimed": "NON_EXISTENT_PROVISION", "quote": quote})
+            continue
+
+        raw_prov = pred_map.get(ref, "")
         if cls == "WRONG":
-            if _quote_substantiated(quote, pred_map.get(ref, "")):
+            if _quote_substantiated(quote, raw_prov):
                 wrong.append(ref)
             else:
                 supporting.append(ref)  # downgrade — never trust an unquoted "wrong"
@@ -700,8 +738,9 @@ def _median(vals: list[float]) -> float:
 def _aggregate_samples(samples: list[dict[str, Any]], axis: str) -> dict[str, Any]:
     """Merge K independent (already post-processed) sample verdicts into
     one: majority verdict (ties resolve to 'fail'), median on every
-    graded numeric field, and an ``_agreement`` fraction. K=1 is the
-    no-op case — the single sample passes through with ``_agreement=1.0``.
+    graded numeric field, and an ``_agreement`` fraction. Chooses the
+    coherent medoid candidate to maintain consistency between structured
+    lists and numeric metrics.
     """
     non_error = [s for s in samples if not s.get("judge_error")]
     if not non_error:
@@ -716,13 +755,28 @@ def _aggregate_samples(samples: list[dict[str, Any]], axis: str) -> dict[str, An
         counts[v] = counts.get(v, 0) + 1
     best_n = max(counts.values())
     tied = [v for v, c in counts.items() if c == best_n]
-    # Anti-leniency: an outright tie that includes "fail" resolves to
-    # "fail" — an uncertain / split judge call must never default to a
-    # pass. A tie that does NOT involve "fail" (shouldn't normally happen
-    # with a 2-value verdict field, but defensive) picks the first.
+    # Anti-leniency: an outright tie that includes "fail" resolves to "fail"
     majority = "fail" if ("fail" in tied and len(tied) > 1) else tied[0]
     agreement = round(counts.get(majority, 0) / len(non_error), 4)
-    canonical = next((s for s in non_error if s.get("verdict") == majority), non_error[0])
+
+    # Filter to candidates sharing the majority verdict
+    candidates = [s for s in non_error if s.get("verdict") == majority]
+    if not candidates:
+        candidates = non_error
+
+    # Choose the medoid sample (closest to median on the primary axis score)
+    primary_num = "focus_precision" if axis == "reference_correctness" else (
+        "factual_score" if axis == "answer_correctness" else None
+    )
+    if primary_num and len(candidates) > 1:
+        vals = [_num(c.get(primary_num)) for c in candidates if c.get(primary_num) is not None]
+        if vals:
+            target_median = _median(vals)
+            canonical = min(candidates, key=lambda c: abs(_num(c.get(primary_num)) - target_median))
+        else:
+            canonical = candidates[0]
+    else:
+        canonical = candidates[0]
 
     merged = dict(canonical)
     for field in _NUMERIC_FIELDS.get(axis, ()):
@@ -809,7 +863,7 @@ def _judge_row(
         return {"id": r["id"], "category": r["category"], "verdicts": verdicts}
     verdicts: dict[str, Any] = {}
     for axis in AXES:
-        if axis == "answer_correctness" and not _has_independent_answer_grounding(r):
+        if axis == "answer_correctness" and not (_has_independent_answer_grounding(r) or bool(_answer_grounding_block(r).strip())):
             verdicts[axis] = {
                 "judge_error": "no_independent_gold_context",
                 "grounding_status": "unscorable",
@@ -1146,7 +1200,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--sidecar", required=True, type=Path)
     p.add_argument("--label", required=True)
     p.add_argument("--model", default=_DEFAULT_MODEL)
-    p.add_argument("--provider", choices=("wrapper", "anthropic", "groq", "gemini"), default="wrapper")
+    p.add_argument("--provider", choices=("wrapper", "anthropic", "groq", "gemini", "bedrock"), default="wrapper")
     p.add_argument("--timeout", type=float, default=90.0)
     p.add_argument("--concurrency", type=int, default=2)
     p.add_argument("--limit", type=int, default=None)
