@@ -5,6 +5,15 @@ Context (measured, see graph_rag_prompts._REF_MINIMALITY_RULE's banner):
 answer prose describes 95% of them (so every prose-driven pruner is a no-op),
 and the cause is rule 10's one-directional "describe everything you cite" with
 no converse minimality constraint. These tests pin the fix's contract.
+
+⚠ R340 made ``ANSWER_GENERATE_SYSTEM_V2`` the DEFAULT composition
+(``REGENOLD_PROMPT_V2``, default ``"1"``), and ``resolve_answer_system()``
+consults it BEFORE the R281 flag, because V2's ``<reference_discipline>`` block
+already carries this rule in its own voice — appending ``_REF_MINIMALITY_RULE``
+on top would restate it twice. So the whole R281 append path lives on the V1
+composition, which ``REGENOLD_PROMPT_V2=0`` selects and which R340 kept
+byte-identical. The module fixture pins that path; ``TestV2DefaultSupersedes``
+pins the new default beside it. Do NOT "fix" these back by deleting the pin.
 """
 from __future__ import annotations
 
@@ -12,6 +21,7 @@ import pytest
 
 from app.data.graph_rag_prompts import (
     ANSWER_GENERATE_SYSTEM,
+    ANSWER_GENERATE_SYSTEM_V2,
     MINIMAL_COMPOSER_SYSTEM,
     ref_minimality_enabled,
     resolve_answer_system,
@@ -20,9 +30,16 @@ from app.data.graph_rag_prompts import (
 
 @pytest.fixture(autouse=True)
 def _clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Both R277/R281 prompt flags default OFF for every test in this module."""
+    """Both R277/R281 prompt flags default OFF for every test in this module.
+
+    R340 — and the V1 composition is pinned explicitly, because the R281 rule is
+    only reachable there (see the module docstring). ``=0`` is R340's documented
+    rollback and returns V1 byte-identical, so every assertion below still grades
+    exactly the prompt it was written for.
+    """
     monkeypatch.delenv("REGENOLD_REF_MINIMALITY", raising=False)
     monkeypatch.delenv("REGENOLD_MINIMAL_COMPOSER", raising=False)
+    monkeypatch.setenv("REGENOLD_PROMPT_V2", "0")
 
 
 class TestGateDefaultOff:
@@ -124,6 +141,49 @@ class TestMinimalComposerPrecedence:
         monkeypatch.setenv("REGENOLD_MINIMAL_COMPOSER", "1")
         monkeypatch.setenv("REGENOLD_REF_MINIMALITY", "1")
         assert resolve_answer_system() == MINIMAL_COMPOSER_SYSTEM
+
+
+class TestV2DefaultSupersedes:
+    """R340 — the shipped default is the rebuilt prompt, and it outranks R281.
+
+    The rule this module pins is not deleted, it is superseded: V2 states the
+    same constraint inside ``<reference_discipline>`` rather than appending a
+    second copy of it. So on the default path ``REGENOLD_REF_MINIMALITY`` cannot
+    change the prompt at all, and the append path is reached only at
+    ``REGENOLD_PROMPT_V2=0``.
+    """
+
+    def test_default_is_the_rebuilt_prompt(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("REGENOLD_PROMPT_V2", raising=False)
+        assert resolve_answer_system() == ANSWER_GENERATE_SYSTEM_V2
+
+    def test_v2_outranks_the_r281_flag_and_is_never_appended_to(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("REGENOLD_PROMPT_V2", "1")
+        monkeypatch.setenv("REGENOLD_REF_MINIMALITY", "1")
+        out = resolve_answer_system()
+        assert out == ANSWER_GENERATE_SYSTEM_V2
+        assert len(out) == len(ANSWER_GENERATE_SYSTEM_V2)
+
+    def test_v2_carries_the_minimality_constraint_itself(self) -> None:
+        """Supersession, not deletion — the rule survives in V2's own voice.
+
+        If this ever fails, V2 lost the constraint and the R281 finding is live
+        again; that is a product bug, not a stale expectation.
+        """
+        flat = " ".join(ANSWER_GENERATE_SYSTEM_V2.split()).lower()
+        assert "only the provisions the answer turns on" in flat
+
+    def test_the_r281_gate_still_reads_its_own_env(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The flag itself is untouched by R340 — only its reachability moved."""
+        monkeypatch.setenv("REGENOLD_PROMPT_V2", "1")
+        monkeypatch.setenv("REGENOLD_REF_MINIMALITY", "1")
+        assert ref_minimality_enabled() is True
 
 
 class TestCacheKey:
