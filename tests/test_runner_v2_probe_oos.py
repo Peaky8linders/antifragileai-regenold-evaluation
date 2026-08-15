@@ -425,44 +425,61 @@ class TestLocalTransport:
             f"{[r['id'] for r in payload['probe_oos']['rows'] if r['verdict'] == 'FAIL_SCOPE_LEAK']}"
         )
 
-    def test_hard_fail_exit_path(self, _configured_key: str, tmp_path: Path) -> None:
+    def test_hard_fail_exit_path(
+        self, _configured_key: str, tmp_path: Path, monkeypatch
+    ) -> None:
         """Exit-code wiring: when summary.hard_fail is True the CLI
         ``main()`` exits non-zero. Forge a single scope-leak scenario
         and confirm.
-        """
-        from evals.regenold import scenarios_oos as _so
 
-        # Save + restore so other tests are unaffected.
-        original = _so.OOS_SCENARIOS
-        try:
-            forged = (
-                OOSScenario(
-                    id="forged_inscope_leak",
-                    question="What does Article 13 require for transparency?",
-                    category="r34_p0",
-                    expected_reason="conversational",  # but the answer will be in-scope
-                    notes="Forged for exit-code test — this is an in-scope query, "
-                    "expected to FAIL_SCOPE_LEAK.",
-                ),
-            )
-            # Monkey-patch both module + runner_v2's binding.
-            _so.OOS_SCENARIOS = forged
-            runner_v2.OOS_SCENARIOS = forged
-            payload = runner_v2.run_probe_oos_only(
-                endpoint=runner_v2._local_endpoint_url(),
-                api_key=_configured_key,
-                label="r56b-forged-leak",
-                timeout=30.0,
-                concurrency=1,
-                verbose=False,
-                out_dir=tmp_path,
-                use_local=True,
-            )
-            assert payload["probe_oos"]["summary"]["hard_fail"] is True
-            assert payload["probe_oos"]["summary"]["fail_scope_leak"] >= 1
-        finally:
-            _so.OOS_SCENARIOS = original
-            runner_v2.OOS_SCENARIOS = original
+        ⚠ SEAM NOTE (R289 moved it; repaired R339). This test used to install
+        the forgery by rebinding ``scenarios_oos.OOS_SCENARIOS`` /
+        ``runner_v2.OOS_SCENARIOS``. R289 made ``run_probe_oos`` resolve its
+        corpus from ``OOS_SUITES[suite]`` (``runner_v2.py:721``), a module-level
+        dict built at IMPORT time that captured a reference to the ORIGINAL
+        tuple — so rebinding the module attribute afterwards reached nothing and
+        the real 21-row legacy suite ran instead. Both assertions below then
+        graded a clean production run, and the hard-fail wiring was untested
+        from R289 until now. Patch ``OOS_SUITES['legacy']`` — the live seam —
+        and assert ``n == 1`` first so a future seam move fails loudly as
+        "forgery did not apply" rather than passing on a clean suite.
+        """
+        forged = (
+            OOSScenario(
+                id="forged_inscope_leak",
+                question="What does Article 13 require for transparency?",
+                category="r34_p0",
+                expected_reason="conversational",  # but the answer will be in-scope
+                notes="Forged for exit-code test — this is an in-scope query, "
+                "expected to FAIL_SCOPE_LEAK.",
+            ),
+        )
+        orig_suite = runner_v2.OOS_SUITES["legacy"]
+        monkeypatch.setitem(
+            runner_v2.OOS_SUITES, "legacy", (forged, orig_suite[1]),
+        )
+
+        payload = runner_v2.run_probe_oos_only(
+            endpoint=runner_v2._local_endpoint_url(),
+            api_key=_configured_key,
+            label="r56b-forged-leak",
+            timeout=30.0,
+            concurrency=1,
+            verbose=False,
+            out_dir=tmp_path,
+            use_local=True,
+        )
+        summary = payload["probe_oos"]["summary"]
+        # Forgery-in-force guard — must run the 1 forged row, not the real suite.
+        assert summary["n"] == 1, (
+            "forged OOS corpus did not reach run_probe_oos — the seam moved "
+            f"again; ran n={summary['n']} rows instead of 1"
+        )
+        assert [r["id"] for r in payload["probe_oos"]["rows"]] == [
+            "forged_inscope_leak"
+        ]
+        assert summary["hard_fail"] is True
+        assert summary["fail_scope_leak"] >= 1
 
 
 class TestCliEntrypoint:
@@ -471,11 +488,16 @@ class TestCliEntrypoint:
     def test_main_exits_zero_when_no_leaks(self, _configured_key: str, tmp_path: Path, monkeypatch) -> None:
         """CLI ``main()`` returns 0 when no scope leaks fire.
 
-        We pin OOS_SCENARIOS to a 1-row OOS query that definitely
-        refuses on the current build (R34 P0 "weather" probe).
-        """
-        from evals.regenold import scenarios_oos as _so
+        We pin the ``legacy`` OOS suite to a 1-row OOS query that
+        definitely refuses on the current build (R34 P0 "weather" probe).
 
+        ⚠ SEAM NOTE (R289 moved it; repaired R339) — see
+        ``TestLocalTransport.test_hard_fail_exit_path``. Rebinding
+        ``OOS_SCENARIOS`` no longer reaches ``run_probe_oos``; this test was
+        therefore passing on the real 21-row suite, i.e. vacuously. It now
+        patches ``OOS_SUITES['legacy']`` and proves the forgery applied via the
+        sidecar's ``n``.
+        """
         forged = (
             OOSScenario(
                 id="cli_no_leak",
@@ -485,8 +507,10 @@ class TestCliEntrypoint:
                 notes="CI guard - must refuse.",
             ),
         )
-        monkeypatch.setattr(_so, "OOS_SCENARIOS", forged)
-        monkeypatch.setattr(runner_v2, "OOS_SCENARIOS", forged)
+        orig_suite = runner_v2.OOS_SUITES["legacy"]
+        monkeypatch.setitem(
+            runner_v2.OOS_SUITES, "legacy", (forged, orig_suite[1]),
+        )
         monkeypatch.chdir(tmp_path)
         # Reset rate limit before invoking main — the TestClient inside
         # _post_local shares the same FastAPI app instance, so prior
@@ -506,15 +530,28 @@ class TestCliEntrypoint:
         assert rc == 0
         sidecar = tmp_path / "evals" / "bench" / "results" / "probe-oos-cli-no-leak.json"
         assert sidecar.exists()
+        on_disk = json.loads(sidecar.read_text(encoding="utf-8"))
+        # Forgery-in-force guard — rc==0 must come from the 1 forged row, not
+        # from the real 21-row legacy suite happening to be clean.
+        assert on_disk["probe_oos"]["summary"]["n"] == 1, (
+            "forged OOS corpus did not reach run_probe_oos — the seam moved "
+            f"again; ran n={on_disk['probe_oos']['summary']['n']} rows instead of 1"
+        )
+        assert [r["id"] for r in on_disk["probe_oos"]["rows"]] == ["cli_no_leak"]
 
     def test_main_exits_nonzero_when_scope_leaks(
         self, _configured_key: str, tmp_path: Path, monkeypatch
     ) -> None:
         """CLI ``main()`` returns non-zero when any FAIL_SCOPE_LEAK
         fires. Forge a 1-row in-scope question that will leak.
-        """
-        from evals.regenold import scenarios_oos as _so
 
+        ⚠ SEAM NOTE (R289 moved it; repaired R339) — see
+        ``TestLocalTransport.test_hard_fail_exit_path``. The old
+        ``OOS_SCENARIOS`` rebinding was dead: the real 21-row legacy suite ran
+        clean, ``main()`` correctly returned 0, and this test failed on
+        ``assert 0 != 0``. The product wiring was never broken — the fixture
+        never reached the producer.
+        """
         forged = (
             OOSScenario(
                 id="cli_will_leak",
@@ -524,8 +561,10 @@ class TestCliEntrypoint:
                 notes="CI guard - this is in-scope and will leak.",
             ),
         )
-        monkeypatch.setattr(_so, "OOS_SCENARIOS", forged)
-        monkeypatch.setattr(runner_v2, "OOS_SCENARIOS", forged)
+        orig_suite = runner_v2.OOS_SUITES["legacy"]
+        monkeypatch.setitem(
+            runner_v2.OOS_SUITES, "legacy", (forged, orig_suite[1]),
+        )
         monkeypatch.chdir(tmp_path)
         try:
             limiter.reset()
@@ -539,4 +578,17 @@ class TestCliEntrypoint:
             "--timeout", "30",
             "--api-key", _EVAL_KEY,
         ])
+        sidecar = tmp_path / "evals" / "bench" / "results" / "probe-oos-cli-leak.json"
+        assert sidecar.exists()
+        on_disk = json.loads(sidecar.read_text(encoding="utf-8"))
+        summary = on_disk["probe_oos"]["summary"]
+        # Forgery-in-force guard FIRST — a non-zero rc is only meaningful if the
+        # forged leak row is what produced it.
+        assert summary["n"] == 1, (
+            "forged OOS corpus did not reach run_probe_oos — the seam moved "
+            f"again; ran n={summary['n']} rows instead of 1"
+        )
+        assert [r["id"] for r in on_disk["probe_oos"]["rows"]] == ["cli_will_leak"]
+        assert summary["fail_scope_leak"] >= 1
+        assert summary["hard_fail"] is True
         assert rc != 0

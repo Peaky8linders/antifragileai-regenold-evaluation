@@ -13,6 +13,17 @@ bare parent is already cited but the sub-point form is not, inserts the
 sub-point (``Article 6.1``) immediately after the parent. The parent is
 kept (the prose cites it standalone too); a parent the answer never
 cites is never fabricated. Bounded, deduped, fail-soft.
+
+⚠ "The parent is kept" is a statement about THIS HELPER, not about the
+wire. Downstream of it the route runs the **R276-D1 reference-granularity
+pass** (``_apply_ref_granularity``, ``REGENOLD_REF_GRANULARITY``, default
+``auto``), which emits ONE granularity level per parent+leaf cluster — and
+**R333** made the ANSWER BODY a leaf-protecting signal, so on exactly the
+answer R133 was written for the pass keeps ``Article 6.1``/``6.2`` and
+drops the bare ``Article 6``. See the route-level tests at the bottom of
+this file: the default-``auto`` wire and the ``both`` rollback wire are
+asserted separately, because parent retention is only observable in
+``both``.
 """
 
 from __future__ import annotations
@@ -115,9 +126,22 @@ _STUB_ANSWER = (
 )
 
 
-def test_route_surfaces_article_6_1_when_stage2_lands(monkeypatch) -> None:
-    """End-to-end: a Stage-2-landed answer naming Article 6(1)/(2) makes
-    the wire references carry Article 6.1 alongside the bare Article 6."""
+_ROUTE_QUESTION = (
+    "Is an AI that transcribes doctor-patient conversations prohibited? "
+    "Or is it high-risk as per the use cases of Annex III of the AI Act?"
+)
+
+
+def _wire_refs(monkeypatch) -> list[str]:
+    """POST the real route with Stage-2 stubbed to ``_STUB_ANSWER`` and
+    return the wire ``references``.
+
+    Deliberately goes through the PRODUCTION producer (the FastAPI route),
+    not a hand-built reference list: the R276-D1 granularity pass reads the
+    live question AND the answer body, so a fixture that fabricated the
+    pre-granularity list would be testing a shape production never emits.
+    Only the LLM call itself is mocked — no network, no real Stage-2.
+    """
     from unittest.mock import patch
 
     from fastapi.testclient import TestClient
@@ -139,10 +163,6 @@ def test_route_surfaces_article_6_1_when_stage2_lands(monkeypatch) -> None:
     monkeypatch.setenv("REGENOLD_FUSION_STAGE2", "0")
     monkeypatch.setenv("REGENOLD_SURFACE_PROSE_SUBPOINTS", "1")
 
-    q = (
-        "Is an AI that transcribes doctor-patient conversations prohibited? "
-        "Or is it high-risk as per the use cases of Annex III of the AI Act?"
-    )
     with (
         patch(
             "app.llm.openai_wrapper_provider.is_openai_wrapper_enabled",
@@ -161,11 +181,60 @@ def test_route_surfaces_article_6_1_when_stage2_lands(monkeypatch) -> None:
         r = client.post(
             "/api/v1/regenold/eu-ai-act/ask",
             headers={"X-Regenold-Api-Key": "regenold-test-key"},
-            json={"messages": [{"role": "user", "content": q}]},
+            json={"messages": [{"role": "user", "content": _ROUTE_QUESTION}]},
         )
     assert r.status_code == 200
-    body = r.json()
-    refs = body["references"]
+    return r.json()["references"]
+
+
+def test_route_surfaces_article_6_1_when_stage2_lands(monkeypatch) -> None:
+    """End-to-end, DEFAULT config: a Stage-2-landed answer naming
+    Article 6(1)/(2) makes the wire references carry Article 6.1 — the
+    R133 defect this file exists for.
+
+    ⚠ SUPERSEDED EXPECTATION — do not "fix" this back. This test used to
+    also assert ``"Article 6" in refs`` (parent retention, R87-C
+    ``_reemit_parents_for_subpoints``). **R276-D1** replaced that wire:
+    ``_apply_ref_granularity`` (``REGENOLD_REF_GRANULARITY``, default
+    ``auto``) emits ONE granularity level per parent+leaf cluster, and
+    **R333** made the ANSWER BODY a leaf-protecting signal — so because
+    ``_STUB_ANSWER`` names "Article 6(1)"/"Article 6(2)", ``auto`` keeps
+    the LEAVES and drops the bare head. That is the measured ref-precision
+    arm (medtech-v124 exact-string F1 both .646 → auto .693), and it is
+    recall-safe at head grain: ``article_heads`` of the shipped list still
+    contains ``Article 6``, so hard rule #8 sees zero gold dropped.
+    Parent retention is now asserted in its own ``both``-mode sibling test
+    below. Changing the ``auto`` default is a reference change and owes a
+    ``dynamic_ab`` run with ``gold_dropped`` — not a test edit.
+    """
+    refs = _wire_refs(monkeypatch)
     # The reported defect: prose says "Article 6(1)" — wire must surface it.
     assert "Article 6.1" in refs, refs
+    # Pin the R276-D1 ``auto`` contract explicitly rather than leaving the
+    # head's absence as an unasserted side effect: one level per cluster,
+    # and here the leaves are the level that survives.
+    assert "Article 6.2" in refs, refs
+    assert "Article 6" not in refs, refs
+    # Head-level recall is invariant — the leaf carries the head.
+    from evals.bench.metrics import article_heads
+
+    assert "Article 6" in article_heads(refs), refs
+
+
+def test_route_keeps_bare_parent_under_granularity_both(monkeypatch) -> None:
+    """R87-C parent retention, observable ONLY in the documented pre-R276
+    rollback arm ``REGENOLD_REF_GRANULARITY=both``.
+
+    ``_ref_granularity_mode``'s own docstring states the contract:
+    "Rollback: ``REGENOLD_REF_GRANULARITY=both`` restores the pre-R276 wire
+    exactly." This test pins that rollback — the parent AND both leaves
+    ship together — so the rollback path stays live and a future change to
+    ``_apply_ref_granularity`` cannot silently break the off-switch.
+    """
+    monkeypatch.setenv("REGENOLD_REF_GRANULARITY", "both")
+    refs = _wire_refs(monkeypatch)
     assert "Article 6" in refs, refs
+    assert "Article 6.1" in refs, refs
+    assert "Article 6.2" in refs, refs
+    # The whole point of ``both``: parent and leaf coexist.
+    assert refs.index("Article 6") < refs.index("Article 6.1"), refs

@@ -1622,6 +1622,18 @@ def _engine_cache_key(
             # "gates go in the key" — it is "anything that changes engine output
             # goes in the key", and a numeric knob is not exempt.
             "REGENOLD_GROUNDING_REF_CHARS",
+            # R339 — the cross-reference context block (the R69 "Fragmentation
+            # Problem" fix) renders the text of provisions the cited articles
+            # point at into the Stage-2 USER message, so both its gate and its
+            # per-node char budget change the polished answer. NEITHER was in
+            # this key: R69 shipped the gate default-ON without registering it,
+            # and R339 raised the budget from a 240-char mid-word cut to a
+            # ceiling nothing normally reaches. Same doctrine as
+            # REGENOLD_GROUNDING_TEXT / _REF_CHARS two entries above — a numeric
+            # knob is not exempt, and an in-process OFF↔ON or 240↔20000 sweep
+            # would otherwise be served one arm's cached engine output (R263.2).
+            "REGENOLD_CROSS_REF_CONTEXT",
+            "REGENOLD_CROSS_REF_SNIPPET_CHARS",
             # R289 — the Groq/panel model selectors. 8145be2 turned nine
             # hardcoded literals into env overrides (an improvement) and
             # registered none of them; 5869eec changed the value again without

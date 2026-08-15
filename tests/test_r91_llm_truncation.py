@@ -137,6 +137,36 @@ def _mk_msg(role: str, content: str):
 
 
 class TestRewriteMultiturnQueryTruncation:
+    @pytest.fixture(autouse=True)
+    def _denoiser_wrapper_candidate_reachable(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """R339 — pin the provider ABOVE the mocked seam these rows patch.
+
+        ``_rewrite_multiturn_query`` (``app/routes/regenold.py``) builds a
+        provider CHAIN and only appends the wrapper candidate when
+        ``is_openai_wrapper_enabled()`` is True. R127 made that function
+        cli-sensitive (``openai_wrapper_provider.py:381`` — an explicit
+        ``P2P_GRAPH_RAG_PROVIDER=cli`` returns False so the deterministic
+        contract holds). These rows patch only
+        ``get_openai_wrapper_provider``, one layer BELOW that check, so
+        under the documented deterministic gate the chain came back empty,
+        ``_rewrite_multiturn_query`` bailed with ``fallback_reason=
+        "no_provider"`` and the mock was never consulted.
+
+        That made ``test_truncated_response_returns_none`` pass VACUOUSLY —
+        it asserts ``out is None``, which the empty chain satisfies without
+        ever reaching the truncation guard it exists to pin. Hence the
+        added ``complete.assert_called_once()`` below: the row must fail if
+        it ever regresses to the vacuous path again.
+
+        Nothing reaches the network — ``conftest`` scrubs
+        ``GROQ_API_KEY`` / ``GEMINI_API_KEY`` / ``MISTRAL_API_KEY`` (so the
+        wrapper is the sole candidate) and pins ``OPENAI_API_BASE`` to a
+        dead port; the provider itself is a ``MagicMock``.
+        """
+        monkeypatch.setenv("P2P_GRAPH_RAG_PROVIDER", "openai_wrapper")
+
     def test_truncated_response_returns_none(self, monkeypatch) -> None:
         """``finish_reason="length"`` with non-empty text → return None
         even though the text would otherwise pass the ``10 < len <= 500``
@@ -165,6 +195,9 @@ class TestRewriteMultiturnQueryTruncation:
                 [_mk_msg("user", "What is Article 13?")],
             )
         assert out is None
+        # R339 non-vacuity guard — prove the None came from the truncation
+        # bail and not from an empty provider chain (see the class fixture).
+        fake_provider.complete.assert_called_once()
 
     def test_natural_stop_returns_rewritten_text(self, monkeypatch) -> None:
         """``finish_reason="stop"`` + valid text → caller gets the rewrite."""

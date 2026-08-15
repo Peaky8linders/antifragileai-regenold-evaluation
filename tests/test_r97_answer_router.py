@@ -41,6 +41,31 @@ from app.models import GraphRAGRequest
 from app.routes.regenold import _engine_cache_key
 
 
+@pytest.fixture(autouse=True)
+def _stage2_provider_reachable(monkeypatch: pytest.MonkeyPatch) -> None:
+    """R339 — pin the provider ABOVE the mocked seam these tests patch.
+
+    ``TestEngineRoutingUnderVerbatim`` and ``TestConfidenceFloorRouterAware``
+    patch ``is_openai_wrapper_enabled`` -> True and mock
+    ``app.engines.graph_rag._openai_wrapper_complete_for_graph_rag``, then
+    assert the mock ran. R56's ``_stage2_provider_enabled()``
+    (``app/engines/_graph_rag_impl.py``) reads ``P2P_GRAPH_RAG_PROVIDER``
+    **before** consulting that function and returns False on the literal
+    ``cli``; R127 made ``is_openai_wrapper_enabled()`` itself cli-sensitive
+    too. So under the documented deterministic gate
+    (``P2P_GRAPH_RAG_PROVIDER=cli``) Stage-2 was switched off one layer
+    above the seam and every ``assert_called_once`` collapsed.
+
+    These tests are about ROUTING (verbatim vs synthesis, the R87-E
+    confidence floor), not about provider selection — the provider is
+    scaffolding, so pin it. ``openai_wrapper`` is the branch that
+    unset/``auto`` resolves to in production (``app/llm/__init__.py``).
+    ``conftest`` pins ``OPENAI_API_BASE`` to a dead port and every call
+    site here is a ``MagicMock``, so nothing reaches the network.
+    """
+    monkeypatch.setenv("P2P_GRAPH_RAG_PROVIDER", "openai_wrapper")
+
+
 _MULTI_TURN_Q = (
     "Conversation so far:\nUser: What does Art. 26 require of deployers?\n"
     "Assistant: Article 26 sets out deployer obligations for high-risk AI.\n\n"

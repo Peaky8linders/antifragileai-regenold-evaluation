@@ -8,6 +8,12 @@ off-topic question) and the de-noiser's Groq->wrapper chain fell to the
 ~10 s Claude Max wrapper, which the fail-fast timeout always tripped into a
 ``provider_error``. Both now fall through to Gemini flash / Mistral large.
 
+⚠ ``qwen/qwen3.6-27b`` above is the R267.1-era Groq model and is HISTORY, not
+the current pin. R289 moved the Groq default to ``openai/gpt-oss-120b`` and put
+it behind a single ``default_groq_model()``; the fallback-chain behaviour these
+tests cover is model-agnostic and unchanged. Do not re-pin a Groq literal here —
+see ``test_candidate_order_is_groq_then_gemini_then_mistral``.
+
 These tests mock the providers so they run in the no-API-key test env.
 """
 from __future__ import annotations
@@ -101,11 +107,53 @@ def test_no_provider_wired_returns_none(monkeypatch: pytest.MonkeyPatch) -> None
 
 
 def test_candidate_order_is_groq_then_gemini_then_mistral(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The chain is groq -> gemini -> mistral, on each slot's DEFAULT model.
+
+    ⚠ Superseded expectation: this asserted the Groq literal
+    ``"qwen/qwen3.6-27b"`` until R289. That round consolidated the Groq model
+    id into ONE source of truth — ``_GROQ_LIVE_VALIDATED_MODEL`` behind
+    ``default_groq_model()`` (``app/llm/openai_wrapper_provider.py``) — after a
+    controlled live before/after on the same ``/healthz`` probe:
+    ``62ca878`` qwen -> ok, ``8145be2`` groq/compound -> 413 request_too_large
+    (it took every Groq path down), ``5869eec`` openai/gpt-oss-120b -> ok. The
+    literal here was one of the nine hard-coded copies that migration existed
+    to delete, so it kept asserting a model that live traffic has invalidated.
+
+    Do NOT re-pin a literal. Assert against ``default_groq_model()`` — the same
+    function ``_general_llm_candidates`` calls — so the next one-line migration
+    stays one line. The assertion stays an order-strict full equality: the
+    ORDER is the actual contract under test and must not be relaxed to a
+    subset/``in`` check.
+    """
+    from app.llm.openai_wrapper_provider import default_groq_model
+
+    # Pin the DEFAULT chain: each slot takes an ``os.getenv(env_key, default)``
+    # override in production, so an ambient override would otherwise silently
+    # change what this test measures.
+    for env_key in (
+        "REGENOLD_GENERAL_MODEL_GROQ",
+        "REGENOLD_GENERAL_MODEL_GEMINI",
+        "REGENOLD_GENERAL_MODEL_MISTRAL",
+    ):
+        monkeypatch.delenv(env_key, raising=False)
+
     g, ge, mi = _Prov(), _Prov(), _Prov()
     _wire(monkeypatch, groq=g, gemini=ge, mistral=mi)
     cands = route._general_llm_candidates()
     models = [m for _, m in cands]
-    assert models == ["qwen/qwen3.6-27b", "gemini-2.5-flash", "mistral-large-latest"]
+    assert models == [default_groq_model(), "gemini-2.5-flash", "mistral-large-latest"]
+
+    # And prove the groq slot really is bound to that source of truth rather
+    # than to some other model constant that merely happens to match today
+    # (there are several Groq-ish ids in-tree). ``default_groq_model`` is
+    # documented as read per-call, never at import, so an in-process A/B arm
+    # can move it — assert that end to end through the route.
+    monkeypatch.setenv("REGENOLD_GROQ_DEFAULT_MODEL", "sentinel/ab-arm-model")
+    assert [m for _, m in route._general_llm_candidates()] == [
+        "sentinel/ab-arm-model",
+        "gemini-2.5-flash",
+        "mistral-large-latest",
+    ]
 
 
 def test_think_block_stripped_then_still_answers(monkeypatch: pytest.MonkeyPatch) -> None:

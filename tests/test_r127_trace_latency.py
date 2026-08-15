@@ -353,10 +353,32 @@ class TestR127GuidingPrinciplesKeywords:
 
 
 class _FakeProvider:
+    """Strict per-model script dispatch, with a call log.
+
+    ⚠ Script keys MUST be derived from the same single sources of truth the
+    product reads (``fusion._panel_registry()`` / ``fusion._judge_model()``),
+    never written here as model-id literals. Two literals in this fixture went
+    stale and the test could not tell you which:
+
+    * R289 migrated the Groq default off ``qwen/qwen3.6-27b`` to
+      ``openai/gpt-oss-120b`` (``owp._GROQ_LIVE_VALIDATED_MODEL``).
+    * ``_DEFAULT_JUDGE_MODEL`` moved to ``claude-opus-4-8`` while the fixture
+      still scripted the wrapper on ``claude-sonnet-4-6`` only.
+
+    An unscripted model returns ``error='no_script'``, which
+    ``_one_candidate`` swallows as a dead transport — so the Groq panel member
+    had been silently absent (``fusion.judge_failed panel=[sonnet,mistral]``)
+    and, because ``_min_candidates()`` is 2, the panel half of this test would
+    have kept passing on the two survivors. Only the judge miss was loud. The
+    call log below is what makes that silent half assertable.
+    """
+
     def __init__(self, script):
         self._script = script
+        self.calls: list[str] = []
 
     def complete(self, req):
+        self.calls.append(req.model)
         fn = self._script.get(req.model)
         if fn is None:
             return OpenAIWrapperResponse(error="no_script", model=req.model)
@@ -376,19 +398,34 @@ class TestR127FusionObservability:
     def test_fusion_records_thinking_on_success(self, monkeypatch):
         from app.integrations.regenold import reasoning_trace as rt
 
+        # Bind the script to the models PRODUCTION resolves, not to literals —
+        # both the Groq default and the judge model have migrated since this
+        # test was written. See _FakeProvider's docstring.
+        registry = fusion._panel_registry()
+        panel_sonnet_model = registry["sonnet"][0]
+        panel_groq_model = registry["groq"][0]
+        panel_mistral_model = registry["mistral"][0]
+        judge_model = fusion._judge_model()
+
+        judge_text = "Article 50 requires the deployer to inform exposed persons."
+        # One handler, two keys: it already branches on the "FUSION JUDGE"
+        # marker in ``req.user``, and it stays correct if an operator collapses
+        # the judge onto the panel model (the dict simply has one key then).
+        _wrapper_script = _sonnet_script(
+            panel_text="Article 50 applies to the deployer.",
+            judge_text=judge_text,
+        )
         wrapper = _FakeProvider({
-            "claude-sonnet-4-6": _sonnet_script(
-                panel_text="Article 50 applies to the deployer.",
-                judge_text="Article 50 requires the deployer to inform exposed persons.",
-            ),
+            panel_sonnet_model: _wrapper_script,
+            judge_model: _wrapper_script,
         })
         groq = _FakeProvider({
-            "qwen/qwen3.6-27b": lambda r: OpenAIWrapperResponse(
+            panel_groq_model: lambda r: OpenAIWrapperResponse(
                 text="Deployers must inform people under Article 50."
             )
         })
         mistral = _FakeProvider({
-            "mistral-large-latest": lambda r: OpenAIWrapperResponse(
+            panel_mistral_model: lambda r: OpenAIWrapperResponse(
                 text="Article 50 transparency applies."
             )
         })
@@ -416,9 +453,25 @@ class TestR127FusionObservability:
         finally:
             rt.deactivate()
         assert out is not None
+        # The JUDGE branch of the wrapper script served the final answer (not
+        # the panel branch) — pins that the judge call really landed.
+        assert out == judge_text
         # #5 — the LLM fusion judge populates the Stage-2 thinking field.
         assert "Stage 2 (Fusion judge)" in trace.llm_thinking
-        assert "fusion" in trace.llm_thinking["Stage 2 (Fusion judge)"].lower()
+        thinking = trace.llm_thinking["Stage 2 (Fusion judge)"]
+        assert "fusion" in thinking.lower()
+        # NON-VACUITY. The recorded thinking names the panel members whose
+        # drafts the judge weighed, so it is the product's own record of who
+        # answered. All three must be present: a member whose script key goes
+        # stale drops out silently and ``_min_candidates() == 2`` lets the run
+        # succeed on the survivors — which is exactly how the stale Groq model
+        # id sat here undetected.
+        for _member in ("sonnet", "groq", "mistral"):
+            assert _member in thinking, f"panel member {_member} missing: {thinking}"
+        # And the models actually requested are the ones production resolves.
+        assert wrapper.calls == [panel_sonnet_model, judge_model]
+        assert groq.calls == [panel_groq_model]
+        assert mistral.calls == [panel_mistral_model]
 
 
 # ── cache key ──────────────────────────────────────────────────────────────

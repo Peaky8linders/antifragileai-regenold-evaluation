@@ -5,12 +5,33 @@ from app.llm.openai_wrapper_provider import OpenAIWrapperResponse
 from app.engines.graph_rag import GraphRAGRequest, ask_compliance_question
 
 @pytest.fixture(autouse=True)
-def _reset() -> None:
+def _reset(monkeypatch) -> None:
+    """Reset the intent cache/breaker and pin the Stage-0 gate CLOSED.
+
+    R127 made :func:`is_openai_wrapper_enabled` return False whenever
+    ``P2P_GRAPH_RAG_PROVIDER == 'cli'``. ``classify_intent`` consults it
+    via ``is_intent_enabled()`` and returns None at its guard before
+    reaching the patched provider factory, which is why the bridging
+    assertion below saw ``result is None`` under the deterministic gate
+    command.
+
+    ``cli`` stays the module default so the two ``ask_compliance_question``
+    tests cannot reach a live provider; the one test that needs Stage-0
+    to actually run opts in via ``wrapper_gate_open``.
+    """
+    monkeypatch.setenv("P2P_GRAPH_RAG_PROVIDER", "cli")
     ic._reset_for_tests()
     yield
     ic._reset_for_tests()
 
-def test_intent_classifier_attaches_bridging_context(monkeypatch) -> None:
+
+@pytest.fixture
+def wrapper_gate_open(monkeypatch, _reset) -> None:
+    """Open the R127 pre-gate. Depends on ``_reset`` to pin fixture order."""
+    monkeypatch.setenv("P2P_GRAPH_RAG_PROVIDER", "openai_wrapper")
+
+
+def test_intent_classifier_attaches_bridging_context(monkeypatch, wrapper_gate_open) -> None:
     monkeypatch.setenv("OPENAI_API_BASE", "http://127.0.0.1:8000/v1")
     monkeypatch.setenv("OPENAI_API_KEY", "test")
 

@@ -10,7 +10,9 @@ practices / Q3 high-risk definition):
   B. Incomplete enumeration of a closed statutory set when the question
      asks for the set itself (3 of 8 prohibitions; 5 of 8).
   C. Over-focus on the prohibited tier when asked about the whole risk
-     framework (GPAI Art. 51-55 + the high-risk dual route omitted).
+     framework (GPAI Art. 51-56 + the high-risk dual route omitted).
+     ⚠ R109 wrote this range as 51-55; R264 corrected it to 51-56
+     (Article 56, codes of practice, is the last Chapter V article).
   E. Material omission of load-bearing high-risk conditions/carve-outs
      (Art. 6(1)(b) third-party conformity assessment; Art. 6(3)
      derogation + Art. 49(2) registration).
@@ -77,13 +79,30 @@ class TestR109SocialScoringFactualError:
 
 class TestR109RiskFrameworkOverview:
     def test_names_all_four_tiers_plus_gpai(self):
+        """Four risk tiers + the parallel GPAI regime, cited as Articles 51 to 56.
+
+        ⚠ The GPAI range assertion below read "articles 51 to 55" from R109
+        until R339. That was legally WRONG and R264 superseded it: Chapter V
+        (general-purpose AI models) spans Articles 51 TO 56, and Article 56
+        (codes of practice) is its final article — see the standing rule in
+        `app/data/graph_rag_prompts.py` ("Never write that the GPAI chapter
+        runs 'Articles 51 to 55'"). R273 corrected the describer text; only
+        this test was left pinning the superseded range, so it failed.
+
+        Verified against the pinned CELEX 32024R1689 text rather than argued:
+        `get_provision_text("Article 56")` is "The AI Office shall encourage
+        and facilitate the drawing up of codes of practice..." (GPAI, Chapter
+        V) while `Article 57` opens the Chapter VI regulatory-sandbox regime.
+        `eu_ai_act_tree.ARTICLE_CHAPTER` independently maps exactly Art. 51
+        through Art. 56 to Chapter V. Do NOT "fix" this back to 51 to 55.
+        """
         answer = _topic("risk_framework_overview")["answer"].lower()
         # all four tiers present
         for token in ("prohibited", "high-risk", "limited-risk", "minimal-risk"):
             assert token in answer, f"risk framework missing tier label {token!r}"
         # parallel GPAI regime
         assert "general-purpose ai" in answer
-        assert "articles 51 to 55" in answer
+        assert "articles 51 to 56" in answer
         # high-risk dual route surfaced
         assert "annex i" in answer
         assert "annex iii" in answer
@@ -141,8 +160,38 @@ class TestR109Stage2PromptDiscipline:
         assert "name EVERY member of that set" in ANSWER_GENERATE_SYSTEM
 
     def test_headline_rule_names_gpai(self):
-        # ANSWER THE HEADLINE for risk-tier questions now includes GPAI.
-        assert "Articles 51 to 55" in ANSWER_GENERATE_SYSTEM
+        """ANSWER THE HEADLINE for risk-tier questions names the GPAI regime.
+
+        ⚠ R339: this asserted the bare substring "Articles 51 to 55", which
+        R264 later made self-defeating. R264 added a FACTUAL GUARD whose text
+        quotes the forbidden range verbatim ('Never write that the GPAI
+        chapter runs "Articles 51 to 55"'), so the bare substring matched the
+        PROHIBITION. The assertion then passed no matter what the headline
+        rule said — it was vacuous. Anchor on the surrounding rule text.
+        """
+        # The positive instruction, with the legally correct Chapter V range.
+        assert (
+            "general-purpose AI (GPAI) model regime under Articles 51 to 56"
+            in ANSWER_GENERATE_SYSTEM
+        )
+
+    def test_prompt_never_instructs_the_wrong_chapter_v_range(self):
+        """The wrong range may appear ONLY inside the rule forbidding it.
+
+        R264 established that Chapter V spans Articles 51 TO 56 (Article 56,
+        codes of practice, is its final article). Until R339 two rules in this
+        same prompt — CLOSED-SET COMPLETENESS and ANSWER THE HEADLINE — still
+        INSTRUCTED the model to write "Articles 51 to 55", contradicting the
+        guard. This pins the file against re-acquiring that contradiction.
+        """
+        forbidding_rule = 'Never write that the GPAI chapter runs "Articles 51 to 55".'
+        assert forbidding_rule in ANSWER_GENERATE_SYSTEM
+        # Strip the one legitimate mention; no other occurrence may survive.
+        remainder = ANSWER_GENERATE_SYSTEM.replace(forbidding_rule, "")
+        assert "51 to 55" not in remainder, (
+            "the Stage-2 system prompt instructs the superseded Chapter V "
+            "range 'Articles 51 to 55' outside the rule that forbids it"
+        )
 
     def test_reference_discipline_forbids_tangential_cites(self):
         low = ANSWER_GENERATE_SYSTEM.lower()

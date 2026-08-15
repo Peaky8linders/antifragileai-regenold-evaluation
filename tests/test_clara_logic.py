@@ -30,11 +30,42 @@ from app.llm.openai_wrapper_provider import OpenAIWrapperResponse
 
 
 @pytest.fixture(autouse=True)
-def _reset_state() -> None:
-    """Wipe LRU cache + breaker between tests."""
+def _reset_state(monkeypatch) -> None:
+    """Wipe LRU cache + breaker between tests, and pin the LLM gate CLOSED.
+
+    R127 made :func:`is_openai_wrapper_enabled` return False whenever
+    ``P2P_GRAPH_RAG_PROVIDER == 'cli'``, and ``extract_tags_llm``
+    consults it (clara_logic.py:846) before anything these tests mock.
+
+    The ``cli`` pin MUST be the default for this module, and it is a
+    safety property rather than a convenience: :func:`analyse` calls
+    ``extract_tags_llm`` FIRST (clara_logic.py:1403), and eight tests
+    here call ``analyse()`` with no provider patch at all. Opening the
+    gate module-wide would send every one of them to the real pooled
+    provider and out to the network. Tests that genuinely need the LLM
+    branch opt in via ``wrapper_gate_open`` below, and each of those
+    patches ``get_openai_wrapper_provider`` first.
+    """
+    monkeypatch.setenv("P2P_GRAPH_RAG_PROVIDER", "cli")
     clara_logic._reset_for_tests()
     yield
     clara_logic._reset_for_tests()
+
+
+@pytest.fixture
+def wrapper_gate_open(monkeypatch, _reset_state) -> None:
+    """Open the R127 pre-gate for the tests that mock the provider.
+
+    Depends on ``_reset_state`` by name so ordering against that autouse
+    fixture's ``cli`` pin is deterministic, not incidental.
+
+    Without this, every LLM-branch test in this module was inert under
+    the documented deterministic gate command: the ones asserting
+    ``is None`` passed VACUOUSLY (``extract_tags_llm`` returned at the
+    gate, never reaching the fake), and the ones asserting parsed tags
+    failed outright.
+    """
+    monkeypatch.setenv("P2P_GRAPH_RAG_PROVIDER", "openai_wrapper")
 
 
 # ── Section 1: matrix purity + determinism ───────────────────────────────
@@ -479,17 +510,42 @@ def test_analyse_medical_image_classification_is_high_risk() -> None:
 
 
 def test_extract_tags_llm_returns_none_when_wrapper_disabled(monkeypatch) -> None:
-    """No ``OPENAI_API_BASE`` / ``OPENAI_API_KEY`` → instant None."""
+    """Wrapper disabled → instant None, without constructing a provider.
+
+    SUPERSEDED EXPECTATION — R127. This test used to delete
+    ``OPENAI_API_BASE`` / ``OPENAI_API_KEY`` and claim that was what
+    disabled the wrapper. It is not, and has not been since R127:
+    :func:`is_openai_wrapper_enabled` never looks at either variable —
+    it returns False if and only if ``P2P_GRAPH_RAG_PROVIDER == 'cli'``,
+    and True otherwise. Under the old form the assertion only held
+    because the deterministic gate command happens to export ``cli``;
+    run under ``openai_wrapper`` it would have constructed the real
+    pooled provider and attempted a network call.
+
+    So the disable switch is asserted directly, and a provider factory
+    that explodes on use pins the "instant" half — the gate must return
+    before anything is constructed.
+    """
+    monkeypatch.setenv("P2P_GRAPH_RAG_PROVIDER", "cli")
     monkeypatch.delenv("OPENAI_API_BASE", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    assert extract_tags_llm("What is biometric identification?") is None
+
+    import app.llm.openai_wrapper_provider as ow
+
+    def _explode():
+        raise AssertionError(
+            "provider constructed despite the cli gate being closed"
+        )
+
+    with patch.object(ow, "get_openai_wrapper_provider", side_effect=_explode):
+        assert extract_tags_llm("What is biometric identification?") is None
 
 
 def test_extract_tags_llm_returns_none_on_empty_question() -> None:
     assert extract_tags_llm("") is None
 
 
-def test_extract_tags_llm_returns_none_on_wrapper_error(monkeypatch) -> None:
+def test_extract_tags_llm_returns_none_on_wrapper_error(monkeypatch, wrapper_gate_open) -> None:
     """Wrapper error → None (engine falls back to deterministic)."""
     monkeypatch.setenv("OPENAI_API_BASE", "http://127.0.0.1:8000/v1")
     monkeypatch.setenv("OPENAI_API_KEY", "test")
@@ -507,7 +563,7 @@ def test_extract_tags_llm_returns_none_on_wrapper_error(monkeypatch) -> None:
         assert extract_tags_llm("What's an AI provider?") is None
 
 
-def test_extract_tags_llm_returns_none_on_malformed_json(monkeypatch) -> None:
+def test_extract_tags_llm_returns_none_on_malformed_json(monkeypatch, wrapper_gate_open) -> None:
     """Garbage from the LLM → None, not a raise."""
     monkeypatch.setenv("OPENAI_API_BASE", "http://127.0.0.1:8000/v1")
     monkeypatch.setenv("OPENAI_API_KEY", "test")
@@ -525,7 +581,7 @@ def test_extract_tags_llm_returns_none_on_malformed_json(monkeypatch) -> None:
         assert extract_tags_llm("Test question?") is None
 
 
-def test_extract_tags_llm_drops_unknown_keys(monkeypatch) -> None:
+def test_extract_tags_llm_drops_unknown_keys(monkeypatch, wrapper_gate_open) -> None:
     """LLM returns extra keys — they must be dropped, not raise."""
     monkeypatch.setenv("OPENAI_API_BASE", "http://127.0.0.1:8000/v1")
     monkeypatch.setenv("OPENAI_API_KEY", "test")
@@ -553,7 +609,7 @@ def test_extract_tags_llm_drops_unknown_keys(monkeypatch) -> None:
     assert not hasattr(tags, "verdict")
 
 
-def test_extract_tags_llm_parses_valid_json(monkeypatch) -> None:
+def test_extract_tags_llm_parses_valid_json(monkeypatch, wrapper_gate_open) -> None:
     monkeypatch.setenv("OPENAI_API_BASE", "http://127.0.0.1:8000/v1")
     monkeypatch.setenv("OPENAI_API_KEY", "test")
 
@@ -573,7 +629,7 @@ def test_extract_tags_llm_parses_valid_json(monkeypatch) -> None:
     assert tags.used_in_workplace
 
 
-def test_extract_tags_llm_returns_none_on_empty_or_unknown_only_json(monkeypatch) -> None:
+def test_extract_tags_llm_returns_none_on_empty_or_unknown_only_json(monkeypatch, wrapper_gate_open) -> None:
     """Empty JSON or JSON with only unknown keys must return None."""
     monkeypatch.setenv("OPENAI_API_BASE", "http://127.0.0.1:8000/v1")
     monkeypatch.setenv("OPENAI_API_KEY", "test")
@@ -609,7 +665,7 @@ def test_extract_tags_llm_returns_none_on_empty_or_unknown_only_json(monkeypatch
     assert verdict.primary_articles == ("Article 5.1.f",)
 
 
-def test_extract_tags_llm_lru_cache_avoids_second_call(monkeypatch) -> None:
+def test_extract_tags_llm_lru_cache_avoids_second_call(monkeypatch, wrapper_gate_open) -> None:
     """Same question → cached result (no second provider invocation)."""
     monkeypatch.setenv("OPENAI_API_BASE", "http://127.0.0.1:8000/v1")
     monkeypatch.setenv("OPENAI_API_KEY", "test")
@@ -633,7 +689,7 @@ def test_extract_tags_llm_lru_cache_avoids_second_call(monkeypatch) -> None:
     assert call_count["n"] == 1
 
 
-def test_extract_tags_llm_circuit_breaker_opens_after_threshold(monkeypatch) -> None:
+def test_extract_tags_llm_circuit_breaker_opens_after_threshold(monkeypatch, wrapper_gate_open) -> None:
     """3 consecutive failures → breaker open → subsequent calls return None fast."""
     monkeypatch.setenv("OPENAI_API_BASE", "http://127.0.0.1:8000/v1")
     monkeypatch.setenv("OPENAI_API_KEY", "test")

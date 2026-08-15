@@ -32,7 +32,25 @@ from app.llm.openai_wrapper_provider import OpenAIWrapperResponse
 
 
 @pytest.fixture(autouse=True)
-def _reset() -> None:
+def _reset(monkeypatch) -> None:
+    """Reset the singletons, and pin ``P2P_GRAPH_RAG_PROVIDER`` off ``cli``.
+
+    R127 added a pre-gate to :func:`is_openai_wrapper_enabled`: it
+    returns False whenever ``P2P_GRAPH_RAG_PROVIDER == 'cli'``, so the
+    deterministic pipeline pays no dead-port connect timeout. That gate
+    is an INPUT to the routing decision under test here —
+    ``_resolve_intent_provider`` consults it for the wrapper branch — so
+    under the deterministic gate command every wrapper-branch assertion
+    below collapsed to ``None`` and the tests died unpacking it.
+
+    ``openai_wrapper`` is the real production value (unset/``auto``
+    resolves here too), so the wrapper branch is exercised through the
+    genuine gate function rather than a stub. This is safe offline: the
+    three ``_resolve_intent_provider`` tests only CONSTRUCT the pooled
+    provider (no I/O until ``.complete()``, which they never call), and
+    every end-to-end test in this module patches its provider factory.
+    """
+    monkeypatch.setenv("P2P_GRAPH_RAG_PROVIDER", "openai_wrapper")
     ic._reset_for_tests()
     owp._reset_groq_singleton_for_tests()
     yield
@@ -121,7 +139,13 @@ def test_resolve_returns_wrapper_when_no_provider_configured(monkeypatch) -> Non
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("REGENOLD_INTENT_PROVIDER", raising=False)
     monkeypatch.delenv("GROQ_API_KEY", raising=False)
-    # With openai_wrapper_enabled returning True unconditionally, it resolves to wrapper
+    # ``is_openai_wrapper_enabled()`` is True for every provider value
+    # EXCEPT ``cli`` (R127 pre-gate), so with no Groq key configured the
+    # wrapper branch wins even though no OPENAI_* env is set — the
+    # wrapper is the fallback, not a credential-gated path.
+    # NOTE: the older comment here claimed the gate returned True
+    # "unconditionally". That stopped being true at R127; the ``_reset``
+    # fixture now supplies the non-``cli`` provider this test needs.
     provider, model = ic._resolve_intent_provider()
     from app.llm.openai_wrapper_provider import _OpenAIWrapperProvider
     assert isinstance(provider, _OpenAIWrapperProvider)

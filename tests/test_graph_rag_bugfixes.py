@@ -49,6 +49,32 @@ from app.models import GraphRAGRequest
 
 
 @pytest.fixture(autouse=True)
+def _stage2_provider_reachable(monkeypatch: pytest.MonkeyPatch) -> None:
+    """R339 — pin the provider ABOVE the mocked seam these tests patch.
+
+    The Issue-#42 (empty Stage-2 output), Issue-#51 (drift guard) and R113
+    (grounding-parity) rows mock
+    ``app.engines.graph_rag._openai_wrapper_complete_for_graph_rag`` and
+    patch ``is_openai_wrapper_enabled`` -> True, then assert the polish
+    shipped / ``stage2_call_failed is True``. R56's
+    ``_stage2_provider_enabled()`` (``app/engines/_graph_rag_impl.py``)
+    reads ``P2P_GRAPH_RAG_PROVIDER`` **first** and returns False on the
+    literal ``cli`` before that function is consulted; R127 made
+    ``is_openai_wrapper_enabled()`` cli-sensitive as well. Under the
+    documented deterministic gate (``P2P_GRAPH_RAG_PROVIDER=cli``) Stage-2
+    was therefore off one layer above the seam, the mock ran zero times,
+    and the guards these rows exist to pin were never executed.
+
+    ``openai_wrapper`` is the branch unset/``auto`` resolves to in
+    production (``app/llm/__init__.py``). ``conftest`` pins
+    ``OPENAI_API_BASE`` to the dead port ``http://127.0.0.1:1/v1`` and
+    every provider call site here is a ``MagicMock``, so no network call
+    is possible.
+    """
+    monkeypatch.setenv("P2P_GRAPH_RAG_PROVIDER", "openai_wrapper")
+
+
+@pytest.fixture(autouse=True)
 def _disable_r87e_stage2_gate(monkeypatch):
     """R87-E confidence gate would skip Stage-2 on the empty mock
     contexts these tests construct. Pre-R87-E tests; disable the gate

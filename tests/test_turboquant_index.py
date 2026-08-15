@@ -418,7 +418,31 @@ def test_score_fusion_preserves_score_magnitudes(monkeypatch):
 
 
 def test_turboquant_index_with_external_embeddings(monkeypatch):
-    """The index build and search should gracefully leverage external embeddings when available."""
+    """The index build and search should gracefully leverage external embeddings when available.
+
+    Two things this test needs and did not own:
+
+    1. **The R127 kill-switch.** ``external_embeddings._get_provider()``
+       begins ``if _opt_in_mode() == "off": return None``, ABOVE the
+       ``COHERE_API_KEY`` check, so the documented deterministic gate
+       (``REGENOLD_EXTERNAL_EMBEDDINGS=0``) made ``is_available()`` False and
+       ``_build`` took the precomputed-SVD branch — ``_use_external`` stayed
+       ``False``. The product is correct (its module docstring: "``=0``
+       force-disables the module entirely"); the test under-specified its
+       env. Dropped here, not weakened there.
+    2. **One embedding per input text.** ``get_embedding`` batches in chunks
+       of 50 and ``extend``s each response, so a mock returning a FIXED
+       matrix regardless of ``json["texts"]`` produces a doc matrix no
+       provider can return. Measured on the live 373-doc corpus (305
+       non-definition docs → 7 batches): the old fixed 281-row mock built
+       ``_doc_vecs_dense`` with **1967** rows against a 305-entry
+       ``_bm25_idx_map``, and ``_DenseIndex.search`` then returned 16 of 20
+       raw ``doc_idx`` values OUT OF RANGE, silently dropped by the guard in
+       ``dense_top_k``. ``len(hits) > 0`` survived on the 4 that happened to
+       land in range — a data shape production never produces. The mock now
+       mirrors the real Cohere contract (``len(embeddings) == len(texts)``)
+       and the row count is asserted against ``_bm25_idx_map``.
+    """
     # Reset state. R338 [I2] — must clear the per-corpus cache, not just the
     # current instance: this test changes something the corpus fingerprint
     # cannot see (external embeddings become available), so a cached index built
@@ -427,23 +451,26 @@ def test_turboquant_index_with_external_embeddings(monkeypatch):
     import app.engines.turboquant_index as ti
     ti._reset_index_cache()
 
+    monkeypatch.delenv("REGENOLD_EXTERNAL_EMBEDDINGS", raising=False)
     monkeypatch.setenv("COHERE_API_KEY", "co-testkey")
 
-    mock_doc_emb = [[0.1] * 1024] * 281
-    mock_query_emb = [0.1] * 1024
+    dim = 1024
+    mock_query_emb = [0.1] * dim
 
-    class MockResponse:
+    class MockDocResponse:
+        def __init__(self, n):
+            self._n = n
         def raise_for_status(self):
             pass
         def json(self):
-            return {"embeddings": mock_doc_emb}
+            # Cohere returns exactly one embedding per input text, in order.
+            return {"embeddings": [[0.1] * dim for _ in range(self._n)]}
 
     def mock_post(self, url, headers, json, **kwargs):
-        # Determine if query or docs
-        if json.get("input_type") == "search_query":
-            return MockResponse() if json["texts"] == ["biometric"] else None
-        else:
-            return MockResponse()
+        assert json.get("input_type") == "search_document", (
+            f"build path must request document embeddings, got {json.get('input_type')!r}"
+        )
+        return MockDocResponse(len(json["texts"]))
 
     monkeypatch.setattr("httpx.Client.post", mock_post)
 
@@ -451,7 +478,10 @@ def test_turboquant_index_with_external_embeddings(monkeypatch):
     diag = ti.index_diagnostics()
     assert diag["loaded"] is True
     assert ti._INDEX._use_external is True
-    assert ti._INDEX._doc_vecs_dense.shape[1] == 1024
+    assert ti._INDEX._doc_vecs_dense.shape[1] == dim
+    # One vector per mapped BM25 document — the invariant every ``doc_idx``
+    # → ``_bm25_idx_map`` dereference in ``dense_top_k`` depends on.
+    assert ti._INDEX._doc_vecs_dense.shape[0] == len(ti._INDEX._bm25_idx_map)
 
     # We now mock the query response
     class MockQueryResponse:
@@ -460,12 +490,19 @@ def test_turboquant_index_with_external_embeddings(monkeypatch):
         def json(self):
             return {"embeddings": [mock_query_emb]}
 
+    query_calls: list[str] = []
+
     def mock_query_post(self, url, headers, json, **kwargs):
+        query_calls.append(json.get("input_type", ""))
         return MockQueryResponse()
 
     monkeypatch.setattr("httpx.Client.post", mock_query_post)
 
     hits = ti.dense_top_k("biometric", k=3)
+    # The external QUERY path actually ran (``_embed_query`` short-circuits to
+    # the TF-IDF/SVD branch unless ``_use_external``), …
+    assert query_calls == ["search_query"], query_calls
+    # … and every returned hit resolved through the index map.
     assert len(hits) > 0
 
 
