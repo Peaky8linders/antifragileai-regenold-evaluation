@@ -346,7 +346,10 @@ def test_parse_level_rerank_exception_is_swallowed(monkeypatch):
     def _boom(*_a, **_k):  # pragma: no cover — must never run
         raise RuntimeError("boom")
 
-    monkeypatch.setattr(CR, "rerank_references", _boom)
+    # R347 — the parse-level wiring now calls ``rerank_pool`` (the ok-bit
+    # variant) rather than the ``rerank_references`` wrapper; the
+    # swallowed-exception contract is unchanged.
+    monkeypatch.setattr(CR, "rerank_pool", _boom)
 
     gq = _deterministic_parse(_Q_MULTI)
 

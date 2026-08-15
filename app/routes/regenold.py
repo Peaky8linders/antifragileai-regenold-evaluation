@@ -1477,6 +1477,10 @@ def _engine_cache_key(
             # lesson).
             "REGENOLD_COHERE_RERANK",
             "REGENOLD_COHERE_RERANK_MODEL",
+            # R347 — KG candidate supplementation changes WHAT the cross-encoder
+            # ranks (keyword entities + their 1-hop CROSS_REFERENCES neighbours),
+            # so it is a different ranking input → engine-level, must be keyed.
+            "REGENOLD_RERANK_KG_CANDIDATES",
             # R327 gate — the open-domain half of the semantic layers, separable
             # so constrained-only can be measured. Engine-level (it changes the
             # Stage-2 grounding block), so it must be keyed like its master.

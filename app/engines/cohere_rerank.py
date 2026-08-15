@@ -68,7 +68,8 @@ from __future__ import annotations
 import logging
 import os
 import threading
-from typing import Any, Sequence
+from collections.abc import Sequence
+from typing import Any
 
 import httpx
 
@@ -77,10 +78,33 @@ logger = logging.getLogger(__name__)
 __all__ = [
     "rerank_enabled",
     "rerank_documents",
+    "rerank_pool",
     "rerank_references",
+    "rerank_query_context",
+    "build_kg_candidate_pool",
     "rerank_stats",
     "reset_rerank_stats",
 ]
+
+#: R347 — hybrid-RAG candidate supplementation: the parse-level rerank may
+#: rank the keyword entities TOGETHER with their 1-hop CROSS_REFERENCES
+#: neighbours from the KG taxonomy (see :func:`build_kg_candidate_pool`), so
+#: a genuinely cross-referenced provision can be promoted ahead of a keyword
+#: hit. DEFAULT OFF — the A/B decides; the R340 permutation-only contract is
+#: the baseline behaviour.
+_RERANK_KG_ENV = "REGENOLD_RERANK_KG_CANDIDATES"
+
+
+def rerank_kg_candidates_enabled() -> bool:
+    """``REGENOLD_RERANK_KG_CANDIDATES`` — **DEFAULT OFF**, fresh read per call.
+
+    Only meaningful when ``REGENOLD_COHERE_RERANK=1``: the KG expansion is
+    applied to the pool the cross-encoder ranks, never to a gate-off parse.
+    """
+    return (
+        os.getenv(_RERANK_KG_ENV, "0").strip().lower()
+        in _TRUTHY
+    )
 
 COHERE_RERANK_URL = "https://api.cohere.com/v2/rerank"
 
@@ -240,31 +264,130 @@ def rerank_documents(
         return None
 
 
-def rerank_references(
+def rerank_query_context(
+    *, intent: str = "", risk_context: str = "", dimension_hint: str = ""
+) -> str:
+    """R347 — deterministic rerank-query enrichment from the parse's own labels.
+
+    A bare question string is a weak discriminator for a cross-encoder: the
+    classifier already KNOWS the question is a ``prohibited_practice`` ask
+    about a ``high``-risk system — telling the reranker the same in domain
+    terms focuses its relevance signal. No LLM call; a few tokens.
+
+    Returns a short ``"; ".join`` (e.g. ``"risk: high; intent: prohibited
+    practice"``) that callers append to the rerank query. Empty string when
+    nothing is available — the query stays exactly the question.
+    """
+    parts: list[str] = []
+    if risk_context:
+        parts.append(f"risk: {str(risk_context).strip().lower()}")
+    if intent:
+        parts.append(
+            f"intent: {str(intent).strip().lower().replace('_', ' ')}"
+        )
+    if dimension_hint:
+        parts.append(
+            f"focus: {str(dimension_hint).strip().lower().replace('_', ' ')}"
+        )
+    return "; ".join(parts)
+
+
+def build_kg_candidate_pool(
+    references: Sequence[str],
+    *,
+    max_extra: int = 8,
+    per_ref: int = 3,
+) -> list[str]:
+    """R347 — ``references`` + deduplicated 1-hop CROSS_REFERENCES neighbours.
+
+    The KG/taxonomy lever: each candidate's own cross-reference adjacency
+    (incoming AND outgoing on the embedded undirected graph; the canonical
+    ``kb_xrefs.cross_refs`` adjacency when the embedded backend is not
+    selected) is appended to the pool, so the cross-encoder can PROMOTE a
+    genuinely cross-referenced provision that the keyword map never saw —
+    instead of only re-ordering a keyword-picked set.
+
+    Appends only, deduplicated, capped at ``max_extra`` (a hub article like
+    Art. 16 would otherwise flood the pool). The caller adopts the result
+    only when the rerank call SUCCEEDED (see :func:`rerank_pool`'s ok bit),
+    so a failure never leaks neighbours into the reference set. Never raises.
+    """
+    base = [r for r in (references or [])]
+    extra: list[str] = []
+    try:
+        # Prefer the embedded graph (undirected — includes refs that POINT AT
+        # our anchors, the "why is this relevant" signal); fall back to the
+        # outgoing-only kb_xrefs adjacency when the neo4j backend is selected.
+        from app.graph.embedded_graph import (  # noqa: PLC0415
+            embedded_backend_selected,
+            get_embedded_graph,
+        )
+
+        neighbors_of: Any = None
+        if embedded_backend_selected():
+            try:
+                g = get_embedded_graph()
+                if g.enabled:
+                    neighbors_of = g.neighbors
+            except Exception:  # noqa: BLE001
+                neighbors_of = None
+        if neighbors_of is None:
+            from functools import partial  # noqa: PLC0415
+
+            from app.data.kb_xrefs import cross_refs  # noqa: PLC0415
+
+            neighbors_of = partial(cross_refs, limit=per_ref)
+
+        for ref in base:
+            try:
+                nbs = neighbors_of(ref)
+            except Exception:  # noqa: BLE001 — one bad ref must not kill the pool
+                continue
+            for nb in nbs:
+                if nb not in base and nb not in extra:
+                    extra.append(nb)
+                    if len(extra) >= max_extra:
+                        return base + extra
+    except Exception:  # noqa: BLE001 — KG expansion must never break parse
+        return base
+    return base + extra
+
+
+def rerank_pool(
     question: str,
     references: Sequence[str],
     *,
+    query_context: str = "",
     text_for: Any = None,
-) -> list[str]:
-    """Reorder ``references`` by cross-encoder relevance. **Never drops.**
+) -> tuple[list[str], bool]:
+    """R347 — the permutation core with an explicit SUCCESS bit.
 
-    :param text_for: callable ``ref -> str | None`` supplying the verbatim text
-        of a provision. Defaults to
-        :func:`app.data.provision_text.get_provision_text`. Reranking on bare
-        article NUMBERS is worthless — the model needs the text.
+    Identical guarantees to :func:`rerank_references` (output is a
+    PERMUTATION of the input, unresolved refs keep relative order, any
+    failure returns the input unchanged), plus ``ok``:
 
-    Guarantees, all asserted by ``tests/test_r329_cohere_rerank.py``:
+    * ``ok=True``  — the cross-encoder answered; the output order is its
+      verdict. ``ok`` is True even when the verdict equals the input order
+      (a successful noop).
+    * ``ok=False`` — gate off, no scorable pair, network/timeout/malformed
+      failure, or the permutation invariant broke. The input stands.
 
-    * the output is a PERMUTATION of the input (same multiset, same length);
-    * a reference whose text cannot be resolved keeps its relative order and is
-      never lost;
-    * any failure returns the input list unchanged.
+    The bit lets a caller that EXPANDED the pool (e.g.
+    :func:`build_kg_candidate_pool`) adopt the expanded result only on real
+    success — a rerank outage must never change the reference set.
+
+    ``query_context`` (see :func:`rerank_query_context`) is appended to the
+    rerank query — the cross-encoder discriminates on domain terms.
+
+    :param text_for: callable ``ref -> str | None`` supplying the verbatim
+        text of a provision. Defaults to
+        :func:`app.data.provision_text.get_provision_text`.
     """
     refs = [r for r in (references or [])]
     if len(refs) < 2:
-        return list(refs)
+        return list(refs), False
     if not rerank_enabled():
-        return list(refs)
+        return list(refs), False
 
     if text_for is None:
         try:
@@ -274,7 +397,7 @@ def rerank_references(
 
             text_for = get_provision_text
         except Exception:  # noqa: BLE001
-            return list(refs)
+            return list(refs), False
 
     # Only rows whose provision text resolves can be scored. Unresolved refs are
     # held aside and re-appended in their ORIGINAL relative order, so nothing is
@@ -291,11 +414,16 @@ def rerank_references(
             docs.append(str(txt).strip()[:4000])
 
     if len(scorable) < 2:
-        return list(refs)
+        return list(refs), False
 
-    ranked = rerank_documents(question, docs)
+    query = str(question).strip()
+    ctx = (query_context or "").strip()
+    if ctx:
+        query = f"{query} — {ctx}"[:600]
+
+    ranked = rerank_documents(query, docs)
     if not ranked:
-        return list(refs)
+        return list(refs), False
 
     seen: set[int] = set()
     ordered: list[str] = []
@@ -317,6 +445,21 @@ def rerank_references(
     if sorted(ordered) != sorted(refs):  # pragma: no cover — invariant guard
         logger.debug("cohere_rerank: permutation invariant violated, keeping input")
         _bump("failed")
-        return list(refs)
+        return list(refs), False
     _bump("reordered" if ordered != list(refs) else "noop")
-    return ordered
+    return ordered, True
+
+
+def rerank_references(
+    question: str,
+    references: Sequence[str],
+    *,
+    text_for: Any = None,
+) -> list[str]:
+    """Reorder ``references`` by cross-encoder relevance. **Never drops.**
+
+    Thin wrapper over :func:`rerank_pool` keeping the historical signature;
+    the guarantees are unchanged (permutation, unresolved refs keep relative
+    order, any failure returns the input unchanged).
+    """
+    return rerank_pool(question, references, text_for=text_for)[0]

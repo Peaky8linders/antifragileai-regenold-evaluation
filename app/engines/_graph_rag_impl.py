@@ -2597,12 +2597,36 @@ def _deterministic_parse(question: str) -> GraphQuery:
     if entities and not _bm25_fallback_used:
         try:
             from app.engines.cohere_rerank import (  # noqa: PLC0415
+                build_kg_candidate_pool,
                 rerank_enabled,
-                rerank_references,
+                rerank_kg_candidates_enabled,
+                rerank_pool,
+                rerank_query_context,
             )
             if rerank_enabled():
-                reranked = rerank_references(question, entities)
-                entities = reranked
+                # R347 — hybrid-RAG pool: rank the keyword entities TOGETHER
+                # with their 1-hop CROSS_REFERENCES neighbours from the KG
+                # taxonomy, and feed the classifier's own labels (intent /
+                # risk tier / dimension) into the rerank QUERY so the
+                # cross-encoder discriminates on domain terms, not just the
+                # bare question. The pool is a SUPERSET of the original
+                # entities — a permutation can reorder but never lose them —
+                # and the rerank ok-bit decides adoption: on any failure the
+                # ORIGINAL entities stand (no neighbour leakage). Gate-off
+                # and kg-off both degenerate to the R340 behaviour exactly.
+                pool = entities
+                if rerank_kg_candidates_enabled():
+                    pool = build_kg_candidate_pool(entities)
+                ctx = rerank_query_context(
+                    intent=intent,
+                    risk_context=risk_context,
+                    dimension_hint=dimension_hint,
+                )
+                reranked, ok = rerank_pool(
+                    question, pool, query_context=ctx
+                )
+                if ok:
+                    entities = reranked
         except Exception as exc:  # noqa: BLE001 — a rerank outage must never break parse
             logger.debug("cohere_rerank: parse-level entity rerank skipped: %s", exc)
 
