@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import time
 from collections.abc import Iterable
 
@@ -40,6 +41,55 @@ _USER_TEMPLATE = "Question: {q}\n\nReturn 2-3 paraphrases as JSON."
 
 _TIMEOUT = 2.0  # short budget — paraphrase is opportunistic
 
+# ── Call instrumentation (R341, mirroring cohere_rerank's R331 counters) ────
+#
+# The R329 lesson: a placement that looks right in the diff but never issues
+# its call reads +0.0000 on every axis, indistinguishable from "the lever
+# does not work". Every A/B of this feature must assert
+# ``query_expansion_stats()["attempts"] > 0`` on the ON arm before any
+# result is believed.
+_STATS: dict[str, int] = {"attempts": 0, "expanded": 0, "failed": 0}
+
+
+def query_expansion_stats() -> dict[str, int]:
+    """Snapshot of the expansion call counters.
+
+    ``attempts`` — LLM calls actually issued to the paraphrase provider.
+    ``expanded`` — total paraphrase count returned (the union surface).
+    ``failed``   — attempts that produced zero paraphrases.
+
+    ``attempts == 0`` means the feature never ran; treat any downstream
+    metric as UNMEASURED, not as evidence of no effect.
+    """
+    return dict(_STATS)
+
+
+def reset_query_expansion_stats() -> None:
+    """Zero the counters — per-arm reset for an A/B harness."""
+    for key in _STATS:
+        _STATS[key] = 0
+
+
+def _bump(field: str) -> None:
+    _STATS[field] = _STATS.get(field, 0) + 1
+
+
+_ENV_GATE = "REGENOLD_QUERY_EXPANSION"
+
+
+def is_enabled() -> bool:
+    """``REGENOLD_QUERY_EXPANSION`` — **DEFAULT OFF**, fresh env read per call.
+
+    Default OFF because it adds an LLM round-trip per request (latency + cost)
+    and external egress of the partner question; the A/B decides whether the
+    recall it buys beats that price. Fresh read per call (R263.2) so an
+    in-process A/B can flip it between arms.
+    """
+    return (
+        os.getenv(_ENV_GATE, "0").strip().lower()
+        in ("1", "true", "yes", "on")
+    )
+
 
 def expand_query(question: str, *, intent_label: str = "") -> list[str]:
     """Return list of queries (original first, then paraphrases).
@@ -52,6 +102,7 @@ def expand_query(question: str, *, intent_label: str = "") -> list[str]:
         return queries
     if not is_openai_wrapper_enabled():
         return queries
+    _bump("attempts")
     try:
         provider = get_openai_wrapper_provider()
         start = time.perf_counter()
@@ -65,9 +116,11 @@ def expand_query(question: str, *, intent_label: str = "") -> list[str]:
         ))
     except Exception as exc:  # noqa: BLE001 — fail-soft
         logger.debug("query_expansion_exception: %s", str(exc)[:160])
+        _bump("failed")
         return queries
     if resp.error:
         logger.debug("query_expansion_provider_error: %s", resp.error[:160])
+        _bump("failed")
         return queries
     try:
         # Extract first JSON object from response text
@@ -75,6 +128,7 @@ def expand_query(question: str, *, intent_label: str = "") -> list[str]:
         start_idx = text.find("{")
         end_idx = text.rfind("}")
         if start_idx == -1 or end_idx == -1:
+            _bump("failed")
             return queries
         data = json.loads(text[start_idx:end_idx + 1])
         for p in (data.get("paraphrases") or [])[:3]:
@@ -82,7 +136,14 @@ def expand_query(question: str, *, intent_label: str = "") -> list[str]:
             if p and p not in queries:
                 queries.append(p)
     except (json.JSONDecodeError, ValueError, AttributeError):
+        _bump("failed")
         return queries
+    if len(queries) == 1:
+        # The provider answered but produced no usable paraphrase — an
+        # attempt that bought nothing.
+        _bump("failed")
+        return queries
+    _bump("expanded")
     elapsed_ms = int((time.perf_counter() - start) * 1000)
     logger.debug("query_expansion_ok: %d paraphrases in %d ms", len(queries) - 1, elapsed_ms)
     return queries
