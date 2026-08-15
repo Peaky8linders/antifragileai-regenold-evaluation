@@ -272,10 +272,30 @@ def paragraph_extract(question: str, article_ref: str) -> str | None:
 # ``Annex IV`` / ``Article 11`` in full publication form.
 _XREF_IN_TEXT_RE = re.compile(r"\b(?:Annex\s+[IVX]{1,5}|Article\s+\d{1,3})\b")
 
-_CROSS_REF_SNIPPET_CHARS = 240
-"""Each surfaced cross-referenced node is clipped to roughly one clause
-— enough to show what the sibling provision is about without bloating
-the generation context."""
+_CROSS_REF_SNIPPET_CHARS = 20000
+"""Per-node ceiling for a surfaced cross-reference, in characters.
+
+R339 — was **240**, and that was the last surviving mid-word truncation on
+the Stage-2 user channel. Measured on the live payload for the recruitment
+scenario, ``Article 40`` (2,780 stored chars) and ``Article 74`` (7,028)
+each arrived as a 240-char fragment ending mid-WORD (``shall be
+understo…``), and ``Article 41`` (3,873) arrived as a 158-char fragment
+with **no marker at all** — a clause-boundary cut that reads as if it were
+the whole provision. The operator's requirement is that Stage-2 receives
+the grounding context with no truncation and no paraphrasing; a 96% silent
+loss under a heading that names the provision is a paraphrase by omission.
+
+The default is set ABOVE the largest node this path can reach — the tree's
+biggest article/annex root is ``art_3`` at 17,079 normalised chars — so
+under the code default **nothing truncates**, which is the point. It stays
+a ceiling rather than being removed, because the block competes for the
+same prompt budget as everything else (CLAUDE.md: "budget the thing you
+just added"), and it is env-tunable for anyone who needs to shrink it:
+``REGENOLD_CROSS_REF_SNIPPET_CHARS``. When it DOES cut, ``_clip_clause``
+cuts on a clean boundary and marks ``[...]``.
+
+Worst-case cost is bounded by ``_CROSS_REF_MAX_ITEMS`` (3): the three
+largest reachable roots total 37,341 chars."""
 
 _CROSS_REF_MAX_ITEMS = 3
 """Cap the number of cross-reference snippets — the Stage-2 context is a
@@ -293,17 +313,66 @@ def _xref_to_slug(xref: str) -> str | None:
     return None
 
 
+def _cross_ref_snippet_budget() -> int:
+    """Per-node cross-reference char ceiling (env-tunable).
+
+    ``REGENOLD_CROSS_REF_SNIPPET_CHARS``. Same shape as its siblings
+    ``_grounding_max_refs`` / ``_grounding_ref_budget`` in
+    ``_graph_rag_impl.py``: clamped, and falling back to the code default on
+    anything unparseable rather than raising into the Stage-2 build.
+
+    The floor is the pre-R339 value (240) so the old behaviour stays
+    reachable for an A/B; the ceiling is well above the largest reachable
+    node. Registered in ``_engine_cache_key`` (``app/routes/regenold.py``) —
+    it changes the Stage-2 context and therefore the cached answer, so
+    without that entry a two-arm in-process sweep of this budget would be
+    served one arm's cached output and measure nothing (R263.2 / R288.1).
+    """
+    try:
+        return max(
+            240,
+            min(60000, int(os.getenv("REGENOLD_CROSS_REF_SNIPPET_CHARS", ""))),
+        )
+    except (TypeError, ValueError):
+        return _CROSS_REF_SNIPPET_CHARS
+
+
 def _clip_clause(text: str, limit: int) -> str:
-    """Clip ``text`` to ~``limit`` chars on a sentence/clause boundary."""
+    """Clip ``text`` to ``limit`` chars on a clean boundary — and SAY SO.
+
+    R339 fixed two distinct silent-loss defects here, both measured on a
+    live Stage-2 payload:
+
+    1. **IT CUT MID-WORD.** With no ``. ``/``; ``/``, `` boundary in the back
+       half of the window the function fell through to ``window.rstrip() +
+       "…"``, which is a raw character cut. Article 74 arrived as ``…shall
+       be understo…``. A word boundary is now always preferred, matching the
+       repo's other two clippers (``kg_context._clip_unit``,
+       ``_graph_rag_impl._clip_grounding``), neither of which cuts mid-word.
+
+    2. **IT CUT WITHOUT SAYING SO.** The clause-boundary branch returned a
+       bare fragment with no marker, so a 158-char clip of Article 41's
+       3,873 chars was indistinguishable from the complete provision. Every
+       cut is now marked ``[...]`` — CLAUDE.md's rule that a truncation must
+       be impossible or LOUD, never silent, and the same marker
+       ``kg_context`` already uses.
+
+    The marker's cost is RESERVED out of ``limit`` rather than appended
+    afterwards, so the result never exceeds the ceiling it is enforcing.
+    """
     t = " ".join((text or "").replace("\xa0", " ").split())
     if len(t) <= limit:
         return t
-    window = t[:limit]
+    mark = " [...]"
+    budget = max(1, limit - len(mark))
+    window = t[:budget]
+    floor = budget // 2
     for sep in (". ", "; ", ", "):
         cut = window.rfind(sep)
-        if cut >= limit // 2:
-            return window[: cut + 1].strip()
-    return window.rstrip() + "…"
+        if cut >= floor:
+            return window[: cut + 1].strip() + mark
+    cut = window.rfind(" ")
+    return ((window[:cut] if cut >= floor else window).strip()) + mark
 
 
 def cross_reference_context(
@@ -362,7 +431,7 @@ def cross_reference_context(
             seen.add(xslug)
             label = target.article_number or xref
             out.append(
-                f"{label}: {_clip_clause(target.text, _CROSS_REF_SNIPPET_CHARS)}"
+                f"{label}: {_clip_clause(target.text, _cross_ref_snippet_budget())}"
             )
             if len(out) >= max_items:
                 return out

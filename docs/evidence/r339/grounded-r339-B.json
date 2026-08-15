@@ -1,0 +1,997 @@
+{
+  "label": "r339-B",
+  "source_sidecar": "evals\\bench\\results\\r339-B.ckpt.jsonl",
+  "judge_model": "claude-sonnet-5",
+  "judge_model_served": [],
+  "judge_model_comparable": true,
+  "provider": "wrapper",
+  "elapsed_s": 504.0,
+  "generated_at": "2026-08-15T13:48:35.733219Z",
+  "axes": [
+    "answer_correctness",
+    "reference_correctness",
+    "citation_faithfulness"
+  ],
+  "rows": [
+    {
+      "id": "q01",
+      "category": null,
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "pass",
+          "correct": 12,
+          "incorrect": 0,
+          "unsupported": 3,
+          "missing": 0,
+          "failure_mode": "unsupported minimal-risk tier claim and unverified Article 51-56 range",
+          "verdict_unsupported_strict": "fail",
+          "verdict_hard_only": "pass",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "fail",
+          "n_predicted": 5,
+          "correct": 5,
+          "wrong": 0,
+          "missing": 1,
+          "precision": 1.0,
+          "recall": 0.8333333333333334,
+          "wrong_refs": [],
+          "missing_refs": [
+            "Article 51"
+          ],
+          "failure_mode": "omitted systemic-risk GPAI category (Article 51)",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 5,
+          "mismatched": 0,
+          "failure_mode": "none"
+        }
+      }
+    },
+    {
+      "id": "q02",
+      "category": null,
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "fail",
+          "correct": 11,
+          "incorrect": 1,
+          "unsupported": 0,
+          "missing": 1,
+          "failure_mode": "incomplete/inaccurate statement of disjunctive conditions (social scoring 'unrelated contexts' prong omitted; RBI terrorist-threat exception misstates omitting life/physical-safety threat prong)",
+          "verdict_unsupported_strict": "fail",
+          "verdict_hard_only": "fail",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "fail",
+          "n_predicted": 3,
+          "correct": 1,
+          "wrong": 2,
+          "missing": 0,
+          "precision": 0.33,
+          "recall": 1.0,
+          "wrong_refs": [
+            "Article 5.1.h",
+            "Annex II"
+          ],
+          "missing_refs": [],
+          "failure_mode": "over-citation of subordinate/definitional provisions beyond minimal governing article",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 3,
+          "mismatched": 0,
+          "failure_mode": "none"
+        }
+      }
+    },
+    {
+      "id": "q03",
+      "category": null,
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "pass",
+          "correct": 8,
+          "incorrect": 0,
+          "unsupported": 0,
+          "missing": 0,
+          "failure_mode": "none",
+          "verdict_unsupported_strict": "pass",
+          "verdict_hard_only": "pass",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "pass",
+          "n_predicted": 3,
+          "correct": 3,
+          "wrong": 0,
+          "missing": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "wrong_refs": [],
+          "missing_refs": [],
+          "failure_mode": "none",
+          "_attempts": 2,
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "fail",
+          "faithful": 5,
+          "mismatched": 1,
+          "failure_mode": "Article 6(3) description improperly includes the pre-deployment documentation/registration duty, which is actually Article 6(4) content, not part of paragraph 3's derogation text"
+        }
+      }
+    },
+    {
+      "id": "q04",
+      "category": null,
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "pass",
+          "correct": 8,
+          "incorrect": 0,
+          "unsupported": 0,
+          "missing": 0,
+          "failure_mode": "none",
+          "verdict_unsupported_strict": "pass",
+          "verdict_hard_only": "pass",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "pass",
+          "n_predicted": 3,
+          "correct": 3,
+          "wrong": 0,
+          "missing": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "wrong_refs": [],
+          "missing_refs": [],
+          "failure_mode": "none",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 3,
+          "mismatched": 0,
+          "failure_mode": "none"
+        }
+      }
+    },
+    {
+      "id": "q05",
+      "category": null,
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "pass",
+          "correct": 6,
+          "incorrect": 0,
+          "unsupported": 0,
+          "missing": 0,
+          "failure_mode": "none",
+          "verdict_unsupported_strict": "pass",
+          "verdict_hard_only": "pass",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "pass",
+          "n_predicted": 1,
+          "correct": 1,
+          "wrong": 0,
+          "missing": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "wrong_refs": [],
+          "missing_refs": [],
+          "failure_mode": "none",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 6,
+          "mismatched": 0,
+          "failure_mode": "none"
+        }
+      }
+    },
+    {
+      "id": "q06",
+      "category": null,
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "pass",
+          "correct": 4,
+          "incorrect": 0,
+          "unsupported": 2,
+          "missing": 0,
+          "failure_mode": "cites examples and voluntary-codes claim not found in supplied verbatim text",
+          "verdict_unsupported_strict": "fail",
+          "verdict_hard_only": "pass",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "fail",
+          "n_predicted": 5,
+          "correct": 3,
+          "wrong": 2,
+          "missing": 1,
+          "precision": 0.6,
+          "recall": 0.75,
+          "wrong_refs": [
+            "Annex I",
+            "Annex III"
+          ],
+          "missing_refs": [
+            "Article 95"
+          ],
+          "failure_mode": "over-citation of high-risk annexes plus missing minimal-risk voluntary-code provision",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 3,
+          "mismatched": 0,
+          "failure_mode": "none"
+        }
+      }
+    },
+    {
+      "id": "q07",
+      "category": null,
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "pass",
+          "correct": 3,
+          "incorrect": 0,
+          "unsupported": 3,
+          "missing": 0,
+          "failure_mode": "cites seven principles and Article 4 AI literacy content not present in supplied verbatim text",
+          "verdict_unsupported_strict": "fail",
+          "verdict_hard_only": "pass",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "fail",
+          "n_predicted": 2,
+          "correct": 1,
+          "wrong": 1,
+          "missing": 0,
+          "precision": 0.5,
+          "recall": 1.0,
+          "wrong_refs": [
+            "Article 4"
+          ],
+          "missing_refs": [],
+          "failure_mode": "over-citation of unrelated AI literacy obligation as a 'guiding principle'",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 2,
+          "mismatched": 0,
+          "failure_mode": "none"
+        }
+      }
+    },
+    {
+      "id": "q08",
+      "category": null,
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "pass",
+          "correct": 4,
+          "incorrect": 0,
+          "unsupported": 0,
+          "missing": 0,
+          "failure_mode": "none",
+          "verdict_unsupported_strict": "pass",
+          "verdict_hard_only": "pass",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "pass",
+          "n_predicted": 1,
+          "correct": 1,
+          "wrong": 0,
+          "missing": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "wrong_refs": [],
+          "missing_refs": [],
+          "failure_mode": "none",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 1,
+          "mismatched": 0,
+          "failure_mode": "none"
+        }
+      }
+    },
+    {
+      "id": "q09",
+      "category": null,
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "pass",
+          "correct": 8,
+          "incorrect": 0,
+          "unsupported": 0,
+          "missing": 0,
+          "failure_mode": "none",
+          "verdict_unsupported_strict": "pass",
+          "verdict_hard_only": "pass",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "fail",
+          "n_predicted": 3,
+          "correct": 1,
+          "wrong": 2,
+          "missing": 0,
+          "precision": 0.333,
+          "recall": 1.0,
+          "wrong_refs": [
+            "Article 50",
+            "Article 5"
+          ],
+          "missing_refs": [],
+          "failure_mode": "over-citation of non-high-risk provisions (prohibited practices & general transparency obligations, not high-risk-specific)",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 3,
+          "mismatched": 0,
+          "failure_mode": "none"
+        }
+      }
+    },
+    {
+      "id": "q10",
+      "category": null,
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "pass",
+          "correct": 3,
+          "incorrect": 0,
+          "unsupported": 2,
+          "missing": 0,
+          "failure_mode": "cites specific Article 16/26 obligation content not present in supplied verbatim text",
+          "verdict_unsupported_strict": "fail",
+          "verdict_hard_only": "pass",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "fail",
+          "n_predicted": 4,
+          "correct": 2,
+          "wrong": 2,
+          "missing": 0,
+          "precision": 0.5,
+          "recall": 1.0,
+          "wrong_refs": [
+            "Article 16",
+            "Article 26"
+          ],
+          "missing_refs": [],
+          "failure_mode": "over-citation of detailed obligations lists not needed for definitional distinction",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 5,
+          "mismatched": 0,
+          "failure_mode": "none"
+        }
+      }
+    },
+    {
+      "id": "q11",
+      "category": null,
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "pass",
+          "correct": 3,
+          "incorrect": 0,
+          "unsupported": 0,
+          "missing": 0,
+          "failure_mode": "none",
+          "verdict_unsupported_strict": "pass",
+          "verdict_hard_only": "pass",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "pass",
+          "n_predicted": 2,
+          "correct": 2,
+          "wrong": 0,
+          "missing": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "wrong_refs": [],
+          "missing_refs": [],
+          "failure_mode": "none",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 3,
+          "mismatched": 0,
+          "failure_mode": "none"
+        }
+      }
+    },
+    {
+      "id": "q12",
+      "category": null,
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "pass",
+          "correct": 3,
+          "incorrect": 0,
+          "unsupported": 0,
+          "missing": 0,
+          "failure_mode": "none",
+          "verdict_unsupported_strict": "pass",
+          "verdict_hard_only": "pass",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "fail",
+          "n_predicted": 5,
+          "correct": 3,
+          "wrong": 2,
+          "missing": 0,
+          "precision": 0.6,
+          "recall": 1.0,
+          "wrong_refs": [
+            "Article 5",
+            "Article 50"
+          ],
+          "missing_refs": [],
+          "failure_mode": "redundant parent-article citations duplicating already-cited pinpoint subprovisions (5.1.f, 50.3)",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 3,
+          "mismatched": 0,
+          "failure_mode": "none"
+        }
+      }
+    },
+    {
+      "id": "q13",
+      "category": null,
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "pass",
+          "correct": 6,
+          "incorrect": 0,
+          "unsupported": 1,
+          "missing": 0,
+          "failure_mode": "cites specific Annex III categories (biometrics, employment, essential services, emergency triage) not verifiable since Annex III text was not supplied",
+          "verdict_unsupported_strict": "fail",
+          "verdict_hard_only": "pass",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "fail",
+          "n_predicted": 5,
+          "correct": 4,
+          "wrong": 1,
+          "missing": 1,
+          "precision": 0.8,
+          "recall": 0.8,
+          "wrong_refs": [
+            "Article 6.1"
+          ],
+          "missing_refs": [
+            "Article 6(2)"
+          ],
+          "failure_mode": "cited wrong paragraph of Article 6 (6.1 product/Annex I safety-component pathway) instead of Article 6(2), which is the actual provision making Annex III-listed systems high-risk",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 5,
+          "mismatched": 0,
+          "failure_mode": "none"
+        }
+      }
+    },
+    {
+      "id": "q14",
+      "category": null,
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "pass",
+          "correct": 5,
+          "incorrect": 0,
+          "unsupported": 3,
+          "missing": 0,
+          "failure_mode": "answer added MDR Rule 11 classification and CE-marking claims not found in the supplied verbatim text",
+          "verdict_unsupported_strict": "fail",
+          "verdict_hard_only": "pass",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "fail",
+          "n_predicted": 4,
+          "correct": 3,
+          "wrong": 1,
+          "missing": 0,
+          "precision": 0.75,
+          "recall": 1.0,
+          "wrong_refs": [
+            "Article 43.4"
+          ],
+          "missing_refs": [],
+          "failure_mode": "over-cited substantial-modification provision not responsive to the question asked",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 4,
+          "mismatched": 0,
+          "failure_mode": "none"
+        }
+      }
+    },
+    {
+      "id": "q15",
+      "category": null,
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "fail",
+          "correct": 5,
+          "incorrect": 1,
+          "unsupported": 0,
+          "missing": 0,
+          "failure_mode": "Annex III(5)(a) trigger stated without the 'by or on behalf of public authorities' qualifier required by the verbatim text",
+          "verdict_unsupported_strict": "fail",
+          "verdict_hard_only": "fail",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "fail",
+          "n_predicted": 3,
+          "correct": 2,
+          "wrong": 1,
+          "missing": 0,
+          "precision": 0.667,
+          "recall": 1.0,
+          "wrong_refs": [
+            "Article 5.1.g"
+          ],
+          "missing_refs": [],
+          "failure_mode": "over-cited prohibition without established protected-attribute inference",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 5,
+          "mismatched": 0,
+          "failure_mode": "none",
+          "_attempts": 2
+        }
+      }
+    },
+    {
+      "id": "q16",
+      "category": null,
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "pass",
+          "correct": 11,
+          "incorrect": 0,
+          "unsupported": 2,
+          "missing": 0,
+          "failure_mode": "introduces unsupported Article 50 transparency obligations not in the supplied verbatim text",
+          "verdict_unsupported_strict": "fail",
+          "verdict_hard_only": "pass",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "fail",
+          "n_predicted": 3,
+          "correct": 1,
+          "wrong": 2,
+          "missing": 2,
+          "precision": 0.33,
+          "recall": 0.33,
+          "wrong_refs": [
+            "Article 50.1",
+            "Article 50.2"
+          ],
+          "missing_refs": [
+            "Article 51",
+            "Article 55"
+          ],
+          "failure_mode": "over-cited deployer-facing transparency articles inapplicable to GPAI model provider; missed systemic-risk classification/obligations",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 6,
+          "mismatched": 0,
+          "failure_mode": "none"
+        }
+      }
+    },
+    {
+      "id": "q17",
+      "category": null,
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "pass",
+          "correct": 6,
+          "incorrect": 0,
+          "unsupported": 0,
+          "missing": 0,
+          "failure_mode": "none",
+          "verdict_unsupported_strict": "pass",
+          "verdict_hard_only": "pass",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "pass",
+          "n_predicted": 1,
+          "correct": 1,
+          "wrong": 0,
+          "missing": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "wrong_refs": [],
+          "missing_refs": [],
+          "failure_mode": "none",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 2,
+          "mismatched": 0,
+          "failure_mode": "none"
+        }
+      }
+    },
+    {
+      "id": "q18",
+      "category": null,
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "pass",
+          "correct": 6,
+          "incorrect": 0,
+          "unsupported": 4,
+          "missing": 0,
+          "failure_mode": "cites Article 6/Annex III(5)(a)/(d) risk-classification specifics not present in supplied verbatim text",
+          "verdict_unsupported_strict": "fail",
+          "verdict_hard_only": "pass",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "fail",
+          "n_predicted": 5,
+          "correct": 2,
+          "wrong": 3,
+          "missing": 0,
+          "precision": 0.4,
+          "recall": 1.0,
+          "wrong_refs": [
+            "Article 6",
+            "Annex III.5.d",
+            "Annex III.5.a"
+          ],
+          "missing_refs": [],
+          "failure_mode": "over-citation of inapplicable high-risk classification/Annex III provisions for a general-query chatbot",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 5,
+          "mismatched": 0,
+          "failure_mode": "none"
+        }
+      }
+    },
+    {
+      "id": "q19",
+      "category": null,
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "pass",
+          "correct": 5,
+          "incorrect": 0,
+          "unsupported": 3,
+          "missing": 0,
+          "failure_mode": "unsupported risk-tier labels (unacceptable-risk / high-risk) and public-private deployer claim not found in verbatim text",
+          "verdict_unsupported_strict": "fail",
+          "verdict_hard_only": "pass",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "pass",
+          "n_predicted": 1,
+          "correct": 1,
+          "wrong": 0,
+          "missing": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "wrong_refs": [],
+          "missing_refs": [],
+          "failure_mode": "none",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 1,
+          "mismatched": 0,
+          "failure_mode": "none"
+        }
+      }
+    },
+    {
+      "id": "q20",
+      "category": null,
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "pass",
+          "correct": 9,
+          "incorrect": 0,
+          "unsupported": 4,
+          "missing": 0,
+          "failure_mode": "cites Articles 43 and 73 and MDR risk-class details not present in supplied verbatim text",
+          "verdict_unsupported_strict": "fail",
+          "verdict_hard_only": "pass",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "fail",
+          "n_predicted": 5,
+          "correct": 1,
+          "wrong": 4,
+          "missing": 1,
+          "precision": 0.2,
+          "recall": 0.5,
+          "wrong_refs": [
+            "Article 6.1",
+            "Article 14",
+            "Article 72",
+            "Article 73"
+          ],
+          "missing_refs": [
+            "Annex I"
+          ],
+          "failure_mode": "redundant sub-citation plus over-citation of downstream post-classification obligations (oversight/monitoring/incident-reporting) not governing the classification test itself, while omitting Annex I needed to confirm the Union harmonisation legislation pathway",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 4,
+          "mismatched": 0,
+          "failure_mode": "none"
+        }
+      }
+    }
+  ],
+  "aggregate": {
+    "answer_correctness": {
+      "n": 20,
+      "pass": 18,
+      "fail": 2,
+      "error": 0,
+      "pass_rate": 0.9,
+      "pass_rate_over_non_error": 0.9,
+      "top_failure_modes": [
+        [
+          "incomplete/inaccurate statement of disjunctive conditions (social scoring 'unrel",
+          1
+        ],
+        [
+          "Annex III(5)(a) trigger stated without the 'by or on behalf of public authoritie",
+          1
+        ]
+      ],
+      "mean_factual_score": 0.8246
+    },
+    "reference_correctness": {
+      "n": 20,
+      "pass": 7,
+      "fail": 13,
+      "error": 0,
+      "pass_rate": 0.35,
+      "pass_rate_over_non_error": 0.35,
+      "top_failure_modes": [
+        [
+          "omitted systemic-risk GPAI category (Article 51)",
+          1
+        ],
+        [
+          "over-citation of subordinate/definitional provisions beyond minimal governing ar",
+          1
+        ],
+        [
+          "over-citation of high-risk annexes plus missing minimal-risk voluntary-code prov",
+          1
+        ],
+        [
+          "over-citation of unrelated AI literacy obligation as a 'guiding principle'",
+          1
+        ],
+        [
+          "over-citation of non-high-risk provisions (prohibited practices & general transp",
+          1
+        ],
+        [
+          "over-citation of detailed obligations lists not needed for definitional distinct",
+          1
+        ],
+        [
+          "redundant parent-article citations duplicating already-cited pinpoint subprovisi",
+          1
+        ],
+        [
+          "cited wrong paragraph of Article 6 (6.1 product/Annex I safety-component pathway",
+          1
+        ]
+      ],
+      "mean_precision": 0.7005,
+      "mean_recall": 0.9107,
+      "recall_n": 20,
+      "mean_f1": 0.7919,
+      "top_wrong_refs": [
+        [
+          "Article 50",
+          2
+        ],
+        [
+          "Article 5",
+          2
+        ],
+        [
+          "Article 6.1",
+          2
+        ],
+        [
+          "Article 5.1.h",
+          1
+        ],
+        [
+          "Annex II",
+          1
+        ],
+        [
+          "Annex I",
+          1
+        ],
+        [
+          "Annex III",
+          1
+        ],
+        [
+          "Article 4",
+          1
+        ],
+        [
+          "Article 16",
+          1
+        ],
+        [
+          "Article 26",
+          1
+        ],
+        [
+          "Article 43.4",
+          1
+        ],
+        [
+          "Article 5.1.g",
+          1
+        ],
+        [
+          "Article 50.1",
+          1
+        ],
+        [
+          "Article 50.2",
+          1
+        ],
+        [
+          "Article 6",
+          1
+        ]
+      ],
+      "top_missing_refs": [
+        [
+          "Article 51",
+          2
+        ],
+        [
+          "Article 95",
+          1
+        ],
+        [
+          "Article 6(2)",
+          1
+        ],
+        [
+          "Article 55",
+          1
+        ],
+        [
+          "Annex I",
+          1
+        ]
+      ]
+    },
+    "citation_faithfulness": {
+      "n": 20,
+      "pass": 19,
+      "fail": 1,
+      "error": 0,
+      "pass_rate": 0.95,
+      "pass_rate_over_non_error": 0.95,
+      "top_failure_modes": [
+        [
+          "Article 6(3) description improperly includes the pre-deployment documentation/re",
+          1
+        ]
+      ]
+    }
+  },
+  "gold_coverage": 1.0,
+  "gold_rows": 20,
+  "input_rows": 20,
+  "empty_answer_rows": 0,
+  "excluded_error_rows": 0,
+  "denominator_policy": "all input rows; empty answers fail; judge errors remain errors",
+  "recall_is_text_grounded": true
+}

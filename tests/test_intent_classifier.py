@@ -9,7 +9,6 @@ circuit-breaker paths.
 
 from __future__ import annotations
 
-import os
 from unittest.mock import patch
 
 import pytest
@@ -19,11 +18,47 @@ from app.llm.openai_wrapper_provider import OpenAIWrapperResponse
 
 
 @pytest.fixture(autouse=True)
-def _reset() -> None:
-    """Wipe cache + breaker between tests."""
+def _reset(monkeypatch) -> None:
+    """Wipe cache + breaker between tests, and pin the Stage-0 gate CLOSED.
+
+    R127 made :func:`is_openai_wrapper_enabled` return False whenever
+    ``P2P_GRAPH_RAG_PROVIDER == 'cli'``, so the deterministic pipeline
+    pays no dead-port connect timeout. That gate sits ABOVE everything
+    these tests mock: ``is_intent_enabled()`` consults it, and
+    ``classify_intent`` returns None at its guard before ever reaching
+    the patched ``get_openai_wrapper_provider``.
+
+    Pinning ``cli`` here is the SAFE default: it guarantees that no test
+    in this module can open a socket no matter what the ambient
+    environment says. Tests that need to exercise the *enabled* path
+    opt in explicitly via the ``wrapper_gate_open`` fixture below, and
+    every one of those also patches its provider factory — so the
+    module docstring's "wrapper mocked, no network" contract holds in
+    both directions.
+    """
+    monkeypatch.setenv("P2P_GRAPH_RAG_PROVIDER", "cli")
     ic._reset_for_tests()
     yield
     ic._reset_for_tests()
+
+
+@pytest.fixture
+def wrapper_gate_open(monkeypatch, _reset) -> None:
+    """Open the R127 provider pre-gate for tests that mock the provider.
+
+    Depends on ``_reset`` by name so the ordering against that autouse
+    fixture's ``cli`` pin is deterministic rather than incidental: this
+    one must run second and win.
+
+    ``openai_wrapper`` is the real production value (an unset/``auto``
+    ``P2P_GRAPH_RAG_PROVIDER`` also resolves here), so the tests below
+    exercise the genuine :func:`is_openai_wrapper_enabled` rather than
+    a stubbed-out gate. ``OPENAI_API_BASE`` is deliberately left alone —
+    the deterministic gate command points it at a dead port, and every
+    consumer of this fixture patches ``ic.get_openai_wrapper_provider``,
+    so nothing can dial out.
+    """
+    monkeypatch.setenv("P2P_GRAPH_RAG_PROVIDER", "openai_wrapper")
 
 
 # ── Disabled paths ───────────────────────────────────────────────────────────
@@ -43,7 +78,7 @@ def test_classifier_returns_none_on_empty_question() -> None:
     assert ic.classify_intent("   ") is None
 
 
-def test_classifier_returns_none_on_wrapper_error(monkeypatch) -> None:
+def test_classifier_returns_none_on_wrapper_error(monkeypatch, wrapper_gate_open) -> None:
     """Wrapper error → classifier returns None (engine falls through)."""
     monkeypatch.setenv("OPENAI_API_BASE", "http://127.0.0.1:8000/v1")
     monkeypatch.setenv("OPENAI_API_KEY", "test")
@@ -60,7 +95,7 @@ def test_classifier_returns_none_on_wrapper_error(monkeypatch) -> None:
         assert ic.classify_intent("What's the max penalty?") is None
 
 
-def test_classifier_returns_none_on_not_logged_in(monkeypatch) -> None:
+def test_classifier_returns_none_on_not_logged_in(monkeypatch, wrapper_gate_open) -> None:
     """Wrapper sentinel ``Not logged in`` already maps to ``error`` in
     the provider — classifier path treats it as a failure.
     """
@@ -81,7 +116,7 @@ def test_classifier_returns_none_on_not_logged_in(monkeypatch) -> None:
 # ── Happy path ───────────────────────────────────────────────────────────────
 
 
-def test_classifier_parses_valid_json_response(monkeypatch) -> None:
+def test_classifier_parses_valid_json_response(monkeypatch, wrapper_gate_open) -> None:
     monkeypatch.setenv("OPENAI_API_BASE", "http://127.0.0.1:8000/v1")
 
     class FakeProvider:
@@ -106,7 +141,7 @@ def test_classifier_parses_valid_json_response(monkeypatch) -> None:
     assert result.elapsed_ms >= 0  # mock provider may return in 0ms
 
 
-def test_classifier_handles_prose_preamble(monkeypatch) -> None:
+def test_classifier_handles_prose_preamble(monkeypatch, wrapper_gate_open) -> None:
     """Haiku occasionally prefixes the JSON with ``Here is the JSON:``
     — the parser strips it.
     """
@@ -133,7 +168,7 @@ def test_classifier_handles_prose_preamble(monkeypatch) -> None:
     assert result.primary_anchor == "Art. 27"
 
 
-def test_classifier_injects_default_anchor_when_missing(monkeypatch) -> None:
+def test_classifier_injects_default_anchor_when_missing(monkeypatch, wrapper_gate_open) -> None:
     """Model returns intent but no primary_anchor → taxonomy default fills in."""
     monkeypatch.setenv("OPENAI_API_BASE", "http://127.0.0.1:8000/v1")
 
@@ -155,7 +190,7 @@ def test_classifier_injects_default_anchor_when_missing(monkeypatch) -> None:
 # ── Error / malformed paths ──────────────────────────────────────────────────
 
 
-def test_classifier_rejects_unknown_intent_label(monkeypatch) -> None:
+def test_classifier_rejects_unknown_intent_label(monkeypatch, wrapper_gate_open) -> None:
     monkeypatch.setenv("OPENAI_API_BASE", "http://127.0.0.1:8000/v1")
 
     class FakeProvider:
@@ -169,7 +204,7 @@ def test_classifier_rejects_unknown_intent_label(monkeypatch) -> None:
         assert ic.classify_intent("Test") is None
 
 
-def test_classifier_rejects_malformed_anchor(monkeypatch) -> None:
+def test_classifier_rejects_malformed_anchor(monkeypatch, wrapper_gate_open) -> None:
     """``primary_anchor`` must match the strict shape regex; otherwise
     it falls back to the taxonomy default (or empty)."""
     monkeypatch.setenv("OPENAI_API_BASE", "http://127.0.0.1:8000/v1")
@@ -189,7 +224,7 @@ def test_classifier_rejects_malformed_anchor(monkeypatch) -> None:
     assert result.primary_anchor == "Art. 27"
 
 
-def test_classifier_handles_unparseable_response(monkeypatch) -> None:
+def test_classifier_handles_unparseable_response(monkeypatch, wrapper_gate_open) -> None:
     monkeypatch.setenv("OPENAI_API_BASE", "http://127.0.0.1:8000/v1")
 
     class FakeProvider:
@@ -206,7 +241,7 @@ def test_classifier_handles_unparseable_response(monkeypatch) -> None:
 # ── Cache ────────────────────────────────────────────────────────────────────
 
 
-def test_classifier_caches_repeated_questions(monkeypatch) -> None:
+def test_classifier_caches_repeated_questions(monkeypatch, wrapper_gate_open) -> None:
     """A repeated question hits the cache; the provider is called once."""
     monkeypatch.setenv("OPENAI_API_BASE", "http://127.0.0.1:8000/v1")
 
@@ -235,7 +270,7 @@ def test_classifier_caches_repeated_questions(monkeypatch) -> None:
 # ── Circuit breaker ──────────────────────────────────────────────────────────
 
 
-def test_breaker_opens_after_threshold_failures(monkeypatch) -> None:
+def test_breaker_opens_after_threshold_failures(monkeypatch, wrapper_gate_open) -> None:
     """N consecutive failures → ``is_intent_enabled()`` returns False
     even though the wrapper env is set — protects latency budget.
     """
@@ -259,7 +294,7 @@ def test_breaker_opens_after_threshold_failures(monkeypatch) -> None:
     assert ic.classify_intent("anything else") is None
 
 
-def test_breaker_resets_on_success(monkeypatch) -> None:
+def test_breaker_resets_on_success(monkeypatch, wrapper_gate_open) -> None:
     monkeypatch.setenv("OPENAI_API_BASE", "http://127.0.0.1:8000/v1")
 
     responses = [
@@ -317,7 +352,7 @@ class TestR66DPrimaryAnchorMap:
                 f"intent={label!r} primary_anchor={anchor!r} not in ARTICLE_EXISTENCE"
             )
 
-    def test_risk_classification_default_injection(self, monkeypatch) -> None:
+    def test_risk_classification_default_injection(self, monkeypatch, wrapper_gate_open) -> None:
         """Model returns ``risk_classification`` with empty primary →
         taxonomy default ``Art. 6`` fills in.
         """
@@ -339,7 +374,7 @@ class TestR66DPrimaryAnchorMap:
         assert result.intent == "risk_classification"
         assert result.primary_anchor == "Art. 6"
 
-    def test_compliance_checklist_default_injection(self, monkeypatch) -> None:
+    def test_compliance_checklist_default_injection(self, monkeypatch, wrapper_gate_open) -> None:
         monkeypatch.setenv("OPENAI_API_BASE", "http://127.0.0.1:8000/v1")
 
         class FakeProvider:
@@ -357,7 +392,7 @@ class TestR66DPrimaryAnchorMap:
         assert result is not None
         assert result.primary_anchor == "Art. 9"
 
-    def test_comparative_default_injection(self, monkeypatch) -> None:
+    def test_comparative_default_injection(self, monkeypatch, wrapper_gate_open) -> None:
         monkeypatch.setenv("OPENAI_API_BASE", "http://127.0.0.1:8000/v1")
 
         class FakeProvider:
@@ -375,7 +410,7 @@ class TestR66DPrimaryAnchorMap:
         assert result is not None
         assert result.primary_anchor == "Art. 2"
 
-    def test_prohibition_path_keeps_explicit_anchor(self, monkeypatch) -> None:
+    def test_prohibition_path_keeps_explicit_anchor(self, monkeypatch, wrapper_gate_open) -> None:
         """The system prompt now nudges Sonnet/Haiku/Llama toward
         ``primary_anchor=Art. 5`` when the question implies prohibition.
         If the model honours this, the explicit anchor wins over the

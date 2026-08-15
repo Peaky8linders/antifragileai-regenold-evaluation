@@ -33,6 +33,44 @@ from app.models import GraphRAGRequest
 
 
 @pytest.fixture(autouse=True)
+def _stage2_provider_reachable(monkeypatch: pytest.MonkeyPatch) -> None:
+    """R339 — pin the provider ABOVE the mocked seam these tests patch.
+
+    Every Stage-2 test in this module mocks
+    ``app.engines.graph_rag._openai_wrapper_complete_for_graph_rag`` and
+    patches ``is_openai_wrapper_enabled`` -> True, then asserts the mock
+    ran. But R56's ``_stage2_provider_enabled()``
+    (``app/engines/_graph_rag_impl.py``) reads ``P2P_GRAPH_RAG_PROVIDER``
+    **first** and returns False on the literal ``cli`` before
+    ``is_openai_wrapper_enabled()`` is ever consulted; R127 made
+    ``is_openai_wrapper_enabled()`` itself cli-sensitive for the same
+    reason. The documented deterministic gate exports
+    ``P2P_GRAPH_RAG_PROVIDER=cli``, so under that gate Stage-2 was
+    disabled one layer ABOVE the seam and the mock was called zero times.
+
+    ``tests/conftest.py`` deliberately does not force the variable either
+    way (see its NOTE), so the pin belongs here, with the tests that need
+    the wrapper branch reachable. ``openai_wrapper`` selects exactly the
+    branch that unset/``auto`` resolves to in production
+    (``app/llm/__init__.py``), so this restores the intended routing
+    rather than inventing a new one.
+
+    No network risk: ``conftest`` hard-pins ``OPENAI_API_BASE`` to the
+    dead port ``http://127.0.0.1:1/v1``, and every provider call site in
+    this module is a ``MagicMock``.
+
+    Bonus, and the reason this is module-wide rather than per-test: the
+    NEGATIVE rows (``test_stage2_skipped_when_wrapper_disabled``,
+    ``test_returns_kg_answer_when_wrapper_disabled``,
+    ``test_stage2_call_failed_unset_when_wrapper_disabled``) were passing
+    VACUOUSLY under ``=cli`` — they assert "no call", which the env
+    short-circuit satisfied without ever reaching the gate under test.
+    With the pin they actually exercise ``is_openai_wrapper_enabled``.
+    """
+    monkeypatch.setenv("P2P_GRAPH_RAG_PROVIDER", "openai_wrapper")
+
+
+@pytest.fixture(autouse=True)
 def _disable_r87e_stage2_gate(monkeypatch):
     """R87-E confidence-gated Stage-2 skip uses ``_compute_confidence``
     which returns 0.3 for ``nodes_traversed=0`` mock contexts. These

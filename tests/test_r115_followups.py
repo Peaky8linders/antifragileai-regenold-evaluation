@@ -80,7 +80,37 @@ def _wire(question: str):
 
 
 class TestR115SubpointBudgetRescue:
-    def test_q11_hardware_pin_cites_survive_qa_budget(self):
+    def test_q11_hardware_pin_cites_survive_qa_budget(self, monkeypatch):
+        """R115 budget rescue — the leaf pin-cites survive the QA 3-ref cap.
+
+        ⚠ SUPERSEDED ON THE DEFAULT WIRE BY R287 (``d97c374`` / ``ae96aac``,
+        2026-07-24). This assertion is the PRE-R287 wire and it is kept here,
+        with the R287 pass explicitly disabled, because it is the only thing
+        that still guards the R115 machinery it was written for.
+
+        R287 added ``_collapse_multi_leaf_clusters``
+        (``app/routes/regenold.py:3182``), applied at :9832 to CURATED
+        authoritative intercepts under ``REGENOLD_INTERCEPT_LEAF_COLLAPSE``
+        (default ON). A head cited alongside 2+ of its OWN leaves keeps the
+        head and drops the leaves. The R287 docstring names THIS row verbatim
+        as a motivating case ("``Annex IV`` + ``Annex IV.2`` + ``Annex IV.1.e``
+        + ``Annex IV.2.c`` (rg_001)"), so the change is deliberate, not drift.
+
+        The R115 machinery underneath is fully intact — verified by execution:
+        ``upgrade_references(q, ['Article 11','Annex IV'])`` still returns
+        ``['Article 11','Annex IV','Annex IV.2','Annex IV.1.e','Annex IV.2.c']``
+        and the leaves still survive the QA budget into the candidate list.
+        Only the R287 post-pass removes them. Disabling that pass therefore
+        tests R115 and nothing else.
+
+        The R287 DEFAULT wire is pinned separately, and deliberately, by
+        ``test_r287_default_collapses_rg001_to_head`` below — so neither
+        contract can regress unnoticed.
+
+        Do NOT "fix" this by deleting the flag and relaxing the assertion:
+        that would silently retire the R115 rescue with no coverage at all.
+        """
+        monkeypatch.setenv("REGENOLD_INTERCEPT_LEAF_COLLAPSE", "0")
         body = _wire(
             "Does the technical documentation of a high-risk AI system "
             "require to provide specifications regarding the required "
@@ -89,6 +119,43 @@ class TestR115SubpointBudgetRescue:
         refs = body["references"]
         assert "Annex IV.1.e" in refs, refs
         assert "Annex IV.2.c" in refs, refs
+
+    def test_r287_default_collapses_rg001_to_head(self, monkeypatch):
+        """R287 default contract — the shipped wire for rg_001 is head-only.
+
+        Sibling of the test above: that one pins the R115 rescue with the R287
+        pass OFF, this one pins what production actually ships with the pass at
+        its default. Together they make either side impossible to change by
+        accident.
+
+        Measured live (``provider=cli``, this suite): the engine offers
+        ``['Article 11','Annex IV','Annex IV.2','Annex IV.1.e','Annex IV.2.c']``
+        and ``_collapse_multi_leaf_clusters`` reduces it to
+        ``['Article 11','Annex IV']``, recording the reasoning-trace note
+        ``intercept_multi_leaf_collapse``.
+
+        ⚠ Note for the next reader, recorded because it is NOT obvious from the
+        R287 docstring: the "keep the deepest dominating ancestor" rescue that
+        R287.1 added only fires when the leaves form a single chain
+        (``Annex III.8`` dominates ``III.8.a``/``III.8.b`` → keeper is
+        ``Annex III.8``). rg_001's leaves are siblings on TWO branches
+        (``IV.1.e`` and ``IV.2.c``), so no candidate dominates the rest and the
+        keeper falls all the way back to the bare head. Whether that costs
+        sub-point grain on this row is a REFERENCE question owed a
+        ``dynamic_ab`` run under the ``gold_dropped`` veto (hard rule #8) —
+        it is not a thing to settle by editing a test. The recorded evidence
+        available today does not show a loss: the July-7 batch carries no gold
+        at all (``gold_coverage=0.0`` in every ``grounded-*.json``), and all
+        eight post-R287 grounded runs score rg_001 at ``n_predicted=2,
+        precision=1.0, wrong_refs=[]``.
+        """
+        monkeypatch.delenv("REGENOLD_INTERCEPT_LEAF_COLLAPSE", raising=False)
+        body = _wire(
+            "Does the technical documentation of a high-risk AI system "
+            "require to provide specifications regarding the required "
+            "hardware?"
+        )
+        assert body["references"] == ["Article 11", "Annex IV"], body["references"]
 
     def test_rescue_never_adds_orphan_subpoints(self):
         # A question with no subpoint topic fired must not gain
@@ -206,12 +273,32 @@ class TestR115ResearchScopeGeneralization:
 
 class TestR115Art43IntegratedProcedure:
     def test_stub_names_433_and_mdr_route(self):
+        """R115 item 6 — the Art. 43 stub names the 43(3) integrated MDR route.
+
+        The two content asserts below are the real guard. The KB_VERSION
+        assert is cache-bust bookkeeping: KB_VERSION is folded into
+        ``_engine_cache_key`` (see ``app/data/kb.py:18``), so any KB content
+        edit must bump it, and this pin is what makes a silent edit visible.
+
+        It therefore gets RE-PINNED, never relaxed, whenever an unrelated
+        round bumps the version. Bump history for this line:
+          * v17 -> v18  R263 Fix 3       — unrelated Art. 50 stub edit
+          * v18 -> v19  R333 (055fea6)   — sub-point citation restore
+          * v19 -> v21  R334 (3a51ada)   — engine cache-key flag registration
+        Verified by execution that the Art. 43 stub itself is untouched across
+        that whole chain: the ``"Art. 43"`` entry is BYTE-IDENTICAL between
+        ``b4deacf`` (the commit that set v18) and HEAD (v21), sha256
+        ``29cd38f4434d08c4…`` on both. So the content this test guards is
+        intact and only the bookkeeping pin moved.
+
+        ⚠ ``app/data/kb.py`` is the source of truth for this value. CLAUDE.md
+        still documents ``KB_VERSION = 2024.1689.v18`` in its knowledge-surface
+        table — that doc line is stale as of R334 and needs correcting
+        separately (out of scope for this test file).
+        """
         from app.data.kb import EC_CHECKER_OBLIGATION_MAP, KB_VERSION
 
         text = str(EC_CHECKER_OBLIGATION_MAP["Art. 43"])
         assert "43(3)" in text
         assert "MDR" in text or "Medical Device" in text
-        # R263 Fix 3 bumped KB_VERSION v17 -> v18 for an unrelated Art. 50
-        # stub edit; the Art. 43(3)/MDR content this test guards is
-        # untouched by that bump, so re-pin to the new value.
-        assert KB_VERSION == "2024.1689.v18"
+        assert KB_VERSION == "2024.1689.v21"

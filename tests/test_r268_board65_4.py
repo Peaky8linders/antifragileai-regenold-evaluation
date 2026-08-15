@@ -91,7 +91,39 @@ class TestBoard65_4Wire:
             f"two-thirds voting-threshold sub-part dropped; got: {answer!r}"
         )
 
-    def test_references_carry_article_65_4(self, client: TestClient) -> None:
+    def test_references_carry_article_65_4(
+        self, client: TestClient, monkeypatch
+    ) -> None:
+        """R268 — the 65(4) sub-point reaches the references.
+
+        ⚠ SUPERSEDED ON THE DEFAULT WIRE BY R287 (``d97c374`` / ``ae96aac``,
+        2026-07-24). Kept, with the R287 pass explicitly disabled, because it
+        is the only coverage of the R268 sub-point EMISSION it was written for.
+
+        R287 added ``_collapse_multi_leaf_clusters``
+        (``app/routes/regenold.py:3182``), applied at :9832 to CURATED
+        authoritative intercepts under ``REGENOLD_INTERCEPT_LEAF_COLLAPSE``
+        (default ON): a head cited alongside 2+ of its own leaves keeps the
+        head and drops the leaves. The R287 docstring names THIS row verbatim
+        ("``Article 65`` + 65.3/.4/.5/.7 (rg_033)"), and the r286 grounded
+        judge's quoted failure_mode for it was "over-cited redundant/
+        non-governing provisions (65.4, whole Art. 65)". So the drop is the
+        deliberate, measured intent of R287 (110-row sim: 12 redundant refs
+        dropped across 4 rows, 0 rows losing a head), not a regression.
+
+        The R268 emission underneath is intact — verified by execution: with
+        the R287 pass off the wire still ships 65.3/65.4/65.5/65.7 alongside
+        the head. Only the post-pass removes them.
+
+        The R287 DEFAULT wire is pinned separately by
+        ``test_r287_default_collapses_board_refs_to_head`` below.
+
+        Note the companion test ``test_impartiality_sentence_is_cite_anchored_
+        to_65_4`` needs no flag: R287 touches REFERENCES only, so the ANSWER
+        text keeps its "Article 65(4)" anchor either way — which is what R268
+        was actually protecting against the soft cap.
+        """
+        monkeypatch.setenv("REGENOLD_INTERCEPT_LEAF_COLLAPSE", "0")
         r = client.post(
             "/api/v1/regenold/eu-ai-act/ask",
             json=[{"role": "user", "content": Q_BOARD}],
@@ -105,4 +137,36 @@ class TestBoard65_4Wire:
         # The other governance sub-points must still ship alongside it.
         assert "Article 65.3" in refs and "Article 65.5" in refs, (
             f"Expected 65.3 (term) + 65.5 (two-thirds) alongside 65.4; got {refs}"
+        )
+
+    def test_r287_default_collapses_board_refs_to_head(
+        self, client: TestClient, monkeypatch
+    ) -> None:
+        """R287 default contract — the shipped wire for rg_033 is head-only.
+
+        Sibling of the test above: that one pins R268's sub-point emission with
+        the R287 pass OFF, this one pins what production actually ships at the
+        default, so neither side can move unnoticed.
+
+        Measured live (``provider=cli``, this suite): the engine offers
+        ``['Article 65','Article 65.3','Article 65.4','Article 65.5',
+        'Article 65.7']`` and ``_collapse_multi_leaf_clusters`` reduces it to
+        ``['Article 65']``, recording the reasoning-trace note
+        ``intercept_multi_leaf_collapse``.
+
+        ⚠ Recorded because it is not obvious from the R287 docstring: the
+        R287.1 "keep the deepest dominating ancestor" rescue only fires when
+        the leaves form a single chain. Here the four leaves are siblings, so
+        no candidate dominates the rest and the keeper falls back to the bare
+        head. Changing that is a REFERENCE change owed a ``dynamic_ab`` run
+        under the ``gold_dropped`` veto (hard rule #8) — not a test edit.
+        """
+        monkeypatch.delenv("REGENOLD_INTERCEPT_LEAF_COLLAPSE", raising=False)
+        r = client.post(
+            "/api/v1/regenold/eu-ai-act/ask",
+            json=[{"role": "user", "content": Q_BOARD}],
+        )
+        assert r.status_code == 200
+        assert r.json().get("references", []) == ["Article 65"], r.json().get(
+            "references", []
         )

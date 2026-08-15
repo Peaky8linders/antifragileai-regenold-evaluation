@@ -162,6 +162,89 @@ if os.getenv("REGENOLD_TEST_ALLOW_LIVE", "").strip().lower() not in (
     # disabled in tests — only the backend *selector* reads neo4j here.
     os.environ["REGENOLD_GRAPH_BACKEND"] = "neo4j"
 
+    # ── R339 — CLOSE THE `load_dotenv()` LEAK, don't allowlist around it ──
+    #
+    # The block above is a HAND-MAINTAINED allowlist, and it runs ONCE, before
+    # the first import. It cannot survive a later `load_dotenv()`, which copies
+    # the ENTIRE developer `.env` into `os.environ` for the rest of the
+    # session. Three eval modules call it at IMPORT time —
+    # `evals/judge/grounded.py:45`, `evals/judge/runner.py:62`,
+    # `evals/bench/representative_json.py:57` — and pytest imports every test
+    # module during COLLECTION, before the first test runs. So the moment any
+    # test file imports one of them (`test_judge_prompts.py:24` and
+    # `test_judge_adversarial_remedies.py:13` do, at module level), the whole
+    # `.env` is in the environment for EVERY test in the session.
+    #
+    # Measured 2026-08-15 on this branch:
+    #     py -3.12 -c "import os; print(os.getenv('REGENOLD_QA_LENGTH_CAP'));
+    #                  import evals.judge.grounded;
+    #                  print(os.getenv('REGENOLD_QA_LENGTH_CAP'))"
+    #   → `None`, then `1000`.
+    #
+    # `.env` carries 38 keys; the allowlist above covers ~23 of them. The 15 it
+    # does NOT cover decide test outcomes today. Measured over the full suite
+    # (6403 tests), neutralising `load_dotenv` for the session takes it from
+    # **55 failed → 26 failed** and breaks NOTHING — the failure set shrinks by
+    # 29 and gains zero. Those 29 span five unrelated files and had all been
+    # filed under CLAUDE.md's "provider=cli Stage-2 env artifact" label:
+    #
+    #   REGENOLD_QA_LENGTH_CAP=1000 → the 400-char QA budget never trips
+    #     (test_citation_minimisation_and_caps ×2, test_r308_uncap_and_coverage,
+    #      test_r115_followups ×2, test_r268_board65_4)
+    #   OPENAI_API_KEY / OPENAI_API_BASE → a real key/base defeats the mock
+    #     (test_external_embeddings ×2, test_turboquant_index,
+    #      test_two_stage_pipeline ×7, test_intent_groq_routing ×3)
+    #   REGENOLD_* behaviour flags (NOISE_SUPPRESS, CLAUSE_COMPLETE,
+    #     GRAPH_AWARE, VECTOR_RERANK, …) → test_intent_classifier ×10
+    #
+    # ⚠ The comment above claiming `OPENAI_API_KEY` is "deliberately NOT
+    # cleared — some unit tests still need a non-empty key" is STALE and
+    # INVERTED: `test_external_embeddings` FAILS with the leaked key and PASSES
+    # without it. It was never ambient; it only ever arrived via this leak.
+    #
+    # The precedent for the fix is already in-tree, twice, at the wrong scope:
+    # `evals/judge/legal_v2.py:120` moved its own `load_dotenv()` into `main()`
+    # in R305 for exactly this reason, and
+    # `tests/test_bedrock_fallback_wiring.py:19` wraps ONE module in a
+    # snapshot/restore fixture to contain the same leak locally. One concept,
+    # one definition: lift it to the session instead of repeating it per file.
+    #
+    # This is containment at the test boundary, not the structural fix. The
+    # structural fix is to move those three import-time `load_dotenv()` calls
+    # into their `main()` per the R305 precedent; that lives outside this file.
+    #
+    # Escape hatch is the same `REGENOLD_TEST_ALLOW_LIVE=1` that gates the
+    # block above (we are inside it), so an intentional live-integration smoke
+    # run from pytest still loads `.env` normally.
+    #
+    # NOTE: only `load_dotenv` is neutralised, NOT `dotenv_values`. pydantic
+    # `Settings(env_file=...)` reads the file through `dotenv_values` into the
+    # settings object without touching `os.environ`, and several tests rely on
+    # that; `os.environ` still takes precedence there, so the block above keeps
+    # working exactly as before.
+    try:
+        import dotenv as _dotenv
+        import dotenv.main as _dotenv_main
+
+        def _load_dotenv_disabled_in_tests(*_args, **_kwargs) -> bool:
+            """No-op stand-in for ``dotenv.load_dotenv`` during pytest.
+
+            Returns ``False`` — the honest "nothing was loaded" value that
+            ``load_dotenv`` itself returns when it finds no file, so callers
+            doing ``if not load_dotenv(...)`` see a truthful result.
+            """
+            return False
+
+        # Patch BOTH the package re-export (``import dotenv;
+        # dotenv.load_dotenv()``) and the defining module (``from dotenv
+        # import load_dotenv``). conftest.py is imported before any test
+        # module, so every later ``from dotenv import load_dotenv`` binds the
+        # no-op. Grep for siblings when you widen a pattern — CLAUDE.md.
+        _dotenv.load_dotenv = _load_dotenv_disabled_in_tests
+        _dotenv_main.load_dotenv = _load_dotenv_disabled_in_tests
+    except ImportError:  # pragma: no cover — python-dotenv always installed
+        pass
+
 import pytest
 
 logger = logging.getLogger(__name__)
@@ -432,6 +515,28 @@ def _reset_r89a_force_append_env(monkeypatch):
 #   ``test_citation_minimisation_and_caps::test_soft_cap_keeps_at_least_one_sentence_even_if_all_cite``
 #   truncate a load-bearing cite sentence it asserts is preserved. The
 #   ``TestR78HardCharCap`` cases opt it ON via their own setenv.
+# * ``REGENOLD_QA_LENGTH_CAP`` (R339) — ``normalise_answer_for_regenold``
+#   resolves its char budget at CALL time from
+#   ``int(os.getenv("REGENOLD_QA_LENGTH_CAP", "400"))``
+#   (``app/integrations/regenold/models.py:1400``). This is an operator-tuned
+#   Railway knob and the repo ``.env`` sets it to ``1000``; at that budget the
+#   ~700-char soft-cap sample never trips the drop loop and the 606-char
+#   hard-cap sample is returned untouched, so
+#   ``test_citation_minimisation_and_caps::test_soft_cap_drops_longest_non_cite_sentence_first``,
+#   ``::TestR78HardCharCap::test_hard_cap_on_truncates_long_enumerated_answer``
+#   and
+#   ``test_r308_uncap_and_coverage::TestAnswerUncap::test_uncap_also_disables_the_soft_char_cap_loop``
+#   fail. Their assertions are correct at the 400 code default — they pin the
+#   R78 / R306 / R308 contracts — so the env is what must be defaulted, not the
+#   assertion.
+#   ⚠ The ``.env`` ROUTE into the session is closed at the top of this file
+#   (the ``load_dotenv`` neutralisation); this delenv covers the OTHER route,
+#   a developer who EXPORTS the production value in their shell — the same
+#   CI/local parity guarantee ``_reset_r89a_force_append_env`` gives, and the
+#   reason this fixture exists at all. Tests that genuinely want a non-default
+#   budget already opt in and auto-revert: ``test_r105_post_cap_reconcile``
+#   (2000), ``test_r306_enumeration_guard`` (1200), ``test_r112_normalise_fixes``
+#   (600px/400/2000), ``test_answer_normaliser`` (400, via ``mock.patch.dict``).
 @pytest.fixture(autouse=True)
 def _reset_answer_shaping_env(monkeypatch):
     """Default the per-call answer-shaping env knobs OFF for every test (R105)."""
@@ -439,6 +544,7 @@ def _reset_answer_shaping_env(monkeypatch):
         "REGENOLD_DYNAMIC_GROUNDING",
         "REGENOLD_MAX_ANSWER_SENTENCES",
         "REGENOLD_HARD_CHAR_CAP",
+        "REGENOLD_QA_LENGTH_CAP",
     ):
         monkeypatch.delenv(_var, raising=False)
     yield
