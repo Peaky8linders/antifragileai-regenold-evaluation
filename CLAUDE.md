@@ -513,10 +513,23 @@ correct only for exactly as long as that remains true.
   correctness and citation faithfulness FLAT; ans_conciseness 0.5160 →
   **0.5518**; latency p50 −174 ms. ⚠ **Effective n is 9**, not 20 — only 9 rows
   reach Stage-2 — so this is a signal CONSISTENT across two instruments, not a
-  RESOLVED one. The confirmatory run is V1-vs-V2 on the official July-7 batch
-  (~88 Stage-2 rows per arm). The shipped V2 is a strict SUPERSET of the arm
-  measured (4 more system sentences, 3 more user-clause sentences, all targeted
-  judge fixes), so the measured delta understates it.
+  RESOLVED one. **The confirmatory V1-vs-V2 A/B ran live (R346, n=60, Bedrock)
+  and V1 was REJECTED by the gold veto (gold_dropped 15→16, +1) — V2 is
+  confirmed as the live default.** The shipped V2 is a strict SUPERSET of the
+  arm measured (4 more system sentences, 3 more user-clause sentences, all
+  targeted judge fixes), so the measured delta understates it.
+* **R346 — three live Bedrock A/Bs (n=60, Opus 4.6 Stage-2, re-minted ABSK
+  key, 0 HTTP errors in every arm).** Rerank (R340.1) FIRED **49/60** rows but
+  is a wash (every axis UNDERPOWERED, gold 17→17, +1.0 s latency). Query
+  expansion (R341) FIRED **37/60** and is the arm to push: ref_loose **+0.039**,
+  kw_recall **+0.029** (CIs mostly above zero), gold **17→14** (branch BETTER),
+  flat latency — UNDERPOWERED at n=60, so it needs more rows to resolve.
+  V1-vs-V2: FIRED 13/60, **V1 REJECTED by the gold veto** (see above). Sidecars:
+  `evals/bench/results/dynamic-ab-r346-*.json`; evidence in
+  `docs/R346-live-bedrock-ab.md`. ⚠ The expansion run used the Haiku
+  paraphrase tier; R346.2 switched paraphrases to the frontier Sonnet 4.6 tier
+  and the confirmatory re-run was interrupted — re-run before trusting those
+  numbers.
 * ⚠ **R338's "−5 expert-mistake regression" (q03/q04/q14) is RETRACTED** — it was
   measured while Stage-2 was dead (the argv ceiling). With Stage-2 restored the
   same resolver gives **34/38**, above the R318 baseline's 33/38. Do not quote
@@ -640,6 +653,19 @@ correct only for exactly as long as that remains true.
   delivery. **Keep any Stage-2 system prompt under 32,767 chars regardless** —
   V2 is 16,146 (`REGENOLD_PROMPT_V2`) and is therefore safe on an unpatched
   wrapper.
+* **ABSK Bedrock keys live exactly 30 days and are shown ONCE at creation.**
+  Both repos' `.env` share one key; when it lapses AWS answers EVERY model and
+  the catalog with the cryptic `AccessDeniedException: Authentication failed:
+  Please make sure your API Key is valid.` — which R346.1 now classifies as
+  `api_key_invalid_403` (fails fast, never caches per-model, never tunnel-hops).
+  Verified raw-HTTP against the official AWS contract before concluding the key
+  was dead; the code was correct, the key had expired (R328.2 measured it
+  authenticating 08-13, it failed 08-15). Re-mint in the AWS Bedrock console →
+  API keys; the client reads the new value fresh per call, no restart.
+* **Cohere rerank against a Trial key (10 calls/min): UNPACED = false INERT.**
+  Every rerank 429s, fails soft, entities keep retrieval order, and the A/B
+  reports INERT for a working feature (measured live). Pass
+  `--min-call-gap 6.5` to `dynamic_ab` (R346), or use a production key.
 * **When you write a legal rule into a prompt, ask WHICH SLOT it lands in, then
   check what the other slot already says about the same provision.** The accurate
   Annex IV(1)(e) / IV(2)(c) technical-documentation rule sat in
@@ -795,7 +821,7 @@ Defaults are the CODE default, re-measured 2026-08-09.
 | --- | --- | --- |
 | `P2P_GRAPH_RAG_PROVIDER` | `auto` | `cli` (deterministic) / `anthropic` / `openai_wrapper` |
 | `P2P_GRAPH_RAG_ENABLE_STAGE2` | **ON** | Stage-2 polish master gate |
-| `REGENOLD_PROMPT_V2` | **ON** | R340 — selects `ANSWER_GENERATE_SYSTEM_V2` (**16,146** chars, XML-sectioned) over V1's **51,516** (−69%), inside `resolve_answer_system()` (`graph_rag_prompts.py:440`) — one selector, one concept. Under the 32,767 argv ceiling, so it is safe on an unpatched wrapper. `=0` is a byte-identical rollback to V1 |
+| `REGENOLD_PROMPT_V2` | **ON** | R340 — selects `ANSWER_GENERATE_SYSTEM_V2` (**16,146** chars, XML-sectioned) over V1's **51,516** (−69%), inside `resolve_answer_system()` (`graph_rag_prompts.py:440`) — one selector, one concept. Under the 32,767 argv ceiling, so it is safe on an unpatched wrapper. `=0` is a byte-identical rollback to V1. **Live A/B (R346, n=60, Bedrock): V1 REJECTED by the gold veto (gold_dropped 15→16, +1) — V2 is confirmed as the live default** |
 | `REGENOLD_CURATED_STAGE2_SKIP` | **ON** | R144, **settled by measurement R339 — keep ON**. Ships the curated deterministic answer without Stage-2; fires on 10/20 Antifragile rows |
 | `REGENOLD_DEFINITIONAL_STAGE2_SKIP` | **ON** | R275, same verdict; fires on 1/20. Together the two bypass Stage-2 on **11/20** rows (9/20 reach it). Turning both OFF resolves the SAME 34/38 expert mistakes and costs ans_conciseness **−0.163**, ref_conciseness −0.099, ref_strict −0.068, judge reference precision −0.093, one citation-faithfulness failure and **2.4× latency**. Fire check passed (`stage2_polish` 9→19) |
 | `REGENOLD_CROSS_REF_CONTEXT` | **ON** | the `CROSS-REFERENCED PROVISIONS` block in the Stage-2 user message. ⚠ Default-ON and **absent from `_engine_cache_key` since R69**, so every in-process A/B of this path was served one arm's cached output; registered R339 |
@@ -807,7 +833,10 @@ Defaults are the CODE default, re-measured 2026-08-09.
 | `REGENOLD_KG_UNIT_CHARS` | **2000** | per-unit budget; `_UNIT_HARD_CEILING` **9000** for enumerations. R328.4 — were 900 / 2600 |
 | `REGENOLD_ANSWER_COVERAGE` | **ON** | delivers `USER_ANSWER_COVERAGE_CLAUSE` (2,241 chars) on the Stage-2 USER channel — delivered on every provider. ⚠ **`=0` is NOT a targeted rollback of anything inside it**: it also deletes the R318 `LEGAL VERSION` sentence, which is the ONLY place the no-Digital-Omnibus rule reaches the model. If you need to remove one sentence, remove that sentence |
 | `REGENOLD_ONTOLOGY_RISK_DOCS` | **ON** | `938933a` — emits 28 virtual BM25 documents from the six AIRO registries (345 → **373** docs). Shipped default-ON with **no `dynamic_ab` verdict and no `gold_dropped` reading**; 9 of 110 official-batch rows lose a provision from their entity set. `=0` restores the pre-`938933a` corpus. In `_engine_cache_key` (`regenold.py:1434`) since R331/R332 |
-| `REGENOLD_COHERE_RERANK` | **OFF** | R331 — cross-encoder rerank via Cohere. Also needs `COHERE_API_KEY`; fresh env read per call so `easyhard_ab` can flip it between in-process arms. Off because it is unmeasured on this corpus, it egresses partner questions, and R329 HyPA already cost Ref Conciseness −0.209 on an ungated default-ON retrieval change |
+| `REGENOLD_COHERE_RERANK` | **OFF** | R331/R340.1 — cross-encoder rerank via Cohere at the parse-level entity list (the placement that reaches live traffic; the pool-level placement only fires on the rare no-entity BM25 fallback) and the retrieval candidate pool. Needs `COHERE_API_KEY`; fresh env read per call. **Live A/B (R346, n=60, Bedrock): FIRED 49/60 rows, all axes UNDERPOWERED (wash inside noise), gold 17→17 (+0), latency +1.0 s.** ⚠ Trial key = 10 calls/min: unpaced every call 429s and the lever reads INERT — pass `--min-call-gap 6.5` |
+| `REGENOLD_QUERY_EXPANSION` | **OFF** | R341 — multi-query expansion (RAG-Fusion) in `_deterministic_parse`: frontier-tier paraphrases scanned through the SAME high-precision keyword map (union capped at 3 new refs) plus the BM25 fallback RRF-combined across queries at the single-query budget. Skips explicit-anchor and multi-turn shapes; the fallback gate asks about the ORIGINAL lanes only (a lone paraphrase hit must not starve BM25). **Live A/B (R346, n=60, Bedrock, Haiku tier): FIRED 37/60, ref_loose +0.039 / kw_recall +0.029 (CIs mostly above zero), gold 17→14 (branch BETTER), latency flat — directionally positive, UNDERPOWERED at n=60; the R346.2 frontier-tier re-run is the open measurement** |
+| `REGENOLD_QUERY_EXPANSION_MODEL` | `claude-sonnet-4-6` | R346.2 — the paraphrase tier. **No Haiku on the live path**: frontier 4.6 by default (the judge tier — a paraphrase is a light task), pin `claude-opus-4-6` for the generation tier. Fresh read per call; in `_engine_cache_key` |
+| `REGENOLD_QUERY_EXPANSION_BEDROCK_TIMEOUT` | **8 s** | R346 — paraphrase read budget on the Bedrock transport (cold-start + frontier model). The wrapper's 2 s budget would fail every paraphrase and read as an inert lever (attempts>0, expanded=0, branch == baseline) |
 | `REGENOLD_JUDGE_CONCISENESS_LENIENCY` | **OFF** | R331.1 — the POST-PROCESSING half of `bb793ca`'s conciseness loosening (`legal_v2.py:821`). ⚠ **Its PROMPT half is UNGATED** (`legal_v2.py:488-514`, the UNREQUESTED-TOPIC / REDUNDANT definitions), and that is where the axis is actually defined — so `answer_conciseness` already sits on a different, strictly more permissive ruler than every pre-`bb793ca` number, under the same canonical name. Violates R327's "change the formula, change its NAME" |
 | `REGENOLD_JUDGE_FACTUAL_THRESHOLD` | **0.70** | `d7be457` — `legal_v2` factual-correctness pass floor (`legal_v2.py:607`). Was an implicit 1.0 ("every proposition addressed"); `=1.0` restores it. Same ruler-swap caution as the row above |
 | `REGENOLD_GRAPH_BACKEND` | `neo4j` | `embedded` = in-process SQLite, no external service |
@@ -838,14 +867,14 @@ Defaults are the CODE default, re-measured 2026-08-09.
 | `GROUNDED_JUDGE_STRICT_GROUNDING` | **OFF** | R327 — ON makes answer-correctness unscorable on the July-7 batch (it has no gold at all). ⚠ **It governs `evals/judge/grounded.py` ONLY.** Since `d7be457` it is SILENTLY INERT on `evals/judge/legal_v2.py` — grep for the flag there returns **0 hits** — whose `_prepare` builds the evidence block from `gold_refs + pred_refs`, i.e. from `pred_refs` alone on a gold-free row, with no `[NOTE]`, no `answer_grounding_source` stamp and no off-switch. All 110 July-7 rows take that branch, so a `legal_v2` answer-correctness number there grades the answer against the answer's own citations. Open item #7 nominates `legal_v2` as the replacement judge — fix `_prepare` AND the `_judge_row` guard together, or the axis keeps running |
 | `NEO4J_AUTO_SEED` | **OFF unless `1`** | R327 — now opt-IN, and even then only seeds a graph proven to have 0 nodes. Hard rule #12 |
 | `BEDROCK_REGION` | **`eu-central-1`** | R328 — Bedrock source Region. Also reads `AWS_DEFAULT_REGION` / `AWS_REGION`. NOT `us-east-1`: an `eu.` profile is unresolvable there |
-| `REGENOLD_BEDROCK_MODEL` | `eu.anthropic.claude-opus-4-8` | R328 — Stage-1 + Stage-2 main RAG tier. 403 on the current key; R328.2 degrades to `opus-4-6-v1` |
-| `REGENOLD_BEDROCK_COMPLEX_MODEL` | `eu.anthropic.claude-opus-5` | R328 — the `complex_question` tier. Also 403; same chain |
-| `REGENOLD_BEDROCK_JUDGE_MODEL` | `eu.anthropic.claude-sonnet-5` | R328 — judge. Precedence: this env > the CLI `--model` flag > the default. Also 403; degrades to `sonnet-4-6` |
+| `REGENOLD_BEDROCK_MODEL` | `eu.anthropic.claude-opus-4-8` | R328 — Stage-1 + Stage-2 main RAG tier. 403 on the 08-13 key vintage; the 08-15 re-mint invokes `opus-4-6-v1` (the live A/Bs pinned `claude-opus-4-6`). R328.2 degrades within the family. ABSK entitlement is fixed at key creation — see the expiry gotcha |
+| `REGENOLD_BEDROCK_COMPLEX_MODEL` | `eu.anthropic.claude-opus-5` | R328 — the `complex_question` tier. 403 on the 08-13 key vintage; same family chain, re-mint restores the pin |
+| `REGENOLD_BEDROCK_JUDGE_MODEL` | `eu.anthropic.claude-sonnet-5` | R328 — judge. Precedence: this env > the CLI `--model` flag > the default. 403 on the 08-13 key vintage; the 08-15 re-mint invokes `sonnet-4-6`, the tier used for judging |
 | `REGENOLD_STAGE2_VERDICT_GUARD` | **ON** | Rejects a Stage-2 answer that stops mid-verdict, on BOTH the wrapper and (since 2026-08-13) the Bedrock path. `=0` disables. ⚠ Never measured on `ab_judge` — davidath cannot see it (Stage-2 only) |
 | `REGENOLD_BEDROCK_MAX_TOKENS` | **4096** | R328.3 — the Stage-2 answer ceiling on Bedrock. NOT `settings.graph_rag.max_tokens` (1536), which is advisory on the wrapper and a HARD mid-word cut here. Worst measured enumerative answer used 3411 |
 | `REGENOLD_BEDROCK_STAGE2_TIMEOUT_S` | **180** | R328.3 — per-call read budget for Stage-2. The 60 s default turned a bigger token ceiling into `ReadTimeoutError` (the worst case emits 3411 tokens in ~70 s) — the same truncation, one layer down |
 | `REGENOLD_BEDROCK_JUDGE_MAX_TOKENS` | **1600** | R328 — NOT the wrapper's 400. Bedrock honours the system prompt, so the judge reasons in prose before its JSON; at 400 it truncates and the axis returns `no_json` — a SILENTLY UNSCORED axis, not a visible failure |
-| `REGENOLD_BEDROCK_WRAPPER_FALLBACK` | **ON** | R330 — cross-PROVIDER last resort ported from the RAG repo: when the WHOLE Bedrock entitlement chain is spent, serve from the Claude-Max wrapper instead of dropping Stage-2. Placed at the END of `complete_with_fallback`, not inside `BedrockProvider.complete` as upstream has it — upstream's placement can hop on the FIRST model's throttle while an invocable tier sits further down the chain. ⚠ **The two providers were not interchangeable while the wrapper dropped the system prompt; since 2026-08-15 both deliver it** (subject to the 32,767 argv ceiling — see the gotchas), so re-measure before assuming a hop changes the delivered instruction. It returns `model="wrapper:<name>"`, which makes the existing `_bedrock_complete_for_graph_rag` provenance fire unchanged — `stage2_models` in the sidecar shows `wrapper:…`, never the pin. Alert on `served_by=wrapper:`. Off-switch `=0` |
+| `REGENOLD_BEDROCK_WRAPPER_FALLBACK` | **ON** | R330 — cross-PROVIDER last resort ported from the RAG repo: when the WHOLE Bedrock entitlement chain is spent, serve from the Claude-Max wrapper instead of dropping Stage-2. Placed at the END of `complete_with_fallback`, not inside `BedrockProvider.complete` as upstream has it — upstream's placement can hop on the FIRST model's throttle while an invocable tier sits further down the chain. ⚠ **The two providers were not interchangeable while the wrapper dropped the system prompt; since 2026-08-15 both deliver it** (subject to the 32,767 argv ceiling — see the gotchas), so re-measure before assuming a hop changes the delivered instruction. It returns `model="wrapper:<name>"`, which makes the existing `_bedrock_complete_for_graph_rag` provenance fire unchanged — `stage2_models` in the sidecar shows `wrapper:…`, never the pin. Alert on `served_by=wrapper:`. **R346.1 — a DEAD/EXPIRED key (`api_key_invalid_403`) fails fast and NEVER reaches this hop**: it is classified distinctly from entitlement, never cached per-model (a re-mint heals the next request), and the tunnel stays reserved for the operator's live runs. Off-switch `=0` |
 
 ⚠ **This table was BROKEN in the middle until 2026-08-15** — the R329 paragraph
 below sat between two rows, so everything from `GROUNDED_JUDGE_STRICT_GROUNDING`
@@ -1197,37 +1226,40 @@ attributed, not Omnibus — and `tests/test_kb_stubs_filled.py` pins it.
 
 Full handoff: [`.planning/NEXT-SESSION.md`](.planning/NEXT-SESSION.md).
 
-1. **Confirm `REGENOLD_PROMPT_V2` on the official July-7 batch** — V1 vs V2,
-   ~88 Stage-2 rows per arm against the Antifragile run's effective n=9. It
-   ships default-ON on a consistent-but-unresolved signal; this is the run that
-   resolves it. (DONE and closed: the semantic layers are gated ON,
-   constrained-only — `REGENOLD_GRAPH_SEMANTIC_LAYERS=1` + `SEMANTIC_GLOSS=0`,
-   evidence in [`docs/R327-live-ab-semantic-layers.md`](docs/R327-live-ab-semantic-layers.md);
-   ⚠ `gold_coverage=0.0` there, so hard rule #8's `gold_dropped` is unmeasured.)
-2. **Run `--mode hard`.** It is **the graded turn** (the adversarial pushback;
+1. **Resolve the query-expansion A/B on the frontier paraphrase tier** (R346.2
+   made the lever Haiku-free; the confirmatory live run was interrupted).
+   Directionally positive on the Haiku tier (ref_loose +0.039, kw_recall
+   +0.029, gold 17→14, flat latency) but UNDERPOWERED at n=60 — run the full
+   probe (`--max-rows 137`) or the moved-row subset to converge the CI. The
+   gold veto is the gate.
+2. **Ground the R346 sidecars with `evals.judge.grounded`** (`claude-sonnet-4-6`
+   via Bedrock — the frontier judge the operator specified) so the retrieval
+   levers get a quality verdict beyond the heuristic axes. Verify
+   sidecar-format compatibility with `grounded.py` first.
+3. **Run `--mode hard`.** It is **the graded turn** (the adversarial pushback;
    67 of 111 hard rows carry it) and it has NEVER been run. Every optimisation
    decision on the table is being made on the *easy* turn — that is the
    instrument trap. Free, ~40-70 min.
-3. **Record the PRIMARY provider's failure in the reasoning trace.** Only the
+4. **Record the PRIMARY provider's failure in the reasoning trace.** Only the
    fallback's outcome is written today (`groq_auto_fallback_success` /
    `groq_fallback_failed`), so a reader sees Groq succeeding and cannot tell
    Claude was never reached — that is what turned R339's total Stage-2 outage
    into a multi-hour diagnosis. One `record_note` in the `groq_auto_fallback`
    branch (`_graph_rag_impl.py` ~:880). Highest-value single change outstanding.
-4. **Gate the parent-collapse** with `easyhard_ab` (davidath cannot see it).
+5. **Gate the parent-collapse** with `easyhard_ab` (davidath cannot see it).
    +0.018 F1 / +5 rows offline; one gold ref is the price. R339's judge adds
    independent evidence on sub-point-carrying gold: q12 fails reference
    correctness for citing a parent alongside its own sub-provision.
-5. **Attack GENERATION, not selection.** R325 closed the ranker, so the
+6. **Attack GENERATION, not selection.** R325 closed the ranker, so the
    remaining ~90% of the over-citation gap is upstream: why does a 3-ref answer
    name a wrong provision **53% of the time at rank 3**? The refs-per-row cliff
    is the shape of it — 1 ref → 0.88 pass, 2 → 0.54, **3 → 0.05**, 4+ → 0.06,
    with 41 of 100 rows sitting at exactly 3 (the QA budget). R327's constrained
    sub-provision layer is the first instrument aimed here.
-6. **`CROSS_REFERENCES` backlinks as non-citable context** — 248 edges, never
+7. **`CROSS_REFERENCES` backlinks as non-citable context** — 248 edges, never
    read as context, real legal signal. The best unshipped graph idea; needs its
    own gate, and prompt budget competes with Answer-Conciseness.
-7. **Fix the judge** before trusting any further answer number — the length
+8. **Fix the judge** before trusting any further answer number — the length
    artefact above. `evals/judge/legal_v2.py` already implements the
    quote-or-retract rule that catches it. ⚠ It also carries three defects of its
    own, all from the unreviewed commits and all still open: the
@@ -1235,19 +1267,19 @@ Full handoff: [`.planning/NEXT-SESSION.md`](.planning/NEXT-SESSION.md).
    guard together — fixing one leaves the axis running), the head-lax
    `provision_exists` ghost-citation gate at `:660`, and the ungated conciseness
    prompt loosening at `:488-514`. **Fix these before nominating it.**
-8. **Watch conciseness** — answers are **+41% longer** than the graded July-7
+9. **Watch conciseness** — answers are **+41% longer** than the graded July-7
    ones, on the one axis the official scorecard says we lead. Any bound must be
    SENTENCE-only (hard rule #2).
-9. **Run the owed gate on `REGENOLD_ONTOLOGY_RISK_DOCS`** — *ranks with #2*.
-   `py -3.12 -m evals.harness.dynamic_ab --branch-env REGENOLD_ONTOLOGY_RISK_DOCS=0`
-   against a **gold-carrying** set (July-7 has `gold_coverage=0.0`, so hard rule
-   #8 cannot be read off it). This is a default-ON, live-shipping retrieval
-   change with 9/110 measured context regressions and no verdict at all. R338
-   fixed the dense-index singleton that would otherwise have corrupted this
-   exact A/B, so the instrument is ready. **Do not just flip the default OFF** —
-   that is an equally unmeasured change in the other direction and it de-aligns
-   the committed TurboQuant assets, which were rebuilt for the 373-doc corpus.
-10. **`ab_judge`'s new swap-consistency metric counts judge ERRORS as
+10. **Run the owed gate on `REGENOLD_ONTOLOGY_RISK_DOCS`** — *ranks with #3*.
+    `py -3.12 -m evals.harness.dynamic_ab --branch-env REGENOLD_ONTOLOGY_RISK_DOCS=0`
+    against a **gold-carrying** set (July-7 has `gold_coverage=0.0`, so hard rule
+    #8 cannot be read off it). This is a default-ON, live-shipping retrieval
+    change with 9/110 measured context regressions and no verdict at all. R338
+    fixed the dense-index singleton that would otherwise have corrupted this
+    exact A/B, so the instrument is ready. **Do not just flip the default OFF** —
+    that is an equally unmeasured change in the other direction and it de-aligns
+    the committed TurboQuant assets, which were rebuilt for the 373-doc corpus.
+11. **`ab_judge`'s new swap-consistency metric counts judge ERRORS as
     agreement** — `_judge_one` collapses every transport/parse failure into the
     same `"tie"` a real tie uses, so each errored pair simultaneously pushes
     `swap_consistency_rate` toward 1.0 and `effective_win_rate_b` toward 0.5:

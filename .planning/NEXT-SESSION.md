@@ -1,213 +1,150 @@
 # Next session — start here
 
-Self-contained handoff. Written 2026-08-10 at `136fac3` (R327 merged, PR #3).
-Assumes no memory of the session that produced it. Read
-[`CLAUDE.md`](../CLAUDE.md) first — it is the load-bearing context and it is
+Self-contained handoff. Written 2026-08-15 at the R346.2 line (`574a88b`,
+PR #32 merged). Assumes no memory of the sessions that produced it. Read
+[`CLAUDE.md`](../CLAUDE.md) first — it is the load-bearing context and is
 current as of this commit.
 
 ---
 
 ## 0. Which repo you are in
 
-`antifragileai-regenold-evaluation` — the **re-evaluation surface**. It deploys
-nowhere. The sibling `regenold-eu-ai-act-rag` (`D:/Claude Projects/…`) is what
-deploys to production and runs its own rounds. Round numbers COLLIDE between the
-two; prefix any shared reference with the repo name. Sync by **cherry-pick** —
-`git merge parent/main` silently DELETES 29 files including the entire July-7
-machinery, which exists only here.
+`antifragileai-regenold-evaluation` — the **re-evaluation surface**. The
+sibling `regenold-eu-ai-act-rag` (`D:/Claude Projects/…`) is what deploys to
+production. Round numbers COLLIDE between the two; prefix any shared reference
+with the repo name. Sync by **cherry-pick** — `git merge parent/main` silently
+DELETES files that exist only here.
 
 **⚠ Never let this repo write to the shared Aura instance.** Pin
-`NEO4J_AUTO_SEED=0`. As of R327 auto-seed is opt-IN and only ever seeds a graph
-proven to have 0 nodes, so the hazard is much reduced — but the seeder here is
-still OLDER than the live graph.
+`NEO4J_AUTO_SEED=0` (default).
 
----
+## 1. Current state — what merged since the R327-era handoff
 
-## 1. What R327 just did, in one paragraph
+The line of work this session: **R340 → R346.2**, all merged to `main`
+(PRs #22–#32), full hermetic suite green after every PR, zero new ruff errors.
 
-Audited ~2.5k lines of uncommitted agent work and found it had shipped an
-unauthorised "semantic minimality" change (every scenario reference budget
-collapsed to 5, ungated) **while rewriting the eval scorer in the same batch**, so
-the bench would have confirmed the clamp with a ruler built to like it. All
-measured defaults restored, each behind a default-OFF opt-in. Separately, all
-**seven** Neo4j vector indexes are now read (R326 read 2 of 7) via the new
-`app/engines/graph_semantic.py`, default OFF behind
-`REGENOLD_GRAPH_SEMANTIC_LAYERS`. Full detail in the merge commit and
-[`docs/R327-live-ab-semantic-layers.md`](../docs/R327-live-ab-semantic-layers.md).
+| PR | What | Key fact |
+| --- | --- | --- |
+| #22 | R340+R341 retrieval quality | Cohere rerank wired at the **parse level** (the placement that reaches live traffic) + multi-query expansion (RAG-Fusion). Both default-OFF, byte-identical off, cache-keyed |
+| #23 | R342 annex/recital dedup | Default KB-primary path expanded annexes/recitals **twice** into the Stage-2 prompt (Art. 43: 1→2, Art. 5: 5→10). Now idempotent |
+| #24 | R340 prompt rebuild | V2 system prompt (16.1 K chars) shipped default-ON; test suite taken to zero |
+| #25 | R343 tokenizer + audit guard | Dense-lane query tokenizer was a vendored copy that had DRIFTED (digit rule AND stopwords) from the build tokenizer — now uses the canonical function. `evidence=None` was silently dropping the whole audit record — guarded |
+| #26 | R344 self-contained clauses | Three default-ON Stage-2 USER clauses pointed at system rules the model never sees (rule 12b, "from your system prompt", "rule above") — made self-contained on BOTH prompt generations |
+| #27 | R345 V2 dangling fix | The live V2 sub-paragraph clause still carried the dangling "closed-set completeness rule above" ref — fixed and pinned on both arms |
+| #28 | R345 harness control layer | `dynamic_ab._infer_control_layer` classified `REGENOLD_PROMPT_V2` as *retrieval* — the V1-vs-V2 A/B would have probed the wrong layer. Now stage2 |
+| #29 | R346 transport + harness | Query-expansion paraphrases follow the ACTIVE provider (Bedrock under `provider=bedrock`, never the tunnel). `dynamic_ab`: batch-level checkpoint sidecars + `--min-call-gap` pacing |
+| #30 | R346.1 dead-key diagnosis | A rejected ABSK key is `api_key_invalid_403`: fails fast, never caches per-model, **never tunnel-hops**; `check_connectivity_and_permissions` returns `status=key_invalid` with re-mint steps |
+| #31 | R346 results doc | The three live A/B results below |
+| #32 | R346.2 no-Haiku | Paraphrase tier = frontier `claude-sonnet-4-6` (was Haiku 4.5), `REGENOLD_QUERY_EXPANSION_MODEL` override; intent-classifier fallback default also off Haiku |
 
-**State: nothing is enabled that wasn't enabled before.** R327 restored defaults
-and added OFF-by-default capability. The scoreboard has not moved.
+Evidence doc: [`docs/R346-live-bedrock-ab.md`](../docs/R346-live-bedrock-ab.md).
+Sidecars (gitignored): `evals/bench/results/dynamic-ab-r346-*.json`.
 
----
+## 2. The three live A/Bs — n=60, Bedrock Opus 4.6 Stage-2, re-minted key, 0 HTTP errors per arm
 
-## 2. Ranked next steps
+All ran `provider=bedrock`, `REGENOLD_BEDROCK_*=claude-opus-4-6`, wrapper
+fallback OFF, embedded graph. All three levers **FIRED** (13–49/60 rows
+changed). No axis resolved at n=60 — every CI spans zero (UNDERPOWERED) — so
+the decisive signals are the veto and direction:
 
-### 1. Re-run the gate CONSTRAINED-ONLY — the R327 gate is done and it split the result
-
-**The gate ran.** `evals.judge.grounded` over both R327 sidecars, 50 rows × 3 axes
-per arm, `claude-sonnet-5` via the tunnel. Full write-up:
-[`docs/R327-live-ab-semantic-layers.md`](../docs/R327-live-ab-semantic-layers.md).
-
-|  | OFF | ON | flips | net | sign test |
+| A/B | fired | ref_loose Δ | kw_recall Δ | gold_dropped | latency |
 | --- | --- | --- | --- | --- | --- |
-| answer correctness | 0.620 | 0.660 | 5/3 | +2 | p=0.727 |
-| reference correctness | 0.380 | 0.360 | 3/4 | −1 | p=1.000 |
-| citation faithfulness | 0.900 | 0.960 | 4/1 | +3 | p=0.375 |
+| Cohere rerank (paced 6.5 s) | 49/60 | −0.0083 | −0.0106 | 17→17 (+0) | 10.4 → 11.4 s mean |
+| Query expansion (Haiku tier) | 37/60 | **+0.0389** | **+0.0292** | 17→14 (−3, better) | 11.1 → 10.4 s |
+| V1 prompt vs V2 default | 13/60 | −0.0083 | +0.0014 | 15→16 (**+1, VETO**) | 5.7 → 5.0 s |
 
-The layers **help attribution** (mismatched citations 5→2, outright incorrect
-answer claims **5→1**) and **cost selection** (wrong refs 51→55 at an unchanged
-reference count, micro-precision 0.611→0.583). Nothing is significant at n=50.
-`REGENOLD_GRAPH_SEMANTIC_LAYERS` stays **OFF**.
+Read: rerank is a wash inside noise (+1.0 s latency, ref_conc the only
+positive). Expansion is directionally the strongest arm (recall up, gold drops
+DOWN, flat latency) but unresolved at this n. **V1 is REJECTED by hard rule
+#8 — V2 stays the live default** (closes the R340 confirmatory question).
 
-The two block families measured opposite-signed, and one switch used to bundle
-them. `REGENOLD_SEMANTIC_GLOSS` now separates them, so run the SAME gate with the
-constrained half only:
+⚠ The expansion numbers above used the **Haiku** paraphrase tier. R346.2
+switched paraphrases to frontier **Sonnet 4.6**; the confirmatory re-run was
+launched but interrupted. Re-run before trusting the Haiku-tier numbers.
+
+## 3. Ranked next steps
+
+1. **Resolve the query-expansion A/B on the frontier tier.** Run the full
+   probe (`--max-rows 137`) or the moved-row subset to converge the CI; the
+   gold veto is the gate. Commands in §4.
+2. **Ground the R346 sidecars** with `evals.judge.grounded`
+   (`claude-sonnet-4-6` via Bedrock — the frontier judge the operator
+   specified) so the retrieval levers get a quality verdict beyond the
+   heuristic axes. Verify sidecar-format compatibility with `grounded.py`
+   first.
+3. **Run `--mode hard`** — the graded turn (adversarial pushback on 67/111
+   rows), never run; every decision so far is on the *easy* turn.
+4. **Record the PRIMARY provider's failure in the reasoning trace**
+   (`_graph_rag_impl.py` ~:880, `groq_auto_fallback` branch) — R339's outage
+   cost hours because only the fallback's outcome was written.
+5. **Gate the parent-collapse** (`REGENOLD_PARENT_COLLAPSE`) with `easyhard_ab`
+   — +0.018 F1 offline, 1 gold ref is the price.
+6. **Attack GENERATION, not selection** — the ~90% over-citation gap is
+   upstream of the ranker (wrong ref 53% of the time at rank 3).
+7. **`CROSS_REFERENCES` backlinks (248 edges) as non-citable context** — best
+   unshipped graph idea.
+8. **Fix the judge** (`legal_v2.py`: `GROUNDED_JUDGE_STRICT_GROUNDING` bypass,
+   head-lax `provision_exists` ghost-citation gate at `:660`, ungated
+   conciseness loosening at `:488-514`) before trusting further answer numbers.
+9. **Watch conciseness** — answers are +41% longer than graded July-7.
+10. **Gate `REGENOLD_ONTOLOGY_RISK_DOCS`** — default-ON, live-shipping, 9/110
+    measured context regressions, no verdict. Do NOT flip the default off —
+    re-aligns the committed TurboQuant assets.
+11. **`ab_judge` swap-consistency counts judge errors as agreement** — add an
+    error channel before reading either number.
+
+## 4. Environment for a live Bedrock A/B
+
+`evals/harness/` does **not** load dotenv. The working recipe (this session's
+`scratch/live_ab_env.py` + `scratch/run_ab.py`, gitignored) loads the
+operator `.env` from the main folder then forces:
+
+```
+P2P_GRAPH_RAG_PROVIDER=bedrock
+REGENOLD_BEDROCK_WRAPPER_FALLBACK=0      # a dead key must not hop to the tunnel
+REGENOLD_GRAPH_BACKEND=embedded          # deterministic local graph, both arms equal
+REGENOLD_EXTERNAL_EMBEDDINGS=0           # COHERE_API_KEY would auto-switch the dense lane to the external embed API
+REGENOLD_BEDROCK_MODEL=claude-opus-4-6   # + _STAGE2_ / _COMPLEX_ / _STAGE1_
+```
 
 ```bash
-# regenerate the branch arm with the open-domain blocks suppressed
-REGENOLD_GRAPH_SEMANTIC_LAYERS=1 REGENOLD_SEMANTIC_GLOSS=0   py -3.12 -m evals.regenold.run_official_batch   --label r328-constrained-only --mode easy --limit 50 --timeout 240
-# then judge it against the EXISTING layers-OFF sidecar
-py -3.12 -m evals.judge.grounded   --sidecar evals/bench/results/official-r328-constrained-only-easy.ckpt.jsonl   --label r328-constrained --model claude-sonnet-5 --provider wrapper   --timeout 120 --concurrency 3
+PYTHONPATH=. py -3.12 scratch/run_ab.py --flag REGENOLD_QUERY_EXPANSION \
+    --label r346.2-live-expansion-frontier --max-rows 137 --batch 12
 ```
 
-Compare with `grounded-r327-layersOFF.json` (already on disk — no need to re-judge
-the baseline). Hypothesis: keeps the +3 faithfulness and the 5→1 incorrect, without
-the precision loss, because the constrained block cannot introduce a citation at
-all — every candidate already belongs to a provision that is already cited.
+Rerank A/B needs `--min-call-gap 6.5` (Cohere Trial key). V1-vs-V2 uses
+`--branch-env REGENOLD_PROMPT_V2=0`. Long runs: launch detached
+(`nohup … &`), the harness now writes a checkpoint sidecar after every batch.
 
-⚠ Two things to carry into any reading of this axis: `gold_coverage = 0.0` on this
-batch, so **reference RECALL is unavailable** and precision-only rewards citing
-less (the hard-rule-#8 hazard) — only safe to compare while ref COUNTS stay level.
-And keep `GROUNDED_JUDGE_STRICT_GROUNDING` OFF or answer-correctness returns
-`judge_error` on every row.
+**Verify the key before a run**: `check_connectivity_and_permissions('claude-opus-4-6')`
+must say `status: ok` — ABSK keys expire after 30 days (see §6).
 
-### 2. Run `--mode hard` — still never run, and it is THE graded turn
+## 5. Judge
 
-Unchanged from the last three handoffs and still the biggest blind spot. 67 of
-111 hard rows carry the adversarial pushback, and **every** optimisation decision
-on the table has been made on the easy turn. That is the instrument trap.
+`claude-sonnet-4-6` via Bedrock is the specified judge tier (verify it
+invokes on the current key: R328.2 measured sonnet-5 403 on the old key,
+sonnet-4-6 fine). `REGENOLD_BEDROCK_JUDGE_MODEL` env wins over `--model`.
 
-```bash
-py -3.12 -m evals.regenold.run_official_batch --label r328-hard --mode hard --timeout 240
-```
+## 6. Gotchas that cost a session (each is in CLAUDE.md, both are new)
 
-Free, ~40–70 min. Score the Omnibus probe with `classify_hit()` (IMPORT vs
-REJECTION) — a bare substring match counts a correct rejection as a leak.
+* **ABSK Bedrock keys: 30-day life, shown ONCE.** Both repos' `.env` share
+  one key. Expiry looks like `Authentication failed: Please make sure your
+  API Key is valid.` on EVERY model — verified raw-HTTP against the official
+  AWS contract before concluding the key was dead; the code was right, the key
+  had expired (authenticated 08-13, dead 08-15). Re-mint in the AWS Bedrock
+  console → API keys; the client picks it up fresh per call, no restart.
+* **Cohere Trial key (10 calls/min): unpaced rerank A/B = false INERT.**
+  Every call 429s → fail-soft → entities unchanged → INERT verdict for a
+  working feature. `--min-call-gap 6.5` or a production key.
 
-### 3. Re-verify the baseline is reproducible
+## 7. Closed — do not re-open
 
-R327 rebound the canonical axis names back to the historical formulas, so the
-authoritative CLAUDE.md block should be measurable again. Confirm before grading
-anything against it:
-
-```bash
-OPENAI_API_BASE=http://127.0.0.1:1/v1 P2P_GRAPH_RAG_PROVIDER=cli REGENOLD_EXTERNAL_EMBEDDINGS=0 py -3.12 -m evals.bench.runner
-```
-
-Expect OVERALL (476) `0.1884 / 0.3545 / 0.6143 / 0.5971 / 0.4748 / 0.4319`. If it
-does not reproduce, STOP and find out why before any other measurement — a moved
-ruler invalidates everything downstream. `--assert-baseline` also works again.
-
-### 4. Gate the parent-collapse with `easyhard_ab`
-
-`REGENOLD_PARENT_COLLAPSE`, still OFF. +0.018 F1 / +5 rows flipped fail→pass
-offline, price is 1 gold ref — which is why it does not satisfy hard rule #8 as
-written and needs the count-ratio gate davidath structurally cannot provide.
-Note `easyhard_ab` now uses the `*_exact_coord` reference formulas deliberately
-(its gold carries sub-point grain; davidath's is head-level).
-
-### 5. Attack GENERATION, not selection
-
-The standing strategic item. R325 closed the ranker (no signal beats the engine's
-own `rank`, AUC 0.703), so ~90% of the over-citation gap is upstream. The shape:
-1 ref → 0.88 pass, 2 → 0.54, **3 → 0.05**, 4+ → 0.06, with 41 of 100 rows sitting
-at exactly 3 (the QA budget). Why does a 3-ref answer name a wrong provision 53%
-of the time at rank 3? That is a retrieval / grounding question.
-
-R327's constrained sub-provision layer is the first real instrument aimed here —
-which is another reason to finish step 1.
-
-### 6. B.9 backlinks — the best unshipped graph idea
-
-`CROSS_REFERENCES` has **248 edges** and is never read as context. Incoming edges
-are real legal signal:
-
-```
-article_50 <- [Article 13, Article 26, Article 5, Article 96]
-article_11 <- [Annex IV, Article 18, Article 22, Article 23, Article 97]
-```
-
-Measured-dead only as a *citation* path (fuse slack destroyed gold; R295 discards
-its refs at the fusion budget). As **non-citable context** it is unexplored. Add
-it as a fourth block in `graph_semantic.py` behind its own flag — but only after
-step 1, because prompt budget competes with Answer-Conciseness, the one axis we
-lead.
-
-### 7. Watch conciseness
-
-Answers are **+41% longer** than the graded July-7 ones (868 → 1223 chars) on the
-one axis the official scorecard says we lead. R327 restored
-`REGENOLD_ANSWER_NO_CAP=1` because turning it off re-enables the soft CHAR cap
-that hard rule #2 forbids — but if a bound is wanted, make it **sentence-only**
-via `REGENOLD_MAX_ANSWER_SENTENCES` and gate it with `ab_judge`.
+* **V1-vs-V2 prompt**: V1 REJECTED by the gold veto (live A/B, §2). V2 default
+  confirmed. (The R327-era handoff's "confirm V2" item is DONE.)
+* R326 I1 non-finding; I2–I5 done. `_DEONTIC_CYPHER` parses fine on Aura. The
+  judge's parent-text fallback stays removed. Haiku is gone from the live
+  path (R346.2).
 
 ---
 
-## 3. Closed — do not re-open
-
-* **R326 code-review finding I1 (`_ENUM_OPENER_RE` truncates (b)–(h))** is a
-  **non-finding**. The regex is searched over the unit's first `limit` chars and
-  an enumerated unit begins at `(a)`: verified Article 5(1), 10(2) and 13(3) all
-  match; 26(1) does not but is 228 chars, well under the 900 cap, so nothing is
-  truncated. A unit cannot begin mid-list in this schema.
-* Findings I2–I5 of that review (executor lock, Arabic annex normalisation in
-  `vector_recall` and Component D, parent-collapse regex) are **done**.
-* The audit's claim that `_DEONTIC_CYPHER` "does not parse on Neo4j 5" is
-  **false** — verified live, it returns 3 rows. Do not "fix" it.
-* The judge's article-level parent-text fallback was deliberately removed and
-  must stay removed: measured 0 of 60 real leaf coordinates lack verbatim text, so
-  the fallback only ever fires for a FABRICATED coordinate, dressing a
-  hallucination in its parent's words.
-
----
-
-## 4. Environment for a live run
-
-`run_official_batch` and `evals/harness/` **do not load dotenv** — export
-explicitly or the run silently falls to the deterministic path (the inert-feature
-trap). Do **not** copy the RAG repo's `.env` wholesale: it carries
-`P2P_GRAPH_RAG_API_KEY=sk-ant-…`, which enables an Anthropic Stage-2 path a test
-expects disabled. Build a scratch env with only:
-
-```
-NEO4J_URI / NEO4J_USERNAME / NEO4J_PASSWORD      # from the sibling repo's .env
-CF_ACCESS_CLIENT_ID / CF_ACCESS_CLIENT_SECRET    # same
-OPENAI_API_BASE=https://wrapper.antifragile-ai.net/v1
-OPENAI_API_KEY=dummy
-P2P_GRAPH_RAG_PROVIDER=openai_wrapper
-NEO4J_AUTO_SEED=0
-```
-
-The tunnel returns 401 without the CF Access pair; the repo sends them
-automatically when both are set. Verify with a real POST — `/healthz/llm` lies.
-
-**Warm the graph client before timing or grading anything.** The first query in a
-fresh process measured a MISS against the 750 ms budget (cold TLS + driver
-handshake) and 40–68 ms on every query after, so row 1 of a batch silently loses
-its graph context.
-
----
-
-## 5. Two traps that bit this round
-
-* **Check the branch arm's LATENCY on every A/B.** R327's first 50-row A/B was
-  byte-identical on all 50 answers AND all 50 reference lists — which reads as
-  "safe" and was actually inert: arm B averaged 1,096 ms vs baseline's 16,642 ms,
-  i.e. every row was an `_ENGINE_CACHE` hit and Stage-2 never re-ran. Any
-  engine-level flag missing from `_engine_cache_key` makes an in-process A/B
-  measure nothing. Route-level post-processing flags must stay OUT of the key.
-* **`grep` silently stops printing when it decides a stream is binary.** The
-  cp1252 curly quotes in provision text make `grep -v` emit
-  `Binary file (standard input) matches` and drop every remaining line. It
-  produced two wrong conclusions this round ("definitions never fire" — they
-  always did). Write to a file and read it, or use `grep -a`.
+**History:** [`docs/ROUNDS.md`](../docs/ROUNDS.md) — every round entry, verbatim.
