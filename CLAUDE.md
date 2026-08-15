@@ -530,6 +530,19 @@ correct only for exactly as long as that remains true.
   paraphrase tier; R346.2 switched paraphrases to the frontier Sonnet 4.6 tier
   and the confirmatory re-run was interrupted — re-run before trusting those
   numbers.
+* **R349 — every dynamic_ab A/B now reports the COMPLETE competition
+  picture.** The retrieval axes (ref_loose/strict/conc, kw_recall) measure
+  WHAT WAS RETRIEVED; the Regenold rubric scores the ANSWER. The harness now
+  runs the legal_v2 judge (answer_correctness, reference_correctness,
+  citation_faithfulness, answer_conciseness) per arm over the same rows —
+  through the SAME caller plumbing, `--judge-model claude-sonnet-4-6` via
+  `--judge-provider bedrock` by default — and reports them as paired axes
+  (`ans_corr` / `ref_corr` / `cite_faith` / `ans_conc`) in the SAME table,
+  with `--no-judge` to skip. Verified LIVE: 8 judge calls, 27.5 s, 0 errors,
+  genuine discrimination. `--judge-samples K` (majority verdict, ties fail).
+  Judge axes are computed once at the end (4 calls × rows × arms), fail soft
+  on transport errors, and pairs whose EITHER arm errors are skipped
+  (counted in `n_skipped`), never counted as passes.
 * **R347/R348 — the rerank is now a hybrid-RAG lever, still OFF until the
   A/B decides.** The R346 wash was the permutation-only contract re-ordering a
   keyword-picked set; R347 makes the parse-level rerank rank the keyword

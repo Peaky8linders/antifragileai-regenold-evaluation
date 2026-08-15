@@ -101,6 +101,12 @@ repeated in each command. Serialize the runs — never two live runs at once.
 #   REGENOLD_BEDROCK_STAGE2_MODEL=claude-opus-4-6
 #   REGENOLD_BEDROCK_COMPLEX_MODEL=claude-opus-4-6
 
+# R349 — the judge axes (ans_corr / ref_corr / cite_faith / ans_conc) are
+# ON by default: the legal_v2 judge runs per arm over the same rows via
+# --judge-model claude-sonnet-4-6 --judge-provider bedrock (the exact
+# commands below need no new flags). --no-judge disables. Verified live:
+# 8 judge calls, 27.5 s, 0 errors.
+
 # A/B 1 — Cohere rerank (branch ON vs OFF). Pacing floors the Trial key.
 py -3.12 -c "
 import os
