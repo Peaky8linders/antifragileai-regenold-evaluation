@@ -85,9 +85,14 @@ class TestJudgeAxes:
             )
 
         _patch_judge_row(monkeypatch, _fake)
-        base = [_rec("1", "a1"), _rec("2", "a2")]
-        brch = [_rec("1", "b1"), _rec("2", "b2")]
-        probe_by_id = {r.id: r for r in [_probe("1"), _probe("2")]}
+        # R350 — n must clear `_MIN_PAIRS_FOR_VERDICT`. This asserts the
+        # DIRECTION of a resolved verdict, so it needs a population the harness
+        # is willing to resolve; at 2 pairs the honest answer is now
+        # UNDERPOWERED (see test_two_pairs_cannot_resolve below).
+        ids = ["1", "2", "3", "4"]
+        base = [_rec(i, f"a{i}") for i in ids]
+        brch = [_rec(i, f"b{i}") for i in ids]
+        probe_by_id = {r.id: r for r in [_probe(i) for i in ids]}
         res = D._judge_axes(
             base, brch, probe_by_id, caller=object(), samples=1,
             concurrency=2, null_band=0.01,
@@ -99,9 +104,37 @@ class TestJudgeAxes:
             assert v["baseline"] == pytest.approx(1.0)
             assert v["branch"] == pytest.approx(0.0)
             assert v["verdict"] == "LOSS"
-            assert v["n_pairs"] == 2
+            assert v["n_pairs"] == len(ids)
 
     def test_branch_better_reads_as_win(self, monkeypatch):
+        def _fake(r, caller, k):  # noqa: ARG001
+            return _verdict_row(
+                r["id"],
+                "pass" if str(r["answer"] or "").startswith("b") else "fail",
+            )
+
+        _patch_judge_row(monkeypatch, _fake)
+        ids = ["1", "2", "3", "4"]
+        base = [_rec(i, f"a{i}") for i in ids]
+        brch = [_rec(i, f"b{i}") for i in ids]
+        probe_by_id = {r.id: r for r in [_probe(i) for i in ids]}
+        res = D._judge_axes(
+            base, brch, probe_by_id, caller=object(), samples=1,
+            concurrency=2, null_band=0.01,
+        )
+        assert res["axes"]["ans_corr"]["delta"] == pytest.approx(1.0)
+        assert res["axes"]["ans_corr"]["verdict"] == "WIN"
+
+    def test_two_pairs_cannot_resolve(self, monkeypatch):
+        """R350 — a unanimous 2-pair result is UNDERPOWERED, not a WIN.
+
+        The judge axes score only rows that reach Stage-2 and judge cleanly in
+        BOTH arms, so they routinely land on a handful of pairs while the run
+        header advertises the much larger deterministic n. A bootstrap over 1-2
+        observations has (near) zero width, which used to read as the MOST
+        resolved state when it is the least. Same fixture as
+        ``test_branch_better_reads_as_win``, two rows short.
+        """
         def _fake(r, caller, k):  # noqa: ARG001
             return _verdict_row(
                 r["id"],
@@ -116,8 +149,45 @@ class TestJudgeAxes:
             base, brch, probe_by_id, caller=object(), samples=1,
             concurrency=2, null_band=0.01,
         )
-        assert res["axes"]["ans_corr"]["delta"] == pytest.approx(1.0)
-        assert res["axes"]["ans_corr"]["verdict"] == "WIN"
+        v = res["axes"]["ans_corr"]
+        assert v["delta"] == pytest.approx(1.0)   # direction is still reported
+        assert v["n_pairs"] == 2
+        assert v["verdict"] == "UNDERPOWERED"     # but it is NOT resolved
+
+    def test_transport_error_verdict_is_not_a_real_fail(self, monkeypatch):
+        """R350 — `legal_v2` returns a genuine ``{"verdict": "fail",
+        "evaluation_error": "empty_answer"}`` when the answer came back empty,
+        which is what a branch-arm HTTP timeout looks like from here. Scoring
+        that as a real fail turned one network blip into the branch losing an
+        entire answer-quality axis. The shape production actually emits — a
+        `fail` verdict carrying an error marker — must be unscorable.
+        """
+        def _fake(r, caller, k):  # noqa: ARG001
+            if r["answer"] == "b2":
+                return {
+                    "id": r["id"], "category": "c",
+                    "verdicts": {
+                        ax: {"verdict": "fail",
+                             "evaluation_error": "empty_answer",
+                             "_samples_n": 0}
+                        for ax, _label in D._JUDGE_AXES
+                    },
+                }
+            return _verdict_row(r["id"], "pass")
+
+        _patch_judge_row(monkeypatch, _fake)
+        ids = ["1", "2", "3", "4"]
+        base = [_rec(i, f"a{i}") for i in ids]
+        brch = [_rec(i, f"b{i}") for i in ids]
+        probe_by_id = {r.id: r for r in [_probe(i) for i in ids]}
+        res = D._judge_axes(
+            base, brch, probe_by_id, caller=object(), samples=1,
+            concurrency=2, null_band=0.01,
+        )
+        v = res["axes"]["ans_corr"]
+        assert v["n_pairs"] == 3      # row "2" dropped, not scored 0.0
+        assert v["n_skipped"] == 1
+        assert v["delta"] == pytest.approx(0.0)   # NOT -0.25
 
     def test_error_on_one_arm_skips_the_pair(self, monkeypatch):
         """An errored arm must not read as a pass or a fail — only the clean

@@ -1664,6 +1664,16 @@ def _engine_cache_key(
             "REGENOLD_STAGE1_MODEL_GROQ",
             "REGENOLD_STAGE2_MODEL_GROQ",
             "REGENOLD_INTENT_MODEL_GROQ",
+            # R350 — the NON-Groq intent model belongs here for the same
+            # reason its Groq sibling does, and it was missing. Stage-0's
+            # `bridging_context` flows into GraphRAGRequest and is rendered
+            # into the Stage-2 prompt, so this is an engine-level input, not a
+            # transport detail. It is the model that runs whenever GROQ_API_KEY
+            # is absent — i.e. the documented eval setup. Made fresh-read in
+            # the same round (`intent_classifier.intent_model()`); a keyed but
+            # frozen flag is worse than an unkeyed one, because the cache split
+            # lets the fire check pass on noise.
+            "REGENOLD_INTENT_MODEL",
             "REGENOLD_GENERAL_MODEL_GROQ",
             "REGENOLD_SAFETY_MODEL_GROQ",
             "REGENOLD_FUSION_MODEL_GROQ",
@@ -1987,6 +1997,9 @@ def _engine_cache_key(
             # query_expansion and changes the expansion round-trip budget, so
             # it belongs in the key like every other engine env read (R334).
             "REGENOLD_QUERY_EXPANSION_BEDROCK_TIMEOUT",
+            # R350.1 — the WRAPPER sibling, added in the same round and keyed
+            # here for the same reason. One concept, one treatment.
+            "REGENOLD_QUERY_EXPANSION_TIMEOUT",
             # R346.2 — the paraphrase model (frontier tier, no Haiku) is read
             # fresh per call and changes the paraphrase surface.
             "REGENOLD_QUERY_EXPANSION_MODEL",

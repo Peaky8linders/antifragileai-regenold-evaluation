@@ -2591,12 +2591,30 @@ def _deterministic_parse(question: str) -> GraphQuery:
     # ``ask_compliance_question`` caps citations at 15 slots from that order
     # — so reranking here decides which entities (and their xrefs / paragraph
     # rows) survive the retrieval cap. Skip when the BM25 fallback already
-    # reranked (one Cohere call per request, never two). Gate-off no-op →
+    # reranked.
+    #
+    # ⚠ R350 — this used to claim "one Cohere call per request, never two".
+    # That is FALSE and the skip below does not deliver it. Counted with a
+    # stubbed transport and both flags ON: `_ranked_lists = [_bm25_hits_for(q)
+    # for q in expanded_queries]` runs the whole BM25 chain once per expanded
+    # query, and every `top_articles_by_relevance*` exit ends in
+    # `_maybe_rerank_fused` — **4 calls inside one `_deterministic_parse`**
+    # (docs [50, 43, 40, 37]), plus the kg-context rerank on the Stage-2 path
+    # = **5 serial calls**, each with a 6 s read timeout, all inside the
+    # request. Latency is a scored axis, and the Cohere Trial key is 10
+    # calls/min — so an A/B paced per-POST at `--min-call-gap 6.5` is really
+    # running at ~5x that budget and will 429 into a false INERT.
+    #
+    # NOT bounded here: a real fix needs a request-scoped call budget, which is
+    # a larger change than this round should make untested. Recorded as an open
+    # item instead of left as a comment asserting a guarantee the code lacks.
+    # Gate-off no-op →
     # davidath byte-identical BY CONSTRUCTION. Fail-soft + permutation-safe
     # via ``rerank_references``.
     if entities and not _bm25_fallback_used:
         try:
             from app.engines.cohere_rerank import (  # noqa: PLC0415
+                _pool_reasons,
                 build_kg_candidate_pool,
                 build_kg_candidate_pool_with_reasons,
                 rerank_enabled,
@@ -2616,27 +2634,32 @@ def _deterministic_parse(question: str) -> GraphQuery:
                 # KG-supplemented neighbour's rerank DOCUMENT with its curated
                 # semantic edge reason ("Relation: …") — the KG's semantic
                 # layer told the cross-encoder WHY the provision is relevant.
-                # The pool is a SUPERSET of the original entities — a
-                # permutation can reorder but never lose them — and the rerank
-                # ok-bit decides adoption: on any failure the ORIGINAL
-                # entities stand (no neighbour leakage). Gate-off and kg-off
-                # both degenerate to the R340 behaviour exactly.
+                # The pool is a SUPERSET of the original entities, so a
+                # permutation over it can never LOSE one — but it could ADD,
+                # which is what R350 closed below: the reranked ORDER is
+                # projected back onto the original membership, so KG
+                # neighbours inform the ranking and never become citations.
+                # On any rerank failure the ORIGINAL entities stand. Gate-off
+                # and kg-off both degenerate to the R340 behaviour exactly.
                 pool = entities
                 doc_reasons: dict[str, str] | None = None
                 if rerank_kg_candidates_enabled():
+                    # R350 — ``hops`` goes to BOTH builders. It used to reach
+                    # only the ``else`` branch, which is near-unreachable
+                    # because ``cross_refs_with_reason`` resolves a pair for
+                    # essentially every entity, so R348's depth knob was inert.
+                    _hops = rerank_kg_hops()
                     pairs = build_kg_candidate_pool_with_reasons(
-                        entities, per_ref=3
+                        entities, per_ref=3, hops=_hops
                     )
                     if pairs:
                         # Superset: the keyword entities stay first, the
                         # KG-supplemented neighbours (with their curated
                         # semantic edge reasons) follow.
                         pool = list(entities) + [e for e, _ in pairs]
-                        doc_reasons = {r: reason for r, reason in pairs}
+                        doc_reasons = _pool_reasons(entities, pairs)
                     else:
-                        pool = build_kg_candidate_pool(
-                            entities, hops=rerank_kg_hops()
-                        )
+                        pool = build_kg_candidate_pool(entities, hops=_hops)
                 ctx = rerank_query_context(
                     intent=intent,
                     risk_context=risk_context,
@@ -2646,7 +2669,51 @@ def _deterministic_parse(question: str) -> GraphQuery:
                     question, pool, query_context=ctx, doc_reasons=doc_reasons
                 )
                 if ok:
-                    entities = reranked
+                    # ⚠ R350 — the KG pool ORDERS; it does not ADMIT.
+                    #
+                    # `entities = reranked` adopted the whole expanded pool, so
+                    # every CROSS_REFERENCES neighbour became a wire citation:
+                    # `entities` -> one obligation each (`"article": entity`)
+                    # -> `CitationNode` -> the wire `references`. Measured with
+                    # an identity rerank stub (the cross-encoder expressing NO
+                    # preference at all, which still returns ok=True — ok means
+                    # "the API answered", and a successful noop is ok too):
+                    #
+                    #   "transparency obligations for chatbots"
+                    #       Art. 50  ->  Art. 50, Art. 56, Art. 98
+                    #   "do we need a FRIA?"        3 refs -> 11 refs
+                    #
+                    # Article 98 is *Committee procedure* — comitology — cited
+                    # on a chatbot question. That is hard rule #10 (the graph is
+                    # additive CONTEXT, never a wire citation) and it inflates
+                    # over-citation, the single axis this repo has left to win.
+                    #
+                    # So: restore the original membership. Genuine KG recall
+                    # may still be a good idea, but it is a reference-affecting
+                    # change and owes hard rule #8 a `gold_dropped` reading —
+                    # it does not get to arrive as a side effect of a rerank
+                    # placement.
+                    #
+                    # ⚠ CONSEQUENCE, stated plainly because the first version of
+                    # this comment got it wrong: with membership restored,
+                    # `REGENOLD_RERANK_KG_CANDIDATES` is a **provable no-op on
+                    # the wire**. Cohere `/v2/rerank` is POINTWISE — one
+                    # relevance score per (query, document) pair, independent of
+                    # the other documents in the request — so adding neighbour
+                    # documents cannot change the relative order of the original
+                    # entities. The projection then discards the neighbours.
+                    # Verified with a pointwise stub: no-KG and projected-KG arms
+                    # return identical entity order.
+                    #
+                    # That means an A/B of this flag will report INERT, and that
+                    # will be CORRECT, not a harness defect — do not spend a
+                    # round debugging `_engine_cache_key` or fresh-env reads.
+                    # `REGENOLD_RERANK_KG_HOPS` is dead weight behind it for the
+                    # same reason. To make the KG lever real it must ADMIT
+                    # candidates on a budget, with its own gold_dropped reading —
+                    # which is the measurement R350 declined to fake.
+                    _original = set(entities)
+                    entities = [r for r in reranked if r in _original]
         except Exception as exc:  # noqa: BLE001 — a rerank outage must never break parse
             logger.debug("cohere_rerank: parse-level entity rerank skipped: %s", exc)
 

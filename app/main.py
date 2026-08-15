@@ -85,6 +85,28 @@ def _log_llm_provider_status() -> None:
     """
     if os.getenv("REGENOLD_SKIP_STARTUP_LOG") == "1":
         return
+
+    def _intent_model_for_log() -> str:
+        """Ask the intent classifier which model it will actually use.
+
+        ⚠ R350 — this line used to re-derive the default itself, as
+        ``os.getenv("REGENOLD_INTENT_MODEL", "claude-haiku-4-5-20251001")``.
+        R346.2 moved the real default to Sonnet 4.6 ("no Haiku on the live
+        path") and did not update the log, so with the variable unset — the
+        DEPLOYED configuration, since ``railway.toml [deploy.envs]`` has never
+        applied — the boot line advertised a model the process would never
+        call. A provenance surface asserting the wrong model is the same
+        false-attribution class as the ``METRIC_PROVENANCE`` "Sentence-BERT"
+        label: worse than no record, because it is confidently wrong. One
+        concept, one definition — ask the owner.
+        """
+        try:
+            from app.llm.intent_classifier import intent_model
+
+            return intent_model()
+        except Exception:  # noqa: BLE001 — a log line must never break boot
+            return "unknown"
+
     provider_label = resolve_provider(
         os.getenv("P2P_GRAPH_RAG_PROVIDER"),
         default_when_auto="openai_wrapper",
@@ -99,7 +121,7 @@ def _log_llm_provider_status() -> None:
             "intent_model=%s graph_rag_model=%s — hit /healthz/llm for a "
             "live probe",
             base,
-            os.getenv("REGENOLD_INTENT_MODEL", "claude-haiku-4-5-20251001"),
+            _intent_model_for_log(),
             settings.graph_rag.model,
         )
     elif provider_label == "anthropic":

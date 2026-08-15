@@ -162,7 +162,7 @@ def test_resolve_picks_wrapper_when_only_wrapper_configured(monkeypatch) -> None
     selection = ic._resolve_intent_provider()
     assert selection is not None
     provider, model = selection
-    assert model == ic._DEFAULT_MODEL  # claude-haiku-4-5-20251001 by default
+    assert model == ic.intent_model()  # R346.2: Sonnet 4.6, no Haiku on the live path
     assert provider is owp.get_openai_wrapper_provider()
 
 
@@ -175,7 +175,7 @@ def test_resolve_picks_groq_when_groq_configured(monkeypatch) -> None:
     selection = ic._resolve_intent_provider()
     assert selection is not None
     provider, model = selection
-    assert model == ic._DEFAULT_GROQ_MODEL  # R264: qwen/qwen3.6-27b
+    assert model == ic.intent_groq_model()  # R264: qwen/qwen3.6-27b
     assert provider is owp.get_groq_intent_provider()
 
 
@@ -188,7 +188,7 @@ def test_resolve_falls_back_to_wrapper_when_groq_misconfigured(monkeypatch) -> N
     selection = ic._resolve_intent_provider()
     assert selection is not None
     _, model = selection
-    assert model == ic._DEFAULT_MODEL  # Haiku, not Groq Llama
+    assert model == ic.intent_model()  # the wrapper tier, not Groq Llama
 
 
 # ── End-to-end classification through Groq ───────────────────────────────────
