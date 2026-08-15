@@ -254,3 +254,95 @@ def test_cache_key_changes_with_flag(monkeypatch):
     monkeypatch.setenv("REGENOLD_QUERY_EXPANSION", "1")
     after = _engine_cache_key(_Q_NO_ENTITY, None, 0, False)
     assert after != before
+
+
+# ── R346 — the paraphrase transport follows the ACTIVE provider ─────────────
+#
+# Under ``P2P_GRAPH_RAG_PROVIDER=bedrock`` the paraphrase call must ride
+# Bedrock's own Haiku 4.5, NOT the Claude-Max wrapper — the operator keeps
+# the tunnel for the live re-evaluation, and a Bedrock-only run with the
+# wrapper disabled must still be able to expand. These tests pin the
+# transport dispatch, not the R341 parse wiring (covered above).
+
+
+def _enable_bedrock_expansion(monkeypatch, paraphrase: str):
+    """Gate ON, provider=bedrock, wrapper DEAD, Bedrock alive (faked)."""
+    import app.llm.bedrock_client as BC  # noqa: PLC0415
+
+    monkeypatch.setenv("REGENOLD_QUERY_EXPANSION", "1")
+    monkeypatch.setenv("P2P_GRAPH_RAG_PROVIDER", "bedrock")
+    monkeypatch.setattr(QE, "is_openai_wrapper_enabled", lambda: False)
+    monkeypatch.setattr(BC, "is_bedrock_provider_enabled", lambda: True)
+    calls: list = []
+
+    def _fake_complete(req):
+        calls.append(req)
+        return _FakeResp(f'{{"paraphrases": ["{paraphrase}"]}}')
+
+    monkeypatch.setattr(BC, "complete_with_fallback", _fake_complete)
+    return calls
+
+
+def test_bedrock_transport_fires(monkeypatch):
+    """THE R346 inert-lever guard: provider=bedrock + wrapper dead must still
+    reach the paraphrase provider — the Bedrock Haiku call happens and the
+    paraphrase's map hit lands in the entity list."""
+    base = _deterministic_parse(_Q_NO_ENTITY).entities
+    calls = _enable_bedrock_expansion(monkeypatch, _PARAPHRASE_72)
+
+    out = _deterministic_parse(_Q_NO_ENTITY).entities
+
+    stats = QE.query_expansion_stats()
+    assert stats["attempts"] == 1
+    assert stats["expanded"] >= 1
+    assert stats["failed"] == 0
+    assert len(calls) == 1
+    # The Bedrock request targets the Haiku 4.5 alias (cheap paraphrase tier),
+    # not the Opus generation model.
+    assert calls[0].model == "claude-haiku-4-5"
+    assert "Art. 72" in out
+    assert out[0] == "Art. 72"
+    assert len(out) == len(base)  # BM25 lane preserved, budget intact
+
+
+def test_bedrock_disabled_falls_back_to_wrapper(monkeypatch):
+    """provider=bedrock but Bedrock credentials absent → the historical
+    wrapper path serves the call (attempts>0) rather than silently
+    disabling expansion."""
+    import app.llm.bedrock_client as BC  # noqa: PLC0415
+
+    monkeypatch.setenv("REGENOLD_QUERY_EXPANSION", "1")
+    monkeypatch.setenv("P2P_GRAPH_RAG_PROVIDER", "bedrock")
+    monkeypatch.setattr(QE, "is_openai_wrapper_enabled", lambda: True)
+    monkeypatch.setattr(BC, "is_bedrock_provider_enabled", lambda: False)
+    wrapper_calls: list = []
+
+    def _fake_wrapper():
+        wrapper_calls.append(1)
+        return _FakeProvider(f'{{"paraphrases": ["{_PARAPHRASE_72}"]}}')
+
+    monkeypatch.setattr(QE, "get_openai_wrapper_provider", _fake_wrapper)
+    out = _deterministic_parse(_Q_NO_ENTITY).entities
+
+    stats = QE.query_expansion_stats()
+    assert stats["attempts"] == 1
+    assert stats["failed"] == 0
+    assert len(wrapper_calls) == 1
+    assert "Art. 72" in out
+
+
+def test_bedrock_only_no_provider_no_call(monkeypatch):
+    """provider=bedrock, wrapper dead AND Bedrock dead → zero calls, exact
+    baseline entities (fail-soft, nothing silently degrades)."""
+    import app.llm.bedrock_client as BC  # noqa: PLC0415
+
+    monkeypatch.setenv("REGENOLD_QUERY_EXPANSION", "1")
+    monkeypatch.setenv("P2P_GRAPH_RAG_PROVIDER", "bedrock")
+    monkeypatch.setattr(QE, "is_openai_wrapper_enabled", lambda: False)
+    monkeypatch.setattr(BC, "is_bedrock_provider_enabled", lambda: False)
+
+    out = _deterministic_parse(_Q_NO_ENTITY).entities
+    base = _deterministic_parse(_Q_NO_ENTITY).entities
+
+    assert QE.query_expansion_stats()["attempts"] == 0
+    assert out == base

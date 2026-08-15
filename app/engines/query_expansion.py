@@ -1,11 +1,17 @@
 """RAG-Fusion query expansion + reciprocal rank fusion (R39 / B8).
 
-When the wrapper is wired and the intent suggests a single-anchor
-question, ask Haiku 4.5 for 3 paraphrases. Each paraphrase runs through
-the existing retrieval stack independently; reciprocal rank fusion (RRF)
-combines the result lists.
+When a paraphrase provider is available and the intent suggests a
+single-anchor question, ask Haiku 4.5 for 3 paraphrases. Each paraphrase
+runs through the existing retrieval stack independently; reciprocal rank
+fusion (RRF) combines the result lists.
 
-Fail-soft: wrapper disabled / circuit open / any exception → return
+R346 — the paraphrase transport follows the ACTIVE Stage-2 provider:
+under ``P2P_GRAPH_RAG_PROVIDER=bedrock`` the call goes to Bedrock's own
+Haiku 4.5, NOT the Claude-Max wrapper — the operator keeps the tunnel
+for the live re-evaluation, and mixing transports mid-A/B contaminates
+both arms. Every other provider keeps the historical wrapper path.
+
+Fail-soft: no provider / circuit open / any exception → return
 [original] only.
 """
 from __future__ import annotations
@@ -15,6 +21,7 @@ import logging
 import os
 import time
 from collections.abc import Iterable
+from typing import Any
 
 from app.llm.openai_wrapper_provider import (
     OpenAIWrapperRequest,
@@ -39,7 +46,14 @@ _SYSTEM_PROMPT = (
 
 _USER_TEMPLATE = "Question: {q}\n\nReturn 2-3 paraphrases as JSON."
 
-_TIMEOUT = 2.0  # short budget — paraphrase is opportunistic
+_TIMEOUT = 2.0  # short budget — paraphrase is opportunistic (wrapper)
+
+# R346 — Bedrock's first call carries cold-start latency the local wrapper
+# does not; a 2 s budget there would fail every paraphrase and read as an
+# inert lever (attempts>0, expanded=0, branch == baseline on the wire).
+_BEDROCK_TIMEOUT = float(os.getenv(
+    "REGENOLD_QUERY_EXPANSION_BEDROCK_TIMEOUT", "8.0"
+))
 
 # ── Call instrumentation (R341, mirroring cohere_rerank's R331 counters) ────
 #
@@ -91,29 +105,82 @@ def is_enabled() -> bool:
     )
 
 
+def _paraphrase_provider_available() -> bool:
+    """True when SOME provider can serve the paraphrase call.
+
+    R346 — the historical gate (``is_openai_wrapper_enabled``) silently
+    disables expansion on a Bedrock-only run, where the wrapper is not the
+    transport by design. Bedrock counts as available when selected AND
+    its credentials are present.
+    """
+    if is_openai_wrapper_enabled():
+        return True
+    if os.getenv("P2P_GRAPH_RAG_PROVIDER", "").strip().lower() == "bedrock":
+        try:
+            from app.llm.bedrock_client import (  # noqa: PLC0415
+                is_bedrock_provider_enabled,
+            )
+            return is_bedrock_provider_enabled()
+        except Exception:  # noqa: BLE001 — boto3 is an optional wheel
+            return False
+    return False
+
+
+def _complete_paraphrase(user: str) -> Any:
+    """One paraphrase completion through the ACTIVE provider.
+
+    Returns an object carrying ``.text`` / ``.error`` — both the wrapper's
+    ``OpenAIWrapperResponse`` and ``BedrockResponse`` satisfy that shape,
+    so the caller never branches on transport.
+    """
+    if os.getenv("P2P_GRAPH_RAG_PROVIDER", "").strip().lower() == "bedrock":
+        try:
+            from app.llm.bedrock_client import (  # noqa: PLC0415
+                BedrockRequest,
+                complete_with_fallback,
+                is_bedrock_provider_enabled,
+            )
+            if is_bedrock_provider_enabled():
+                return complete_with_fallback(BedrockRequest(
+                    system=_SYSTEM_PROMPT,
+                    user=user,
+                    # Alias -> eu.anthropic.claude-haiku-4-5-20251001-v1:0,
+                    # the same Haiku 4.5 tier the wrapper path uses.
+                    model="claude-haiku-4-5",
+                    max_tokens=200,
+                    temperature=0.3,
+                    timeout_seconds=_BEDROCK_TIMEOUT,
+                ))
+        except Exception as exc:  # noqa: BLE001 — fail-soft
+            logger.debug(
+                "query_expansion_bedrock_unavailable: %s", str(exc)[:160]
+            )
+    # Historical path: Claude Max via the wrapper (OPENAI_API_BASE).
+    return get_openai_wrapper_provider().complete(OpenAIWrapperRequest(
+        system=_SYSTEM_PROMPT,
+        user=user,
+        model="claude-haiku-4-5-20251001",
+        max_tokens=200,
+        temperature=0.3,
+        timeout_seconds=_TIMEOUT,
+    ))
+
+
 def expand_query(question: str, *, intent_label: str = "") -> list[str]:
     """Return list of queries (original first, then paraphrases).
 
     Always includes the original. Returns [original] on any failure
-    path (no wrapper, circuit open, parse error, timeout).
+    path (no provider, circuit open, parse error, timeout).
     """
     queries = [question.strip()]
     if not queries[0]:
         return queries
-    if not is_openai_wrapper_enabled():
+    if not _paraphrase_provider_available():
         return queries
     _bump("attempts")
     try:
-        provider = get_openai_wrapper_provider()
         start = time.perf_counter()
-        resp = provider.complete(OpenAIWrapperRequest(
-            system=_SYSTEM_PROMPT,
-            user=_USER_TEMPLATE.format(q=queries[0][:1000]),
-            model="claude-haiku-4-5-20251001",
-            max_tokens=200,
-            temperature=0.3,
-            timeout_seconds=_TIMEOUT,
-        ))
+        resp = _complete_paraphrase(_USER_TEMPLATE.format(q=queries[0][:1000]))
     except Exception as exc:  # noqa: BLE001 — fail-soft
         logger.debug("query_expansion_exception: %s", str(exc)[:160])
         _bump("failed")

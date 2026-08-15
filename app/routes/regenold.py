@@ -1976,6 +1976,10 @@ def _engine_cache_key(
             # reads +0.0000 on every axis — which is also what INERT looks
             # like, making the run unfalsifiable.
             "REGENOLD_QUERY_EXPANSION",
+            # R346 — the Bedrock paraphrase timeout is read fresh per call by
+            # query_expansion and changes the expansion round-trip budget, so
+            # it belongs in the key like every other engine env read (R334).
+            "REGENOLD_QUERY_EXPANSION_BEDROCK_TIMEOUT",
         )
     )
     import json
