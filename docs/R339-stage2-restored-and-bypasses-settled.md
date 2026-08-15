@@ -246,6 +246,59 @@ inert-A/B trap, arriving through the *probe pool* rather than the harness. The A
 under `provider=cli` neither flag is reachable at all. Any deterministic-arm A/B on them is inert by
 construction.
 
+## 4d. The Stage-2 grounding block was truncating provision text — FIXED
+
+The operator's requirement is "Stage 2 gets the full context plus original user question, no
+truncation or paraphrasing". Captured the real Stage-2 payload by spying on
+`_OpenAIWrapperProvider.complete` while running the engine. The original question arrives
+**verbatim** and the system prompt arrives **whole** — but the grounding did not.
+
+**Localised:** `app/engines/semantic_layer.py` `_clip_clause`, called from `cross_reference_context`
+with a hard-coded `_CROSS_REF_SNIPPET_CHARS = 240`. It renders the `CROSS-REFERENCED PROVISIONS`
+block appended to the Stage-2 user message at `_graph_rag_impl.py:7514-7524`. The final line was
+`return window.rstrip() + "…"` — a raw character cut whenever no clause boundary sat in the back
+half of the window.
+
+**Proven render-time, not stored data:**
+
+| ref | stored (`get_provision_text`) | rendered to Stage-2 | `…` in the store? |
+| --- | --- | --- | --- |
+| Article 40 | 2,770 | **240** | no |
+| Article 41 | 3,842 | **158** | no |
+| Article 74 | 6,977 | **241** | no |
+
+**A second, worse defect in the same function:** Article 41 was clipped to **158 of 3,873 chars — a
+96% loss — with no marker at all**, ending `"...or, as applicable,"`, indistinguishable from a
+complete provision. The mid-word cut was at least visible; this one was silent. It is precisely
+CLAUDE.md's own rule: *a ceiling that falls back to a smaller limit is a switch, not a ceiling.*
+
+**Fix:** budget raised to 20,000 (above the largest reachable node, `art_3` at 17,079) so nothing
+truncates under the code default; new `REGENOLD_CROSS_REF_SNIPPET_CHARS` clamped `[240, 60000]`;
+`_clip_clause` now prefers clause → word boundary, **never** cuts mid-word, **always** marks with
+` [...]`, and reserves the marker's cost so the result cannot exceed the ceiling.
+
+⚠ **And the flag was invisible to every A/B.** `REGENOLD_CROSS_REF_CONTEXT` has been default-ON and
+**absent from `_engine_cache_key` since R69**, so an in-process A/B of this path would have been
+served one arm's cached output — the inert-A/B trap, live for many rounds. Both it and the new
+budget flag are now registered (`app/routes/regenold.py:1626-1636`).
+
+**Measured before/after, same question, live:**
+
+| | SYSTEM | USER | `…` in USER |
+| --- | --- | --- | --- |
+| before | 51,512 | 122,828 | **2** |
+| after | 51,512 | **135,778** | **0** |
+
++12,950 chars of grounding restored (+10.5%). Tests: 629 passed on
+`-k "grounding or prose or context or stage2"`, 28 on `test_semantic_layer.py`, 190 on the
+cache-key/xref selection.
+
+**The consequence that matters most for the graded batch:** the canonical Article 11 → **Annex IV**
+cross-reference was being cut to 240 chars. Annex IV now reaches Stage-2 complete at **5,720 chars**
+— which is where **Annex IV(1)(e)**, the hardware description that graded question `rg_001` turns
+on, actually lives. Per CLAUDE.md that content was previously reachable only through the system slot
+the wrapper dropped. It is now on both channels, in full, for the first time.
+
 ## 5. What is still open
 
 1. **The trace must record the primary provider's failure.** One `record_note` in the
