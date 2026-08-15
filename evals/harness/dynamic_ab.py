@@ -269,6 +269,11 @@ _LAYER_HINTS: tuple[tuple[str, str], ...] = (
     ("STAGE2", "stage2"), ("COMPLEX", "stage2"), ("OPUS", "stage2"),
     ("MINIMAL_COMPOSER", "stage2"), ("REF_MINIMALITY", "stage2"),
     ("ANSWER_FIRST", "stage2"), ("CURATED", "stage2"),
+    # R345 — REGENOLD_PROMPT_V2 swaps the Stage-2 SYSTEM prompt (V1 51K vs
+    # V2 15K chars), so the V1-vs-V2 confirmatory A/B (#24) must probe with
+    # the stage2 control (P2P_GRAPH_RAG_ENABLE_STAGE2=0), not the retrieval
+    # fallback the name would otherwise infer.
+    ("PROMPT", "stage2"),
     ("KG_", "graph"), ("GRAPH", "graph"), ("SEMANTIC", "graph"),
     ("PPR", "graph"), ("VECTOR", "graph"), ("ONTOLOGY", "graph"),
 )
