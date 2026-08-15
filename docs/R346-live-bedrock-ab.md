@@ -126,3 +126,72 @@ runpy.run_module('evals.harness.dynamic_ab', run_name='__main__')
 Fire checks, probe sensitivity, the gold_dropped veto, and per-arm latency
 (the sidecar records `latency_ms` per row) are all asserted/reported by the
 harness; each run writes its checkpoint sidecar to `evals/bench/results/`.
+
+## 6. RESULTS — three live A/Bs, 2026-08-15 (60 rows, Bedrock Opus 4.6 Stage-2)
+
+All runs on the re-minted ABSK key, `P2P_GRAPH_RAG_PROVIDER=bedrock`,
+`REGENOLD_BEDROCK_* = claude-opus-4-6`, wrapper fallback OFF, embedded graph.
+0 errors in every arm. Sidecars: `evals/bench/results/dynamic-ab-r346-*.json`.
+
+### A/B 1 — REGENOLD_COHERE_RERANK (ON vs OFF), paced 6.5 s
+
+| axis | baseline | branch | delta | 95% CI | verdict |
+|---|---|---|---|---|---|
+| ref_loose | 0.8278 | 0.8194 | −0.0083 | [−0.0667, +0.0417] | UNDERPOWERED |
+| ref_strict | 0.6706 | 0.6646 | −0.0060 | [−0.0515, +0.0463] | UNDERPOWERED |
+| ref_conc | 0.5215 | 0.5384 | +0.0168 | [−0.0470, +0.0808] | UNDERPOWERED |
+| kw_recall | 0.8787 | 0.8682 | −0.0106 | [−0.0511, +0.0278] | UNDERPOWERED |
+| gold_dropped_head | 17 | 17 | **+0** | — | no veto |
+
+FIRED 49/60 rows (refs 31, answers 49). Latency: 10.4 → 11.4 s mean
+(+1.0 s ≈ +10%, the Cohere round-trip), p50 10.0 → 11.1 s.
+
+The lever provably moves rows but this 60-row probe cannot resolve whether
+that movement helps; deltas are inside noise. ref_conc is the only positive.
+
+### A/B 2 — REGENOLD_QUERY_EXPANSION (ON vs OFF)
+
+| axis | baseline | branch | delta | 95% CI | verdict |
+|---|---|---|---|---|---|
+| ref_loose | 0.8278 | 0.8667 | +0.0389 | [−0.0083, +0.0944] | UNDERPOWERED |
+| ref_strict | 0.6273 | 0.6265 | −0.0008 | [−0.0325, +0.0292] | UNDERPOWERED |
+| ref_conc | 0.4576 | 0.4328 | −0.0248 | [−0.0678, +0.0125] | UNDERPOWERED |
+| kw_recall | 0.7860 | 0.8151 | +0.0292 | [−0.0069, +0.0681] | UNDERPOWERED |
+| gold_dropped_head | 17 | 14 | **−3** | — | no veto (branch BETTER) |
+
+FIRED 37/60 rows (refs 25, answers 37). Latency flat: 11.1 → 10.4 s mean.
+
+Directionally the strongest arm: ref_loose +0.039 and kw_recall +0.029 with
+their CIs mostly above zero, and the branch DROPS FEWER gold refs (−3).
+Exactly what the paraphrase-recall lever was built for; needs more rows to
+resolve. The Bedrock-Haiku paraphrase transport (R346) held up with zero
+failures.
+
+### A/B 3 — REGENOLD_PROMPT_V2=0 (V1 branch) vs V2 default
+
+| axis | baseline(V2) | branch(V1) | delta | 95% CI | verdict |
+|---|---|---|---|---|---|
+| ref_loose | 0.8528 | 0.8444 | −0.0083 | [−0.0583, +0.0500] | UNDERPOWERED |
+| ref_strict | 0.5806 | 0.5660 | −0.0146 | [−0.0491, +0.0153] | UNDERPOWERED |
+| ref_conc | 0.3657 | 0.3503 | −0.0154 | [−0.0554, +0.0171] | UNDERPOWERED |
+| kw_recall | 0.6852 | 0.6866 | +0.0014 | [−0.0500, +0.0569] | UNDERPOWERED |
+| gold_dropped_head | 15 | 16 | **+1** | — | **HARD RULE #8 VETO** |
+
+FIRED 13/60 rows (refs 12, answers 13). Latency: 5.7 → 5.0 s mean (V1 is
+faster — 51.5 K vs 16.1 K char prompt).
+
+REJECTED: the V1 branch drops a gold reference. Per hard rule #8 the veto
+is decisive regardless of the other axes — V2 stays the live default, which
+confirms the R340 prompt-rebuild decision with a live measurement.
+
+### Reading the three together
+
+* All three levers FIRED (13–49 changed rows) — none inert, none blind.
+* No axis reached a resolved verdict on 60 rows; every CI spans zero
+  (UNDERPOWERED). The retrieval levers need more rows (or a harder probe
+  subset) to resolve; the veto grain is the only decisive signal at this n.
+* The only veto fired against V1 — the V2 default is safe to keep.
+* Expansion is the arm worth more rows: positive direction on the recall
+  axes and it reduced gold drops, at flat latency.
+* Every arm ran at 0 HTTP errors — the Bedrock path (Opus 4.6 Stage-2,
+  Haiku paraphrase, Cohere rerank) is healthy end-to-end.
