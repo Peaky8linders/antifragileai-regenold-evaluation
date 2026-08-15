@@ -361,14 +361,56 @@ class TestParseConverseResponse:
 
 
 class TestClassifyClientError:
-    def _make_client_error(self, code: str, status: int = 400) -> ClientError:
+    def _make_client_error(
+        self, code: str, status: int = 400, message: str = "test"
+    ) -> ClientError:
         return ClientError(
             error_response={
-                "Error": {"Code": code, "Message": "test"},
+                "Error": {"Code": code, "Message": message},
                 "ResponseMetadata": {"HTTPStatusCode": status},
             },
             operation_name="Converse",
         )
+
+    # R346.1 — a dead/expired ABSK key is a GLOBAL credential failure, not a
+    # per-model entitlement gap. AWS answers with the same AccessDenied code
+    # but a distinct message; it must classify separately, be non-skippable
+    # (no chain burn, no wrapper hop) and never be remembered per-model.
+    def test_auth_failed_classifies_as_key_invalid(self) -> None:
+        from app.llm.bedrock_client import _classify_client_error
+
+        exc = self._make_client_error(
+            "AccessDeniedException", 403,
+            message="Authentication failed: Please make sure your API Key is valid.",
+        )
+        assert _classify_client_error(exc) == "api_key_invalid_403"
+
+    def test_key_invalid_is_not_entitlement(self) -> None:
+        from app.llm.bedrock_client import is_entitlement_error
+
+        assert not is_entitlement_error("api_key_invalid_403")
+
+    def test_key_invalid_fails_fast_not_skippable(self) -> None:
+        """A dead key must NOT advance the chain (every model fails the same
+        way) and must NOT reach the wrapper hop — the tunnel is reserved."""
+        from app.llm.bedrock_client import is_skippable_error
+
+        assert not is_skippable_error("api_key_invalid_403")
+
+    def test_plain_access_denied_still_entitlement(self) -> None:
+        """The distinct marker must not change the pre-existing behaviour for
+        genuine per-model entitlement errors ("not available for this account")."""
+        from app.llm.bedrock_client import (
+            _classify_client_error,
+            is_entitlement_error,
+            is_skippable_error,
+        )
+
+        exc = self._make_client_error("AccessDeniedException", 403)
+        classified = _classify_client_error(exc)
+        assert classified == "api_access_denied_403"
+        assert is_entitlement_error(classified)
+        assert is_skippable_error(classified)
 
     def test_throttling(self) -> None:
         from app.llm.bedrock_client import _classify_client_error
