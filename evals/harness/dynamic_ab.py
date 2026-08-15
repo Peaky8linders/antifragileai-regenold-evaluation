@@ -57,6 +57,24 @@ sub-point, and prints that population; against head-level gold it is reported as
 inapplicable rather than as a number, because there it counts precision GAINS as
 losses. See the veto block in :func:`_analyse`.
 
+R349 — THE COMPLETE COMPETITION PICTURE
+=======================================
+
+The retrieval axes (ref_loose / ref_strict / ref_conc / kw_recall) measure
+WHAT WAS RETRIEVED, not whether the ANSWER is right. The Regenold rubric
+scores the answer itself — ``answer_correctness`` (CoVe, decompose-and-
+verify), ``reference_correctness`` (GOVERNING/SUPPORTING/WRONG three-way),
+``citation_faithfulness`` (does the prose match each citation), and
+``answer_conciseness``. Those live in :mod:`evals.judge.legal_v2`; this
+harness now runs them per arm over the same rows, through the same caller
+plumbing (``--judge-model`` / ``--judge-provider``, Bedrock sonnet-4-6 by
+default), and reports them as paired axes — ``ans_corr`` / ``ref_corr`` /
+``cite_faith`` / ``ans_conc`` — in the SAME table, so a retrieval win can be
+read against its answer-level cost and a gold veto against both. Judge axes
+are computed ONCE at the end (4 calls per row per arm — the fire check and
+adaptive stop stay on the cheap axes), fail soft on transport errors, and are
+skipped entirely with ``--no-judge``.
+
 USAGE
 =====
 
@@ -79,8 +97,10 @@ import os
 import random
 import statistics as st
 import sys
+import threading
 import time
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -154,6 +174,153 @@ def _score(row: ProbeRow, answer: str, refs: list[str]) -> dict[str, Any]:
         "answer_chars": float(len(answer or "")),
         "n_refs": float(len(refs or [])),
     }
+
+
+# ── R349: the legal_v2 judge axes (the Regenold rubric's answer-level
+#    metrics) run per arm and join the axis table as paired deltas.
+# ─────────────────────────────────────────────────────────────────────────
+
+_JUDGE_AXES: tuple[tuple[str, str], ...] = (
+    ("answer_correctness", "ans_corr"),
+    ("reference_correctness", "ref_corr"),
+    ("citation_faithfulness", "cite_faith"),
+    ("answer_conciseness", "ans_conc"),
+)
+
+
+def _judge_caller(provider: str, timeout_s: float, model: str) -> Any:
+    """The legal_v2 caller for ``provider`` (bedrock by default)."""
+    from evals.judge.legal_v2 import (  # noqa: PLC0415
+        _resolve_caller,
+        set_judge_model,
+    )
+
+    set_judge_model(model)
+    return _resolve_caller(provider, timeout_s)
+
+
+def _judge_rows(
+    records: list[dict[str, Any]],
+    probe_by_id: dict[str, ProbeRow],
+    *,
+    caller: Any,
+    samples: int,
+    concurrency: int,
+) -> dict[str, Any]:
+    """Run the 4 legal_v2 axes over arm records (a cheap local caller in
+    tests; the LLM caller in live runs). Fail-soft: a transport error marks
+    every row with a judge error, never raises."""
+    from evals.judge.legal_v2 import _judge_row, _norm  # noqa: PLC0415
+
+    k = max(1, int(samples))
+    rows: list[tuple[int, dict[str, Any]]] = []
+    for i, rec in enumerate(records):
+        pr = probe_by_id.get(str(rec.get("id")))
+        question = str(pr.live_question) if pr and getattr(pr, "live_question", "") else ""
+        rows.append((i, _norm({
+            "id": rec.get("id"),
+            "category": getattr(pr, "category", None) if pr else None,
+            "question": question,
+            "pred_answer": rec.get("pred_answer", ""),
+            "pred_refs": rec.get("pred_refs", []),
+            "gold_refs": rec.get("gold_refs", []),
+            "gold_answer": getattr(pr, "gold_answer", "") if pr else "",
+        })))
+
+    judged: dict[str, Any] = {}
+    errors = 0
+    lock = threading.Lock()
+
+    def _w(item: tuple[int, dict[str, Any]]) -> tuple[int, dict[str, Any]]:
+        _i, r = item
+        return _i, _judge_row(r, caller, k)
+
+    try:
+        with ThreadPoolExecutor(max_workers=max(1, int(concurrency))) as pool:
+            for _i, jr in pool.map(_w, rows):
+                with lock:
+                    judged[str(jr.get("id"))] = jr
+                    for _ax, _label in _JUDGE_AXES:
+                        v = (jr.get("verdicts") or {}).get(_ax) or {}
+                        if v.get("judge_error") or v.get("evaluation_error"):
+                            errors += 1
+                            break
+    except Exception as exc:  # noqa: BLE001 — a judge outage must not kill the A/B
+        return {"error": str(exc)}
+    return {"judged": judged, "n_errors": errors}
+
+
+def _judge_axes(
+    base_records: list[dict[str, Any]],
+    brch_records: list[dict[str, Any]],
+    probe_by_id: dict[str, ProbeRow],
+    *,
+    caller: Any,
+    samples: int,
+    concurrency: int,
+    null_band: float,
+) -> dict[str, Any]:
+    """Paired judge axes for the common rows of both arms.
+
+    Returns ``{label: {baseline, branch, delta, ci_lo, ci_hi, n_changed,
+    verdict, n_pairs, n_skipped}}`` — the same shape as the retrieval axes —
+    plus the per-arm aggregate (pass/fail/error counts per axis). A pair is
+    dropped from an axis when EITHER arm's verdict is an error or unscorable
+    (counted in ``n_skipped``), so errors never masquerade as passes.
+    """
+    base = _judge_rows(base_records, probe_by_id, caller=caller,
+                       samples=samples, concurrency=concurrency)
+    if "error" in base:
+        return {"error": base["error"]}
+    branch = _judge_rows(brch_records, probe_by_id, caller=caller,
+                         samples=samples, concurrency=concurrency)
+    if "error" in branch:
+        return {"error": branch["error"]}
+
+    axes: dict[str, Any] = {}
+    for ax, label in _JUDGE_AXES:
+        deltas: list[float] = []
+        skipped = 0
+        common = set(base["judged"]) & set(branch["judged"])
+        for rid in common:
+            vb = (base["judged"][rid].get("verdicts") or {}).get(ax) or {}
+            vc = (branch["judged"][rid].get("verdicts") or {}).get(ax) or {}
+            sb = str(vb.get("verdict") or "").lower()
+            sc = str(vc.get("verdict") or "").lower()
+            if (sb == "pass" or sb == "fail") and (sc == "pass" or sc == "fail"):
+                deltas.append((1.0 if sc == "pass" else 0.0)
+                              - (1.0 if sb == "pass" else 0.0))
+            else:
+                skipped += 1
+        if not deltas:
+            continue
+        mean = st.fmean(deltas)
+        lo, hi = _bootstrap_ci(deltas)
+        # Per-arm pass RATE over the paired population (errors already excluded).
+        pairs = [rid for rid in common if _pair_scored(base, branch, ax, rid)]
+        axes[label] = {
+            "baseline": st.fmean(
+                1.0 if str(((base["judged"][rid].get("verdicts") or {})
+                            .get(ax) or {}).get("verdict") or "").lower() == "pass"
+                else 0.0 for rid in pairs),
+            "branch": st.fmean(
+                1.0 if str(((branch["judged"][rid].get("verdicts") or {})
+                            .get(ax) or {}).get("verdict") or "").lower() == "pass"
+                else 0.0 for rid in pairs),
+            "delta": mean, "ci_lo": lo, "ci_hi": hi,
+            "n_changed": sum(1 for d in deltas if d != 0),
+            "verdict": _verdict(mean, lo, hi, null_band=null_band),
+            "n_pairs": len(deltas), "n_skipped": skipped,
+        }
+    return {"axes": axes, "base": base, "branch": branch}
+
+
+def _pair_scored(base: dict[str, Any], branch: dict[str, Any], ax: str, rid: str) -> bool:
+    vb = (base["judged"][rid].get("verdicts") or {}).get(ax) or {}
+    vc = (branch["judged"][rid].get("verdicts") or {}).get(ax) or {}
+    sb = str(vb.get("verdict") or "").lower()
+    sc = str(vc.get("verdict") or "").lower()
+    return (sb == "pass" or sb == "fail") and (sc == "pass" or sc == "fail")
 
 
 # ── statistics ───────────────────────────────────────────────────────────
@@ -476,6 +643,11 @@ def run(
     seed: int,
     control_layer: str | None = None,
     min_gap: float = 0.0,
+    judge_model: str | None = "claude-sonnet-4-6",
+    judge_provider: str = "bedrock",
+    judge_concurrency: int = 4,
+    judge_timeout: float = 120.0,
+    judge_samples: int = 1,
     emit: Callable[[str], None] = print,
 ) -> dict[str, Any]:
     probe = load_probe_set()
@@ -601,6 +773,57 @@ def run(
         "stop_reason": stop_reason, "n": len(base_rows),
         "baseline_rows": base_rows, "branch_rows": brch_rows,
     })
+
+    # R349 — the complete competition picture: the legal_v2 judge axes
+    # (answer / reference correctness, citation faithfulness, conciseness)
+    # per arm, joined to the retrieval axes as paired deltas. ON by default;
+    # ``judge_model=None`` (--no-judge) skips entirely. Fail-soft: a judge
+    # transport error leaves the retrieval axes fully reported with an honest
+    # note, never a partial table pretending the judge axes were measured.
+    if judge_model:
+        try:
+            caller = _judge_caller(judge_provider, judge_timeout, judge_model)
+            if judge_provider != "wrapper":
+                emit(f"judge: legal_v2 axes on {judge_model} via {judge_provider} "
+                     f"(billed provider — REGENOLD_JUDGE_ALLOW_BILLED applies "
+                     f"to the standalone CLI, not this in-run path)")
+            probe_by_id = {str(pr.id): pr for pr in pool}
+            common = [r for r in base_rows
+                      if r.get("id") in {c["id"] for c in brch_rows}
+                      and not r.get("error")]
+            j = _judge_axes(
+                common,
+                [c for c in brch_rows if c.get("id") in {r["id"] for r in common}],
+                probe_by_id,
+                caller=caller, samples=judge_samples,
+                concurrency=judge_concurrency, null_band=null_band,
+            )
+            if "error" in j:
+                emit(f"judge axes NOT computed: {j['error']}")
+            else:
+                for ax, v in j["axes"].items():
+                    res["axes"][ax] = v
+                def _passfail(judged: dict[str, Any], ax: str) -> dict[str, int]:
+                    p = f = 0
+                    for r in judged.values():
+                        v = str(((r.get("verdicts") or {}).get(ax) or {})
+                                .get("verdict") or "").lower()
+                        if v == "pass":
+                            p += 1
+                        elif v == "fail":
+                            f += 1
+                    return {"pass": p, "fail": f}
+
+                res["judge"] = {
+                    "model": judge_model, "provider": judge_provider,
+                    "samples": max(1, int(judge_samples)),
+                    "base": {ax: _passfail(j["base"]["judged"], ax)
+                              for ax, _lbl in _JUDGE_AXES},
+                    "branch": {ax: _passfail(j["branch"]["judged"], ax)
+                                for ax, _lbl in _JUDGE_AXES},
+                }
+        except Exception as exc:  # noqa: BLE001 — a judge failure must never break the A/B
+            emit(f"judge axes NOT computed: {exc}")
     return res
 
 
@@ -758,6 +981,12 @@ def _report(res: dict[str, Any], emit: Callable[[str], None] = print) -> None:
         ci = f"[{v['ci_lo']:+.4f},{v['ci_hi']:+.4f}]"
         emit(f"  {ax:<12} {v['baseline']:>9.4f} {v['branch']:>9.4f} "
              f"{v['delta']:>+9.4f} {ci:>20}  {v['verdict']}")
+    j = res.get("judge")
+    if j:
+        emit(f"  ── ans_corr / ref_corr / cite_faith / ans_conc are the "
+             f"legal_v2 judge axes ({j.get('model')} via {j.get('provider')}, "
+             f"K={j.get('samples')}) — pass rate over paired non-error rows; "
+             f"answer-level, per the Regenold rubric")
     emit("")
     for g, v in res["gold"].items():
         # R337 — an inapplicable veto prints its REASON, never a number. On
@@ -808,6 +1037,17 @@ def main() -> None:
                     default=None,
                     help="force the probe-sensitivity control layer "
                          "(default: inferred from the branch flag name)")
+    ap.add_argument("--judge-model", default="claude-sonnet-4-6",
+                    help="legal_v2 judge model (R349 answer-level axes)")
+    ap.add_argument("--judge-provider",
+                    choices=("wrapper", "anthropic", "groq", "gemini", "bedrock"),
+                    default="bedrock")
+    ap.add_argument("--judge-concurrency", type=int, default=4)
+    ap.add_argument("--judge-timeout", type=float, default=120.0)
+    ap.add_argument("--judge-samples", type=int, default=1,
+                    help="judge self-consistency K (majority verdict; 2-way ties fail)")
+    ap.add_argument("--no-judge", action="store_true",
+                    help="skip the legal_v2 judge axes entirely")
     args = ap.parse_args()
 
     branch_env: dict[str, str] = {}
@@ -825,6 +1065,11 @@ def main() -> None:
         api_key=args.api_key or None, timeout=args.timeout,
         null_band=args.null_band, seed=args.seed,
         control_layer=args.control_layer, min_gap=args.min_call_gap,
+        judge_model=(None if args.no_judge else args.judge_model),
+        judge_provider=args.judge_provider,
+        judge_concurrency=args.judge_concurrency,
+        judge_timeout=args.judge_timeout,
+        judge_samples=args.judge_samples,
     )
     _report(res)
 
