@@ -80,8 +80,9 @@ import random
 import statistics as st
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from app.integrations.regenold import refs as central_refs
 from evals.bench import metrics as bench_metrics
@@ -315,6 +316,7 @@ def probe_sensitivity_check(
     endpoint: str | None,
     api_key: str | None,
     timeout: float,
+    min_gap: float = 0.0,
 ) -> dict[str, Any]:
     """Can these rows observe ANY change at this layer?
 
@@ -322,7 +324,7 @@ def probe_sensitivity_check(
     :func:`fire_check` so "changed" means exactly what it means everywhere else.
     """
     control_rows = _run_rows(rows, control_env, local=local, endpoint=endpoint,
-                             api_key=api_key, timeout=timeout)
+                             api_key=api_key, timeout=timeout, min_gap=min_gap)
     fired = fire_check(baseline_rows, control_rows)
     return {
         "control_env": control_env,
@@ -392,6 +394,7 @@ def _run_rows(
     endpoint: str | None,
     api_key: str | None,
     timeout: float,
+    min_gap: float = 0.0,
 ) -> list[dict[str, Any]]:
     saved: dict[str, str | None] = {}
     for k, v in arm_env.items():
@@ -406,7 +409,17 @@ def _run_rows(
             if local else str(endpoint)
         )
         out: list[dict[str, Any]] = []
+        _last_call = 0.0
         for pr in rows:
+            # R346 — rate-limit pacing. The Cohere rerank A/B runs against a
+            # Trial key (10 calls/min): without a floor between POSTs every
+            # call 429s, the lever fails soft on the wire, and the A/B reports
+            # INERT for a feature that works. Pacing is the fix.
+            if min_gap > 0.0:
+                _wait = min_gap - (time.monotonic() - _last_call)
+                if _wait > 0.0:
+                    time.sleep(_wait)
+            _last_call = time.monotonic()
             history = [dict(m) for m in pr.messages]
             body, latency_ms, status, err, attempts, _ = poster(
                 url, api_key, history, timeout
@@ -462,6 +475,7 @@ def run(
     null_band: float,
     seed: int,
     control_layer: str | None = None,
+    min_gap: float = 0.0,
     emit: Callable[[str], None] = print,
 ) -> dict[str, Any]:
     probe = load_probe_set()
@@ -478,13 +492,28 @@ def run(
     for start in range(0, len(pool), batch):
         chunk = pool[start:start + batch]
         base_rows += _run_rows(chunk, {}, local=local, endpoint=endpoint,
-                               api_key=api_key, timeout=timeout)
+                               api_key=api_key, timeout=timeout,
+                               min_gap=min_gap)
         brch_rows += _run_rows(chunk, branch_env, local=local, endpoint=endpoint,
-                               api_key=api_key, timeout=timeout)
+                               api_key=api_key, timeout=timeout,
+                               min_gap=min_gap)
 
         fired = fire_check(base_rows, brch_rows)
         emit(f"  n={len(base_rows):3d}  changed={fired['any_changed']:3d} "
              f"(refs {fired['refs_changed']}, answers {fired['answers_changed']})")
+
+        # R346 — checkpoint after every batch so a long live run survives a
+        # crash with the rows it has already completed.
+        try:
+            _write_sidecar({
+                "label": label, "branch_env": branch_env,
+                "fire": fired, "stop_reason": "checkpoint",
+                "n": len(base_rows),
+                "baseline_rows": base_rows, "branch_rows": brch_rows,
+                "partial": True,
+            }, label)
+        except Exception:  # noqa: BLE001 — a checkpoint must never kill the run
+            pass
 
         # ── THE GATE: a lever that never fired gets no axis table ──────────
         if not fired["fired"] and len(base_rows) >= min(batch * 2, len(pool)):
@@ -505,7 +534,8 @@ def run(
                      f"{layer} control: {control_env}")
                 sens = probe_sensitivity_check(
                     ran, base_rows, control_env, local=local,
-                    endpoint=endpoint, api_key=api_key, timeout=timeout)
+                    endpoint=endpoint, api_key=api_key, timeout=timeout,
+                    min_gap=min_gap)
                 sens["layer"] = layer
                 emit(f"  control moved {sens['rows_moved']}/"
                      f"{sens['rows_compared']} of the same rows")
@@ -694,6 +724,24 @@ def _analyse(
     return {"axes": axes, "gold": gold, "n_scored": len(common)}
 
 
+def _write_sidecar(res: dict[str, Any], label: str) -> None:
+    """Persist the run state as a JSON sidecar under evals/bench/results.
+
+    R346 — batch-level checkpoints. A live A/B (Bedrock Stage-2) runs tens of
+    minutes per arm; a crash between batches used to lose the whole run
+    because the sidecar was written once, at the end. This is callable after
+    EVERY batch, so a killed run still leaves the rows it completed, and the
+    final call overwrites the checkpoint with the complete state.
+    """
+    _RESULTS.mkdir(parents=True, exist_ok=True)
+    out = _RESULTS / f"dynamic-ab-{label}.json"
+    slim = {k: v for k, v in res.items()
+            if k not in ("baseline_rows", "branch_rows")}
+    slim["baseline_rows"] = res.get("baseline_rows", [])
+    slim["branch_rows"] = res.get("branch_rows", [])
+    out.write_text(json.dumps(slim, indent=2), encoding="utf-8")
+
+
 def _report(res: dict[str, Any], emit: Callable[[str], None] = print) -> None:
     if res.get("verdict") in ("INERT", "BLIND_PROBE"):
         return
@@ -751,6 +799,10 @@ def main() -> None:
     ap.add_argument("--timeout", type=float, default=180.0)
     ap.add_argument("--null-band", type=float, default=0.01,
                     help="half-width under which a zero-spanning CI is a NULL")
+    ap.add_argument("--min-call-gap", type=float, default=0.0,
+                    help="minimum seconds between POSTs — rate-limit pacing "
+                         "(the Cohere Trial key allows 10 calls/min, so the "
+                         "rerank A/B needs ~6.5)")
     ap.add_argument("--seed", type=int, default=_SEED)
     ap.add_argument("--control-layer", choices=("retrieval", "stage2", "graph"),
                     default=None,
@@ -772,18 +824,12 @@ def main() -> None:
         batch=args.batch, local=bool(args.local), endpoint=args.endpoint,
         api_key=args.api_key or None, timeout=args.timeout,
         null_band=args.null_band, seed=args.seed,
-        control_layer=args.control_layer,
+        control_layer=args.control_layer, min_gap=args.min_call_gap,
     )
     _report(res)
 
-    _RESULTS.mkdir(parents=True, exist_ok=True)
-    out = _RESULTS / f"dynamic-ab-{args.label}.json"
-    slim = {k: v for k, v in res.items()
-            if k not in ("baseline_rows", "branch_rows")}
-    slim["baseline_rows"] = res.get("baseline_rows", [])
-    slim["branch_rows"] = res.get("branch_rows", [])
-    out.write_text(json.dumps(slim, indent=2), encoding="utf-8")
-    print(f"\nwrote {out}")
+    _write_sidecar(res, args.label)
+    print(f"\nwrote {_RESULTS / ('dynamic-ab-' + args.label + '.json')}")
     # 0 = measured, 2 = lever inert (fix the feature),
     # 3 = probe blind (fix the rows) — a different action, so a different code.
     sys.exit({"INERT": 2, "BLIND_PROBE": 3}.get(res.get("verdict"), 0))
