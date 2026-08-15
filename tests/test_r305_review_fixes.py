@@ -290,9 +290,13 @@ class TestSubparagraphAttributionDiscipline:
         assert "Do NOT invent a sub-clause number" in USER_SUBPARAGRAPH_ATTRIBUTION_CLAUSE
         # R305 — the clause must NOT contradict the closed-set completeness
         # rule that precedes it on the same delivered channel.
-        assert "never overrides the closed-set completeness rule" in (
+        # R344 — the reference is self-contained (nothing is "above" in the
+        # delivered user message; the system slot is dropped by the wrapper),
+        # so the clause now names the rule instead of pointing at it.
+        assert "never overrides closed-set completeness" in (
             USER_SUBPARAGRAPH_ATTRIBUTION_CLAUSE
         )
+        assert "rule above" not in USER_SUBPARAGRAPH_ATTRIBUTION_CLAUSE
         assert subparagraph_attribution_enabled() is True
 
     def test_clause_is_on_the_stage2_user_channel(self, monkeypatch) -> None:

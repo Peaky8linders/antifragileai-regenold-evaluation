@@ -604,8 +604,8 @@ USER_SUBPARAGRAPH_ATTRIBUTION_CLAUSE = (
     "(e.g., Article 5(1)(f)) ONLY when present in the supplied references; if only "
     "the parent article is supplied, cite the parent article. Do NOT invent a "
     "sub-clause number, and do not add a sub-paragraph walk-through that the "
-    "question did not ask for. This never overrides the closed-set completeness "
-    "rule above: when the question's subject IS an enumerated statutory set, name "
+    "question did not ask for. This never overrides closed-set completeness: "
+    "when the question's subject IS an enumerated statutory set, name "
     "every member of it.\n"
 )
 

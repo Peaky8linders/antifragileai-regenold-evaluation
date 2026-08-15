@@ -7761,7 +7761,7 @@ def _claude_max_enhance_answer(
                 f"BACKGROUND RISK FRAMEWORK:\n{kg_answer}\n\n"
                 "The user is asking a classification question about a specific AI system use-case or category. "
                 "Provide a professional, objective regulatory verdict based strictly on the EU AI Act. "
-                "CRITICAL INSTRUCTION: Adhere to the BOTTOM-LINE UP FRONT (BLUF) DIRECT-ANSWER-FIRST format from your system prompt. "
+                "CRITICAL INSTRUCTION: Adhere to the BOTTOM-LINE UP FRONT (BLUF) DIRECT-ANSWER-FIRST format defined here. "
                 "Lead with the concise classification VERDICT in the FIRST clause (e.g. 'Likely high-risk', 'Not high-risk', 'Prohibited', 'Limited-risk only', 'Out of scope', or a conditional verdict in formal regulatory terms such as 'High-risk only where [the deciding condition]' / 'Not high-risk unless [the deciding condition]'), THEN name the operative provision(s) and explain. "
                 "Do NOT open with a provision-naming meta-statement in ANY word order — neither 'Article N is the operative provision' NOR the reversed 'The operative provision is Article N' / 'The applicable provision is Article N' / 'Under Article N' — and do NOT bury the verdict in a later sentence. The FIRST WORDS must be the subject entity or the classification itself (e.g. 'A weight-tracking medtech system is high-risk only where it is a safety component of a regulated medical device requiring third-party conformity assessment'), NOT 'The operative provision is Article 6'. "
                 "NEVER open with the colloquial 'It depends' or any conversational hedge; lead with the classification itself, stated conditionally where the facts require it. "
@@ -7850,8 +7850,9 @@ def _claude_max_enhance_answer(
                 "concise sentences when that fully answers. Use additional "
                 "sentences only for distinct substantive points (another risk "
                 "tier, a carve-out, or a cross-reference) directly responsive to "
-                "the latest question, or when rule 12b closed-set completeness "
-                "requires naming every member of a set."
+                "the latest question, or when the question asks for an "
+                "exhaustively enumerated statutory set (closed-set completeness), "
+                "which requires naming every member of that set."
             )
         # R298 / R299 / R304 — Prompt additions on the channel that reaches the model.
         try:
