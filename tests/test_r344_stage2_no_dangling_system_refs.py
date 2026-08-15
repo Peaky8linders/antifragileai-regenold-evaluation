@@ -106,12 +106,21 @@ def test_delivered_user_message_has_no_dangling_system_refs(
 
 
 def test_subparagraph_attribution_clause_is_self_contained() -> None:
-    """The default-ON clause must not point at a 'rule above' that nothing in
-    the delivered message defines."""
-    assert "rule above" not in USER_SUBPARAGRAPH_ATTRIBUTION_CLAUSE
-    assert "closed-set completeness rule above" not in USER_SUBPARAGRAPH_ATTRIBUTION_CLAUSE
-    assert "system prompt" not in USER_SUBPARAGRAPH_ATTRIBUTION_CLAUSE
-    # It carries its own self-contained definition of the carve-out.
-    assert "enumerated statutory set, name every member of it" in (
-        USER_SUBPARAGRAPH_ATTRIBUTION_CLAUSE
+    """BOTH prompt generations' default-ON clauses must not point at a 'rule
+    above' that nothing in the delivered message defines.
+
+    R345 extends the R344 invariant to the V2 prompt set (#24, live by
+    default via ``REGENOLD_PROMPT_V2``): the V2 sub-paragraph clause carried
+    the same dangling "closed-set completeness rule above" reference, which
+    the R344 test (written pre-#24) only caught on the V1 constant.
+    """
+    from app.data.graph_rag_prompts import (  # noqa: PLC0415
+        USER_SUBPARAGRAPH_ATTRIBUTION_CLAUSE_V2,
     )
+
+    for clause in (USER_SUBPARAGRAPH_ATTRIBUTION_CLAUSE, USER_SUBPARAGRAPH_ATTRIBUTION_CLAUSE_V2):
+        assert "rule above" not in clause
+        assert "closed-set completeness rule above" not in clause
+        assert "system prompt" not in clause
+        # It carries its own self-contained definition of the carve-out.
+        assert "enumerated statutory set, name every member of it" in clause
