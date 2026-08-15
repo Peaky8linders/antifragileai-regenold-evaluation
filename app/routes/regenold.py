@@ -1961,6 +1961,15 @@ def _engine_cache_key(
             "REGENOLD_QA_LEAD_RANK",
             "REGENOLD_ROLE_DUTY_ZRF",
             "REGENOLD_NLI_API",
+            # R341 — multi-query expansion (RAG-Fusion) APPENDS entities in
+            # ``_deterministic_parse`` (paraphrase keyword-map union) and
+            # RRF-combines the BM25 fallback across paraphrases ⇒ flips
+            # ``GraphRAGResponse.references`` and the answer. Same R263.2
+            # doctrine as every line above: without a key entry, an in-process
+            # OFF↔ON A/B serves arm A's cached engine output to arm B and
+            # reads +0.0000 on every axis — which is also what INERT looks
+            # like, making the run unfalsifiable.
+            "REGENOLD_QUERY_EXPANSION",
         )
     )
     import json

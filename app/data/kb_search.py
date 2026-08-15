@@ -633,6 +633,53 @@ def _rrf_fusion_enabled() -> bool:
     )
 
 
+# R340 — candidate-pool size handed to the cross-encoder reranker. The
+# BM25+dense fused list is normally cut to ``k`` immediately; when the Cohere
+# reranker is enabled we gather up to this many candidates so the rerank has
+# room to move a provision across the top-k cut (the R329 measured failure was
+# ~1.1 WRONG references inside an otherwise-right set — a ranking problem a
+# bigger pool can actually fix). Cohere v2 accepts up to 1000 documents per
+# call, so 50 is comfortably inside the envelope and costs one bounded HTTP
+# round-trip (~300-700 ms) on the gated path only.
+_RERANK_POOL_SIZE = 50
+
+
+def _maybe_rerank_fused(question: str, fused: list[str], k: int) -> list[str]:
+    """R340 — cross-encoder rerank of the fused retrieval pool, then the top-k cut.
+
+    Fires ONLY when ``REGENOLD_COHERE_RERANK=1`` AND ``COHERE_API_KEY`` is set
+    (see :func:`app.engines.cohere_rerank.rerank_enabled`). With the gate off
+    — the default — this returns ``fused[:k]`` unchanged, so the deterministic
+    davidath path is byte-identical BY CONSTRUCTION (the same gating
+    discipline as R72 / R100 / R109 / R329).
+
+    The rerank is a PERMUTATION of the pool (never adds, drops or rewrites a
+    candidate — the R142.1 hard rule), and any failure (network, timeout,
+    malformed response, missing provision text) returns the input order
+    unchanged. ``rerank_stats()["attempts"] > 0`` is the only proof this ran;
+    three prior R329 placements read +0.0000 because they never issued a call.
+
+    The pool is internally capped at ``max(_RERANK_POOL_SIZE, k)`` so the
+    gate-OFF path is exactly ``fused[:k]`` for any ``k``, and the gate-ON path
+    never pays for a >50-document rerank when the BM25+dense pool over-saturates.
+    """
+    pool = list(fused)[: max(_RERANK_POOL_SIZE, k)]
+    if len(pool) < 2:
+        return pool[:k]
+    try:
+        from app.engines.cohere_rerank import (  # noqa: PLC0415
+            rerank_enabled,
+            rerank_references,
+        )
+        if not rerank_enabled():
+            return pool[:k]
+        reranked = rerank_references(question, pool)
+        return reranked[:k]
+    except Exception as exc:  # noqa: BLE001 — a rerank outage must never change retrieval
+        logger.debug("cohere_rerank: retrieval-pool rerank skipped: %s", exc)
+        return pool[:k]
+
+
 def _fuse_dense(
     bm25_refs: list[str],
     dense_refs: list[tuple[str, float]],
@@ -870,6 +917,22 @@ def top_articles_by_relevance(
         entity_boosts = {}
         _ents_for_injection = None
 
+    # R340 — when the cross-encoder reranker is enabled, gather a WIDER
+    # candidate pool (up to ``_RERANK_POOL_SIZE``) so the rerank has room to
+    # move candidates across the top-k cut. With the gate off ``_pool_k == k``
+    # and every downstream slice/fill/budget below is byte-identical to the
+    # pre-R340 behaviour. Gate is the same one ``_maybe_rerank_fused`` uses and
+    # that ``_engine_cache_key`` already folds in, so an in-process A/B cannot
+    # serve a stale cached engine result (R263.2).
+    try:
+        from app.engines.cohere_rerank import (  # noqa: PLC0415
+            rerank_enabled as _rr_enabled,
+        )
+        _rerank_on = _rr_enabled()
+    except Exception:  # noqa: BLE001 — a dead reranker must never change the pool
+        _rerank_on = False
+    _pool_k = max(_RERANK_POOL_SIZE, k) if _rerank_on else k
+
     # Component A — Embeddings sentence-index SVD query at the beginning
     emb_hits = []
     high_sim_articles = set()
@@ -884,7 +947,7 @@ def top_articles_by_relevance(
             env_flag = os.getenv("REGENOLD_EMBEDDINGS_INDEX", "1").strip().lower()
             if env_flag in ("1", "true", "yes", "on"):
                 # Retrieve sentence hits once
-                emb_hits = _emb_query(question, top_k=k * 4, threshold=0.15)
+                emb_hits = _emb_query(question, top_k=_pool_k * 4, threshold=0.15)
                 for hit in emb_hits:
                     if hit.similarity >= 0.50:
                         ref = hit.article_ref
@@ -1022,7 +1085,7 @@ def top_articles_by_relevance(
             pass
 
     scored = sorted(best.items(), key=lambda t: t[1], reverse=True)
-    bm25_top = [ref for ref, _ in scored[:k]]
+    bm25_top = [ref for ref, _ in scored[:_pool_k]]
 
     # Round 31 — when the TurboQuant dense path is enabled
     # (``REGENOLD_TURBOQUANT_DENSE=1``), use the dense ranking to APPEND
@@ -1048,13 +1111,13 @@ def top_articles_by_relevance(
         )
         if _dense_enabled():
             try:
-                dense_hits = dense_top_k(question, k=k * 2)
+                dense_hits = dense_top_k(question, k=_pool_k * 2)
             except Exception:  # noqa: BLE001 — never 500 the route
                 dense_hits = []
             if dense_hits:
                 # R69 — RRF when REGENOLD_RRF_FUSION is on, else the
                 # Round-31 additive fill (default, byte-identical).
-                fused = _fuse_dense(fused, dense_hits, k, bm25_scores=best)
+                fused = _fuse_dense(fused, dense_hits, _pool_k, bm25_scores=best)
     except Exception:  # noqa: BLE001 — numpy missing on a stripped install
         pass
 
@@ -1084,7 +1147,7 @@ def top_articles_by_relevance(
         emb_refs = sorted(article_max.items(), key=lambda t: t[1], reverse=True)
         if emb_refs:
             # R69 — RRF when REGENOLD_RRF_FUSION is on, else additive fill.
-            fused = _fuse_dense(fused, emb_refs, k, bm25_scores=best)
+            fused = _fuse_dense(fused, emb_refs, _pool_k, bm25_scores=best)
 
 
 
@@ -1110,9 +1173,12 @@ def top_articles_by_relevance(
             is_enabled as _g2_enabled,
         )
     except Exception:  # noqa: BLE001 — neo4j missing on a stripped install
-        return fused
+        # R340 — same rerank + top-k cut as the main return: the pool may have
+        # been widened to ``_RERANK_POOL_SIZE``, so every exit must cut.
+        return _maybe_rerank_fused(question, fused, k)
     if not _g2_enabled():
-        return fused
+        # R340 — gate-off no-op (returns ``fused[:k]`` unchanged).
+        return _maybe_rerank_fused(question, fused, k)
     try:
         max_hop2 = int(os.getenv("REGENOLD_MAX_HOP2", "5"))
     except ValueError:
@@ -1151,7 +1217,7 @@ def top_articles_by_relevance(
     # A GraphExpansion is always truthy, so test the field that carries the
     # fusion candidates (empty hop2 → nothing to fuse → leave ``fused``).
     fused = (
-        _g2_fuse(fused, expansion, budget=k + _fuse_slack)
+        _g2_fuse(fused, expansion, budget=_pool_k + _fuse_slack)
         if expansion.hop2_articles
         else fused
     )
@@ -1171,10 +1237,10 @@ def top_articles_by_relevance(
             for ref in fused[:3]:
                 if ref.startswith("Art. "):
                     seed_articles.append(ref)
-            ppr_extra = ppr_candidates(seed_articles=seed_articles, top_k=k)
+            ppr_extra = ppr_candidates(seed_articles=seed_articles, top_k=_pool_k)
             ppr_added = []
             for extra_ref in ppr_extra:
-                if extra_ref not in fused and len(fused) < k * 2:
+                if extra_ref not in fused and len(fused) < _pool_k * 2:
                     fused.append(extra_ref)
                     ppr_added.append(extra_ref)
             if ppr_added:
@@ -1194,14 +1260,16 @@ def top_articles_by_relevance(
             for ref in fused[:3]:
                 if ref.startswith("Art. "):
                     seed_articles.append(ref)
-            path_extra = pathrag_candidates(seed_articles=seed_articles, top_k=k)
+            path_extra = pathrag_candidates(seed_articles=seed_articles, top_k=_pool_k)
             for extra_ref in path_extra:
-                if extra_ref not in fused and len(fused) < k * 2:
+                if extra_ref not in fused and len(fused) < _pool_k * 2:
                     fused.append(extra_ref)
     except Exception:  # noqa: BLE001 — fail-soft
         pass
 
-    return fused
+    # R340 — cross-encoder rerank of the fused pool BEFORE the reference cut,
+    # then the top-k slice. Gate-off no-op (returns ``fused[:k]`` unchanged).
+    return _maybe_rerank_fused(question, fused, k)
 
 
 @lru_cache(maxsize=1)
@@ -1416,7 +1484,9 @@ def top_articles_by_relevance_in_chapters(
                 best[article_ref] = ranked
 
     sorted_refs = sorted(best, key=lambda r: best[r], reverse=True)
-    return sorted_refs[:k]
+    # R340 — same cross-encoder rerank before the reference cut as the
+    # full-corpus variant (chapter-scoped pool). Gate-off no-op.
+    return _maybe_rerank_fused(question, sorted_refs, k)
 
 
 def top_articles_by_relevance_in_sections(
@@ -1493,7 +1563,9 @@ def top_articles_by_relevance_in_sections(
                 best[article_ref] = ranked
 
     sorted_refs = sorted(best, key=lambda r: best[r], reverse=True)
-    return sorted_refs[:k]
+    # R340 — same cross-encoder rerank before the reference cut as the
+    # full-corpus variant (section-scoped pool). Gate-off no-op.
+    return _maybe_rerank_fused(question, sorted_refs, k)
 
 
 # Public API

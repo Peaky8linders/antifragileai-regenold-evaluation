@@ -1982,6 +1982,34 @@ def _bm25_fallback_k() -> int:
         return _BM25_FALLBACK_K
 
 
+def _keyword_scan_refs(text_lower: str) -> list[str]:
+    """Run the curated ``_KEYWORD_ENTITY_MAP`` scan over ``text_lower``.
+
+    Returns the matched article refs in map order, deduplicated. Pure
+    function of the text + the R283 env knobs — factored out of
+    ``_deterministic_parse`` so the R341 multi-query expansion can scan
+    each paraphrase with the SAME high-precision map that scans the
+    original question (gate-off: the original scan is byte-identical).
+    """
+    _kw_map = _KEYWORD_ENTITY_MAP
+    if (
+        os.getenv("REGENOLD_REF_RECOVERY_KW")
+        or os.getenv("REGENOLD_REF_RECOVERY", "1")
+    ).strip().lower() in ("1", "true", "yes", "on"):
+        _kw_map = _KEYWORD_ENTITY_MAP + _R283_KEYWORD_ADDITIONS
+    matched: list[str] = []
+    for kw, art_ref in _kw_map:
+        boundary_pat = _KEYWORD_ENTITY_BOUNDARY_RES.get(kw)
+        if boundary_pat is not None:
+            if not boundary_pat.search(text_lower):
+                continue
+        elif kw not in text_lower:
+            continue
+        if art_ref not in matched:
+            matched.append(art_ref)
+    return matched
+
+
 def _deterministic_parse(question: str) -> GraphQuery:
     """Parse question using keyword matching when LLM is unavailable."""
     # R79 — normalise Unicode dashes / non-breaking spaces before the
@@ -2190,21 +2218,62 @@ def _deterministic_parse(question: str) -> GraphQuery:
     # it at runtime; the flag is folded into ``_engine_cache_key`` (R263.2) so
     # the two arms never share a cached engine response. Sub ``_KW`` inherits
     # the master ``REGENOLD_REF_RECOVERY`` (default ON) when unset/blank.
-    _kw_map = _KEYWORD_ENTITY_MAP
+    for ref in _keyword_scan_refs(q_lower):
+        if ref not in entities:
+            entities.append(ref)
+
+    # R341 — multi-query expansion (RAG-Fusion). When the gate is ON, the
+    # wrapper is alive, the question carries NO explicit Art./Annex anchor
+    # (paraphrasing an anchored question adds noise + latency for zero
+    # recall) and the turn is NOT the flattened multi-turn shape (paraphrasing
+    # the whole conversation history is meaningless), ask Haiku 4.5 for 2-3
+    # paraphrases and run the SAME high-precision keyword map over each. New
+    # refs are APPENDED after the original question's anchors (they can only
+    # add recall, never displace the original's priority), deduplicated.
+    # This is the lever that closes the review's paraphrase gap: the map is
+    # a literal substring scan, so a question phrased informally
+    # ("what must companies that put AI on the market do?") misses it while
+    # its formal paraphrase ("what obligations apply to providers of
+    # high-risk AI systems?") hits. The expanded queries are also handed to
+    # the BM25 fallback below for reciprocal-rank fusion.
+    expanded_queries: list[str] | None = None
+    #: Entities the paraphrase lane appended — the BM25 fallback below must
+    #: still run when the ORIGINAL lanes found nothing, so a single
+    #: high-precision paraphrase hit cannot starve the retrieval (measured:
+    #: without this, one union hit replaced 8 BM25 refs). Gate-off: 0, so
+    #: ``len(entities) - _expansion_added == 0`` degenerates to ``not entities``
+    #: exactly — byte-identical.
+    _expansion_added = 0
     if (
-        os.getenv("REGENOLD_REF_RECOVERY_KW")
-        or os.getenv("REGENOLD_REF_RECOVERY", "1")
-    ).strip().lower() in ("1", "true", "yes", "on"):
-        _kw_map = _KEYWORD_ENTITY_MAP + _R283_KEYWORD_ADDITIONS
-    for kw, art_ref in _kw_map:
-        boundary_pat = _KEYWORD_ENTITY_BOUNDARY_RES.get(kw)
-        if boundary_pat is not None:
-            if not boundary_pat.search(q_lower):
-                continue
-        elif kw not in q_lower:
-            continue
-        if art_ref not in entities:
-            entities.append(art_ref)
+        not has_explicit_provision_anchor
+        and "Latest question:\n" not in question
+        and os.getenv("REGENOLD_QUERY_EXPANSION", "0").strip().lower()
+        in ("1", "true", "yes", "on")
+    ):
+        try:
+            from app.engines.query_expansion import (  # noqa: PLC0415
+                expand_query,
+            )
+            _qs = expand_query(question)
+            if len(_qs) > 1:
+                expanded_queries = _qs
+                # The paraphrase lane is a RECALL SUPPLEMENT: at most 3 new
+                # refs, in map order (the curated precision order), appended
+                # after the original's anchors. Without the cap a paraphrase
+                # that happens to repeat several map phrases would inflate
+                # the entity list past the citation budget and pollute the
+                # answer (measured with a mock provider: 8 -> 22 entities).
+                for _q_extra in _qs[1:]:
+                    for ref in _keyword_scan_refs(_q_extra.lower()):
+                        if ref not in entities:
+                            entities.append(ref)
+                            _expansion_added += 1
+                            if _expansion_added >= 3:
+                                break
+                    if _expansion_added >= 3:
+                        break
+        except Exception as exc:  # noqa: BLE001 — expansion must never break parse
+            logger.debug("query_expansion_parse_failed: %s", exc)
 
     # R137 — role-contrast obligational anchor (see module-level
     # ``_is_role_contrast_obligation``). Scans the LIVE turn only (post the
@@ -2361,7 +2430,21 @@ def _deterministic_parse(question: str) -> GraphQuery:
     # citation set and inflate the answer to 7+ sentences. The
     # keyword path is the high-precision primary; BM25 is the
     # zero-precision fallback.
-    if not entities:
+    #
+    # R340 — ``_bm25_fallback_used`` tells the parse-level cross-encoder
+    # rerank below to SKIP when the entities came from the BM25 fallback:
+    # ``top_articles_by_relevance*`` already reranks its 50-candidate pool
+    # (the R340 pool wiring), so reranking the handful of surviving entities
+    # a second time would double the Cohere round-trip per request.
+    _bm25_fallback_used = False
+    # The ``== 0`` gate is load-bearing (see the block comment above). With
+    # R341 expansion active, entities may now include paraphrase-union hits:
+    # the gate must ask about the ORIGINAL lanes only, so a lone union hit
+    # does not suppress the BM25 recall lane (measured starvation bug).
+    # Gate-off: ``_expansion_added == 0`` ⇒ identical to ``not entities``.
+    _original_lanes_empty = len(entities) - _expansion_added == 0
+    if _original_lanes_empty:
+        _bm25_fallback_used = True
         try:
             # PageIndex-style hierarchical pre-filter: scope BM25 to the
             # 1-2 most likely chapters before searching the full 135-doc
@@ -2374,46 +2457,75 @@ def _deterministic_parse(question: str) -> GraphQuery:
             # Scoped path uses k=5 (vs full-corpus k=3) because the
             # candidate pool is smaller — higher k does not add noise
             # when the scope is already narrowed to 1 chapter's docs.
-            candidate_chapters = candidate_chapters_for_query(
-                question, intent_label=intent
-            )
-            if candidate_chapters:
-                bm25_hits: list[str] = []
-                if _env_enabled("REGENOLD_SECTION_SCOPED_BM25"):
-                    candidate_sections = candidate_sections_for_query(
-                        question,
-                        chapters=candidate_chapters,
-                        intent_label=intent,
-                    )
-                    if candidate_sections:
-                        bm25_hits = top_articles_by_relevance_in_sections(
-                            question, candidate_sections, k=5, min_score=1.0
+            def _bm25_hits_for(q: str) -> list[str]:
+                """One query through the scoped → full-corpus fallback."""
+                candidate_chapters = candidate_chapters_for_query(
+                    q, intent_label=intent
+                )
+                if candidate_chapters:
+                    hits: list[str] = []
+                    if _env_enabled("REGENOLD_SECTION_SCOPED_BM25"):
+                        candidate_sections = candidate_sections_for_query(
+                            q,
+                            chapters=candidate_chapters,
+                            intent_label=intent,
+                        )
+                        if candidate_sections:
+                            hits = top_articles_by_relevance_in_sections(
+                                q, candidate_sections, k=5, min_score=1.0
+                            )
+                            logger.debug(
+                                "section_scoped_bm25: sections=%s hits=%s",
+                                candidate_sections, hits,
+                            )
+                    if not hits:
+                        hits = top_articles_by_relevance_in_chapters(
+                            q, candidate_chapters, k=5, min_score=1.0
                         )
                         logger.debug(
-                            "section_scoped_bm25: sections=%s hits=%s",
-                            candidate_sections, bm25_hits,
+                            "chapter_scoped_bm25: chapters=%s hits=%s",
+                            candidate_chapters, hits,
                         )
-                if not bm25_hits:
-                    bm25_hits = top_articles_by_relevance_in_chapters(
-                        question, candidate_chapters, k=5, min_score=1.0
-                    )
-                    logger.debug(
-                        "chapter_scoped_bm25: chapters=%s hits=%s",
-                        candidate_chapters, bm25_hits,
-                    )
-                # If the scoped search yields nothing, fall through to
-                # full-corpus BM25 as a safety net.
-                if not bm25_hits:
-                    bm25_hits = top_articles_by_relevance(
-                        question, k=_bm25_fallback_k(), min_score=1.0
-                    )
-            else:
+                    # If the scoped search yields nothing, fall through to
+                    # full-corpus BM25 as a safety net.
+                    if not hits:
+                        hits = top_articles_by_relevance(
+                            q, k=_bm25_fallback_k(), min_score=1.0
+                        )
+                    return hits
                 # Issue #54 — drop the absolute floor to 1.0. The
                 # ``top_articles_by_relevance`` helper honours a
                 # relative-to-best cutoff too, so a 1-2 token query
                 # whose top raw score sits below 2.5 still surfaces a
                 # clear winner instead of returning empty.
-                bm25_hits = top_articles_by_relevance(question, k=_bm25_fallback_k(), min_score=1.0)
+                return top_articles_by_relevance(
+                    q, k=_bm25_fallback_k(), min_score=1.0
+                )
+
+            if expanded_queries and len(expanded_queries) > 1:
+                # R341 — reciprocal-rank fusion across the original + each
+                # paraphrase, so a provision that ranks mid-pool for one
+                # phrasing can win the combination across all of them.
+                # The combined list is capped at the budget a single query
+                # run gets (max list length, itself ≤ k) — RRF re-ranks and
+                # refreshes WHICH refs win, it never inflates the entity
+                # count the fallback is allowed to surface.
+                from app.engines.query_expansion import (  # noqa: PLC0415
+                    reciprocal_rank_fusion,
+                )
+
+                _ranked_lists = [_bm25_hits_for(q) for q in expanded_queries]
+                combined = reciprocal_rank_fusion(_ranked_lists)
+                _rrf_budget = max(
+                    (len(lst) for lst in _ranked_lists), default=0
+                )
+                bm25_hits = combined[:_rrf_budget]
+                logger.debug(
+                    "query_expansion_rrf: %d queries -> %d combined refs (budget %d)",
+                    len(expanded_queries), len(bm25_hits), _rrf_budget,
+                )
+            else:
+                bm25_hits = _bm25_hits_for(question)
             for ref in bm25_hits:
                 if ref not in entities:
                     entities.append(ref)
@@ -2469,6 +2581,30 @@ def _deterministic_parse(question: str) -> GraphQuery:
                         pass
     except Exception as exc:  # noqa: BLE001 — vector recall must never block parse
         logger.debug("vector_recall_failed: %s", exc)
+
+    # R340 — cross-encoder rerank of the FINAL assembled entity list. This is
+    # the placement that actually fires on the COMMON path: the keyword map
+    # extracts an entity for nearly every question, so
+    # ``top_articles_by_relevance*`` (and its pool rerank) only runs on the
+    # rare no-entity fallback. Entity ORDER is load-bearing downstream —
+    # ``_retrieve_from_kb`` builds obligations in entity order and
+    # ``ask_compliance_question`` caps citations at 15 slots from that order
+    # — so reranking here decides which entities (and their xrefs / paragraph
+    # rows) survive the retrieval cap. Skip when the BM25 fallback already
+    # reranked (one Cohere call per request, never two). Gate-off no-op →
+    # davidath byte-identical BY CONSTRUCTION. Fail-soft + permutation-safe
+    # via ``rerank_references``.
+    if entities and not _bm25_fallback_used:
+        try:
+            from app.engines.cohere_rerank import (  # noqa: PLC0415
+                rerank_enabled,
+                rerank_references,
+            )
+            if rerank_enabled():
+                reranked = rerank_references(question, entities)
+                entities = reranked
+        except Exception as exc:  # noqa: BLE001 — a rerank outage must never break parse
+            logger.debug("cohere_rerank: parse-level entity rerank skipped: %s", exc)
 
     return GraphQuery(
         intent=intent,
