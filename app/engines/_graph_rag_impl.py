@@ -1616,7 +1616,7 @@ def _llm_generate_answer(
     provider = _graph_rag_provider()
     try:
         from app.config import settings
-        from app.data.graph_rag_prompts import ANSWER_GENERATE_SYSTEM
+        from app.data.graph_rag_prompts import resolve_answer_system
 
         # Build context message
         context_parts = []
@@ -1707,7 +1707,7 @@ def _llm_generate_answer(
         # regulation expert, not as a graph-querying agent.
         user_message += f"EU AI ACT REFERENCES:\n{context_text}"
 
-        full_system = PROMPT_HARDENING_PREFIX + ANSWER_GENERATE_SYSTEM
+        full_system = PROMPT_HARDENING_PREFIX + resolve_answer_system()
 
         if provider == "openai_wrapper":
             text_raw = _openai_wrapper_complete_for_graph_rag(
@@ -7452,7 +7452,7 @@ def _claude_max_enhance_answer(
     """
     try:
         from app.config import settings
-        from app.data.graph_rag_prompts import ANSWER_GENERATE_SYSTEM
+        from app.data.graph_rag_prompts import resolve_answer_system
         from app.security.prompt_guard import (
             PROMPT_HARDENING_PREFIX,
             sanitize_for_llm,
@@ -7684,10 +7684,10 @@ def _claude_max_enhance_answer(
         # R298 / R299 / R304 — Prompt additions on the channel that reaches the model.
         try:
             from app.data.graph_rag_prompts import (  # noqa: PLC0415
-                USER_CHALLENGE_BREVITY_CLAUSE,
-                USER_REF_MINIMALITY_CLAUSE,
                 USER_REF_UNCERTAINTY_CLAUSE,
-                USER_SUBPARAGRAPH_ATTRIBUTION_CLAUSE,
+                user_challenge_brevity_clause,
+                user_ref_minimality_clause,
+                user_subparagraph_attribution_clause,
                 challenge_brevity_enabled,
                 is_challenge_turn,
                 subparagraph_attribution_enabled,
@@ -7697,9 +7697,9 @@ def _claude_max_enhance_answer(
             )
 
             if subparagraph_attribution_enabled():
-                user_message += USER_SUBPARAGRAPH_ATTRIBUTION_CLAUSE
+                user_message += user_subparagraph_attribution_clause()
             if user_ref_minimality_enabled():
-                user_message += USER_REF_MINIMALITY_CLAUSE
+                user_message += user_ref_minimality_clause()
             # R329 P3b — the CRAG asymmetry (uncertainty, not relevance).
             # DEFAULT OFF; own flag REGENOLD_REF_UNCERTAINTY so it A/Bs apart
             # from R329 P3a. Placed immediately after minimality because the two
@@ -7715,7 +7715,7 @@ def _claude_max_enhance_answer(
                     "latest question explicitly asks for them.\n"
                 )
             if challenge_brevity_enabled() and is_challenge_turn(question):
-                user_message += USER_CHALLENGE_BREVITY_CLAUSE
+                user_message += user_challenge_brevity_clause()
         except Exception:  # noqa: BLE001 — a prompt add-on must never break Stage-2
             pass
         if _answer_v2_enabled():
@@ -7819,12 +7819,12 @@ def _claude_max_enhance_answer(
         # that, a same-process A/B silently serves arm A's cache to arm B.
         try:
             from app.data.graph_rag_prompts import (  # noqa: PLC0415
-                USER_ANSWER_COVERAGE_CLAUSE,
                 answer_coverage_enabled,
+                user_answer_coverage_clause,
             )
 
             if answer_coverage_enabled():
-                user_message += USER_ANSWER_COVERAGE_CLAUSE
+                user_message += user_answer_coverage_clause()
         except Exception:  # noqa: BLE001 — a prompt add-on must never break Stage-2
             pass
         # R329 P3c — the block above was DUPLICATED verbatim (two identical

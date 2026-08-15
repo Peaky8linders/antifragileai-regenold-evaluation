@@ -1396,6 +1396,12 @@ def _engine_cache_key(
             # R30/R56/R79/R263.2 doctrine: must be in the cache key so the
             # in-process ab_judge two-arm A/B cannot cross-contaminate.
             "REGENOLD_MINIMAL_COMPOSER",
+            # R340 — selects the rebuilt Stage-2 system prompt. It REPLACES the
+            # whole V1 prompt (51,516 → 15,462 chars), so it flips the polished
+            # answer and its citations; without it here the two arms would be
+            # served one arm's cached GraphRAGResponse and the A/B would report
+            # a number for a change that never executed.
+            "REGENOLD_PROMPT_V2",
             # R281 — the reference-minimality rule appends to the Stage-2
             # system prompt ⇒ flips the polished answer AND its citations.
             # Same doctrine as the line above.
