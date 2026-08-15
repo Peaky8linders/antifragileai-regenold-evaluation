@@ -560,6 +560,22 @@ def _classify_client_error(exc: ClientError) -> str:
     """Map botocore ClientError to a categorised error string."""
     code = exc.response.get("Error", {}).get("Code", "Unknown")
     status = exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode", 0)
+    message = str(exc.response.get("Error", {}).get("Message", ""))
+
+    # R346.1 — a DEAD/EXPIRED ABSK key is NOT a per-model entitlement gap.
+    # AWS rejects the credential itself on both the catalog and the runtime
+    # endpoints with "Authentication failed: Please make sure your API Key
+    # is valid." (long-term keys live exactly 30 days and are shown once at
+    # creation). Classify it distinctly so that:
+    #   * the operator sees "re-mint the key", not a confusing per-model 403;
+    #   * the entitlement chain does NOT burn round-trips or cache per-model
+    #     denials for a GLOBAL credential failure (a re-minted key must heal
+    #     the process instantly — the 900 s denial memo would delay that);
+    #   * the request fails fast instead of hop-ping to the Claude-Max wrapper
+    #     (the tunnel the operator keeps for the live re-evaluation) on a
+    #     credential problem.
+    if code == "AccessDeniedException" and "authentication failed" in message.lower():
+        return "api_key_invalid_403"
 
     error_map = {
         "ThrottlingException": f"api_throttled_{status}",
@@ -753,6 +769,21 @@ def check_connectivity_and_permissions(
         elapsed_ms = int((time.monotonic() - t0) * 1000)
 
         if result.error:
+            if result.error == "api_key_invalid_403":
+                return {
+                    "status": "key_invalid",
+                    "model": target,
+                    "error": result.error,
+                    "elapsed_ms": elapsed_ms,
+                    "hint": (
+                        "AWS rejects the ABSK credential itself, not a model "
+                        "entitlement. Long-term Bedrock API keys expire after "
+                        "30 days and are shown once at creation. Regenerate in "
+                        "the Bedrock console (API keys) and update "
+                        "AWS_BEARER_TOKEN_BEDROCK in .env — the code picks the "
+                        "new key up on the next request with no restart."
+                    ),
+                }
             return {
                 "status": "error",
                 "model": target,
@@ -850,7 +881,15 @@ it covers "this profile is unresolvable in this Region" (per-model) AND
 "input too long / bad maxTokens / bad temperature" (per-REQUEST). Caching the
 per-request case as a model denial lets ONE oversized prompt evict the only
 invocable model for the whole TTL — a single long row poisoning the rest of a
-judge batch."""
+judge batch.
+
+R346.1 — ``api_key_invalid_403`` is deliberately in NEITHER tuple. It is a
+GLOBAL credential failure: every model fails identically, so advancing the
+chain only burns round-trips, and remembering per-model denials would delay
+healing after the key is re-minted. Failing fast (``is_skippable_error``
+False) also keeps a dead key from triggering the cross-provider wrapper hop
+— the tunnel is the operator's reserved transport, not a recovery path for
+an expired credential."""
 
 BEDROCK_FALLBACK_CHAINS: dict[str, tuple[str, ...]] = {
     "opus": (
