@@ -5755,7 +5755,11 @@ def _retrieve_from_graph(
     if _kb_primary_retrieval_enabled():
         context = _retrieve_from_kb(query, risk_level)
         _populate_semantic_statements(context, query.raw_question)
-        _expand_referenced_annexes_and_recitals(context)
+        # ``_retrieve_from_kb`` already runs
+        # ``_expand_referenced_annexes_and_recitals`` internally (it is
+        # idempotent); the removed second call here is what shipped every
+        # referenced annex/recital TWICE into the Stage-2 prompt on the
+        # default KB-primary path.
         return context
 
     effective_risk = query.risk_context or risk_level or "high"
@@ -5944,11 +5948,29 @@ def _populate_semantic_statements(context: GraphContext, question: str) -> None:
 
 
 def _expand_referenced_annexes_and_recitals(context: GraphContext) -> None:
-    """Parse primary retrieved context for referenced Annexes and Recitals and append them to context."""
+    """Parse primary retrieved context for referenced Annexes and Recitals and append them to context.
+
+    Idempotent: annexes/recitals already present in
+    ``context.referenced_annexes_and_recitals`` are never appended again.
+    Every entry here is rendered VERBATIM into the Stage-2 prompt, so a
+    duplicate doubles the prompt block and can make the model double-count
+    the provision — the pre-fix bug shipped every referenced annex/recital
+    twice on the KB-primary default path (``_retrieve_from_kb`` expands
+    internally AND ``_retrieve_from_graph`` expanded the returned context
+    again).
+    """
     import re
 
     from app.data.eu_ai_act_corpus import RECITALS
     from app.data.kb import EC_CHECKER_OBLIGATION_MAP
+
+    # The call-local dedup that caused the duplicate grounding: the annex /
+    # recital resolution loops below only guarded against other extracted
+    # refs and against ``context.obligations`` — never against refs already
+    # in the queue itself. Idempotency requires checking the queue.
+    already_queued = {
+        r.get("ref") for r in context.referenced_annexes_and_recitals
+    }
 
     annex_pat = re.compile(r"\bAnnex\s+([IVXLCDM]+)\b", re.IGNORECASE)
     recital_pat = re.compile(r"\bRecital\s+(\d+)\b", re.IGNORECASE)
@@ -5978,14 +6000,22 @@ def _expand_referenced_annexes_and_recitals(context: GraphContext) -> None:
         if rec_num not in extracted_recitals:
             extracted_recitals.append(rec_num)
 
-    # Resolve Annexes (capped at 2)
-    resolved_count_annex = 0
+    # Resolve Annexes (capped at 2 total in the queue, so a re-expansion of
+    # an already-expanded context adds NOTHING — full idempotency, not just
+    # duplicate-skipping: the cap is a QUEUE budget, not a per-call budget).
+    annex_queued = sum(
+        1 for r in context.referenced_annexes_and_recitals if r.get("type") == "Annex"
+    )
+    recital_queued = sum(
+        1 for r in context.referenced_annexes_and_recitals if r.get("type") == "Recital"
+    )
+    resolved_count_annex = annex_queued
     for annex in extracted_annexes:
         if resolved_count_annex >= 2:
             break
         # Check if already retrieved as a primary obligation to avoid duplication
         already_present = any(o.get("article") == annex for o in context.obligations)
-        if already_present:
+        if already_present or annex in already_queued:
             continue
         mapping = EC_CHECKER_OBLIGATION_MAP.get(annex)
         if mapping:
@@ -5995,21 +6025,27 @@ def _expand_referenced_annexes_and_recitals(context: GraphContext) -> None:
                 "ref": annex,
                 "text": mapping.get("summary", ""),
             })
+            already_queued.add(annex)
             resolved_count_annex += 1
 
-    # Resolve Recitals (capped at 3)
-    resolved_count_recital = 0
+    # Resolve Recitals (capped at 3 total in the queue — see the annex cap
+    # comment above).
+    resolved_count_recital = recital_queued
     for rec_num in extracted_recitals:
         if resolved_count_recital >= 3:
             break
+        rec_key = f"Recital {rec_num}"
+        if rec_key in already_queued:
+            continue
         rec_text = RECITALS.get(rec_num)
         if rec_text:
             context.referenced_annexes_and_recitals.append({
                 "id": f"ref-recital-{rec_num}",
                 "type": "Recital",
-                "ref": f"Recital {rec_num}",
+                "ref": rec_key,
                 "text": rec_text,
             })
+            already_queued.add(rec_key)
             resolved_count_recital += 1
 
 
