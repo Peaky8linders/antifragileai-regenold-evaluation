@@ -82,6 +82,9 @@ __all__ = [
     "rerank_references",
     "rerank_query_context",
     "build_kg_candidate_pool",
+    "build_kg_candidate_pool_with_reasons",
+    "rerank_kg_candidates_enabled",
+    "rerank_kg_hops",
     "rerank_stats",
     "reset_rerank_stats",
 ]
@@ -105,6 +108,27 @@ def rerank_kg_candidates_enabled() -> bool:
         os.getenv(_RERANK_KG_ENV, "0").strip().lower()
         in _TRUTHY
     )
+
+
+_RERANK_KG_HOPS_ENV = "REGENOLD_RERANK_KG_HOPS"
+
+
+def rerank_kg_hops() -> int:
+    """``REGENOLD_RERANK_KG_HOPS`` — **1** by default, **2** optional.
+
+    R348 — how deep the KG candidate expansion goes. Hop-2 neighbours ("the
+    provisions those provisions point at") are genuinely different retrieval
+    candidates, but a hub article's 2-hop closure floods the pool, so hop-2
+    neighbours are capped at a fraction of the hop-1 budget (``max_extra``
+    split 2:1 — see :func:`build_kg_candidate_pool`). Values outside ``1..2``
+    clamp to 1. Fresh read per call; registered in ``_engine_cache_key`` so the
+    A/B arm is cache-distinct.
+    """
+    try:
+        hops = int(os.getenv(_RERANK_KG_HOPS_ENV, "1").strip() or "1")
+    except (TypeError, ValueError):  # noqa: BLE001
+        return 1
+    return 2 if hops >= 2 else 1
 
 COHERE_RERANK_URL = "https://api.cohere.com/v2/rerank"
 
@@ -297,8 +321,9 @@ def build_kg_candidate_pool(
     *,
     max_extra: int = 8,
     per_ref: int = 3,
+    hops: int = 1,
 ) -> list[str]:
-    """R347 — ``references`` + deduplicated 1-hop CROSS_REFERENCES neighbours.
+    """R347 — ``references`` + deduplicated CROSS_REFERENCES neighbours.
 
     The KG/taxonomy lever: each candidate's own cross-reference adjacency
     (incoming AND outgoing on the embedded undirected graph; the canonical
@@ -306,6 +331,14 @@ def build_kg_candidate_pool(
     selected) is appended to the pool, so the cross-encoder can PROMOTE a
     genuinely cross-referenced provision that the keyword map never saw —
     instead of only re-ordering a keyword-picked set.
+
+    R348 — ``hops=2`` walks one level further ("the provisions those
+    provisions point at"), on EITHER backend: the embedded graph's
+    ``neighbors()`` when selected, else the composed ``cross_refs(cross_refs
+    (ref))`` adjacency via the frontier walk below. Hop-2 closure floods the
+    pool around a hub article, so the ``max_extra`` budget is split 2:1 —
+    hop-1 neighbours get the first ``2/3`` slots, hop-2 the remaining
+    ``1/3`` (which may go unused when the closure is thin).
 
     Appends only, deduplicated, capped at ``max_extra`` (a hub article like
     Art. 16 would otherwise flood the pool). The caller adopts the result
@@ -324,6 +357,7 @@ def build_kg_candidate_pool(
         )
 
         neighbors_of: Any = None
+        graph_hops = max(1, int(hops))
         if embedded_backend_selected():
             try:
                 g = get_embedded_graph()
@@ -336,21 +370,96 @@ def build_kg_candidate_pool(
 
             from app.data.kb_xrefs import cross_refs  # noqa: PLC0415
 
+            # Composed adjacency: hop-2 becomes cross_refs(cross_refs(ref))
+            # via the frontier walk below.
             neighbors_of = partial(cross_refs, limit=per_ref)
 
-        for ref in base:
-            try:
-                nbs = neighbors_of(ref)
-            except Exception:  # noqa: BLE001 — one bad ref must not kill the pool
-                continue
-            for nb in nbs:
-                if nb not in base and nb not in extra:
-                    extra.append(nb)
-                    if len(extra) >= max_extra:
-                        return base + extra
+        # Budget split (R348): hop-1 gets ~2/3 of ``max_extra``, hop-2 the
+        # remaining 1/3 — a hub article's 2-hop closure must not starve the
+        # direct neighbours. Each hop stops as soon as its own budget fills.
+        hop1_budget = max(1, int(max_extra * 2 // 3))
+        hop2_budget = max(0, int(max_extra) - hop1_budget)
+
+        def _collect(frontier: list[str], budget: int) -> list[str]:
+            """Neighbours of ``frontier`` not already seen, up to ``budget``."""
+            out: list[str] = []
+            for ref in frontier:
+                try:
+                    nbs = neighbors_of(ref)
+                except Exception:  # noqa: BLE001 — one bad ref must not kill the pool
+                    continue
+                for nb in nbs:
+                    if nb not in base and nb not in extra:
+                        extra.append(nb)
+                        out.append(nb)
+                        if len(out) >= budget:
+                            return out
+            return out
+
+        hop1 = _collect(list(base), hop1_budget)
+        if graph_hops >= 2 and hop2_budget > 0 and len(extra) < max_extra:
+            _collect(hop1, hop2_budget)
     except Exception:  # noqa: BLE001 — KG expansion must never break parse
         return base
     return base + extra
+
+
+def build_kg_candidate_pool_with_reasons(
+    references: Sequence[str],
+    *,
+    max_extra: int = 8,
+    per_ref: int = 3,
+) -> list[tuple[str, str]]:
+    """R348 — like :func:`build_kg_candidate_pool`, but each neighbour carries
+    the CURATED semantic reason for its edge (the KG's semantic layer).
+
+    ``cross_refs_with_reason`` resolves ``(target, reason)`` pairs from the
+    FULL graph — regex + manual + the R47-A backfill whose curated reasons
+    are sentences like ``"Art. 26 → Art. 13: deployer reads provider's
+    transparency schema"``. Feeding that reason into the rerank DOCUMENT (see
+    ``rerank_pool(doc_reasons=...)``) tells the cross-encoder WHY the
+    neighbour is relevant to the anchor, which is exactly the semantic signal
+    a bare provision text omits.
+
+    Deterministic, backend-independent, never raises: a reason-index failure
+    degrades to the plain :func:`build_kg_candidate_pool` with a generic
+    relation label. Returns ``(ref, reason)`` pairs in pool order.
+    """
+    base = [r for r in (references or [])]
+    try:
+        from app.data.kb_xrefs import cross_refs_with_reason  # noqa: PLC0415
+
+        pairs: list[tuple[str, str]] = []
+        for ref in base:
+            try:
+                edges = cross_refs_with_reason(ref, limit=per_ref)
+            except Exception:  # noqa: BLE001 — one bad ref must not kill the pool
+                continue
+            for target, reason in edges:
+                if target not in base and target not in {p[0] for p in pairs}:
+                    pairs.append((target, str(reason).strip() or "cross-referenced"))
+                    if len(pairs) >= max_extra:
+                        return pairs
+        return pairs
+    except Exception:  # noqa: BLE001 — semantic layer must never break parse
+        return []
+
+
+def _pool_reasons(
+    references: Sequence[str], pairs: Sequence[tuple[str, str]] | None
+) -> dict[str, str] | None:
+    """Merge KG reason-pairs into a ``ref -> reason`` map for doc enrichment.
+
+    ``None`` when no pairs were supplied (the R340/permutation-only contract
+    is unchanged). Never raises; malformed pairs are skipped.
+    """
+    if not pairs:
+        return None
+    out: dict[str, str] = {}
+    for ref, reason in pairs:
+        if ref and str(reason).strip():
+            out[str(ref)] = str(reason).strip()[:240]
+    return out or None
 
 
 def rerank_pool(
@@ -358,6 +467,7 @@ def rerank_pool(
     references: Sequence[str],
     *,
     query_context: str = "",
+    doc_reasons: dict[str, str] | None = None,
     text_for: Any = None,
 ) -> tuple[list[str], bool]:
     """R347 — the permutation core with an explicit SUCCESS bit.
@@ -378,6 +488,10 @@ def rerank_pool(
 
     ``query_context`` (see :func:`rerank_query_context`) is appended to the
     rerank query — the cross-encoder discriminates on domain terms.
+    ``doc_reasons`` (R348, a ``ref -> reason`` map from
+    :func:`build_kg_candidate_pool_with_reasons`) annotates each doc with its
+    curated KG edge reason (``"\nRelation: …"``) — the semantic-layer signal
+    telling the cross-encoder why a KG-supplemented neighbour matters.
 
     :param text_for: callable ``ref -> str | None`` supplying the verbatim
         text of a provision. Defaults to
@@ -399,6 +513,13 @@ def rerank_pool(
         except Exception:  # noqa: BLE001
             return list(refs), False
 
+    # R348 — a KG-supplemented neighbour carries its CURATED semantic reason
+    # (e.g. "deployer reads provider's transparency schema"); appending it to
+    # the doc tells the cross-encoder WHY the provision is relevant, which a
+    # bare provision text omits. Reasons only ever ANNOTATE text that already
+    # resolved — an unresolvable ref still falls out of the scored set.
+    reasons = doc_reasons or {}
+
     # Only rows whose provision text resolves can be scored. Unresolved refs are
     # held aside and re-appended in their ORIGINAL relative order, so nothing is
     # lost and the transform stays a permutation.
@@ -411,7 +532,11 @@ def rerank_pool(
             txt = None
         if txt and str(txt).strip():
             scorable.append(i)
-            docs.append(str(txt).strip()[:4000])
+            doc = str(txt).strip()[:4000]
+            reason = reasons.get(str(ref))
+            if reason:
+                doc = f"{doc}\nRelation: {reason}"[:4100]
+            docs.append(doc)
 
     if len(scorable) < 2:
         return list(refs), False

@@ -530,15 +530,17 @@ correct only for exactly as long as that remains true.
   paraphrase tier; R346.2 switched paraphrases to the frontier Sonnet 4.6 tier
   and the confirmatory re-run was interrupted — re-run before trusting those
   numbers.
-* **R347 — the rerank is now a hybrid-RAG lever, still OFF until the A/B
-  decides.** The R346 wash was the permutation-only contract re-ordering a
+* **R347/R348 — the rerank is now a hybrid-RAG lever, still OFF until the
+  A/B decides.** The R346 wash was the permutation-only contract re-ordering a
   keyword-picked set; R347 makes the parse-level rerank rank the keyword
-  entities TOGETHER with their 1-hop CROSS_REFERENCES neighbours from the KG
-  taxonomy (``REGENOLD_RERANK_KG_CANDIDATES``), so a genuinely
-  cross-referenced provision can be promoted the keyword map never saw, and
-  feeds the classifier labels (intent / risk tier / dimension) into the rerank
-  query. Superset + dedup + cap + ok-bit adoption: gate-off is byte-identical
-  to R340. Unmeasured — the two-flag A/B (rerank × KG-candidates) is the open
+  entities TOGETHER with their CROSS_REFERENCES neighbours from the KG
+  taxonomy (``REGENOLD_RERANK_KG_CANDIDATES``), feeds the classifier labels
+  (intent / risk tier / dimension) into the rerank query, and R348 annotates
+  each KG-supplemented neighbour's rerank DOCUMENT with its curated semantic
+  edge reason (``cross_refs_with_reason`` — the KG's semantic layer) plus a
+  ``REGENOLD_RERANK_KG_HOPS=2`` depth option with a 2:1 budget split. Superset
+  + dedup + cap + ok-bit adoption: gate-off is byte-identical to R340.
+  Unmeasured — the A/B (rerank × KG-candidates [× hops]) is the open
   measurement.
 * ⚠ **R338's "−5 expert-mistake regression" (q03/q04/q14) is RETRACTED** — it was
   measured while Stage-2 was dead (the argv ceiling). With Stage-2 restored the
@@ -844,7 +846,8 @@ Defaults are the CODE default, re-measured 2026-08-09.
 | `REGENOLD_ANSWER_COVERAGE` | **ON** | delivers `USER_ANSWER_COVERAGE_CLAUSE` (2,241 chars) on the Stage-2 USER channel — delivered on every provider. ⚠ **`=0` is NOT a targeted rollback of anything inside it**: it also deletes the R318 `LEGAL VERSION` sentence, which is the ONLY place the no-Digital-Omnibus rule reaches the model. If you need to remove one sentence, remove that sentence |
 | `REGENOLD_ONTOLOGY_RISK_DOCS` | **ON** | `938933a` — emits 28 virtual BM25 documents from the six AIRO registries (345 → **373** docs). Shipped default-ON with **no `dynamic_ab` verdict and no `gold_dropped` reading**; 9 of 110 official-batch rows lose a provision from their entity set. `=0` restores the pre-`938933a` corpus. In `_engine_cache_key` (`regenold.py:1434`) since R331/R332 |
 | `REGENOLD_COHERE_RERANK` | **OFF** | R331/R340.1 — cross-encoder rerank via Cohere at the parse-level entity list (the placement that reaches live traffic; the pool-level placement only fires on the rare no-entity BM25 fallback) and the retrieval candidate pool. Needs `COHERE_API_KEY`; fresh env read per call. **Live A/B (R346, n=60, Bedrock): FIRED 49/60 rows, all axes UNDERPOWERED (wash inside noise), gold 17→17 (+0), latency +1.0 s.** ⚠ Trial key = 10 calls/min: unpaced every call 429s and the lever reads INERT — pass `--min-call-gap 6.5` |
-| `REGENOLD_RERANK_KG_CANDIDATES` | **OFF** | R347 — hybrid-RAG KG supplementation: the parse-level rerank ranks the keyword entities TOGETHER with their 1-hop CROSS_REFERENCES neighbours from the KG taxonomy (embedded-graph `neighbors()` when the embedded backend is selected, canonical `kb_xrefs.cross_refs` adjacency otherwise), so a genuinely cross-referenced provision can be PROMOTED instead of only re-ordering a keyword-picked set. Pool is a superset (permutation-safe), capped at 8 extras, adopted only on cross-encoder success (the `rerank_pool` ok-bit — an outage never leaks neighbours). Also feeds the classifier's own labels (intent / risk tier / dimension) into the rerank QUERY via `rerank_query_context`. No-op unless `REGENOLD_COHERE_RERANK=1`; in `_engine_cache_key` (R334 drift-guarded). The A/B decides |
+| `REGENOLD_RERANK_KG_CANDIDATES` | **OFF** | R347/R348 — hybrid-RAG KG supplementation: the parse-level rerank ranks the keyword entities TOGETHER with their CROSS_REFERENCES neighbours from the KG taxonomy (embedded-graph `neighbors()` when the embedded backend is selected, canonical `kb_xrefs.cross_refs` adjacency otherwise), so a genuinely cross-referenced provision can be PROMOTED instead of only re-ordering a keyword-picked set. R348 annotates each KG-supplemented neighbour's rerank DOCUMENT with its curated semantic edge REASON (`cross_refs_with_reason` — e.g. "Art. 13: Art. 26(1) requires deployers to use the Art. 13 information from the provider"), so the cross-encoder scores WHY the provision is relevant. Pool is a superset (permutation-safe), capped at 8 extras, adopted only on cross-encoder success (the `rerank_pool` ok-bit — an outage never leaks neighbours). Also feeds the classifier's own labels (intent / risk tier / dimension) into the rerank QUERY via `rerank_query_context`. No-op unless `REGENOLD_COHERE_RERANK=1`; in `_engine_cache_key` (R334 drift-guarded). The A/B decides |
+| `REGENOLD_RERANK_KG_HOPS` | **1** | R348 — KG expansion depth: `2` walks one level further ("the provisions those provisions point at") on EITHER backend (embedded graph `neighbors()` or composed `cross_refs(cross_refs(ref))`). `max_extra` budget splits 2:1 (hop-1 gets 2/3) so a hub article's 2-hop closure can't starve the direct neighbours. Values outside 1–2 clamp to 1; in `_engine_cache_key` (R334 drift-guarded) |
 | `REGENOLD_QUERY_EXPANSION` | **OFF** | R341 — multi-query expansion (RAG-Fusion) in `_deterministic_parse`: frontier-tier paraphrases scanned through the SAME high-precision keyword map (union capped at 3 new refs) plus the BM25 fallback RRF-combined across queries at the single-query budget. Skips explicit-anchor and multi-turn shapes; the fallback gate asks about the ORIGINAL lanes only (a lone paraphrase hit must not starve BM25). **Live A/B (R346, n=60, Bedrock, Haiku tier): FIRED 37/60, ref_loose +0.039 / kw_recall +0.029 (CIs mostly above zero), gold 17→14 (branch BETTER), latency flat — directionally positive, UNDERPOWERED at n=60; the R346.2 frontier-tier re-run is the open measurement** |
 | `REGENOLD_QUERY_EXPANSION_MODEL` | `claude-sonnet-4-6` | R346.2 — the paraphrase tier. **No Haiku on the live path**: frontier 4.6 by default (the judge tier — a paraphrase is a light task), pin `claude-opus-4-6` for the generation tier. Fresh read per call; in `_engine_cache_key` |
 | `REGENOLD_QUERY_EXPANSION_BEDROCK_TIMEOUT` | **8 s** | R346 — paraphrase read budget on the Bedrock transport (cold-start + frontier model). The wrapper's 2 s budget would fail every paraphrase and read as an inert lever (attempts>0, expanded=0, branch == baseline) |

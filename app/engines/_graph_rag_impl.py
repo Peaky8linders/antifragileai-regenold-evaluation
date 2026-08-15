@@ -2598,32 +2598,52 @@ def _deterministic_parse(question: str) -> GraphQuery:
         try:
             from app.engines.cohere_rerank import (  # noqa: PLC0415
                 build_kg_candidate_pool,
+                build_kg_candidate_pool_with_reasons,
                 rerank_enabled,
                 rerank_kg_candidates_enabled,
+                rerank_kg_hops,
                 rerank_pool,
                 rerank_query_context,
             )
             if rerank_enabled():
-                # R347 — hybrid-RAG pool: rank the keyword entities TOGETHER
-                # with their 1-hop CROSS_REFERENCES neighbours from the KG
-                # taxonomy, and feed the classifier's own labels (intent /
-                # risk tier / dimension) into the rerank QUERY so the
-                # cross-encoder discriminates on domain terms, not just the
-                # bare question. The pool is a SUPERSET of the original
-                # entities — a permutation can reorder but never lose them —
-                # and the rerank ok-bit decides adoption: on any failure the
-                # ORIGINAL entities stand (no neighbour leakage). Gate-off
-                # and kg-off both degenerate to the R340 behaviour exactly.
+                # R347/R348 — hybrid-RAG pool: rank the keyword entities
+                # TOGETHER with their CROSS_REFERENCES neighbours from the KG
+                # taxonomy (1-hop by default, 2-hop under
+                # ``REGENOLD_RERANK_KG_HOPS=2``), and feed the classifier's
+                # own labels (intent / risk tier / dimension) into the rerank
+                # QUERY so the cross-encoder discriminates on domain terms,
+                # not just the bare question. R348 also annotates each
+                # KG-supplemented neighbour's rerank DOCUMENT with its curated
+                # semantic edge reason ("Relation: …") — the KG's semantic
+                # layer told the cross-encoder WHY the provision is relevant.
+                # The pool is a SUPERSET of the original entities — a
+                # permutation can reorder but never lose them — and the rerank
+                # ok-bit decides adoption: on any failure the ORIGINAL
+                # entities stand (no neighbour leakage). Gate-off and kg-off
+                # both degenerate to the R340 behaviour exactly.
                 pool = entities
+                doc_reasons: dict[str, str] | None = None
                 if rerank_kg_candidates_enabled():
-                    pool = build_kg_candidate_pool(entities)
+                    pairs = build_kg_candidate_pool_with_reasons(
+                        entities, per_ref=3
+                    )
+                    if pairs:
+                        # Superset: the keyword entities stay first, the
+                        # KG-supplemented neighbours (with their curated
+                        # semantic edge reasons) follow.
+                        pool = list(entities) + [e for e, _ in pairs]
+                        doc_reasons = {r: reason for r, reason in pairs}
+                    else:
+                        pool = build_kg_candidate_pool(
+                            entities, hops=rerank_kg_hops()
+                        )
                 ctx = rerank_query_context(
                     intent=intent,
                     risk_context=risk_context,
                     dimension_hint=dimension_hint,
                 )
                 reranked, ok = rerank_pool(
-                    question, pool, query_context=ctx
+                    question, pool, query_context=ctx, doc_reasons=doc_reasons
                 )
                 if ok:
                     entities = reranked
