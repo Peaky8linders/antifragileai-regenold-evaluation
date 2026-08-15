@@ -1,8 +1,10 @@
 # CLAUDE.md — Regenold EU AI Act RAG (re-evaluation repo)
 
 Load-bearing context for an LLM coding assistant. Read top-to-bottom before
-making changes. Every number here was re-measured in R326 (2026-08-10) against **this**
-repo; the per-round engineering log lives in
+making changes. Numbers were re-measured in R326 (2026-08-10) and again in R338
+(2026-08-15, after six unreviewed commits landed on `main` — see
+[`docs/reviews/gemini-changes-2026-08-15-cc47f8b.md`](docs/reviews/gemini-changes-2026-08-15-cc47f8b.md));
+the per-round engineering log lives in
 **[`docs/ROUNDS.md`](docs/ROUNDS.md)** — search it, don't read it.
 
 ## ⚠ Which repo you are in
@@ -23,19 +25,39 @@ fix* landed here, and `railway.toml`'s own R306 note records probing **"the
 deployed endpoint"** live on 2026-08-03. Merging to `main` here reaches a real
 service:
 
-⚠ **One leg of that argument was retracted 2026-08-14.** This paragraph used to
-also cite "the provider table below says the Bedrock path *is what Railway
-runs*". That claim was never verified and has been removed from the table — see
-the provider section. The conclusion (**a merge here ships**) is unaffected; it
-rests on the three remaining items. But *which provider* the deployed service
-runs is a separate, still-open question, and the two must not be conflated
-again.
+⚠ **One leg of that argument was retracted 2026-08-14** — "the provider table
+says Bedrock is what Railway runs" was never verified. The conclusion (**a merge
+here ships**) is now MEASURED independently: on 2026-08-15 the service's
+`/healthz` reported the deployed commit tracking `main` (see below). *Which
+provider* it runs is a separate question, answered by probe and not durable —
+see the provider section. Do not conflate the two again.
 
 ```
 project      e19dc6ef-b463-4a54-9662-4a5085ae00c9
 service      0086ff18-f642-46c8-8127-57c913ca1c53
 environment  2f6298dd-881c-4848-81eb-5017a8a64c32
+domain       https://antifragileai-regenold-evaluation-production.up.railway.app
 ```
+
+⚠ **The domain is RECORDED now (2026-08-15, R338).** `CLAUDE.md` and
+`.kiro/steering/railway-redeploy.md:60` both used to say it was unrecorded and
+send the reader to the dashboard; `.kiro` still does. `GET /healthz` returns
+`{"status":"ok","version":"1.2.3","commit":"<sha12>",…}` — **the `commit` field
+is the instrument for "did my merge actually ship?"**, and it is cheap. Two
+eval runners had been defaulting `--endpoint` to the **sibling** repo's service
+(`regenold-eu-ai-act-rag-production`), i.e. measuring a codebase that does not
+contain the change under test; R338 repointed
+`evals/regenold/antifragile_live.LIVE_ENDPOINT` and `runner_oob.py --endpoint`
+here and kept the sibling one flag away as `SIBLING_ENDPOINT`.
+
+⚠ **A push does NOT deploy immediately.** Measured 2026-08-15 with `/healthz`:
+early in the session the service served `commit=4d29387f3db1` while `main` was
+at `4d72ff3` — five commits behind `cc47f8b`, six behind HEAD. Re-probed later
+the same day it served `commit=4d72ff31a54e`, i.e. HEAD. So something *does*
+deploy (Railway's own GitHub integration; there is no `.github/` here), but with
+a lag long enough that a merge and a live probe in one session will disagree.
+**Read `/healthz.commit` before believing a merge shipped, and before
+attributing any live measurement to a commit.**
 
 Treat a merge to `main` in this repo as **shipping**, not as a bench artefact.
 That is exactly the reason `railway.toml [deploy.envs]` being inert matters so
@@ -105,18 +127,35 @@ It is additive: never a ranker, never a wire citation (hard rule #10).
 | ------ | ------- |
 | `app/data/article_existence.py` | **126** canonical refs = 113 articles + 13 annexes. The lint floor. |
 | `app/data/kb.py` | `EC_CHECKER_OBLIGATION_MAP` — **131 entries** covering all 126 provisions (some articles carry multiple stubs). `KB_VERSION = 2024.1689.v18`. |
-| `app/data/ontology.py` | `PRACTICE_REGISTRY` **×8**, `ANNEX_III_REGISTRY` **×8**, `PHASE_REGISTRY` **×4**. 0 dangling citations (normalise the sub-point tail before resolving — `Art. 5.1.a` keys as `Art. 5`). |
+| `app/data/ontology.py` | `PRACTICE_REGISTRY` **×8**, `ANNEX_III_REGISTRY` **×8**, `PHASE_REGISTRY` **×4**, plus the six AIRO registries `938933a` added: `RISK_SCENARIO_REGISTRY` **×8**, `RISK_CONTROL_REGISTRY` **×9**, `GPAI_REGISTRY` **×4**, `CONFORMITY_ROUTE_REGISTRY` **×3**, `FRIA_REGISTRY` **×1**, `SERIOUS_INCIDENT_REGISTRY` **×3**. **All six feed the BM25 index.** 0 dangling citations (normalise the sub-point tail before resolving — `Art. 5.1.a` keys as `Art. 5`). |
 | `app/data/definitions.py` | **68** Art. 3 definitions. |
 | `app/data/provision_text.py` | Verbatim resolver: article / paragraph / point / sub-point / annex item, section-aware. |
 | `app/data/official_eu_ai_act.py` | Pinned EUR-Lex text, CELEX `32024R1689` (**pre-Omnibus**), 180 recitals. |
-| `app/data/kb_search.py` | BM25 index — **345 docs**. |
+| `app/data/kb_search.py` | BM25 index — **373 docs** by default (131 kb / 48 ontology / 126 corpus / 68 definition), measured 2026-08-15. **345** is the `REGENOLD_ONTOLOGY_RISK_DOCS=0` arm, i.e. the pre-`938933a` corpus. |
 | `app/data/kb_xrefs.py` | Cross-reference graph: **149 core** edges, **249 full**. |
 | `app/data/eu_ai_act_tree.py` | **1,412**-node document tree. |
 | `app/engines/_assets/` | Embeddings index — `is_available()` True, **0** asset SHA mismatches vs the manifest. TurboQuant precomputed — enabled, staleness guard present and passing. |
 
 ⚠ Older round entries quote `~165` / `348` / `347` BM25 docs, `Practice ×9`,
 `Phase ×6`, and a `1,426`-node tree. **All four are stale** — the table above is
-measured.
+measured. **A BM25 doc count is meaningless without its gate value**: quote it
+as `373 (risk-docs ON)` or `345 (risk-docs OFF)`, never bare.
+
+⚠ **The six AIRO registries are NOT an additive corpus extension.** Their 28
+virtual documents land in the MIDDLE of the corpus, so `n_docs` 345→373 and
+`avg_doc_len` 94.5→91.7 move IDF and length normalisation for **every**
+pre-existing document — the whole corpus re-ranks. Measured over the 110
+official-batch rows, `_deterministic_parse` changes its entity set on **9 rows
+and all 9 LOSE a provision** (the toy question loses Annex III; "which systems
+are high-risk" loses Art. 6 and Art. 7; the QMS question loses Art. 11 and the
+Annex IV xref), while `Art. 27` is GAINED on 5 because the FRIA document dumps
+six generic `required_steps` into one anchor. Wire references were
+byte-identical on 110/110 under `provider=cli`, so the blast radius is the
+**Stage-2 grounding context** — which that arm cannot observe. Two authoring
+defects to fix whatever the gate says: documents are keyed on the first element
+of an arbitrarily-ordered citation tuple (`scenario.statutory_violation[0]`,
+`control.articles[0]`, `fria.governing_articles[0]`), and several duplicate
+their keyword tuple for 2× term weight.
 
 ⚠ `PHASE_REGISTRY` has **0** `superseded_by` entries and `ROLE_SMALL_MID_CAP`
 **does not exist**. Both are CORRECT for the pre-Omnibus pin. Older notes
@@ -161,6 +200,16 @@ them**.
    resolve there. `tests/test_kb_consistency.py` enforces it.
    ⚠ It cannot catch a *wire-legal* fabrication: a foreign instrument's
    Article 5 collides with AI Act Article 5 and passes the lint. See rule #11.
+   ⚠ Nor can `provision_exists`, which is head-level LAX (see the gotchas) —
+   and it is **violated in-tree today at `evals/judge/legal_v2.py:660`**, where
+   `if not provision_exists(ref)` is the `NON_EXISTENT_PROVISION` gate. Measured
+   across every recorded sidecar it has fired on **zero** refs, while the
+   fabricated leaves it passes (`Article 3.14a`, `Annex III.4.employment`,
+   `Article 4.2` ×11, `Annex IX.99`) are then scored SUPPORTING, because an
+   unquotable provision downgrades WRONG → SUPPORTING. Only
+   `get_provision_text(ref) is not None` validates a leaf; R338 pinned that for
+   the Cappelli gold in `tests/test_cappelli_dataset_legal.py`, the judge is
+   still unfixed.
 6. **`dynamic_ab` IS THE MERGE GATE. davidath is RETIRED — do not run it.**
    See Validation policy. Never ship on "davidath byte-identical": it runs
    `provider=cli` with no Stage-2, so for most changes it is not a weak signal,
@@ -214,6 +263,22 @@ Why it is worse than useless rather than merely weak:
   structurally cannot show a chain-dropping defect (hard rule #7), and it is
   BM25-saturated, so retrieval levers read flat *because it is blind*.
 
+⚠ **The same trap shipped twice more, in modules whose NAMES deny it.**
+`evals.bench.run_cappelli_bench` and `evals.bench.run_live_deep_eval` (`cc47f8b`)
+both defaulted `--provider` to **`cli`** and both *assigned*
+`P2P_GRAPH_RAG_PROVIDER`, overwriting an operator's exported value — so a file
+printing `RUNNING LIVE EVALUATION` ran the no-Stage-2 path, and it was the
+instrument shipped in the same commit to justify a Stage-2 **prompt** change.
+Both ran inert unnoticed: `cappelli_bench_results.json` carries per-row
+latencies of **14.5-440 ms** across all 20 rows (this repo's own cheapest inert
+detector) and still printed a full 5-dimension scorecard; `run_live_deep_eval`
+averaged **91.8 ms/row** against a ~16 s live baseline; and neither artefact
+recorded the resolved provider, so neither can be re-attributed afterwards.
+`cli` also leaves `stage2_landed` False, re-arming `MAX_ANSWER_SENTENCES = 3`,
+so both scored ≤3-sentence capped answers against multi-sentence gold. R338
+defaults both to `openai_wrapper`, honours an exported value, and writes the
+resolved provider + Stage-2 model + per-row `stage2_landed` into the artefact.
+
 **Use `evals.harness.dynamic_ab`.** It is built around the one property every
 inert A/B in this repo's history lacked:
 
@@ -230,7 +295,17 @@ inert A/B in this repo's history lacked:
    9 effective rows is UNDERPOWERED, not a finding.
 3. **Live path by default** (Stage-2 on), because that is where the product is.
 4. **`gold_dropped` on both grains, as a VETO** — hard rule #8 is not an axis to
-   trade against.
+   trade against. ⚠ **The exact-grain half of that veto was DEAD until R338.**
+   R337's grain guard read each row's gold from a `"row"` key that `_run_arm`
+   has never written, so `applicable` was ALWAYS False: a branch dropping 5 gold
+   coordinates at exact grain printed `n/a` and **no REJECTED line**. Its tests
+   passed 5/5 the whole time because the fixture hand-built a dict *with* that
+   key — a data shape production never produced. Gold is now carried out of
+   `_run_arm` by one `_row_record()` definition the tests also call, and the
+   grain is decided PER ROW (head-level gold cannot support an exact-grain veto;
+   there a MORE precise citation reads as a loss). **A test fixture that builds
+   its own input is not a test of the producer** — make the test call the
+   producer.
 5. **Genuinely stratified sampling.** `probe_set` is ordered by source, so the
    `[:n]` slice earlier runs called "stratified" took whole sources and dropped
    others; `_stratified()` round-robins across sources instead.
@@ -293,8 +368,9 @@ Multi-turn coherence and the OOS probe remain useful cheap guards.
 
 Other gates: `evals.regenold.runner` **255/255**, RISK_F1 macro **1.00**, 28/28
 categories · OOS probe (`--oos-suite all`, 51 rows) **49 pass, 0 scope leaks**
-(2 known `adjacent_eu` soft fails) · full `pytest` **55 pre-existing failures**,
-all the documented `provider=cli` Stage-2 env artifact.
+(2 known `adjacent_eu` soft fails) · full `pytest` **56 pre-existing failures**
+(measured 2026-08-15 at R338; 57 immediately before it), all the documented
+`provider=cli` Stage-2 env artifact.
 
 ⚠ **R327 — this block is measurable again.** An uncommitted pass had rebound the
 canonical axis names to new formulas, so any run graded against this table was
@@ -373,14 +449,23 @@ lexicographically — Article 3 ordered 1, 10-19, 2, 20-29, 3 … and at a 24-un
 cap dropped definitions 3(4)-(8) (deployer / authrep / importer / distributor /
 operator). Every ordering must cast: `toIntegerOrNull(u.number)`.
 
-**⚠ The seed hazard (hard rule #12).** This repo ships
-`SEED_VERSION = 2026-07-24-r291-fullseed`; the live graph is
+**⚠ The seed hazard (hard rule #12) — WORSE since `938933a`.** This repo ships
+`SEED_VERSION = 2026-08-14-sota-airo-fullseed`
+(`scripts/seed_neo4j_kb.py:136`); the live graph is
 `2026-08-08-r323-annex-sections`, seeded by the RAG repo. The boot hook
 re-seeds on ANY mismatch — it does not check which is newer — so booting this
 repo with auto-seed ON **downgrades production's graph**, losing the
 section-aware annex items and the SubPoint layer. The failure is silent: the
 seeder succeeds, `/healthz/graph` still reports ok, answers just get worse.
 `.env.example` pins `NEO4J_AUTO_SEED=0`; keep it.
+⚠ The version STRING changed but the hazard did not: the two still mismatch, so
+the re-seed still triggers. What changed is the blast radius — this repo's
+seeder now also writes `RiskScenario` / `RiskControl` / `GPAIModelProfile` /
+`ConformityRoute` / `FRIAWorkflow` / `SeriousIncidentSLA`, so a stray boot would
+not only delete the annex/SubPoint work but inject six unreviewed label families
+into the shared instance. The **18-label / 1758-node census above is still
+correct for the LIVE graph** — this repo has never written to it — and stays
+correct only for exactly as long as that remains true.
 
 ## Where we stand
 
@@ -483,13 +568,57 @@ seeder succeeds, `/healthz/graph` still reports ok, answers just get worse.
   wrapper drops. Do not cite it as evidence that prompt volume is harmless.
 * **The Cappelli et al. (2026) paper's 7 optimisations** — none buildable; the
   authors built no retrieval system and their failure mode is UNDER-citation,
-  the inverse of ours.
+  the inverse of ours. ⚠ **The line now has EVIDENCE, not just an argument.**
+  `cc47f8b` built two of them anyway — #2 (an Art. 27 FRIA generator) and #3 (an
+  Annex IV checklist injector) — as two sentences on
+  `USER_ANSWER_COVERAGE_CLAUSE`, the Stage-2 **user** channel, delivered on 100%
+  of requests on every provider, ungated and unmeasured. Both were WRONG against
+  the pin; R338 reverted them (`graph_rag_prompts.py:898-903`). The checklist
+  named an eight-item "Annex IV" that is not Annex IV —
+  `get_provision_text("Annex IV")` is 5,710 chars over **nine** points, `'ce
+  mark'` does not occur in it (CE marking is Article 48), and it omitted point 1
+  entirely, including **1(e)**, the hardware description graded question `rg_001`
+  turns on. The FRIA sentence told the model to name rights *"under the relevant
+  Charter articles"*: Charter articles 1-54 all resolve in `ARTICLE_EXISTENCE`
+  so the lint floor is blind by construction, and the foreign-instrument guard is
+  adjacency-anchored so an enumeration suppresses only the member next to the
+  token "Charter" — executed, `_prose_citation_bases` returns
+  `['Article 1','Article 21','Article 47']`, which Component D then puts on the
+  wire as AI Act citations. **An optimisation from that paper is a claim about
+  law: it must clear `get_provision_text` before it clears an A/B.**
 
 ## Gotchas that have each cost a session
 
 * **The Stage-2 SYSTEM prompt is dropped by the Claude Max wrapper — 0% of
   requests see it.** Prompt fixes MUST go in the Stage-2 **user** message.
   Proven with a French-instruction probe: system slot ignored, user slot obeyed.
+  ⚠ **ROOT CAUSE FOUND AND FIXED 2026-08-15 — but the fix is default OFF.**
+  `D:/Claude Projects/claude-code-openai-wrapper/src/claude_cli.py:14
+  _forward_system_prompt_enabled()`. The wrapper passed
+  `options.system_prompt` as `{"type": "text", "text": …}`, which is **not** a
+  valid `SystemPromptPreset` in `claude_agent_sdk 0.2.82` (a preset requires
+  `{"type": "preset", …}`), so the SDK silently discards it; a plain `str` **is**
+  honoured. Gated behind `WRAPPER_FORWARD_SYSTEM_PROMPT`, **default OFF**, so the
+  running deployment stays byte-identical to the dropped-prompt behaviour.
+  Measured with a sentinel probe on `claude-opus-4-8`: port **8000** (the
+  cloudflared tunnel target, the NSSM `regenold-wrapper` service) SYSTEM slot
+  obeyed = **False**; port **8001** (same code, `WRAPPER_FORWARD_SYSTEM_PROMPT=1`)
+  = **True**. Turning it on for 8000 needs an elevated shell
+  (`nssm restart regenold-wrapper`). ⚠ **Flipping it ON is answer-CHANGING and
+  owes its own A/B**: `ANSWER_GENERATE_SYSTEM` is ~12.8K tokens that currently
+  reach the model on zero wrapper requests, and every conclusion in this file
+  about "the system slot is dead" was measured with the flag OFF.
+* **The channel inversion — the CORRECT law is on the dead channel.** The
+  accurate technical-documentation rule, *"in particular Annex IV(1)(e) (the
+  description of the hardware…) and Annex IV(2)(c) (the computational
+  resources…)"*, sits at `app/data/graph_rag_prompts.py:118`, inside
+  `ANSWER_GENERATE_SYSTEM` — dropped on 100% of wrapper requests. `cc47f8b` then
+  put a FABRICATED eight-item component list at `:898`, on the user clause,
+  delivered on 100%. Right law where nothing hears it, wrong law where
+  everything does; and on Bedrock, which honours the system slot, the model
+  received **both** and they contradict. When you write a legal rule into a
+  prompt, first ask WHICH SLOT it lands in, then check what the other slot
+  already says about the same provision.
 * **`railway.toml [deploy.envs]` has NEVER applied** — Railway's `[deploy]`
   schema has no `envs` key. Bake config as **code defaults**.
 * **Scripts don't load `.env`.** `scripts/seed_neo4j_kb.py` and
@@ -497,8 +626,14 @@ seeder succeeds, `/healthz/graph` still reports ok, answers just get worse.
   or they exit 1. The seeder prints its error at the TOP, so **never `tail` it**
   (and don't pipe a runner through `tail` either: `evals.regenold.runner` puts
   its summary on line 4).
-* **`evals/harness/` does not load dotenv.** Export explicitly or it silently
-  falls to the deterministic path — the inert-feature trap.
+* **`evals/harness/` does not load dotenv — and neither does `evals/bench/`.**
+  Export explicitly or a runner silently falls to the deterministic path — the
+  inert-feature trap. (The one exception is
+  `evals/bench/representative_json.py`; every other module under both trees
+  reads a bare environment.) ⚠ Worse than *not defaulting*: until R338 the two
+  new bench runners **assigned** `P2P_GRAPH_RAG_PROVIDER`, so an operator who
+  had correctly exported `openai_wrapper` was silently overwritten with `cli`.
+  A runner may set an UNSET variable; it must never overwrite a set one.
 * **Do NOT copy the RAG repo's `.env` here.** It carries
   `P2P_GRAPH_RAG_API_KEY=sk-ant-…`, which enables the Anthropic Stage-2 path a
   test expects disabled. Build a scratch env instead, and override its
@@ -538,6 +673,22 @@ seeder succeeds, `/healthz/graph` still reports ok, answers just get worse.
   the same defect. Route-level post-processing flags must stay OUT of the key
   (that asymmetry is what makes the paired A/B possible); engine-level ones must
   be in it.
+* **A PROCESS SINGLETON holding raw corpus positions turns an in-process A/B
+  into a mislabelling machine.** `app/engines/turboquant_index.py` kept
+  `_INDEX = _DenseIndex()` with a `_loaded` latch and a `_bm25_idx_map` of RAW
+  positions into whatever corpus existed at first build, then dereferenced a
+  **live, gate-resolved** `_build_index()` through that **frozen** map. The
+  ontology docs sit in the MIDDLE of the corpus, so flipping
+  `REGENOLD_ONTOLOGY_RISK_DOCS` shifts every later document by 28. Measured in
+  one process, `dense_top_k('serious incident reporting deadline')` returned
+  `Art. 73 @ 0.8224` before the flip and `Art. 111 @ 0.8224` after — **identical
+  scores, different labels**, no `IndexError`, no log line. So the literal
+  rollback command in this file compared ON against a THIRD, index-shifted
+  system that exists nowhere, and the **fire check PASSED**, because the arms did
+  genuinely differ. R338 keyed the index on a corpus identity and rebuilds on
+  mismatch. The build-time staleness guard was already there and ran once per
+  process — **a guard that runs at construction cannot see a mutation after
+  it.**
 * **"Byte-identical" is also what INERT looks like.** A foreign-citation guard
   was widened, measured no wire change, and that was read as *safe* — it was
   also consistent with *not working*, because Component D was re-adding
@@ -562,6 +713,25 @@ seeder succeeds, `/healthz/graph` still reports ok, answers just get worse.
   clamp using a scorer built to like it. Canonical axis names are now pinned to
   the historical formulas; new formulas live under `*_polarity_adj` /
   `*_exact_coord`. **If you change a formula, change its NAME.**
+* **The corollary: a NAME must describe what the code COMPUTES.**
+  `evals/bench/metrics.py` registered a `0.70 × char-trigram cosine + 0.30 ×
+  word-Jaccard` score in `METRIC_PROVENANCE` as *"Sentence-BERT … decoupled from
+  surface lexical form"* and printed it `SBERT:`. No embedding model exists on
+  that path; measured, a conceptually equivalent low-lexical paraphrase scores
+  **0.043** — near-zero on exactly the case the label names. `METRIC_PROVENANCE`
+  is serialised into sidecars by seven writers, so the false attribution was
+  stamped into artefacts of runs that never call the function. R338 renamed it
+  `answer_trigram_jaccard`.
+* **A curve whose labels come from the score it thresholds measures nothing.**
+  The Cappelli threshold analysis did `all_sim_scores.append(sem_sim)` then
+  `all_relevance.append(sem_sim >= 0.25)` and fed both to one function, so false
+  positives were unsatisfiable for every `t >= 0.25` and **precision was
+  identically 1.0000 by construction** — duly published as an empirical
+  *"Crucial Finding"*. The primitive was fine and unit-tested with independent
+  labels; the defect was entirely at the caller, which is why the suite was
+  blind. R338 withdrew `threshold_precision_recall_curve` (it raises now) for a
+  label-free `score_threshold_retention_curve`. **Ask where the ground truth
+  came from, every time.**
 * **Gold shape decides which reference formula is valid.** davidath's
   `relevant_article` gold is HEAD-level, so scoring exact coordinates against it
   marks a MORE precise citation (`Article 5.1.f` vs gold `Article 5`) as 0.0.
@@ -601,6 +771,11 @@ Defaults are the CODE default, re-measured 2026-08-09.
 | `REGENOLD_KG_MAX_CHARS` | **48000** | total graph-context ceiling. R328.4 — was 16000 |
 | `REGENOLD_KG_MAX_UNITS` | **70** | units per provision. R328.4 — was 24, which rendered Article 3 as 24 of its 68 definitions with 3(4)-3(8) (the five OPERATOR ROLE definitions) absent and unmarked |
 | `REGENOLD_KG_UNIT_CHARS` | **2000** | per-unit budget; `_UNIT_HARD_CEILING` **9000** for enumerations. R328.4 — were 900 / 2600 |
+| `REGENOLD_ANSWER_COVERAGE` | **ON** | delivers `USER_ANSWER_COVERAGE_CLAUSE` (2,241 chars) on the Stage-2 USER channel — the slot the wrapper does NOT drop. ⚠ **`=0` is NOT a targeted rollback of anything inside it**: it also deletes the R318 `LEGAL VERSION` sentence, which is the ONLY place the no-Digital-Omnibus rule reaches the model. If you need to remove one sentence, remove that sentence |
+| `REGENOLD_ONTOLOGY_RISK_DOCS` | **ON** | `938933a` — emits 28 virtual BM25 documents from the six AIRO registries (345 → **373** docs). Shipped default-ON with **no `dynamic_ab` verdict and no `gold_dropped` reading**; 9 of 110 official-batch rows lose a provision from their entity set. `=0` restores the pre-`938933a` corpus. In `_engine_cache_key` (`regenold.py:1434`) since R331/R332 |
+| `REGENOLD_COHERE_RERANK` | **OFF** | R331 — cross-encoder rerank via Cohere. Also needs `COHERE_API_KEY`; fresh env read per call so `easyhard_ab` can flip it between in-process arms. Off because it is unmeasured on this corpus, it egresses partner questions, and R329 HyPA already cost Ref Conciseness −0.209 on an ungated default-ON retrieval change |
+| `REGENOLD_JUDGE_CONCISENESS_LENIENCY` | **OFF** | R331.1 — the POST-PROCESSING half of `bb793ca`'s conciseness loosening (`legal_v2.py:821`). ⚠ **Its PROMPT half is UNGATED** (`legal_v2.py:488-514`, the UNREQUESTED-TOPIC / REDUNDANT definitions), and that is where the axis is actually defined — so `answer_conciseness` already sits on a different, strictly more permissive ruler than every pre-`bb793ca` number, under the same canonical name. Violates R327's "change the formula, change its NAME" |
+| `REGENOLD_JUDGE_FACTUAL_THRESHOLD` | **0.70** | `d7be457` — `legal_v2` factual-correctness pass floor (`legal_v2.py:607`). Was an implicit 1.0 ("every proposition addressed"); `=1.0` restores it. Same ruler-swap caution as the row above |
 | `REGENOLD_GRAPH_BACKEND` | `neo4j` | `embedded` = in-process SQLite, no external service |
 | `REGENOLD_GRAPH_TIMEOUT_MS` | **750** | one budget + breaker for every graph read |
 | `REGENOLD_GROUNDING_TEXT` | ON | verbatim paragraphs of cited refs into Stage-2 |
@@ -626,17 +801,7 @@ Defaults are the CODE default, re-measured 2026-08-09.
 | `REGENOLD_SEMANTIC_COORDINATES` | **ON** | R329 P2 — the constrained sub-provision block renders the legal coordinate (`Article 12.2.a`) instead of the internal node label (`[paragraph para_12_1]`). LABEL only: the block stays non-citable, so hard rule #10 holds. Guards a real fabrication — `build_hierarchy_payload` synthesises a Paragraph `1` for single-block lettered provisions, so naive reconstruction emitted `Article 16.1.a`, which does not exist (3 of 658 nodes; those fall back head-level via `get_provision_text`, NOT the head-lax `provision_exists`). Off-switch `=0` |
 | `REGENOLD_CITABLE_UNIVERSE_BLOCK` | **ON** | R329 P3a — emits an explicit `CITABLE PROVISIONS:` list and repoints the citation instruction at it. Fixes a scope statement that named a block also containing GDPR/MDR bridging, multi-hop synthesis, legal-AST output, three KG sections, verbatim text and recitals, each with its own "do NOT cite" clause. Sub-points of a listed provision stay permitted. Off-switch `=0` |
 | `REGENOLD_REF_UNCERTAINTY` | **ON** | R329 P3b — one user-channel sentence on the UNCERTAINTY axis, which `USER_REF_MINIMALITY_CLAUSE` (ON since R298) does not state; it argues relevance. Pulls against system rule 10 ("Unmentioned citations are severely penalized") — read the reconcile drop rate in any arm that moves it. Off-switch `=0` |
-
-⚠ **The three R329 flags were flipped to default-ON on 2026-08-13 by operator
-decision and are UNGATED.** The reason they are code defaults rather than env
-opt-ins is the standing `railway.toml [deploy.envs]` finding: an env-gated
-default-OFF flag never reaches the deployment at all. Each keeps a `=0`
-off-switch and remains a flag so `ab_judge` / `easyhard_ab` can still A/B it.
-**Consequence: the "Current baseline" block above was measured with all three
-OFF and no longer describes the default-configuration system.** Re-measure
-before grading anything against it. This is the R327 shape (an ungated change
-shipped ON) entered deliberately and with the risk recorded, not by accident.
-| `GROUNDED_JUDGE_STRICT_GROUNDING` | **OFF** | R327 — ON makes answer-correctness unscorable on the July-7 batch (it has no gold at all) |
+| `GROUNDED_JUDGE_STRICT_GROUNDING` | **OFF** | R327 — ON makes answer-correctness unscorable on the July-7 batch (it has no gold at all). ⚠ **It governs `evals/judge/grounded.py` ONLY.** Since `d7be457` it is SILENTLY INERT on `evals/judge/legal_v2.py` — grep for the flag there returns **0 hits** — whose `_prepare` builds the evidence block from `gold_refs + pred_refs`, i.e. from `pred_refs` alone on a gold-free row, with no `[NOTE]`, no `answer_grounding_source` stamp and no off-switch. All 110 July-7 rows take that branch, so a `legal_v2` answer-correctness number there grades the answer against the answer's own citations. Open item #7 nominates `legal_v2` as the replacement judge — fix `_prepare` AND the `_judge_row` guard together, or the axis keeps running |
 | `NEO4J_AUTO_SEED` | **OFF unless `1`** | R327 — now opt-IN, and even then only seeds a graph proven to have 0 nodes. Hard rule #12 |
 | `BEDROCK_REGION` | **`eu-central-1`** | R328 — Bedrock source Region. Also reads `AWS_DEFAULT_REGION` / `AWS_REGION`. NOT `us-east-1`: an `eu.` profile is unresolvable there |
 | `REGENOLD_BEDROCK_MODEL` | `eu.anthropic.claude-opus-4-8` | R328 — Stage-1 + Stage-2 main RAG tier. 403 on the current key; R328.2 degrades to `opus-4-6-v1` |
@@ -647,6 +812,20 @@ shipped ON) entered deliberately and with the risk recorded, not by accident.
 | `REGENOLD_BEDROCK_STAGE2_TIMEOUT_S` | **180** | R328.3 — per-call read budget for Stage-2. The 60 s default turned a bigger token ceiling into `ReadTimeoutError` (the worst case emits 3411 tokens in ~70 s) — the same truncation, one layer down |
 | `REGENOLD_BEDROCK_JUDGE_MAX_TOKENS` | **1600** | R328 — NOT the wrapper's 400. Bedrock honours the system prompt (the wrapper drops it), so the judge reasons in prose before its JSON; at 400 it truncates and the axis returns `no_json` — a SILENTLY UNSCORED axis, not a visible failure |
 | `REGENOLD_BEDROCK_WRAPPER_FALLBACK` | **ON** | R330 — cross-PROVIDER last resort ported from the RAG repo: when the WHOLE Bedrock entitlement chain is spent, serve from the Claude-Max wrapper instead of dropping Stage-2. Placed at the END of `complete_with_fallback`, not inside `BedrockProvider.complete` as upstream has it — upstream's placement can hop on the FIRST model's throttle while an invocable tier sits further down the chain. ⚠ **The two providers are not interchangeable: Bedrock honours the system prompt, the wrapper drops it 100%**, so a hop silently changes ~12.8K tokens of delivered instruction. It therefore returns `model="wrapper:<name>"`, which makes the existing `_bedrock_complete_for_graph_rag` provenance fire unchanged — `stage2_models` in the sidecar shows `wrapper:…`, never the pin. Alert on `served_by=wrapper:`. Off-switch `=0` |
+
+⚠ **This table was BROKEN in the middle until 2026-08-15** — the R329 paragraph
+below sat between two rows, so everything from `GROUNDED_JUDGE_STRICT_GROUNDING`
+down rendered outside the table. It is moved here; no row changed.
+
+⚠ **The three R329 flags were flipped to default-ON on 2026-08-13 by operator
+decision and are UNGATED.** The reason they are code defaults rather than env
+opt-ins is the standing `railway.toml [deploy.envs]` finding: an env-gated
+default-OFF flag never reaches the deployment at all. Each keeps a `=0`
+off-switch and remains a flag so `ab_judge` / `easyhard_ab` can still A/B it.
+**Consequence: the "Current baseline" block above was measured with all three
+OFF and no longer describes the default-configuration system.** Re-measure
+before grading anything against it. This is the R327 shape (an ungated change
+shipped ON) entered deliberately and with the risk recorded, not by accident.
 
 Stage-2 models (`app/config.py`): parse `claude-sonnet-5`, Stage-2
 `claude-opus-5`, complex `claude-opus-5`, complex thinking 4000, max_tokens
@@ -675,25 +854,38 @@ selects Bedrock: every dispatch site is an equality test on the literal string
 branch. Every sub-pipeline falls back to a deterministic equivalent on error, so
 the route never 500s on a downed LLM.
 
-⚠ **"Bedrock is what Railway runs" was an UNVERIFIED claim and has been removed
-from the table.** Nothing in this repo establishes the deployed provider:
+⚠ **The deployed provider is NOT derivable from the repo, and it is NOT
+STABLE.** Nothing checked in establishes it — the code default with no env var
+is `openai_wrapper`; `railway.toml [deploy.envs]` has never applied and in any
+case assigns `openai_wrapper`, with the string `bedrock` appearing nowhere in
+it; `.env` is gitignored so the container ships no dotenv; `Procfile` /
+`railpack.json` set only the uvicorn command. A Railway **service variable** set
+from the dashboard/CLI is invisible here and overrides all of that.
 
-* the code default with no env var set is `openai_wrapper` (above);
-* `railway.toml [deploy.envs]` **has never applied** (its own header says so),
-  and the string `bedrock` appears nowhere in `railway.toml` — what that inert
-  block actually assigns is `P2P_GRAPH_RAG_PROVIDER = "openai_wrapper"`;
-* `.env` is gitignored, so the deployed container ships no dotenv;
-* `Procfile` / `railpack.json` set only the uvicorn command.
+**But it IS observable, and R338 observed it.** POST the live endpoint with
+`?include_reasoning=true` and read the `stage2_model=` note. That single probe
+answers the question, and it is now the standing method. Measured 2026-08-15,
+twice, on the same URL, **with two different answers**:
 
-So production is on Bedrock **only if** a Railway *service variable* was set from
-the dashboard/CLI, which is not in the repo and cannot be verified from it.
-`.kiro/steering/railway-redeploy.md` does not even record this service's public
-domain — it sends you to the dashboard. **Treat the deployed provider as UNKNOWN
-until someone runs `railway variables` against service
-`0086ff18-f642-46c8-8127-57c913ca1c53`, or POSTs the live endpoint and reads the
-`stage2_model=` note in the reasoning trace.** Any argument of the shape
-"Bedrock honours the system prompt ⇒ production has the four-sentence cap" is
-unsupported until then, because its middle link is this unverified claim.
+| deployed `commit` | trace notes | provider |
+| --- | --- | --- |
+| `4d29387f3db1` | `stage2_model=eu.anthropic.claude-opus-4-6-v1` + `bedrock_fallback requested=eu.anthropic.claude-opus-4-8 served_by=eu.anthropic.claude-opus-4-6-v1` | **bedrock**, on the R328.2 degraded tier, failing over on every request |
+| `4d72ff31a54e` | `stage2_model=claude-opus-5 complex=True` / `complex=False`, `groq_auto_fallback_success`, **no** `bedrock_fallback` note | **NOT bedrock** — that note shape is emitted at `_graph_rag_impl.py:780`, the wrapper/Anthropic branch; a Bedrock answer always carries the full `eu.anthropic.…` profile id |
+
+Two probes, hours apart, straddling a redeploy — so whether the *variable* moved
+or the *deployment* did is not established, and the difference does not change
+what follows. The honest statement is not "production is on Bedrock" and not
+"production is on the wrapper" — it is:
+**the deployed provider is a live service variable that can change without a
+commit, so it must be RE-MEASURED, not remembered.** Anything downstream of it
+(does production see `ANSWER_GENERATE_SYSTEM`? which model answered? is the
+entitlement chain firing?) inherits that same expiry date. ⚠ In particular, any
+argument of the shape *"Bedrock honours the system prompt ⇒ production has the
+system-slot rules"* is only as good as a probe from the same hour.
+
+`railway variables` against service `0086ff18-f642-46c8-8127-57c913ca1c53` is
+the other instrument, and the only one that shows the variable itself rather
+than its effect.
 
 ### Bedrock — the EU cross-region path (R328)
 
@@ -937,6 +1129,17 @@ py -3.12 -m evals.harness.ab_judge                        # pairwise LLM judgeme
 is `provider=cli`, so it cannot observe Stage-2, prompts, the judge or the
 reranker, and a green run on such a change is the instrument trap, not a pass.
 
+⚠ `evals.bench.run_cappelli_bench` and `evals.bench.run_live_deep_eval` are the
+same trap wearing a different name — both defaulted to `provider=cli` until R338
+and both ran inert (14.5-440 ms/row, 91.8 ms/row) while printing full
+scorecards. They now default to `openai_wrapper` and record
+`stage2_landed_rate` + `stage2_models` in their artefacts. **Read those two
+fields first; a scorecard without them is unattributable.** Neither is a merge
+gate. `run_live_deep_eval` is also **not** the hard turn: its
+`HARD_JULY7_SCENARIOS` is ten hand-authored SINGLE-turn rows with self-written
+gold, not the adversarial pushback of `run_official_batch --mode hard` (open
+item #2, still never run).
+
 The July-7 re-evaluation (this repo's reason to exist):
 
 ```bash
@@ -1002,10 +1205,31 @@ Full handoff: [`.planning/NEXT-SESSION.md`](.planning/NEXT-SESSION.md).
    own gate, and prompt budget competes with Answer-Conciseness.
 7. **Fix the judge** before trusting any further answer number — the length
    artefact above. `evals/judge/legal_v2.py` already implements the
-   quote-or-retract rule that catches it.
+   quote-or-retract rule that catches it. ⚠ It also carries three defects of its
+   own, all from the unreviewed commits and all still open: the
+   `GROUNDED_JUDGE_STRICT_GROUNDING` bypass (fix `_prepare` AND the `_judge_row`
+   guard together — fixing one leaves the axis running), the head-lax
+   `provision_exists` ghost-citation gate at `:660`, and the ungated conciseness
+   prompt loosening at `:488-514`. **Fix these before nominating it.**
 8. **Watch conciseness** — answers are **+41% longer** than the graded July-7
    ones, on the one axis the official scorecard says we lead. Any bound must be
    SENTENCE-only (hard rule #2).
+9. **Run the owed gate on `REGENOLD_ONTOLOGY_RISK_DOCS`** — *ranks with #2*.
+   `py -3.12 -m evals.harness.dynamic_ab --branch-env REGENOLD_ONTOLOGY_RISK_DOCS=0`
+   against a **gold-carrying** set (July-7 has `gold_coverage=0.0`, so hard rule
+   #8 cannot be read off it). This is a default-ON, live-shipping retrieval
+   change with 9/110 measured context regressions and no verdict at all. R338
+   fixed the dense-index singleton that would otherwise have corrupted this
+   exact A/B, so the instrument is ready. **Do not just flip the default OFF** —
+   that is an equally unmeasured change in the other direction and it de-aligns
+   the committed TurboQuant assets, which were rebuilt for the 373-doc corpus.
+10. **`ab_judge`'s new swap-consistency metric counts judge ERRORS as
+    agreement** — `_judge_one` collapses every transport/parse failure into the
+    same `"tie"` a real tie uses, so each errored pair simultaneously pushes
+    `swap_consistency_rate` toward 1.0 and `effective_win_rate_b` toward 0.5:
+    the reliability score RISES as the instrument breaks. Reachable today with
+    `--judge-provider bedrock` and no AWS credential. Give it an error channel
+    before reading either number.
 
 **Closed — do not re-open:** R326 review finding I1 (`_ENUM_OPENER_RE`) is a
 non-finding (enumerated units begin at `(a)`; verified 5(1)/10(2)/13(3) match,

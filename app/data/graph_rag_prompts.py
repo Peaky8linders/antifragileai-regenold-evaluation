@@ -895,12 +895,59 @@ USER_ANSWER_COVERAGE_CLAUSE = (
     "point, say so as a matter of LAW -- 'the Act does not specify X' -- and "
     "NEVER as a matter of your own sources: do not mention the references, "
     "provisions or material supplied to you, what was or was not retrieved, or "
-    "how complete your inputs are. When answering about technical documentation "
-    "(Article 11 / Annex IV), name the required components in one compact list "
-    "(technical file, risk management file, data governance records, human oversight "
-    "protocol, logging mechanism, post-market monitoring plan, declaration of conformity, "
-    "CE marking). When answering about Fundamental Rights Impact Assessment (Article 27), "
-    "name the assessed rights and deployer mitigations under the relevant Charter articles. "
+    "how complete your inputs are. "
+    # R338 — REVERTED cc47f8b's two topic-specific sentences. They were:
+    #   "When answering about technical documentation (Article 11 / Annex IV),
+    #    name the required components in one compact list (technical file, risk
+    #    management file, data governance records, human oversight protocol,
+    #    logging mechanism, post-market monitoring plan, declaration of
+    #    conformity, CE marking)."
+    #   "When answering about Fundamental Rights Impact Assessment (Article 27),
+    #    name the assessed rights and deployer mitigations under the relevant
+    #    Charter articles."
+    #
+    # Both were wrong, and both were on the LIVE channel. This constant is
+    # appended to the Stage-2 USER message (_graph_rag_impl.py, under
+    # answer_coverage_enabled(), default "1"), i.e. the one slot the Claude-Max
+    # wrapper does NOT drop — so they were delivered on 100% of requests on
+    # every provider.
+    #
+    # 1. The component list is not Annex IV. Measured against the pin:
+    #    get_provision_text("Annex IV") is 5,710 chars over NINE numbered
+    #    points, and "ce mark" does not appear in it. CE marking is Article 48,
+    #    an affixing obligation, not a technical-documentation component;
+    #    Annex IV(8) asks only for "a copy of the EU declaration of conformity
+    #    referred to in Article 47". "technical file", "data governance" and
+    #    "logging" are not Annex IV item names either, and the list omits
+    #    points 4, 6 and 7 and the whole of point 1 — including 1(e), "the
+    #    description of the hardware on which the AI system is intended to
+    #    run", which is exactly what graded question rg_001 turns on. So this
+    #    shipped a false statement of EU law to compliance users (hard rule #4)
+    #    while suppressing the sub-point the answer needed.
+    #
+    # 2. The Charter sentence directs the model at a FOREIGN instrument from
+    #    parametric memory (Article 27 contains no Charter reference), and
+    #    Charter article numbers 1-54 all resolve in ARTICLE_EXISTENCE, so the
+    #    lint floor is blind to them by construction (hard rule #5's documented
+    #    collision). The foreign-instrument guard in _prose_citation_bases is
+    #    adjacency-anchored, so in an ENUMERATION of Charter articles it
+    #    suppresses only the member sitting next to the word "Charter":
+    #      _prose_citation_bases("...human dignity (Article 1), "
+    #                            "non-discrimination (Article 21) and effective "
+    #                            "remedy (Article 47).")
+    #      -> ['Article 1', 'Article 21', 'Article 47']
+    #    Component D then promotes those onto the wire as AI Act citations
+    #    (REGENOLD_COMPONENT_D_CITABLE_ONLY is default OFF), landing wrong refs
+    #    on Ref Strict and Ref Conciseness — the two axes that are the entire
+    #    remaining competitive gap.
+    #
+    # The topic-neutral rule four lines above ("Where the question's subject IS
+    # an enumerated statutory set, name every member THE SUPPLIED TEXT STATES")
+    # already covers the intent, and stays grounded in what was retrieved
+    # instead of in the model's memory. Do not re-add a topic-specific
+    # enumeration here; if one is ever wanted it must name provisions from the
+    # supplied text only, be env-gated, and be measured on dynamic_ab with a
+    # live rg_001 probe.
     "The reader sees only the answer, so a remark about your inputs is unanswerable to "
     "them, and it is self-contradictory whenever the answer cites the very provision it claims to be missing. "
     # R318 — LEGAL VERSION, ported here because it was UNENFORCED anywhere else.

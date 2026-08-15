@@ -11870,6 +11870,316 @@ Handoff: `.planning/NEXT-SESSION.md`, `.planning/R318-CHECKPOINT.md`,
 * `evals/harness/` does **not** load dotenv — export explicitly or it silently
   falls to the deterministic path (the R256 inert-feature trap).
 
+## Round 338 — six unreviewed commits, adversarially reviewed: wrong law off the live channel, and four instruments that could not observe what they graded (2026-08-15)
+
+Six commits by an autonomous "Gemini" agent (`3af98af`, `938933a`, `d7be457`,
+`bb793ca`, `ee61cfd`, `cc47f8b` — 25 files, +3,341 / −110) went straight to
+`main` with no PR and no review. A 10-lens adversarially-verified review found
+**3 Critical / 14 Important / 7 Suggestions**; the full report is
+`docs/reviews/gemini-changes-2026-08-15-cc47f8b.md`. R338 is the blocking half
+of its fix plan plus the CLAUDE.md drift table.
+
+⚠ **The shape of the whole change set, in one sentence:** it shipped a legal
+claim on the live user channel and, in the same commits, four measuring
+instruments that were each structurally incapable of observing it. That is this
+repo's signature defect (the instrument trap), arriving as a set.
+
+### 1. Reverted `app/data/graph_rag_prompts.py:898-903` — wrong law, live channel
+
+`cc47f8b` appended two topic-specific sentences to `USER_ANSWER_COVERAGE_CLAUSE`.
+That constant is appended to the Stage-2 **USER** message under
+`answer_coverage_enabled()` (default `"1"`), i.e. the one slot the Claude-Max
+wrapper does NOT drop — **delivered on 100% of requests on every provider**,
+ungated, with no A/B and no live probe.
+
+* **The Charter sentence** told the model to name FRIA-assessed rights *"under
+  the relevant Charter articles"*. Article 27 contains no Charter reference at
+  all (`'charter' in get_provision_text("Article 27").lower()` is `False`), so it
+  points the model at a foreign instrument from parametric memory. Charter
+  articles **1-54 all resolve in `ARTICLE_EXISTENCE`**, so the lint floor (hard
+  rule #5) is blind by construction; and `_CROSS_INSTRUMENT_RE` /
+  `_FOREIGN_INSTRUMENT_AHEAD_RE` are **adjacency-anchored**, so in an enumeration
+  only the member next to the token "Charter" is suppressed. Executed against the
+  tree: `_prose_citation_bases("…human dignity (Article 1), non-discrimination
+  (Article 21) and effective remedy (Article 47).")` → `['Article 1','Article
+  21','Article 47']`. `REGENOLD_COMPONENT_D_CITABLE_ONLY` is default OFF, so
+  Component D promotes them onto the wire as AI Act citations — where Article 21
+  is *Cooperation with competent authorities*, Article 1 is *Subject matter* and
+  Article 47 is the *EU declaration of conformity*. Wire-legal, and wrong, on the
+  two axes that ARE the remaining competitive gap. The same guard fails the other
+  way on the same sentence: *"Under Article 27 the deployer assesses rights under
+  Articles 21, 8 and 47 of the Charter"* returns `[]` — the genuine Article 27 is
+  suppressed because "of the Charter" lands in its ahead-window. A hard-rule-#8
+  gold drop of the provision the question is about.
+* **The "Annex IV" sentence** dictated an eight-item component list that is not
+  Annex IV. Verified against the pin, not from memory: `get_provision_text("Annex
+  IV")` is **5,710 chars over NINE numbered points**; `'ce mark'` does not occur
+  in it (CE marking is **Article 48**, an affixing obligation; Annex IV(8) asks
+  only for *"a copy of the EU declaration of conformity referred to in Article
+  47"*); `'technical file'`, `'data governance'` and `'logging'` are not Annex IV
+  item names; and the list omits points 4, 6, 7 and **the whole of point 1** —
+  including **1(e), "the description of the hardware on which the AI system is
+  intended to run"**, which is exactly what graded question `rg_001` turns on.
+
+⚠ **The channel inversion is the sharp part.** The ACCURATE rule already exists
+at `graph_rag_prompts.py:118` — *"in particular Annex IV(1)(e) … and Annex
+IV(2)(c) …"* — inside `ANSWER_GENERATE_SYSTEM`, which reaches the model on
+**ZERO** live wrapper requests. So `cc47f8b` put the fabricated list on the live
+channel and left the accurate rule on the dead one; on Bedrock the model receives
+both and they contradict. Reverting costs nothing measurable: the topic-neutral
+rule at `:885-889` ("where the question's subject IS an enumerated statutory set,
+name every member **the supplied text states**") already covers the intent and
+stays grounded.
+
+Note on the ceiling test. `tests/…::TestAnswerCoverageClause::test_is_compact`
+asserts `900 <= len(USER_ANSWER_COVERAGE_CLAUSE) <= 2900`, a bound R337 had just
+raised from 2300 **because the clause grew to hold these two enumerations** — a
+ceiling moved to fit the content rather than the content questioned against the
+ceiling. The clause is back to **2,241** chars, 659 under the bound, so the
+ceiling is once again guarding creep rather than ratifying it. (That test is
+also the one row that leaves the failure set this round; see Gates. Its only
+assertion is the length bound, and the baseline artefact captured no traceback,
+so the causal link is likely but not proven.)
+
+### 2. `run_live_deep_eval.evaluate_mistake_resolution` — 11 of 38 mistakes were RESOLVED for every possible answer
+
+`cc47f8b` reimplemented mistake verification from scratch, reading only
+`verify.present` and `verify.absent`. `ANTIFRAGILE_GT` carries three more
+constraint kinds the canonical `evals/regenold/antifragile_live._mistake_resolved`
+has always honoured: `verify.present_any`, `mistake['ref_present']` and
+`mistake['ref_absent']`. The new function **did not accept `pred_refs` at all**,
+so the reference constraints were structurally unevaluable — and `pred_refs` was
+in scope at the call site and simply not passed. With both lists empty, the
+`... if present_needed else True` guards return `True` unconditionally.
+
+Re-measured this round against the tree: **38 total mistakes, 11 with neither
+`present` nor `absent`** — `q02_m3`, `q03_m3`, `q04_m2`, `q06_m1`, `q07_m2`,
+`q10_m1`, `q10_m2`, `q13_m1`, `q14_m2`, `q15_m1`, `q18_m3`. Handed *"This system
+is governed by Annex II and Article 27, and also Article 5 and Annex III
+apply."*, `q02_m3` (`ref_absent=['Annex II','Article 27']`) and `q14_m2`
+(`ref_absent=['Article 5','Annex III']`) both returned FIXED — the metric
+certifying a mistake as resolved inside the very text that makes it.
+
+Now delegates to the canonical resolver with `pred_refs` threaded, and **fails
+CLOSED**: a record with zero evaluable constraints is not evidence the mistake
+was fixed, it is evidence the GT record is incomplete. The artefact also reports
+`evaluable_mistakes` / `unfalsifiable_mistakes` so the denominator is visible.
+Measured on identical recorded answers: old algorithm **30/38 = 0.7895**, new
+**28/38 = 0.7368**. `evals/bench/results/live_deep_eval_results.json` (which
+carried the 0.7895) was deleted; note that directory is **gitignored**, so the
+review's "already committed" framing was one word too strong — the false record
+was on disk and cited by `docs/PROPOSAL_GENAI_EU_AI_ACT_COMPLIANCE_EVAL.md`, but
+never tracked.
+
+### 3. `dynamic_ab` — half of the hard-rule-#8 veto had never fired
+
+An uncommitted R337 gold-GRAIN guard read each row's gold from `b[i].get("row")`,
+a key `_run_arm` has **never produced**. So `gold_refs` was always empty,
+`applicable` was always `False`, and because `_report` filters its rejection test
+on `applicable`, an exact-grain gold drop could never print REJECTED. Measured on
+two rows whose branch arm dropped **5 gold coordinates**: `applicable=False`,
+`gold_refs_total=0`, exact delta `+5`, no REJECTED line. On the repo's designated
+merge gate.
+
+⚠ **Its tests passed 5/5 the entire time, because the fixture hand-built a dict
+WITH the `"row"` key — a data shape production never produced.** That is the
+generalisable finding: a test whose fixture constructs its own input is not a
+test of the producer. The row record is now one `_row_record()` definition that
+both `_run_arm` and the tests call, so a key that disappears there disappears
+from the test too. The grain is also decided **per row** rather than globally —
+against head-level gold the exact-grain veto counts a MORE precise citation as a
+loss, so it must report *inapplicable*, never a number.
+
+### 4. `turboquant_index` — the one documented rollback A/B measured a system that does not exist
+
+`_INDEX = _DenseIndex()` was a module singleton with a `_loaded` latch whose
+`_bm25_idx_map` stored **raw positions** into whatever corpus existed at first
+build. `dense_top_k` then read a **live, gate-resolved** `_build_index()` and
+dereferenced it through that **frozen** map. `_build_ontology_docs` is emitted in
+the MIDDLE of the corpus, so flipping `REGENOLD_ONTOLOGY_RISK_DOCS` shifts every
+later document by 28. Reproduced in one process:
+
+```
+REGENOLD_ONTOLOGY_RISK_DOCS=1  -> [('Art. 73',0.8224), ('Art. 17',0.3746), ...]
+os.environ[...] = '0'          -> [('Art. 111',0.8224), ('Art. 11',0.8123), ...]
+```
+
+Identical scores, different labels; no `IndexError`, no log line. `dynamic_ab`
+mutates `os.environ` in-process and nothing reset `_INDEX`, so the literal
+rollback command in CLAUDE.md compared ON against a **third, index-shifted
+system** — and because the flag genuinely is in `_engine_cache_key`, the arms did
+diverge and **the fire check PASSED**. Now keyed on a corpus identity (resolved
+gate + corpus length), rebuilt on mismatch, LRU over 2 to mirror
+`kb_search._build_index_cached(maxsize=2)`, with `_CORPUS_SWITCHES` /
+`_STALE_REBUILDS` counters so a rebuild is observable. The build-time staleness
+guard was already present and correct — it just runs once per process, and a
+guard that runs at construction cannot see a mutation after it.
+
+### 5. `metrics.py` — a trigram counter registered as Sentence-BERT, and a curve that graded itself
+
+* `answer_semantic_similarity_proxy` is `0.70 × cosine(char-3grams) + 0.30 ×
+  word-token Jaccard`. `METRIC_PROVENANCE` described it as *"Sentence-BERT …
+  decoupled from surface lexical form"* and both runners printed `SBERT:`. There
+  is no embedding model on the path. Measured: gold *"Emotion recognition in the
+  workplace is prohibited under Article 5(1)(f) except for medical or safety
+  reasons."* vs the conceptually equivalent *"Employers may not deploy
+  affect-inference AI on staff; the ban carves out health and security use
+  cases."* scores **0.043** — near-zero on exactly the case the label names.
+  `METRIC_PROVENANCE` is serialised wholesale into sidecars by seven writers, so
+  the false attribution was stamped into artefacts of runs that never call it.
+  Renamed `answer_trigram_jaccard` (old name kept as an alias), provenance
+  rewritten, console header corrected.
+* `threshold_precision_recall_curve` was fed `all_relevance.append(sem_sim >=
+  0.25)` immediately after `all_sim_scores.append(sem_sim)` — the label vector IS
+  the score vector, thresholded at a constant. Substituting `g := (s >= 0.25)`
+  makes false positives unsatisfiable for every `t >= 0.25`, so **precision is
+  identically 1.0000 by construction**, which the committed artefact duly shows
+  at all eight thresholds ≥ 0.25 while `overall_averages.semantic_similarity` is
+  0.2885. `docs/PROPOSAL_GENAI_EU_AI_ACT_COMPLIANCE_EVAL.md` narrates it as an
+  empirical *"Crucial Finding"*. The primitive was sound and unit-tested with
+  independent labels — the defect was entirely at the caller, which is why the
+  suite was blind to it. The function is **withdrawn** (it raises with the
+  reason) in favour of a label-free `score_threshold_retention_curve`.
+
+### 6. Both new bench runners defaulted to `provider=cli`
+
+`run_cappelli_bench` and `run_live_deep_eval` both defaulted `--provider` to
+`"cli"` — the no-Stage-2 path CLAUDE.md had just retired davidath for — and both
+did an unconditional `os.environ["P2P_GRAPH_RAG_PROVIDER"] = provider`,
+overwriting an operator's exported `openai_wrapper`. One of them was the
+instrument shipped in the same commit to justify the Stage-2 prompt change in §1,
+and its `cs1_q5` gold keywords are **7 of 8 verbatim** from that prompt: at `cli`
+it cannot see the change, at `openai_wrapper` it measures the prompt echo.
+
+They ran inert and it was not noticed: `cappelli_bench_results.json` carries
+per-row latencies of **14.5-440 ms** across all 20 rows and still printed a full
+5-dimension scorecard including a `technical_documentation` bucket — the exact
+dimension the prompt hunk targeted. `run_live_deep_eval` averaged **91.8 ms/row**
+against a ~16 s live baseline. `cli` also leaves `stage2_landed` False, so
+`set_answer_no_cap` never fires and `MAX_ANSWER_SENTENCES=3` stays armed: both
+scored ≤3-sentence capped answers against multi-sentence gold.
+
+Now: default `openai_wrapper`, an exported value is never overwritten, the
+resolved provider + Stage-2 model + per-row `stage2_landed` are written into the
+artefact, the rate limiter resets **per request** (every other runner in the repo
+already did), and a non-200 is recorded as an error rather than scored `answer=""`
+0.0 on eight axes. `?include_reasoning=true` is now mandatory on the request,
+because without it `reasoning` comes back as the empty string and `stage2_landed`
+would be a constant `False` — the dead-feature shape, again.
+
+### 7. Cappelli gold — legal corrections, and a test that can actually catch them
+
+All resolved against the pinned CELEX `32024R1689`, never from memory:
+
+* **Article 27 FRIA scope.** Three `cs4_retail_facial_recognition` rows demanded
+  an Article 27 FRIA from a private retail chain. `get_provision_text("Article
+  27.1")` confines the duty to bodies governed by public law, private entities
+  providing public services, and deployers of **Annex III 5(b)/(c)** systems; the
+  dataset's own `annex_iii_category` puts the system in Annex III point **1**. It
+  fails all three limbs. Worse, in the recorded results `Article 27` was the
+  **only** predicted ref intersecting gold on two rows — the entire score was
+  carried by a citation the law does not authorise, i.e. the ruler was laundering
+  an over-citation into the score on the axis that is the whole remaining gap.
+  Gold now states Article 27 does **not** apply, with the limb test, and drops
+  "register" (27(3) is a **notification** to the market surveillance authority).
+* **Four Annex IV rows** rebuilt from the nine pinned points; "the 8 mandatory
+  Annex IV files" and CE marking as a component are gone, and the FRIA report is
+  no longer placed inside Annex IV.
+* **Log retention.** `"6-month … logging mechanism (Article 12)"` → Article 12
+  states the automatic-recording capability and **no retention period**; the
+  six-month floor is **Article 19(1)** for providers and **26(6)** for deployers.
+  The same dataset already had 26(6) right elsewhere, so it contradicted itself.
+* **Article 5(1)(c)/(h) misuse.** 5(1)(c) is **social scoring**, not "mass
+  surveillance"; 5(1)(h) is law-enforcement-only and a shop is not law
+  enforcement. Replaced with 5(1)(e) (untargeted scraping of facial images from
+  CCTV), which binds any operator, with the 5(1)(c) social-scoring limb stated in
+  those words. `expected_keywords` moved in step — leaving `"mass surveillance"`
+  while fixing the citation keeps the metric rewarding the wrong framing.
+* **`Annex III.4.b` → `4.a`** (4(a) is recruitment and candidate evaluation; 4(b)
+  is in-employment terms/promotion/termination) and the **fabricated `Annex
+  III.2.a`** → `Annex III.2` (point 2 is a single unlettered paragraph).
+
+New `tests/test_cappelli_dataset_legal.py` (12 tests) asserts
+`get_provision_text(ref) is not None` for every `expected_refs` entry and every
+`annex_iii_category`, and pins the reason: **`provision_exists` is head-level LAX
+and returns `True` for `Annex III.2.a`**, which is how the fabricated coordinate
+shipped. It also imports the runner's real `load_dataset` rather than re-opening
+the JSON, so a divergence in the loader cannot hide from it.
+
+### Gates
+
+* `evals.regenold.runner` **255/255**, RISK_F1 macro **1.00**.
+* Full `pytest tests/ -q` under the deterministic env: **56 failed, 6342 passed,
+  35 skipped** against a pre-change baseline of **57 failed, 6312 passed**. Diffed
+  by SET, not count: **zero new failures**, and the single row that left the set
+  is `test_r308_uncap_and_coverage.py::TestAnswerCoverageClause::test_is_compact`
+  — the clause-length bound the §1 revert relaxes. The remaining 56 are the
+  documented `provider=cli` Stage-2 env artifact. The 30 extra passes are the new
+  and extended tests (`test_cappelli_dataset_legal.py`, plus the reworked
+  `test_r337_gold_grain_veto.py` / `test_turboquant_index.py` /
+  `test_cappelli_metrics.py`).
+* ⚠ **No `dynamic_ab` run.** Every change here is to an eval instrument, a
+  dataset, a doc, or a revert of an unmeasured prompt addition — none is a new
+  product behaviour to gate. The one change that DOES owe the gate is
+  `REGENOLD_ONTOLOGY_RISK_DOCS` (default-ON, live, 9/110 context regressions,
+  shipped in `938933a` with no verdict), and R338 deliberately did not run it
+  yet: fixing the dense-index singleton (§4) was the prerequisite, because before
+  that fix the prescribed command measured a configuration that does not exist.
+
+### Three facts measured this round that the docs had wrong or missing
+
+1. **This repo's live service domain is
+   `https://antifragileai-regenold-evaluation-production.up.railway.app`.**
+   CLAUDE.md and `.kiro/steering/railway-redeploy.md:60` both said it was
+   unrecorded and sent the reader to the dashboard. `GET /healthz` →
+   `{"status":"ok","version":"1.2.3","commit":"<sha12>",…}`. Two eval runners had
+   been defaulting `--endpoint` to the **sibling** repo's service, i.e. measuring
+   a codebase that does not contain the change under test; repointed here, with
+   the sibling kept as `SIBLING_ENDPOINT` one flag away.
+2. **A push does not deploy immediately, and the deployed provider is not a
+   durable fact.** Early in the session `/healthz` reported
+   `commit=4d29387f3db1` while `main` was at `4d72ff3` (five commits behind
+   `cc47f8b`); a POST with `?include_reasoning=true` returned
+   `stage2_model=eu.anthropic.claude-opus-4-6-v1` **plus** `bedrock_fallback
+   requested=eu.anthropic.claude-opus-4-8 served_by=…opus-4-6-v1` — so a Railway
+   service variable did set `P2P_GRAPH_RAG_PROVIDER=bedrock` and the R328.2
+   entitlement failover was firing on every request. Re-probed later the same
+   day, the service reported `commit=4d72ff31a54e` (= `main` HEAD) and **two**
+   probes returned `stage2_model=claude-opus-5` with `groq_auto_fallback_success`
+   and **no** `bedrock_fallback` note — the `_graph_rag_impl.py:780` wrapper /
+   Anthropic branch, not Bedrock. ⚠ So the correct doctrine is neither "it is
+   Bedrock" nor "it is the wrapper": **the deployed provider is a live service
+   variable that can change without a commit and must be re-measured, not
+   remembered** — and `/healthz.commit` is what tells you which commit any live
+   measurement belongs to. CLAUDE.md's long "treat it as UNKNOWN until someone
+   POSTs the endpoint" section has been replaced with the method and both
+   readings.
+3. **The wrapper's dropped-system-prompt bug has a root cause and a fix, gated
+   OFF.** `D:/Claude Projects/claude-code-openai-wrapper/src/claude_cli.py:14
+   _forward_system_prompt_enabled()`. `options.system_prompt` was passed as
+   `{"type": "text", "text": …}`, which is **not** a valid `SystemPromptPreset`
+   in `claude_agent_sdk 0.2.82` (a preset requires `{"type": "preset", …}`), so
+   the SDK silently discards it; a plain `str` **is** honoured. Measured with a
+   sentinel probe on `claude-opus-4-8`: port **8000** (the cloudflared tunnel
+   target, the NSSM `regenold-wrapper` service) SYSTEM slot obeyed = **False**;
+   port **8001**, same code with `WRAPPER_FORWARD_SYSTEM_PROMPT=1`, = **True**.
+   Activating it on 8000 needs an elevated shell (`nssm restart
+   regenold-wrapper`). ⚠ Flipping it ON starts delivering `ANSWER_GENERATE_SYSTEM`
+   (~12.8K tokens) that currently reaches the model on zero wrapper requests —
+   answer-CHANGING, and it owes its own A/B. Every "the system slot is dead"
+   conclusion in this repo was measured with that flag OFF.
+
+### Left open, deliberately (the review's "after merging" tier)
+
+`legal_v2`'s `GROUNDED_JUDGE_STRICT_GROUNDING` bypass (grep: **0 hits** in that
+file) and its self-grounding `_prepare`; its head-lax `provision_exists`
+ghost-citation gate at `:660`; `ab_judge`'s swap-consistency metric counting
+judge ERRORS as agreement; the `_TOKEN_RE_V2` tokeniser that cannot represent
+`"5"`, `"7%"` or `"1.5%"` (so `answer_rouge_l("Article 5 …", "Article 9 …") ==
+1.0`); the ungated conciseness-prompt loosening at `legal_v2.py:488-514`; and the
+owed `REGENOLD_ONTOLOGY_RISK_DOCS` gate. All are recorded in CLAUDE.md's ranked
+open list or its hard rules, with the line numbers.
+
 ## Non-goals / things to skip
 
 - ~~Vector embeddings / dense retrieval~~ → **Round 31 added a

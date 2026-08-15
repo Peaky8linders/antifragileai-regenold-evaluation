@@ -52,6 +52,11 @@ Per axis: paired delta, bootstrap 95% CI, and a verdict. Plus ``gold_dropped``
 on both grains — hard rule #8 is a VETO, not an axis: a non-zero gold drop is a
 rejection regardless of every other number.
 
+The exact-grain veto is summed PER ROW over rows whose own gold carries a
+sub-point, and prints that population; against head-level gold it is reported as
+inapplicable rather than as a number, because there it counts precision GAINS as
+losses. See the veto block in :func:`_analyse`.
+
 USAGE
 =====
 
@@ -78,6 +83,7 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
+from app.integrations.regenold import refs as central_refs
 from evals.bench import metrics as bench_metrics
 from evals.harness.probe_set import ProbeRow, load_probe_set
 
@@ -89,6 +95,41 @@ _AXES = ("ref_loose", "ref_strict", "ref_conc", "kw_recall")
 
 _BOOTSTRAP_N = 2000
 _SEED = 20260814
+
+
+# ── citation grain ───────────────────────────────────────────────────────
+
+
+def _carries_sub_point(ref: Any) -> bool:
+    """Does this citation name a SUB-POINT, or only an article/annex head?
+
+    ONE CONCEPT, ONE DEFINITION: this delegates to the repo's canonical citation
+    parser (``app.integrations.regenold.refs.parse``), which is already the
+    single source of truth for "what are this reference's sub-point tokens"
+    everywhere else in the codebase. It is deliberately NOT a local regex.
+
+    The obvious shorthand — ``"." in ref`` — is wrong on forms this repo really
+    emits, and wrong in the dangerous direction:
+
+        "Art. 5"        "." present, subpoints ()          -> HEAD  (shorthand: leaf)
+        "Recital 27."   "." present, unparseable as a cite -> not a citation
+        "Art. 5(1)(a)"  "." present, subpoints ('1', 'a')  -> LEAF
+        "Article 5.1.f" "." present, subpoints ('1', 'f')  -> LEAF
+        "Article 5"     "." absent,  subpoints ()          -> HEAD
+        "Annex IV"      "." absent,  subpoints ()          -> HEAD
+
+    So the shorthand calls the INTERNAL-form head ``Art. 5`` leaf-grained, which
+    would switch the exact-grain veto ON over gold that cannot support it — the
+    precise false rejection the R337 guard exists to prevent. Gold reaches this
+    harness in wire form today, but ``easyhard``/KB-derived gold is internal
+    form, and the two are one copy-paste apart.
+    """
+    if not isinstance(ref, str):
+        return False
+    try:
+        return bool(central_refs.parse(ref).subpoints)
+    except Exception:  # noqa: BLE001 — unparseable text is simply not a citation
+        return False
 
 
 # ── scoring ──────────────────────────────────────────────────────────────
@@ -290,6 +331,54 @@ def probe_sensitivity_check(
 # ── the run ──────────────────────────────────────────────────────────────
 
 
+def _row_record(
+    pr: ProbeRow,
+    answer: str,
+    refs: list[str],
+    *,
+    latency_ms: float = 0.0,
+    http_status: int = 200,
+    error: str | None = None,
+) -> dict[str, Any]:
+    """THE per-row record shape. One definition, so nothing can drift from it.
+
+    R337.1 — this was an inline dict literal inside :func:`_run_rows`, and the
+    R337 grain guard in :func:`_analyse` then read each row's gold from a
+    ``"row"`` key that the literal has never written. ``gold_refs`` was
+    therefore ALWAYS empty, ``applicable`` ALWAYS False, and because
+    :func:`_report` filters its rejection test on ``applicable``, an exact-grain
+    gold drop could NEVER print REJECTED. Half of hard rule #8's veto was dead
+    on this repo's designated merge gate. Measured on two rows whose branch arm
+    dropped 5 gold coordinates: ``applicable=False``, ``gold_refs_total=0``,
+    exact delta ``+5``, and no REJECTED line.
+
+    The accompanying test suite passed 5/5 throughout, because its fixture
+    hand-built a dict *with* a ``"row"`` key — a data shape production never
+    produced. That is the failure mode this extraction closes: the tests now
+    call this function, so a key that disappears here disappears from the test
+    too, and a guard reading a key nobody writes cannot pass unnoticed again.
+
+    ``gold_refs`` is stored as an explicit list rather than by stashing the
+    whole :class:`ProbeRow`: the record is serialised straight into the sidecar
+    JSON, and a dataclass there is both unserialisable and an invitation for a
+    consumer to reach for a field the sidecar does not carry.
+    """
+    return {
+        "id": pr.id,
+        "source": pr.source,
+        "pred_answer": answer,
+        "pred_refs": refs,
+        # The gold this row was scored against — read back by `_analyse` to
+        # decide the veto GRAIN per row. Never re-derived there: re-deriving
+        # is how the two definitions drift.
+        "gold_refs": list(getattr(pr, "expected_refs", ()) or ()),
+        "latency_ms": latency_ms,
+        "http_status": http_status,
+        "error": error,
+        "scores": _score(pr, answer, refs),
+    }
+
+
 def _run_rows(
     rows: list[ProbeRow],
     arm_env: dict[str, str],
@@ -319,16 +408,10 @@ def _run_rows(
             )
             answer = (body or {}).get("answer") or ""
             refs = list((body or {}).get("references") or [])
-            out.append({
-                "id": pr.id,
-                "source": pr.source,
-                "pred_answer": answer,
-                "pred_refs": refs,
-                "latency_ms": latency_ms,
-                "http_status": status,
-                "error": err,
-                "scores": _score(pr, answer, refs),
-            })
+            out.append(_row_record(
+                pr, answer, refs,
+                latency_ms=latency_ms, http_status=status, error=err,
+            ))
         return out
     finally:
         for k, old in saved.items():
@@ -510,24 +593,16 @@ def _analyse(
             "n_changed": sum(1 for d in deltas if d != 0),
             "verdict": _verdict(mean, lo, hi, null_band=null_band),
         }
-    gold = {
-        g: {
-            "baseline": sum(b[i]["scores"][g] for i in common),
-            "branch": sum(c[i]["scores"][g] for i in common),
-        }
-        for g in ("gold_dropped_head", "gold_dropped_exact")
-    }
-    for g in gold:
-        gold[g]["delta"] = gold[g]["branch"] - gold[g]["baseline"]
-
+    # ── the veto block ────────────────────────────────────────────────────
+    #
     # R337 — GOLD SHAPE decides which veto grain is valid, and getting this
     # wrong rejects correct work.
     #
     # `gold_dropped` is a VETO (hard rule #8), so it is meant to be read without
     # argument. But `gold_dropped_exact` compares full coordinates, and this
-    # probe set's gold carries NO sub-points (measured: 208 gold refs over 129
-    # rows, 0 leaf-grained). Against head-level gold, a MORE precise citation
-    # scores as a dropped head:
+    # probe set's gold carries NO sub-points (re-measured 2026-08-15: 132 rows,
+    # 208 gold refs, 0 leaf-grained). Against head-level gold, a MORE precise
+    # citation scores as a dropped head:
     #
     #     gold_dropped_exact(["Article 6.1"], gold=["Article 6"]) -> dropped 1
     #     gold_dropped_head (["Article 6.1"], gold=["Article 6"]) -> dropped 0
@@ -538,20 +613,79 @@ def _analyse(
     # while head said +0 and every axis was exactly 0.0000. Read literally, the
     # veto rejects a change that dropped nothing.
     #
-    # Report the grain rather than a misleading number: when no gold ref carries
-    # a sub-point, the exact veto is not applicable and says so.
-    gold_refs = [
-        str(x)
-        for i in common
-        for x in ((b[i].get("row") or {}).get("expected_refs")
-                  if isinstance(b[i].get("row"), dict)
-                  else getattr(b[i].get("row"), "expected_refs", None)) or ()
-    ]
-    leaf_grained = sum(1 for x in gold_refs if "." in x)
-    gold["gold_dropped_exact"]["applicable"] = bool(leaf_grained)
-    gold["gold_dropped_exact"]["gold_leaf_grained"] = leaf_grained
-    gold["gold_dropped_exact"]["gold_refs_total"] = len(gold_refs)
-    gold["gold_dropped_head"]["applicable"] = True
+    # R337.1 — TWO defects in the first cut of that guard, each of which made it
+    # worse than having no guard at all:
+    #
+    #   (a) It read the gold from `b[i]["row"]`, a key `_run_rows` has never
+    #       written (its record carries id / source / pred_answer / pred_refs /
+    #       latency_ms / http_status / error / scores). `gold_refs` was
+    #       therefore always empty, `applicable` always False, and since
+    #       `_report`'s rejection test filters on `applicable`, an exact-grain
+    #       gold drop could NEVER print REJECTED. Fixed at the PRODUCER —
+    #       `_row_record` now carries `gold_refs` — because a guard that reads a
+    #       key nobody writes is indistinguishable from a guard switched off.
+    #
+    #   (b) The switch was GLOBAL. One leaf-grained gold ref anywhere in the
+    #       sample re-enabled the exact veto for every head-level row in it, so
+    #       on a mixed pool the guard reinstates exactly the false rejection it
+    #       exists to prevent. The grain is now decided PER ROW: the exact veto
+    #       sums only over rows whose OWN gold carries a sub-point, and it
+    #       records that population so the printed line is self-describing.
+    #
+    # The KEY CHANGED WITH THE MATHS — `gold_dropped_exact` ->
+    # `gold_dropped_exact_leaf_rows` — per CLAUDE.md's "if you change a formula,
+    # change its NAME". The old key summed every scored row; the new one sums a
+    # row subset, so the two are not comparable and must not share a name. The
+    # all-rows figure is still recorded (`all_rows_*`) so an older sidecar stays
+    # readable, but it is a DIAGNOSTIC and never a veto: on head-level gold it
+    # counts precision gains as losses, which is the whole finding.
+    def _gold_for(rid: str) -> list[str]:
+        # Both arms run the SAME ProbeRow, so either record carries the same
+        # gold; prefer the baseline and fall back so one arm's absence cannot
+        # silently blank the grain (blank grain == veto off, so it must not be
+        # reachable by accident).
+        raw = b[rid].get("gold_refs") or c[rid].get("gold_refs") or ()
+        return [str(x) for x in raw]
+
+    gold_refs_all = [g for i in common for g in _gold_for(i)]
+    leaf_rows = [i for i in common if any(map(_carries_sub_point, _gold_for(i)))]
+
+    gold: dict[str, Any] = {
+        "gold_dropped_head": {
+            "baseline": sum(b[i]["scores"]["gold_dropped_head"] for i in common),
+            "branch": sum(c[i]["scores"]["gold_dropped_head"] for i in common),
+            "applicable": True,
+            "rows_counted": len(common),
+            "rows_scored": len(common),
+            "population": f"all {len(common)} scored rows",
+        },
+        "gold_dropped_exact_leaf_rows": {
+            # float() so an empty leaf population serialises as 0.0 like every
+            # other figure here, rather than as a bare int nobody expected.
+            "baseline": float(sum(
+                b[i]["scores"]["gold_dropped_exact"] for i in leaf_rows)),
+            "branch": float(sum(
+                c[i]["scores"]["gold_dropped_exact"] for i in leaf_rows)),
+            "applicable": bool(leaf_rows),
+            "rows_counted": len(leaf_rows),
+            "rows_scored": len(common),
+            "population": (f"{len(leaf_rows)} of {len(common)} rows with "
+                           f"leaf-grained gold"),
+            "gold_refs_total": len(gold_refs_all),
+            "gold_leaf_grained": sum(map(_carries_sub_point, gold_refs_all)),
+            # Diagnostic only — the historical all-rows sum. Kept so a
+            # pre-R337.1 sidecar can still be lined up against a new run;
+            # deliberately NOT part of the veto.
+            "all_rows_baseline": sum(
+                b[i]["scores"]["gold_dropped_exact"] for i in common),
+            "all_rows_branch": sum(
+                c[i]["scores"]["gold_dropped_exact"] for i in common),
+        },
+    }
+    for v in gold.values():
+        v["delta"] = v["branch"] - v["baseline"]
+    ex = gold["gold_dropped_exact_leaf_rows"]
+    ex["all_rows_delta"] = ex["all_rows_branch"] - ex["all_rows_baseline"]
     return {"axes": axes, "gold": gold, "n_scored": len(common)}
 
 
@@ -576,15 +710,20 @@ def _report(res: dict[str, Any], emit: Callable[[str], None] = print) -> None:
         # R337 — an inapplicable veto prints its REASON, never a number. On
         # head-level gold the exact-grain drop counts precision GAINS as losses,
         # so showing the figure invites a rejection of correct work.
+        #
+        # R337.1 — and an APPLICABLE veto prints its POPULATION, because the
+        # grain is now decided per row: "+5" means nothing until you know it was
+        # summed over the 12 rows that could support it, not over all 32.
         if not v.get("applicable", True):
-            emit(f"  {g:<20} {'n/a':>6} — gold is head-level "
-                 f"({v.get('gold_refs_total', 0)} refs, "
-                 f"{v.get('gold_leaf_grained', 0)} with a sub-point); "
-                 f"exact-grain veto does not apply")
+            emit(f"  {g:<28} {'n/a':>6} — 0 of {v.get('rows_scored', 0)} rows "
+                 f"carry leaf-grained gold ({v.get('gold_refs_total', 0)} gold "
+                 f"refs, {v.get('gold_leaf_grained', 0)} with a sub-point), so "
+                 f"the exact-grain veto has no population; head grain above is "
+                 f"authoritative")
             continue
         flag = "  <-- HARD RULE #8 VETO" if v["delta"] > 0 else ""
-        emit(f"  {g:<20} {v['baseline']:>6.0f} -> {v['branch']:>6.0f} "
-             f"({v['delta']:+.0f}){flag}")
+        emit(f"  {g:<28} {v['baseline']:>6.0f} -> {v['branch']:>6.0f} "
+             f"({v['delta']:+.0f})  over {v.get('population', 'n/a')}{flag}")
     if any(v["delta"] > 0 for v in res["gold"].values()
            if v.get("applicable", True)):
         emit("")

@@ -36,11 +36,12 @@ def _dense_singleton_reset(monkeypatch):
     import app.engines.turboquant_index as ti
 
     yield
-    # Re-init the singleton's internal state — cheaper than
-    # importlib.reload and avoids the BM25-import side effects.
-    ti._INDEX._loaded = False  # noqa: SLF001
-    ti._INDEX._failed = False  # noqa: SLF001
-    ti._INDEX._compression_active = False  # noqa: SLF001
+    # R338 [I2] — drop the per-corpus index cache too, not just the current
+    # instance's ``_loaded`` latch. Since the module keeps one built index PER
+    # BM25 CORPUS IDENTITY, resetting ``ti._INDEX`` alone leaves a fully-built
+    # index for the *other* corpus in ``_INDEX_BY_CORPUS``, which the next test
+    # would silently be served instead of rebuilding.
+    ti._reset_index_cache()  # noqa: SLF001
 
 
 # ── Layer 1: env-gate behaviour ──────────────────────────────────────────
@@ -418,12 +419,13 @@ def test_score_fusion_preserves_score_magnitudes(monkeypatch):
 
 def test_turboquant_index_with_external_embeddings(monkeypatch):
     """The index build and search should gracefully leverage external embeddings when available."""
-    # Reset state
+    # Reset state. R338 [I2] — must clear the per-corpus cache, not just the
+    # current instance: this test changes something the corpus fingerprint
+    # cannot see (external embeddings become available), so a cached index built
+    # for the same corpus WITHOUT them would be served and the assertions below
+    # would grade the wrong object.
     import app.engines.turboquant_index as ti
-    ti._INDEX._loaded = False
-    ti._INDEX._failed = False
-    ti._INDEX._use_external = False
-    ti._INDEX._compression_active = False
+    ti._reset_index_cache()
 
     monkeypatch.setenv("COHERE_API_KEY", "co-testkey")
 
@@ -467,3 +469,143 @@ def test_turboquant_index_with_external_embeddings(monkeypatch):
     assert len(hits) > 0
 
 
+
+
+# ── R338 [I2]: corpus identity — the dense index must never outlive its corpus ─
+#
+# The dense index stores RAW POSITIONS into the BM25 corpus
+# (``_bm25_idx_map``) and ``dense_top_k`` labels every hit with
+# ``bm25.article_refs[position]``. Since 938933a the corpus is
+# configuration-dependent (``REGENOLD_ONTOLOGY_RISK_DOCS`` swings it 345 ↔ 373
+# docs, inserted in the MIDDLE of the corpus), so a singleton that survives the
+# flip relabels every hit silently. Measured before the fix, in ONE process:
+#
+#   gate=1  dense_top_k('serious incident reporting deadline')
+#             -> [('Art. 73', 0.8224), ('Art. 17', 0.3746), ('Art. 76', 0.3703)]
+#   gate=0  (flipped in-process)
+#             -> [('Art. 111', 0.8224), ('Art. 11', 0.8123), ('Art. 110', 0.7656)]
+#
+# Identical scores, different labels, no IndexError and no log line — and over
+# the real 132-row ``probe_set`` the flipped process disagreed with a
+# fresh-process gate-OFF run on 4 rows of ``top_articles_by_relevance``. These
+# tests assert against the SHAPE THE REAL CALLER EMITS: the actual env flag, the
+# actual BM25 corpus, the actual public ``dense_top_k`` — a fixture-built fake
+# corpus would pass while the integration stayed broken.
+
+
+def _live_corpus_id():
+    from app.data.kb_search import _build_index
+    from app.engines.turboquant_index import _corpus_identity
+
+    return _corpus_identity(_build_index())
+
+
+def test_corpus_identity_tracks_the_ontology_risk_docs_gate(monkeypatch):
+    """The fingerprint must SEPARATE the two corpora the gate can produce."""
+    monkeypatch.setenv("REGENOLD_ONTOLOGY_RISK_DOCS", "1")
+    on_id = _live_corpus_id()
+    monkeypatch.setenv("REGENOLD_ONTOLOGY_RISK_DOCS", "0")
+    off_id = _live_corpus_id()
+
+    assert on_id != off_id, "corpus identity is blind to the gate that resizes the corpus"
+    # n_docs is carried in the fingerprint so a human reading a log line can see
+    # which corpus is which without re-deriving the hash.
+    assert on_id.startswith("n373:"), on_id
+    assert off_id.startswith("n345:"), off_id
+
+
+def test_dense_index_rebuilds_when_the_corpus_gate_flips_in_process(monkeypatch):
+    """The R332 inert-A/B shape: a memo outliving the configuration.
+
+    Build with the gate ON, flip it OFF the way
+    ``dynamic_ab --branch-env REGENOLD_ONTOLOGY_RISK_DOCS=0`` does (an in-process
+    ``os.environ`` mutation), and require that the NEXT query is served by an
+    index built for the 345-doc corpus — not the stale 373-doc one.
+    """
+    import app.engines.turboquant_index as ti
+
+    monkeypatch.setenv("REGENOLD_TURBOQUANT_DENSE", "1")
+    monkeypatch.setenv("REGENOLD_ONTOLOGY_RISK_DOCS", "1")
+    ti.dense_top_k("serious incident reporting deadline", k=5)
+    diag_on = ti.index_diagnostics()
+    assert diag_on["corpus_id"].startswith("n373:")
+    n_docs_on = diag_on["num_docs"]
+    rebuilds_before = diag_on["stale_rebuilds"]
+
+    monkeypatch.setenv("REGENOLD_ONTOLOGY_RISK_DOCS", "0")
+    ti.dense_top_k("serious incident reporting deadline", k=5)
+    diag_off = ti.index_diagnostics()
+
+    # The served index describes the LIVE corpus …
+    assert diag_off["corpus_id"] == _live_corpus_id()
+    assert diag_off["corpus_id"].startswith("n345:")
+    # … its size actually moved (28 ontology docs, none of them definitions) …
+    assert diag_off["num_docs"] == n_docs_on - 28
+    # … and the switch is OBSERVABLE, because a silent rebuild and a silent
+    # staleness look identical from the outside.
+    assert diag_off["corpus_switches"] > diag_on["corpus_switches"]
+    assert diag_off["stale_rebuilds"] == rebuilds_before + 1
+
+
+def test_dense_hits_after_a_flip_match_a_gate_off_build(monkeypatch):
+    """The relabelling itself: post-flip hits must be the gate-OFF ranking.
+
+    ``Art. 111`` (Union safeguard / transitional) as the top hit for a
+    serious-incident question was the pre-fix symptom.
+    """
+    import app.engines.turboquant_index as ti
+
+    monkeypatch.setenv("REGENOLD_TURBOQUANT_DENSE", "1")
+    monkeypatch.setenv("REGENOLD_ONTOLOGY_RISK_DOCS", "1")
+    ti.dense_top_k("serious incident reporting deadline", k=5)
+
+    monkeypatch.setenv("REGENOLD_ONTOLOGY_RISK_DOCS", "0")
+    flipped = ti.dense_top_k("serious incident reporting deadline", k=5)
+
+    # Build the same corpus from scratch in a pristine instance — the
+    # fresh-process ground truth, reproduced in-process.
+    pristine = ti._DenseIndex()  # noqa: SLF001
+    assert pristine._setup()  # noqa: SLF001
+    assert pristine._corpus_id == _live_corpus_id()  # noqa: SLF001
+
+    saved = ti._INDEX
+    try:
+        ti._INDEX = pristine
+        ground_truth = ti.dense_top_k("serious incident reporting deadline", k=5)
+    finally:
+        ti._INDEX = saved
+
+    assert flipped == ground_truth, (
+        "post-flip dense hits diverge from a from-scratch gate-OFF build — "
+        "the stale-corpus relabelling is back"
+    )
+    assert flipped and flipped[0][0] == "Art. 73"
+
+
+def test_returning_to_the_first_gate_reuses_the_cached_index(monkeypatch):
+    """ON → OFF → ON must be faithful AND cheap (one build per corpus).
+
+    ``dynamic_ab`` runs the baseline arm first in EVERY batch, so the process
+    ping-pongs between corpora dozens of times; a rebuild-per-flip would make
+    the gate unusably slow, which is its own reason a future round would rip the
+    check back out.
+    """
+    import app.engines.turboquant_index as ti
+
+    monkeypatch.setenv("REGENOLD_TURBOQUANT_DENSE", "1")
+    monkeypatch.setenv("REGENOLD_ONTOLOGY_RISK_DOCS", "1")
+    first = ti.dense_top_k("quality management system documentation", k=5)
+
+    monkeypatch.setenv("REGENOLD_ONTOLOGY_RISK_DOCS", "0")
+    ti.dense_top_k("quality management system documentation", k=5)
+    rebuilds_after_first_switch = ti.index_diagnostics()["stale_rebuilds"]
+
+    monkeypatch.setenv("REGENOLD_ONTOLOGY_RISK_DOCS", "1")
+    again = ti.dense_top_k("quality management system documentation", k=5)
+    diag = ti.index_diagnostics()
+
+    assert again == first, "the return trip did not restore the original corpus"
+    assert diag["stale_rebuilds"] == rebuilds_after_first_switch, (
+        "returning to an already-built corpus paid for a second SVD build"
+    )
+    assert diag["cached_corpora"] <= ti._MAX_CACHED_INDEXES
