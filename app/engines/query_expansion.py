@@ -1,13 +1,14 @@
 """RAG-Fusion query expansion + reciprocal rank fusion (R39 / B8).
 
 When a paraphrase provider is available and the intent suggests a
-single-anchor question, ask Haiku 4.5 for 3 paraphrases. Each paraphrase
-runs through the existing retrieval stack independently; reciprocal rank
-fusion (RRF) combines the result lists.
+single-anchor question, ask Sonnet 4.6 (the frontier tier — no Haiku,
+R346.2) for 3 paraphrases. Each paraphrase runs through the existing
+retrieval stack independently; reciprocal rank fusion (RRF) combines the
+result lists.
 
 R346 — the paraphrase transport follows the ACTIVE Stage-2 provider:
 under ``P2P_GRAPH_RAG_PROVIDER=bedrock`` the call goes to Bedrock's own
-Haiku 4.5, NOT the Claude-Max wrapper — the operator keeps the tunnel
+Sonnet 4.6, NOT the Claude-Max wrapper — the operator keeps the tunnel
 for the live re-evaluation, and mixing transports mid-A/B contaminates
 both arms. Every other provider keeps the historical wrapper path.
 
@@ -54,6 +55,20 @@ _TIMEOUT = 2.0  # short budget — paraphrase is opportunistic (wrapper)
 _BEDROCK_TIMEOUT = float(os.getenv(
     "REGENOLD_QUERY_EXPANSION_BEDROCK_TIMEOUT", "8.0"
 ))
+
+# R346.2 — NO Haiku on the live path: paraphrases use the frontier tier like
+# every other Stage-2 call. Sonnet 4.6 is the default (the judge tier — a
+# paraphrase is a light task, Opus would buy nothing), pinned up with
+# ``REGENOLD_QUERY_EXPANSION_MODEL=claude-opus-4-6`` if the operator wants
+# the generation tier. Fresh read per call (R263.2).
+_DEFAULT_PARAPHRASE_MODEL = "claude-sonnet-4-6"
+
+
+def _paraphrase_model() -> str:
+    return (
+        os.getenv("REGENOLD_QUERY_EXPANSION_MODEL", "").strip()
+        or _DEFAULT_PARAPHRASE_MODEL
+    )
 
 # ── Call instrumentation (R341, mirroring cohere_rerank's R331 counters) ────
 #
@@ -144,9 +159,8 @@ def _complete_paraphrase(user: str) -> Any:
                 return complete_with_fallback(BedrockRequest(
                     system=_SYSTEM_PROMPT,
                     user=user,
-                    # Alias -> eu.anthropic.claude-haiku-4-5-20251001-v1:0,
-                    # the same Haiku 4.5 tier the wrapper path uses.
-                    model="claude-haiku-4-5",
+                    # R346.2 — frontier tier: alias -> eu.anthropic.claude-sonnet-4-6.
+                    model=_paraphrase_model(),
                     max_tokens=200,
                     temperature=0.3,
                     timeout_seconds=_BEDROCK_TIMEOUT,
@@ -159,7 +173,8 @@ def _complete_paraphrase(user: str) -> Any:
     return get_openai_wrapper_provider().complete(OpenAIWrapperRequest(
         system=_SYSTEM_PROMPT,
         user=user,
-        model="claude-haiku-4-5-20251001",
+        # R346.2 — frontier tier, same env override as the Bedrock path.
+        model=_paraphrase_model(),
         max_tokens=200,
         temperature=0.3,
         timeout_seconds=_TIMEOUT,

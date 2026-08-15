@@ -297,9 +297,27 @@ def test_bedrock_transport_fires(monkeypatch):
     assert stats["expanded"] >= 1
     assert stats["failed"] == 0
     assert len(calls) == 1
-    # The Bedrock request targets the Haiku 4.5 alias (cheap paraphrase tier),
-    # not the Opus generation model.
-    assert calls[0].model == "claude-haiku-4-5"
+    # R346.2 — the paraphrase rides the frontier tier (Sonnet 4.6), never
+    # Haiku, and defaults to the judge tier rather than the Opus generation
+    # model. The env override must win when set.
+    assert calls[0].model == "claude-sonnet-4-6"
+    assert "Art. 72" in out
+    assert out[0] == "Art. 72"
+    assert len(out) == len(base)  # BM25 lane preserved, budget intact
+
+
+def test_bedrock_transport_honours_model_override(monkeypatch):
+    """R346.2 — ``REGENOLD_QUERY_EXPANSION_MODEL`` pins the paraphrase tier
+    (e.g. the Opus generation model) on the Bedrock transport."""
+    base = _deterministic_parse(_Q_NO_ENTITY).entities
+    monkeypatch.setenv("REGENOLD_QUERY_EXPANSION_MODEL", "claude-opus-4-6")
+    calls = _enable_bedrock_expansion(monkeypatch, _PARAPHRASE_72)
+
+    out = _deterministic_parse(_Q_NO_ENTITY).entities
+
+    assert QE.query_expansion_stats()["attempts"] == 1
+    assert len(calls) == 1
+    assert calls[0].model == "claude-opus-4-6"
     assert "Art. 72" in out
     assert out[0] == "Art. 72"
     assert len(out) == len(base)  # BM25 lane preserved, budget intact

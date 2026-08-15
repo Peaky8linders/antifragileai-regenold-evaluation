@@ -1,10 +1,11 @@
 """Intent classifier — routes EU AI Act questions through Claude Max.
 
-Stage 0 of the deterministic pipeline. Calls Claude Haiku 4.5 (default)
+Stage 0 of the deterministic pipeline. Calls Claude Sonnet 4.6 (default)
 via the local ``claude-code-openai-wrapper`` so each question goes
 through the Claude Code Max subscription, not the per-token Anthropic
-API. Operators can flip ``REGENOLD_INTENT_MODEL`` to ``claude-sonnet-4-6``
-for a higher-quality (slower, more expensive) classification.
+API. Operators can flip ``REGENOLD_INTENT_MODEL`` to pin a different
+tier. (R346.2 — the Haiku default is gone; the live path uses Groq
+anyway per R94 unless the operator opts out.)
 
 ## Why intent
 
@@ -342,7 +343,10 @@ class IntentResult:
 
 # ── Module-level config + state ──────────────────────────────────────────────
 
-_DEFAULT_MODEL = os.getenv("REGENOLD_INTENT_MODEL", "claude-haiku-4-5-20251001")
+# R346.2 — no Haiku on the live path: the non-Groq intent fallback uses the
+# frontier tier too. (Groq is the R94 default Stage-0 provider; this model
+# only answers when the operator opts out of Groq.)
+_DEFAULT_MODEL = os.getenv("REGENOLD_INTENT_MODEL", "claude-sonnet-4-6")
 # Round 52+: Groq Stage-0 model. Migrated to openai/gpt-oss-120b. Override
 # via REGENOLD_INTENT_MODEL_GROQ.
 _DEFAULT_GROQ_MODEL = os.getenv(
