@@ -16,6 +16,7 @@ import pytest
 
 from app.data.graph_rag_prompts import (
     ANSWER_GENERATE_SYSTEM,
+    ANSWER_GENERATE_SYSTEM_V2,
     USER_CHALLENGE_BREVITY_CLAUSE,
     USER_REF_MINIMALITY_CLAUSE,
     challenge_brevity_enabled,
@@ -72,11 +73,29 @@ class TestGates:
         assert user_ref_minimality_enabled() is False
 
     def test_system_prompt_untouched_by_r298(self, monkeypatch):
-        """R298 must not alter the (inert) system channel in either state."""
+        """R298 must not alter the (inert) system channel in either state.
+
+        R340 made ``ANSWER_GENERATE_SYSTEM_V2`` the default composition, so the
+        constant this case was written against is now selected by
+        ``REGENOLD_PROMPT_V2=0`` (R340's rollback, kept byte-identical). The
+        invariant being pinned is unchanged and is asserted on BOTH
+        compositions: whichever system prompt is in force, neither R298 user-
+        channel flag may move it.
+        """
+        monkeypatch.setenv("REGENOLD_PROMPT_V2", "0")
         assert resolve_answer_system() == ANSWER_GENERATE_SYSTEM
         monkeypatch.setenv("REGENOLD_USER_REF_MINIMALITY", "1")
         monkeypatch.setenv("REGENOLD_CHALLENGE_BREVITY", "1")
         assert resolve_answer_system() == ANSWER_GENERATE_SYSTEM
+
+        # …and on the R340 default composition.
+        monkeypatch.delenv("REGENOLD_USER_REF_MINIMALITY", raising=False)
+        monkeypatch.delenv("REGENOLD_CHALLENGE_BREVITY", raising=False)
+        monkeypatch.setenv("REGENOLD_PROMPT_V2", "1")
+        assert resolve_answer_system() == ANSWER_GENERATE_SYSTEM_V2
+        monkeypatch.setenv("REGENOLD_USER_REF_MINIMALITY", "1")
+        monkeypatch.setenv("REGENOLD_CHALLENGE_BREVITY", "1")
+        assert resolve_answer_system() == ANSWER_GENERATE_SYSTEM_V2
 
 
 # ── challenge detector ───────────────────────────────────────────────────────

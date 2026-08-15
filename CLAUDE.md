@@ -1,11 +1,11 @@
 # CLAUDE.md — Regenold EU AI Act RAG (re-evaluation repo)
 
 Load-bearing context for an LLM coding assistant. Read top-to-bottom before
-making changes. Numbers were re-measured in R326 (2026-08-10) and again in R338
-(2026-08-15, after six unreviewed commits landed on `main` — see
-[`docs/reviews/gemini-changes-2026-08-15-cc47f8b.md`](docs/reviews/gemini-changes-2026-08-15-cc47f8b.md));
-the per-round engineering log lives in
-**[`docs/ROUNDS.md`](docs/ROUNDS.md)** — search it, don't read it.
+making changes. Numbers were re-measured across R338-R340 (2026-08-15); the
+decision record for that session — question, evidence, decision — is
+[`docs/R340-session-decisions-and-open-questions.md`](docs/R340-session-decisions-and-open-questions.md),
+its measurements are in [`docs/R339-stage2-restored-and-bypasses-settled.md`](docs/R339-stage2-restored-and-bypasses-settled.md).
+The per-round log is **[`docs/ROUNDS.md`](docs/ROUNDS.md)** — search it, don't read it.
 
 ## ⚠ Which repo you are in
 
@@ -50,18 +50,13 @@ contain the change under test; R338 repointed
 `evals/regenold/antifragile_live.LIVE_ENDPOINT` and `runner_oob.py --endpoint`
 here and kept the sibling one flag away as `SIBLING_ENDPOINT`.
 
-⚠ **A push does NOT deploy immediately.** Measured 2026-08-15 with `/healthz`:
-early in the session the service served `commit=4d29387f3db1` while `main` was
-at `4d72ff3` — five commits behind `cc47f8b`, six behind HEAD. Re-probed later
-the same day it served `commit=4d72ff31a54e`, i.e. HEAD. So something *does*
-deploy (Railway's own GitHub integration; there is no `.github/` here), but with
-a lag long enough that a merge and a live probe in one session will disagree.
-**Read `/healthz.commit` before believing a merge shipped, and before
-attributing any live measurement to a commit.**
-
-Treat a merge to `main` in this repo as **shipping**, not as a bench artefact.
-That is exactly the reason `railway.toml [deploy.envs]` being inert matters so
-much (see the gotchas): config here must be a CODE default or it never arrives.
+⚠ **Railway's GitHub integration DOES auto-deploy a merge to `main` — with a
+lag.** Measured 2026-08-15: the service served a commit five behind `main`, then
+HEAD hours later. So a merge and a live probe in the same session will disagree.
+**Read `/healthz.commit` before believing a merge shipped, and before attributing
+any live measurement to a commit.** Treat a merge here as **shipping**, not as a
+bench artefact — which is exactly why `railway.toml [deploy.envs]` being inert
+matters (see the gotchas): config must be a CODE default or it never arrives.
 
 * The July-7 machinery exists **only here** —
   `evals/regenold/_official_batch_20260707.json` (110 questions),
@@ -315,6 +310,16 @@ py -3.12 -m evals.harness.dynamic_ab --flag REGENOLD_COHERE_RERANK --label x
 py -3.12 -m evals.harness.dynamic_ab --branch-env REGENOLD_ONTOLOGY_RISK_DOCS=0 --label y
 ```
 
+⚠ **But choose the instrument by the gate's MEASURED FIRE RATE on the actual
+probe rows, not by reputation — `dynamic_ab` included.** R339 counted where the
+two Stage-2 bypass gates fire: Antifragile **11/20**, GraphRAG 14/40, official
+batch 22/110, and `probe_set` **2/132**. A `dynamic_ab` run there moves 2 rows
+and reports a meaningless NULL — the inert-A/B trap arriving through the PROBE
+POOL rather than the harness. Antifragile 20 was the correct instrument and is
+what settled them. Check the provider too: `_stage2_provider_enabled`
+(`_graph_rag_impl.py:1302`) returns at `:8181`, **before** both bypass gates at
+`:8222` / `:8241`, so any `provider=cli` arm on them is inert by construction.
+
 Gate for any change that can move an answer, a reference, the tone, or a scope
 decision:
 
@@ -337,18 +342,12 @@ before the arms differed at all). The fire check is what catches this.
 ## Current baseline — HISTORICAL ONLY, not a grading target
 
 ⚠ **RETIRED 2026-08-14 with davidath itself. Do NOT grade a change against this
-table.** It is kept because older round entries reference it, not because it
-answers anything.
-
-The block below is a `provider=cli` measurement: no Stage-2, head-level
-single-article gold, BM25-saturated. Reproducing it tells you the deterministic
-retrieval/answer-assembly path is unchanged and **nothing else** — not the
+table.** It is a `provider=cli` measurement — no Stage-2, head-level
+single-article gold, BM25-saturated — so reproducing it says the deterministic
+retrieval/answer-assembly path is unchanged and **nothing else**: not the
 prompts, not Stage-2, not the judge, not the reranker, not the graph context.
-R331 reproduced it to ≤0.0007 while changing all four, which is exactly the
-false comfort this retirement exists to remove.
-
-Grade a change with `evals.harness.dynamic_ab` instead: it fire-checks, sizes
-itself to the observed variance, and vetoes on `gold_dropped`.
+R331 reproduced it to ≤0.0007 while changing four things it cannot see. Grade
+with `evals.harness.dynamic_ab` instead. Kept only because older rounds cite it.
 
 <details><summary>historical davidath numbers at <code>c6db579</code> (2026-08-09)</summary>
 
@@ -368,9 +367,19 @@ Multi-turn coherence and the OOS probe remain useful cheap guards.
 
 Other gates: `evals.regenold.runner` **255/255**, RISK_F1 macro **1.00**, 28/28
 categories · OOS probe (`--oos-suite all`, 51 rows) **49 pass, 0 scope leaks**
-(2 known `adjacent_eu` soft fails) · full `pytest` **56 pre-existing failures**
-(measured 2026-08-15 at R338; 57 immediately before it), all the documented
-`provider=cli` Stage-2 env artifact.
+(2 known `adjacent_eu` soft fails).
+
+⚠ **"56 pre-existing `pytest` failures, the documented `provider=cli` env
+artifact" was FALSE — they are STALE MOCKS.** R340 triaged all 56 by execution:
+R56/R127 put a provider pre-gate ABOVE the seam these tests mock
+(`_stage2_provider_enabled`, `_graph_rag_impl.py:1302`;
+`is_openai_wrapper_enabled`, `openai_wrapper_provider.py:367`) and it returns
+False on the literal string `cli`, so the mock is never reached. Pinning the
+file's provider to `openai_wrapper` — dead-port base retained, so no network is
+reachable and every call site is a MagicMock — turned **65** green with no
+assertion weakened; R340 landed that pin per file and the suite is at **~0
+pre-existing failures**. Re-measure the count; do not quote this one, and do not
+dismiss a failure as environmental again without executing the seam.
 
 ⚠ **R327 — this block is measurable again.** An uncommitted pass had rebound the
 canonical axis names to new formulas, so any run graded against this table was
@@ -378,12 +387,11 @@ comparing two different rulers. Canonical names are back on the historical
 formulas; `--assert-baseline` also works again (per-row `metric_provenance` inside
 `scores` had made it permanently red).
 
-⚠ An older pin of **0.4079 / 0.5543** appears in the log — it is stale.
-⚠ **Judge the full suite by the failure SET, never the count**, and diff it
-against a baseline checked out **in place** (`git stash`), never in a
-`git worktree` — a worktree carries no `.env`, and the denoiser /
-topic-filter / safety-gate cluster changes behaviour on `GROQ_API_KEY`
-(measured 63 vs 92 failures on the same commit).
+⚠ An older pin of **0.4079 / 0.5543** appears in the log — it is stale. Diff a
+suite result against a baseline checked out **in place** (`git stash`), never in
+a `git worktree` — a worktree carries no `.env`, and the denoiser / topic-filter
+/ safety-gate cluster changes behaviour on `GROQ_API_KEY` (measured 63 vs 92
+failures on the same commit).
 
 ## The graph — live, and read-only from here
 
@@ -491,6 +499,28 @@ correct only for exactly as long as that remains true.
   terminal punctuation, and fail rows median **1698** chars vs pass **1096**.
   Correctness is understated; any long-answer verdict from that judge is
   suspect. **Do not tune against the truncation cluster — it does not exist.**
+* **LLM-judge baseline, shipped config** (`evals.judge.grounded`,
+  `claude-sonnet-5`, Antifragile n=20, 0 errors, `answer_grounding_source =
+  gold_refs` on 20/20 because `ANTIFRAGILE_GT` supplies a `gold_answer`): answer
+  correctness **0.85**, reference correctness **0.50** (P 0.789 / R 0.955 / F1
+  0.864), citation faithfulness **1.00** — and **9 of the 10 reference failures
+  are OVER-CITATION**. ⚠ Without a `gold_answer`, `grounded._prepare` grounds
+  the answer axis on the answer's OWN `pred_refs`, i.e. self-graded; check
+  `answer_grounding_source` before quoting any answer number.
+* **R340 — the rebuilt Stage-2 system prompt ships default-ON**
+  (`REGENOLD_PROMPT_V2`, 51,516 → 16,146 chars). Judge reference precision
+  0.7890 → **0.8385**, F1 0.8641 → **0.8859**, recall 0.9550 → 0.9389; answer
+  correctness and citation faithfulness FLAT; ans_conciseness 0.5160 →
+  **0.5518**; latency p50 −174 ms. ⚠ **Effective n is 9**, not 20 — only 9 rows
+  reach Stage-2 — so this is a signal CONSISTENT across two instruments, not a
+  RESOLVED one. The confirmatory run is V1-vs-V2 on the official July-7 batch
+  (~88 Stage-2 rows per arm). The shipped V2 is a strict SUPERSET of the arm
+  measured (4 more system sentences, 3 more user-clause sentences, all targeted
+  judge fixes), so the measured delta understates it.
+* ⚠ **R338's "−5 expert-mistake regression" (q03/q04/q14) is RETRACTED** — it was
+  measured while Stage-2 was dead (the argv ceiling). With Stage-2 restored the
+  same resolver gives **34/38**, above the R318 baseline's 33/38. Do not quote
+  that report's R318↔R338 table.
 * **Reference correctness is TAIL PADDING.** Wrong-rate by rank: 1 → **0.22**,
   2 → 0.45, 3 → **0.60**, 5 → 0.88. Retrieval is fine; the first ref is right
   78% of the time. Capping at 2 destroys **33 correct refs to remove 49 wrong**
@@ -564,8 +594,9 @@ correct only for exactly as long as that remains true.
 
 **Method:**
 * **R277's "minimal composer" result is a NULL EXPERIMENT** — both arms were
-  identical at the model, because the swap was inside the system prompt the
-  wrapper drops. Do not cite it as evidence that prompt volume is harmless.
+  identical at the model, because the swap sat inside the system prompt the
+  wrapper *then* dropped. Do not cite it as evidence that prompt volume is
+  harmless; R340 re-opened that question on a delivered prompt (see below).
 * **The Cappelli et al. (2026) paper's 7 optimisations** — none buildable; the
   authors built no retrieval system and their failure mode is UNDER-citation,
   the inverse of ours. ⚠ **The line now has EVIDENCE, not just an argument.**
@@ -589,36 +620,34 @@ correct only for exactly as long as that remains true.
 
 ## Gotchas that have each cost a session
 
-* **The Stage-2 SYSTEM prompt is dropped by the Claude Max wrapper — 0% of
-  requests see it.** Prompt fixes MUST go in the Stage-2 **user** message.
-  Proven with a French-instruction probe: system slot ignored, user slot obeyed.
-  ⚠ **ROOT CAUSE FOUND AND FIXED 2026-08-15 — but the fix is default OFF.**
-  `D:/Claude Projects/claude-code-openai-wrapper/src/claude_cli.py:14
-  _forward_system_prompt_enabled()`. The wrapper passed
-  `options.system_prompt` as `{"type": "text", "text": …}`, which is **not** a
-  valid `SystemPromptPreset` in `claude_agent_sdk 0.2.82` (a preset requires
-  `{"type": "preset", …}`), so the SDK silently discards it; a plain `str` **is**
-  honoured. Gated behind `WRAPPER_FORWARD_SYSTEM_PROMPT`, **default OFF**, so the
-  running deployment stays byte-identical to the dropped-prompt behaviour.
-  Measured with a sentinel probe on `claude-opus-4-8`: port **8000** (the
-  cloudflared tunnel target, the NSSM `regenold-wrapper` service) SYSTEM slot
-  obeyed = **False**; port **8001** (same code, `WRAPPER_FORWARD_SYSTEM_PROMPT=1`)
-  = **True**. Turning it on for 8000 needs an elevated shell
-  (`nssm restart regenold-wrapper`). ⚠ **Flipping it ON is answer-CHANGING and
-  owes its own A/B**: `ANSWER_GENERATE_SYSTEM` is ~12.8K tokens that currently
-  reach the model on zero wrapper requests, and every conclusion in this file
-  about "the system slot is dead" was measured with the flag OFF.
-* **The channel inversion — the CORRECT law is on the dead channel.** The
-  accurate technical-documentation rule, *"in particular Annex IV(1)(e) (the
-  description of the hardware…) and Annex IV(2)(c) (the computational
-  resources…)"*, sits at `app/data/graph_rag_prompts.py:118`, inside
-  `ANSWER_GENERATE_SYSTEM` — dropped on 100% of wrapper requests. `cc47f8b` then
-  put a FABRICATED eight-item component list at `:898`, on the user clause,
-  delivered on 100%. Right law where nothing hears it, wrong law where
-  everything does; and on Bedrock, which honours the system slot, the model
-  received **both** and they contradict. When you write a legal rule into a
-  prompt, first ask WHICH SLOT it lands in, then check what the other slot
-  already says about the same provision.
+* **The Stage-2 SYSTEM prompt IS delivered — since 2026-08-15 — and it now
+  carries a HARD 32,767-char ceiling.** The old gotcha ("the Claude Max wrapper
+  drops it, 0% of requests see it") is DEAD: the wrapper passed
+  `{"type":"text",…}`, not a valid `SystemPromptPreset` in
+  `claude_agent_sdk 0.2.82`, so the SDK silently discarded it; a plain `str` is
+  honoured and `WRAPPER_FORWARD_SYSTEM_PROMPT=1` is on. ⚠ **But the SDK passes a
+  `str` system prompt INLINE INTO ARGV** (`subprocess_cli.py:229`), and Windows
+  `CreateProcess` caps a command line at **32,767 chars**. Bisected on the
+  running wrapper, everything else constant: 32,000 → **200 OK**; **32,768 →
+  500 in 0.3 s**; 40,000 → 500. V1's `ANSWER_GENERATE_SYSTEM` is 51,516 chars, so
+  enabling the flag killed Stage-2 on **every** request — and the SDK misreports
+  the spawn failure as `"Claude Code not found at: …claude.exe"` (the binary is
+  present, 265 MB), which is why it survived two service restarts. **A 500 with a
+  "not found" message means the SPAWN failed, not the binary.** The wrapper now
+  spills above `WRAPPER_SYSTEM_PROMPT_ARGV_LIMIT` (30,000) to
+  `--system-prompt-file`; verified by NONCE ECHO at head *and* tail of a 51.4K
+  prompt, because at that size an obedience sentinel tests behaviour, not
+  delivery. **Keep any Stage-2 system prompt under 32,767 chars regardless** —
+  V2 is 16,146 (`REGENOLD_PROMPT_V2`) and is therefore safe on an unpatched
+  wrapper.
+* **When you write a legal rule into a prompt, ask WHICH SLOT it lands in, then
+  check what the other slot already says about the same provision.** The accurate
+  Annex IV(1)(e) / IV(2)(c) technical-documentation rule sat in
+  `ANSWER_GENERATE_SYSTEM` (then unheard) while `cc47f8b` put a FABRICATED
+  eight-item "Annex IV" on the always-delivered user clause — right law where
+  nothing heard it, wrong law where everything did, and mutually contradictory on
+  any provider honouring both. R338 reverted the fabrication; both slots are live
+  now, so a contradiction between them reaches the model on every request.
 * **`railway.toml [deploy.envs]` has NEVER applied** — Railway's `[deploy]`
   schema has no `envs` key. Bake config as **code defaults**.
 * **Scripts don't load `.env`.** `scripts/seed_neo4j_kb.py` and
@@ -766,12 +795,17 @@ Defaults are the CODE default, re-measured 2026-08-09.
 | --- | --- | --- |
 | `P2P_GRAPH_RAG_PROVIDER` | `auto` | `cli` (deterministic) / `anthropic` / `openai_wrapper` |
 | `P2P_GRAPH_RAG_ENABLE_STAGE2` | **ON** | Stage-2 polish master gate |
+| `REGENOLD_PROMPT_V2` | **ON** | R340 — selects `ANSWER_GENERATE_SYSTEM_V2` (**16,146** chars, XML-sectioned) over V1's **51,516** (−69%), inside `resolve_answer_system()` (`graph_rag_prompts.py:440`) — one selector, one concept. Under the 32,767 argv ceiling, so it is safe on an unpatched wrapper. `=0` is a byte-identical rollback to V1 |
+| `REGENOLD_CURATED_STAGE2_SKIP` | **ON** | R144, **settled by measurement R339 — keep ON**. Ships the curated deterministic answer without Stage-2; fires on 10/20 Antifragile rows |
+| `REGENOLD_DEFINITIONAL_STAGE2_SKIP` | **ON** | R275, same verdict; fires on 1/20. Together the two bypass Stage-2 on **11/20** rows (9/20 reach it). Turning both OFF resolves the SAME 34/38 expert mistakes and costs ans_conciseness **−0.163**, ref_conciseness −0.099, ref_strict −0.068, judge reference precision −0.093, one citation-faithfulness failure and **2.4× latency**. Fire check passed (`stage2_polish` 9→19) |
+| `REGENOLD_CROSS_REF_CONTEXT` | **ON** | the `CROSS-REFERENCED PROVISIONS` block in the Stage-2 user message. ⚠ Default-ON and **absent from `_engine_cache_key` since R69**, so every in-process A/B of this path was served one arm's cached output; registered R339 |
+| `REGENOLD_CROSS_REF_SNIPPET_CHARS` | **20000** | R339 — per-node ceiling, clamped `[240, 60000]`. Was a hard-coded 240 that cut MID-WORD, and clipped Article 41 to 158 of 3,873 chars (96% loss) with **no marker at all**. Set above the largest reachable node (`art_3`, 17,079) so nothing truncates by default; `_clip_clause` now cuts on a clause/word boundary and always marks ` [...]`. Measured: Stage-2 user payload 122,828 → **135,778** chars, ellipses 2 → **0**, and **Annex IV now arrives complete at 5,720 chars** — where Annex IV(1)(e) lives |
 | `REGENOLD_ANSWER_NO_CAP` | **ON** | removes sentence + char caps live (hard rule #2) |
 | `REGENOLD_KG_CONTEXT` | **ON** | graph context into Stage-2 |
 | `REGENOLD_KG_MAX_CHARS` | **48000** | total graph-context ceiling. R328.4 — was 16000 |
 | `REGENOLD_KG_MAX_UNITS` | **70** | units per provision. R328.4 — was 24, which rendered Article 3 as 24 of its 68 definitions with 3(4)-3(8) (the five OPERATOR ROLE definitions) absent and unmarked |
 | `REGENOLD_KG_UNIT_CHARS` | **2000** | per-unit budget; `_UNIT_HARD_CEILING` **9000** for enumerations. R328.4 — were 900 / 2600 |
-| `REGENOLD_ANSWER_COVERAGE` | **ON** | delivers `USER_ANSWER_COVERAGE_CLAUSE` (2,241 chars) on the Stage-2 USER channel — the slot the wrapper does NOT drop. ⚠ **`=0` is NOT a targeted rollback of anything inside it**: it also deletes the R318 `LEGAL VERSION` sentence, which is the ONLY place the no-Digital-Omnibus rule reaches the model. If you need to remove one sentence, remove that sentence |
+| `REGENOLD_ANSWER_COVERAGE` | **ON** | delivers `USER_ANSWER_COVERAGE_CLAUSE` (2,241 chars) on the Stage-2 USER channel — delivered on every provider. ⚠ **`=0` is NOT a targeted rollback of anything inside it**: it also deletes the R318 `LEGAL VERSION` sentence, which is the ONLY place the no-Digital-Omnibus rule reaches the model. If you need to remove one sentence, remove that sentence |
 | `REGENOLD_ONTOLOGY_RISK_DOCS` | **ON** | `938933a` — emits 28 virtual BM25 documents from the six AIRO registries (345 → **373** docs). Shipped default-ON with **no `dynamic_ab` verdict and no `gold_dropped` reading**; 9 of 110 official-batch rows lose a provision from their entity set. `=0` restores the pre-`938933a` corpus. In `_engine_cache_key` (`regenold.py:1434`) since R331/R332 |
 | `REGENOLD_COHERE_RERANK` | **OFF** | R331 — cross-encoder rerank via Cohere. Also needs `COHERE_API_KEY`; fresh env read per call so `easyhard_ab` can flip it between in-process arms. Off because it is unmeasured on this corpus, it egresses partner questions, and R329 HyPA already cost Ref Conciseness −0.209 on an ungated default-ON retrieval change |
 | `REGENOLD_JUDGE_CONCISENESS_LENIENCY` | **OFF** | R331.1 — the POST-PROCESSING half of `bb793ca`'s conciseness loosening (`legal_v2.py:821`). ⚠ **Its PROMPT half is UNGATED** (`legal_v2.py:488-514`, the UNREQUESTED-TOPIC / REDUNDANT definitions), and that is where the axis is actually defined — so `answer_conciseness` already sits on a different, strictly more permissive ruler than every pre-`bb793ca` number, under the same canonical name. Violates R327's "change the formula, change its NAME" |
@@ -810,8 +844,8 @@ Defaults are the CODE default, re-measured 2026-08-09.
 | `REGENOLD_STAGE2_VERDICT_GUARD` | **ON** | Rejects a Stage-2 answer that stops mid-verdict, on BOTH the wrapper and (since 2026-08-13) the Bedrock path. `=0` disables. ⚠ Never measured on `ab_judge` — davidath cannot see it (Stage-2 only) |
 | `REGENOLD_BEDROCK_MAX_TOKENS` | **4096** | R328.3 — the Stage-2 answer ceiling on Bedrock. NOT `settings.graph_rag.max_tokens` (1536), which is advisory on the wrapper and a HARD mid-word cut here. Worst measured enumerative answer used 3411 |
 | `REGENOLD_BEDROCK_STAGE2_TIMEOUT_S` | **180** | R328.3 — per-call read budget for Stage-2. The 60 s default turned a bigger token ceiling into `ReadTimeoutError` (the worst case emits 3411 tokens in ~70 s) — the same truncation, one layer down |
-| `REGENOLD_BEDROCK_JUDGE_MAX_TOKENS` | **1600** | R328 — NOT the wrapper's 400. Bedrock honours the system prompt (the wrapper drops it), so the judge reasons in prose before its JSON; at 400 it truncates and the axis returns `no_json` — a SILENTLY UNSCORED axis, not a visible failure |
-| `REGENOLD_BEDROCK_WRAPPER_FALLBACK` | **ON** | R330 — cross-PROVIDER last resort ported from the RAG repo: when the WHOLE Bedrock entitlement chain is spent, serve from the Claude-Max wrapper instead of dropping Stage-2. Placed at the END of `complete_with_fallback`, not inside `BedrockProvider.complete` as upstream has it — upstream's placement can hop on the FIRST model's throttle while an invocable tier sits further down the chain. ⚠ **The two providers are not interchangeable: Bedrock honours the system prompt, the wrapper drops it 100%**, so a hop silently changes ~12.8K tokens of delivered instruction. It therefore returns `model="wrapper:<name>"`, which makes the existing `_bedrock_complete_for_graph_rag` provenance fire unchanged — `stage2_models` in the sidecar shows `wrapper:…`, never the pin. Alert on `served_by=wrapper:`. Off-switch `=0` |
+| `REGENOLD_BEDROCK_JUDGE_MAX_TOKENS` | **1600** | R328 — NOT the wrapper's 400. Bedrock honours the system prompt, so the judge reasons in prose before its JSON; at 400 it truncates and the axis returns `no_json` — a SILENTLY UNSCORED axis, not a visible failure |
+| `REGENOLD_BEDROCK_WRAPPER_FALLBACK` | **ON** | R330 — cross-PROVIDER last resort ported from the RAG repo: when the WHOLE Bedrock entitlement chain is spent, serve from the Claude-Max wrapper instead of dropping Stage-2. Placed at the END of `complete_with_fallback`, not inside `BedrockProvider.complete` as upstream has it — upstream's placement can hop on the FIRST model's throttle while an invocable tier sits further down the chain. ⚠ **The two providers were not interchangeable while the wrapper dropped the system prompt; since 2026-08-15 both deliver it** (subject to the 32,767 argv ceiling — see the gotchas), so re-measure before assuming a hop changes the delivered instruction. It returns `model="wrapper:<name>"`, which makes the existing `_bedrock_complete_for_graph_rag` provenance fire unchanged — `stage2_models` in the sidecar shows `wrapper:…`, never the pin. Alert on `served_by=wrapper:`. Off-switch `=0` |
 
 ⚠ **This table was BROKEN in the middle until 2026-08-15** — the R329 paragraph
 below sat between two rows, so everything from `GROUNDED_JUDGE_STRICT_GROUNDING`
@@ -862,26 +896,21 @@ it; `.env` is gitignored so the container ships no dotenv; `Procfile` /
 `railpack.json` set only the uvicorn command. A Railway **service variable** set
 from the dashboard/CLI is invisible here and overrides all of that.
 
-**But it IS observable, and R338 observed it.** POST the live endpoint with
-`?include_reasoning=true` and read the `stage2_model=` note. That single probe
-answers the question, and it is now the standing method. Measured 2026-08-15,
-twice, on the same URL, **with two different answers**:
-
-| deployed `commit` | trace notes | provider |
-| --- | --- | --- |
-| `4d29387f3db1` | `stage2_model=eu.anthropic.claude-opus-4-6-v1` + `bedrock_fallback requested=eu.anthropic.claude-opus-4-8 served_by=eu.anthropic.claude-opus-4-6-v1` | **bedrock**, on the R328.2 degraded tier, failing over on every request |
-| `4d72ff31a54e` | `stage2_model=claude-opus-5 complex=True` / `complex=False`, `groq_auto_fallback_success`, **no** `bedrock_fallback` note | **NOT bedrock** — that note shape is emitted at `_graph_rag_impl.py:780`, the wrapper/Anthropic branch; a Bedrock answer always carries the full `eu.anthropic.…` profile id |
-
-Two probes, hours apart, straddling a redeploy — so whether the *variable* moved
-or the *deployment* did is not established, and the difference does not change
-what follows. The honest statement is not "production is on Bedrock" and not
-"production is on the wrapper" — it is:
-**the deployed provider is a live service variable that can change without a
-commit, so it must be RE-MEASURED, not remembered.** Anything downstream of it
-(does production see `ANSWER_GENERATE_SYSTEM`? which model answered? is the
-entitlement chain firing?) inherits that same expiry date. ⚠ In particular, any
-argument of the shape *"Bedrock honours the system prompt ⇒ production has the
-system-slot rules"* is only as good as a probe from the same hour.
+**But it IS observable.** POST the live endpoint with `?include_reasoning=true`
+and read the `stage2_model=` note — one probe, and it is the standing method.
+Run on 2026-08-15 it gave three different answers on the same URL: an early
+probe served `eu.anthropic.claude-opus-4-6-v1` with a `bedrock_fallback` note
+(bedrock, on the R328.2 degraded tier, failing over every request); a later one
+`claude-opus-5 complex=True` with `groq_auto_fallback_success` and **no**
+`bedrock_fallback` note (NOT bedrock — that note shape is the wrapper/Anthropic
+branch at `_graph_rag_impl.py:780`; a Bedrock answer always carries the full
+`eu.anthropic.…` profile id); and after the R339/R340 fixes, **`stage2_polish:
+True`, `stage2_model=claude-opus-5 complex=True`, no fallback note** — the
+primary healthy. The honest statement is neither "production is on Bedrock" nor
+"on the wrapper": **the deployed provider is a live service variable that can
+change without a commit, so it must be RE-MEASURED, not remembered.** Everything
+downstream (which model answered, is the entitlement chain firing, is the system
+slot delivered) inherits that same expiry date.
 
 `railway variables` against service `0086ff18-f642-46c8-8127-57c913ca1c53` is
 the other instrument, and the only one that shows the variable itself rather
@@ -1089,14 +1118,12 @@ lever for shortening them is the PROMPT, never the ceiling.
 
 ⚠ **Still unfixed, from the same audit — these silently drop content today:**
 `REGENOLD_ADAPTIVE_REF_CLAMP` (**default ON**, undocumented, cuts scenarios to 5
-refs and is `stage2_landed`-gated so davidath cannot see it); judge
-`max_tokens=400` hard-coded on the wrapper/Anthropic paths with no env (only
-Bedrock got 1600); the judge prompt caps (`_GOLD_TEXT_CAP` 12000,
-`_PRED_TEXT_CAP` 6000, `_MAX_PRED_REFS` 8) which make `legal_v2`'s
-quote-or-retract gate *invert* — an unquotable provision downgrades WRONG to
-SUPPORTING, so truncation inflates the pass rate; and `REGENOLD_KG_MAX_UNITS=24`
-rendering Article 3 as 24 of its 68 definitions under a heading that reads
-"PROVISION STRUCTURE".
+refs and is `stage2_landed`-gated so davidath cannot see it); and the judge
+prompt caps (`_GOLD_TEXT_CAP` 12000, `_PRED_TEXT_CAP` 6000, `_MAX_PRED_REFS` 8)
+which make `legal_v2`'s quote-or-retract gate *invert* — an unquotable provision
+downgrades WRONG to SUPPORTING, so truncation inflates the pass rate. (This
+list's judge `max_tokens=400` and `REGENOLD_KG_MAX_UNITS=24` items were fixed by
+R328.4 — see the flag table.)
 
 The wrapper lives at `D:\Claude Projects\claude-code-openai-wrapper` (not this
 repo) and bills the flat Max subscription. Evals MUST use it, not SDK-direct.
@@ -1113,7 +1140,7 @@ $env:P2P_GRAPH_RAG_PROVIDER = "openai_wrapper"
 # deterministic env for every gate
 OPENAI_API_BASE=http://127.0.0.1:1/v1 P2P_GRAPH_RAG_PROVIDER=cli REGENOLD_EXTERNAL_EMBEDDINGS=0
 
-py -3.12 -m pytest tests/ -q -p no:cacheprovider          # full suite (judge the SET)
+py -3.12 -m pytest tests/ -q -p no:cacheprovider          # full suite (~0 failures since R340)
 
 # THE MERGE GATE — fire-checked, adaptively sized, gold_dropped veto.
 py -3.12 -m evals.harness.dynamic_ab --flag <FLAG> --label <L>
@@ -1159,8 +1186,8 @@ Use the **original** Regulation (EU) 2024/1689 as adopted (in force 1 Aug 2024).
 dates (2 Aug 2026 / 2 Aug 2027), Article 51 only 10^25, 113 articles with zero
 lettered entries, 68 definitions with no 3(14a)/(14b).
 
-Enforcement is on the delivered **user** channel, because the old rule sat only
-in the Stage-2 system prompt the wrapper drops.
+Enforcement is on the **user** channel — historically because the system slot was
+dropped; it stays there because that channel is delivered on every provider.
 
 **Kept by operator decision:** the Commission GPAI Guidelines content (10^23
 threshold, one-third fine-tune rule). It is 18 July 2025 soft law, correctly
@@ -1170,30 +1197,27 @@ attributed, not Omnibus — and `tests/test_kb_stubs_filled.py` pins it.
 
 Full handoff: [`.planning/NEXT-SESSION.md`](.planning/NEXT-SESSION.md).
 
-1. **DONE — the semantic layers are gated ON, constrained-only.** Three arms,
-   grounded judge, 50 live July-7 rows each
-   ([`docs/R327-live-ab-semantic-layers.md`](docs/R327-live-ab-semantic-layers.md)):
-
-   | arm | ans (hist.) | ref pass | ref MACRO | ref micro | wrong/total | cite |
-   | --- | --- | --- | --- | --- | --- | --- |
-   | layers OFF | 0.880 | 0.380 | 0.675 | 0.611 | 51/131 | 0.900 |
-   | both halves | 0.880 | 0.360 | 0.642 | 0.583 | 55/132 | **0.960** |
-   | **constrained only** | 0.880 | 0.367 | 0.657 | **0.614** | **49/127** | **0.960** |
-
-   Shipped `REGENOLD_GRAPH_SEMANTIC_LAYERS=1` + `REGENOLD_SEMANTIC_GLOSS=0`.
-   ⚠ Not significant at n=50 (p=0.453) and it ships 2 fewer judge-correct refs, and
-   `gold_coverage=0.0` here means hard rule #8's `gold_dropped` is **unmeasured** —
-   `easyhard_ab` is what can supply it. **That is now the top follow-up.**
+1. **Confirm `REGENOLD_PROMPT_V2` on the official July-7 batch** — V1 vs V2,
+   ~88 Stage-2 rows per arm against the Antifragile run's effective n=9. It
+   ships default-ON on a consistent-but-unresolved signal; this is the run that
+   resolves it. (DONE and closed: the semantic layers are gated ON,
+   constrained-only — `REGENOLD_GRAPH_SEMANTIC_LAYERS=1` + `SEMANTIC_GLOSS=0`,
+   evidence in [`docs/R327-live-ab-semantic-layers.md`](docs/R327-live-ab-semantic-layers.md);
+   ⚠ `gold_coverage=0.0` there, so hard rule #8's `gold_dropped` is unmeasured.)
 2. **Run `--mode hard`.** It is **the graded turn** (the adversarial pushback;
    67 of 111 hard rows carry it) and it has NEVER been run. Every optimisation
    decision on the table is being made on the *easy* turn — that is the
    instrument trap. Free, ~40-70 min.
-3. **Re-verify the baseline reproduces** before grading anything against it.
-   R327 rebound the canonical axis names to the historical formulas, so the block
-   above should be measurable again; if it does not reproduce, stop and find out
-   why.
+3. **Record the PRIMARY provider's failure in the reasoning trace.** Only the
+   fallback's outcome is written today (`groq_auto_fallback_success` /
+   `groq_fallback_failed`), so a reader sees Groq succeeding and cannot tell
+   Claude was never reached — that is what turned R339's total Stage-2 outage
+   into a multi-hour diagnosis. One `record_note` in the `groq_auto_fallback`
+   branch (`_graph_rag_impl.py` ~:880). Highest-value single change outstanding.
 4. **Gate the parent-collapse** with `easyhard_ab` (davidath cannot see it).
-   +0.018 F1 / +5 rows measured offline; one gold ref is the price.
+   +0.018 F1 / +5 rows offline; one gold ref is the price. R339's judge adds
+   independent evidence on sub-point-carrying gold: q12 fails reference
+   correctness for citing a parent alongside its own sub-provision.
 5. **Attack GENERATION, not selection.** R325 closed the ranker, so the
    remaining ~90% of the over-citation gap is upstream: why does a 3-ref answer
    name a wrong provision **53% of the time at rank 3**? The refs-per-row cliff

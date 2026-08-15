@@ -1,0 +1,1082 @@
+{
+  "label": "r340-v2",
+  "endpoint": "http://127.0.0.1:8131/api/v1/regenold/eu-ai-act/ask?include_reasoning=true",
+  "antifragile_rows": [
+    {
+      "id": "q01",
+      "question": "What risk categories are provided for AI systems?",
+      "verdict_original": "partially_wrong_incomplete_error",
+      "gold_refs": [
+        "Article 5",
+        "Article 6",
+        "Annex I",
+        "Annex III",
+        "Article 50",
+        "Article 51"
+      ],
+      "pred_refs": [
+        "Article 5",
+        "Article 6",
+        "Annex I",
+        "Annex III",
+        "Article 50"
+      ],
+      "predicted_answer": "The Regulation applies a risk-based framework of four tiers plus a parallel regime for general-purpose AI models: prohibited practices banned outright under Article 5, high-risk systems classified under Article 6 as a safety component of an Annex I product or as an Annex III use case, limited risk systems carrying only the transparency duties of Article 50, and minimal risk systems bearing no mandatory obligations. Alongside these, general-purpose AI models are governed separately under Articles 51 to 56, with a distinct systemic-risk category classified under Article 51 for models with high-impact capabilities. Limited risk and minimal risk are settled descriptive labels rather than defined terms of the Regulation.",
+      "answer_preview": "The Regulation applies a risk-based framework of four tiers plus a parallel regime for general-purpose AI models: prohibited practices banned outright under Article 5, high-risk systems classified under Article 6 as a safety component of an Annex I product or as an Annex III use case, limited risk systems carrying only the transparency duties of Article 50, and minimal risk systems bearing no mand",
+      "ans_loose": 0.37681159420289856,
+      "ans_strict": 0.6666666666666666,
+      "ans_f1": 0.5473684210526316,
+      "ans_conciseness": 0.30745112960760995,
+      "ref_loose": 0.8333333333333334,
+      "ref_strict": 0.9090909090909091,
+      "ref_conciseness": 0.6944444444444445,
+      "gold_subpoint_refs": [
+        "Article 5",
+        "Article 6",
+        "Annex I",
+        "Annex III",
+        "Article 50",
+        "Article 51"
+      ],
+      "ref_subpoint_loose": 0.8333333333333334,
+      "ref_subpoint_strict": 0.9090909090909091,
+      "ref_subpoint_conciseness": 0.6944444444444445,
+      "regulatory_tone": 1.0,
+      "keyword_recall": 0.8571428571428571,
+      "mistakes_total": 4,
+      "mistakes_resolved": 3,
+      "mistakes_resolved_ids": [
+        "q01_m1",
+        "q01_m3",
+        "q01_m4"
+      ],
+      "mistakes_unresolved_ids": [
+        "q01_m2"
+      ],
+      "is_refusal": false,
+      "latency_ms": 17258.6,
+      "error": null,
+      "reasoning": {
+        "stage2_polish": true,
+        "stage2_model": "claude-opus-4-8",
+        "complex": false,
+        "retrieval_path": "kb_fallback",
+        "engine_confidence": 0.85,
+        "cache_hit": false,
+        "answer_route": "synthesis:synthesis_default"
+      },
+      "attempts": 1
+    },
+    {
+      "id": "q02",
+      "question": "What types of AI systems or practices are explicitly prohibited by the AI Act?",
+      "verdict_original": "half_right_partial_enumeration",
+      "gold_refs": [
+        "Article 5"
+      ],
+      "pred_refs": [
+        "Article 5"
+      ],
+      "predicted_answer": "Article 5 prohibits eight AI practices outright: subliminal or manipulative techniques causing significant harm, exploitation of vulnerabilities linked to age, disability, or socio-economic situation, social scoring leading to unjustified detrimental treatment, criminal-offence risk profiling of natural persons, untargeted scraping of facial images to build facial-recognition databases, emotion recognition in the workplace or educational institutions, biometric categorisation inferring sensitive attributes, and real-time remote biometric identification in publicly accessible spaces for law enforcement subject to the narrow Article 5(1)(h) exceptions.",
+      "answer_preview": "Article 5 prohibits eight AI practices outright: subliminal or manipulative techniques causing significant harm, exploitation of vulnerabilities linked to age, disability, or socio-economic situation, social scoring leading to unjustified detrimental treatment, criminal-offence risk profiling of natural persons, untargeted scraping of facial images to build facial-recognition databases, emotion re",
+      "ans_loose": 0.7101449275362319,
+      "ans_strict": 0.8166666666666667,
+      "ans_f1": 0.8305084745762712,
+      "ans_conciseness": 0.9041481506231415,
+      "ref_loose": 1.0,
+      "ref_strict": 1.0,
+      "ref_conciseness": 1.0,
+      "gold_subpoint_refs": [
+        "Article 5"
+      ],
+      "ref_subpoint_loose": 1.0,
+      "ref_subpoint_strict": 1.0,
+      "ref_subpoint_conciseness": 1.0,
+      "regulatory_tone": 1.0,
+      "keyword_recall": 1.0,
+      "mistakes_total": 3,
+      "mistakes_resolved": 3,
+      "mistakes_resolved_ids": [
+        "q02_m1",
+        "q02_m2",
+        "q02_m3"
+      ],
+      "mistakes_unresolved_ids": [],
+      "is_refusal": false,
+      "latency_ms": 3661.5,
+      "error": null,
+      "reasoning": {
+        "stage2_polish": false,
+        "stage2_model": null,
+        "complex": null,
+        "retrieval_path": "kb_fallback",
+        "engine_confidence": 0.7,
+        "cache_hit": false,
+        "answer_route": null
+      },
+      "attempts": 1
+    },
+    {
+      "id": "q03",
+      "question": "What is the definition of high risk?",
+      "verdict_original": "mostly_correct_omissions",
+      "gold_refs": [
+        "Article 6",
+        "Annex I",
+        "Annex III"
+      ],
+      "pred_refs": [
+        "Article 6",
+        "Annex I",
+        "Annex III"
+      ],
+      "predicted_answer": "An AI system is high-risk on either of two routes. Under Article 6(1) it is high-risk where it is a safety component of, or is itself, a product covered by the Union harmonisation legislation listed in Annex I and that product must undergo a third-party conformity assessment under that legislation. Under Article 6(2) a system falling within one of the use cases in Annex III is high-risk. By derogation under Article 6(3), an Annex III system is not high-risk where it poses no significant risk of harm to health, safety or fundamental rights, including by not materially influencing the outcome of decision making, and it performs a narrow procedural task, improves the result of a previously completed human activity, detects decision-making patterns or deviations without replacing or influencing the previously completed human assessment, or performs a preparatory task, though a system that profiles natural persons is always high-risk.",
+      "answer_preview": "An AI system is high-risk on either of two routes. Under Article 6(1) it is high-risk where it is a safety component of, or is itself, a product covered by the Union harmonisation legislation listed in Annex I and that product must undergo a third-party conformity assessment under that legislation. Under Article 6(2) a system falling within one of the use cases in Annex III is high-risk. By deroga",
+      "ans_loose": 0.4520547945205479,
+      "ans_strict": 0.8048780487804879,
+      "ans_f1": 0.6226415094339622,
+      "ans_conciseness": 0.2667070752961207,
+      "ref_loose": 1.0,
+      "ref_strict": 1.0,
+      "ref_conciseness": 1.0,
+      "gold_subpoint_refs": [
+        "Article 6",
+        "Annex I",
+        "Annex III"
+      ],
+      "ref_subpoint_loose": 1.0,
+      "ref_subpoint_strict": 1.0,
+      "ref_subpoint_conciseness": 1.0,
+      "regulatory_tone": 1.0,
+      "keyword_recall": 1.0,
+      "mistakes_total": 3,
+      "mistakes_resolved": 3,
+      "mistakes_resolved_ids": [
+        "q03_m1",
+        "q03_m2",
+        "q03_m3"
+      ],
+      "mistakes_unresolved_ids": [],
+      "is_refusal": false,
+      "latency_ms": 17309.1,
+      "error": null,
+      "reasoning": {
+        "stage2_polish": true,
+        "stage2_model": "claude-opus-4-8",
+        "complex": false,
+        "retrieval_path": "kb_fallback",
+        "engine_confidence": 0.85,
+        "cache_hit": false,
+        "answer_route": "synthesis:synthesis_default"
+      },
+      "attempts": 1
+    },
+    {
+      "id": "q04",
+      "question": "Which sectors or applications are considered high-risk under the regulation?",
+      "verdict_original": "half_right_structural_omission",
+      "gold_refs": [
+        "Article 6",
+        "Annex III",
+        "Annex I"
+      ],
+      "pred_refs": [
+        "Article 6.1",
+        "Article 6.2",
+        "Annex III"
+      ],
+      "predicted_answer": "Two routes make a system high-risk. Under Article 6(1) it is high-risk where it is a safety component of, or is itself, a product covered by the Union harmonisation legislation listed in Annex I that must undergo third-party conformity assessment, covering products such as machinery, toys, radio equipment, medical devices, lifts, motor vehicles and aircraft. Under Article 6(2) the eight use-case areas listed in Annex III are high-risk: biometrics, critical infrastructure, education and vocational training, employment and workers' management, access to essential private and public services and benefits, law enforcement, migration, asylum and border control management, and administration of justice and democratic processes.",
+      "answer_preview": "Two routes make a system high-risk. Under Article 6(1) it is high-risk where it is a safety component of, or is itself, a product covered by the Union harmonisation legislation listed in Annex I that must undergo third-party conformity assessment, covering products such as machinery, toys, radio equipment, medical devices, lifts, motor vehicles and aircraft. Under Article 6(2) the eight use-case a",
+      "ans_loose": 0.582089552238806,
+      "ans_strict": 0.8666666666666667,
+      "ans_f1": 0.7358490566037736,
+      "ans_conciseness": 0.46039288046844734,
+      "ref_loose": 0.6666666666666666,
+      "ref_strict": 0.8,
+      "ref_conciseness": 0.4444444444444444,
+      "gold_subpoint_refs": [
+        "Article 6",
+        "Annex III",
+        "Annex I"
+      ],
+      "ref_subpoint_loose": 0.3333333333333333,
+      "ref_subpoint_strict": 0.3333333333333333,
+      "ref_subpoint_conciseness": 1.0,
+      "regulatory_tone": 1.0,
+      "keyword_recall": 1.0,
+      "mistakes_total": 2,
+      "mistakes_resolved": 2,
+      "mistakes_resolved_ids": [
+        "q04_m1",
+        "q04_m2"
+      ],
+      "mistakes_unresolved_ids": [],
+      "is_refusal": false,
+      "latency_ms": 14114.8,
+      "error": null,
+      "reasoning": {
+        "stage2_polish": true,
+        "stage2_model": "claude-opus-4-8",
+        "complex": false,
+        "retrieval_path": "kb_fallback",
+        "engine_confidence": 0.85,
+        "cache_hit": false,
+        "answer_route": "synthesis:synthesis_default"
+      },
+      "attempts": 1
+    },
+    {
+      "id": "q05",
+      "question": "How should users be informed when interacting with AI systems?",
+      "verdict_original": "mostly_right_role_error",
+      "gold_refs": [
+        "Article 50"
+      ],
+      "pred_refs": [
+        "Article 50"
+      ],
+      "predicted_answer": "Article 50(1) requires providers to design AI systems intended to interact directly with natural persons so they are informed they are interacting with AI, unless this is obvious. Article 50(2) requires providers of generative AI to mark synthetic audio, image, video, or text in a machine-readable, detectable format. Article 50(3) requires deployers of emotion recognition or biometric categorisation systems to inform exposed natural persons of their operation.",
+      "answer_preview": "Article 50(1) requires providers to design AI systems intended to interact directly with natural persons so they are informed they are interacting with AI, unless this is obvious. Article 50(2) requires providers of generative AI to mark synthetic audio, image, video, or text in a machine-readable, detectable format. Article 50(3) requires deployers of emotion recognition or biometric categorisati",
+      "ans_loose": 0.38,
+      "ans_strict": 0.5277777777777778,
+      "ans_f1": 0.5507246376811594,
+      "ans_conciseness": 0.8543356454659449,
+      "ref_loose": 1.0,
+      "ref_strict": 1.0,
+      "ref_conciseness": 1.0,
+      "gold_subpoint_refs": [
+        "Article 50.1",
+        "Article 50.2",
+        "Article 50.3",
+        "Article 50.4"
+      ],
+      "ref_subpoint_loose": 0.0,
+      "ref_subpoint_strict": 0.0,
+      "ref_subpoint_conciseness": 0.0625,
+      "regulatory_tone": 1.0,
+      "keyword_recall": 0.6666666666666666,
+      "mistakes_total": 2,
+      "mistakes_resolved": 1,
+      "mistakes_resolved_ids": [
+        "q05_m1"
+      ],
+      "mistakes_unresolved_ids": [
+        "q05_m2"
+      ],
+      "is_refusal": false,
+      "latency_ms": 462.6,
+      "error": null,
+      "reasoning": {
+        "stage2_polish": false,
+        "stage2_model": null,
+        "complex": null,
+        "retrieval_path": "kb_fallback",
+        "engine_confidence": 0.85,
+        "cache_hit": false,
+        "answer_route": null
+      },
+      "attempts": 1
+    },
+    {
+      "id": "q06",
+      "question": "What are AI systems with minimal risks?",
+      "verdict_original": "half_right_irrelevant_citations",
+      "gold_refs": [
+        "Article 5",
+        "Article 6",
+        "Article 50"
+      ],
+      "pred_refs": [
+        "Article 5",
+        "Article 6",
+        "Article 50"
+      ],
+      "predicted_answer": "Minimal-risk AI systems are the residual category: systems that are neither prohibited under Article 5, nor high-risk under Article 6 (as an Annex I safety component or an Annex III use case), nor subject to the Article 50 transparency duties, nor general-purpose AI models. Typical examples are AI-enabled spam filters, inventory-management tools, and AI in video games. They carry no mandatory obligations under the Regulation, though providers and deployers may adopt voluntary codes of conduct.",
+      "answer_preview": "Minimal-risk AI systems are the residual category: systems that are neither prohibited under Article 5, nor high-risk under Article 6 (as an Annex I safety component or an Annex III use case), nor subject to the Article 50 transparency duties, nor general-purpose AI models. Typical examples are AI-enabled spam filters, inventory-management tools, and AI in video games. They carry no mandatory obli",
+      "ans_loose": 0.52,
+      "ans_strict": 0.8125,
+      "ans_f1": 0.6842105263157896,
+      "ans_conciseness": 0.5371889163078015,
+      "ref_loose": 1.0,
+      "ref_strict": 1.0,
+      "ref_conciseness": 1.0,
+      "gold_subpoint_refs": [
+        "Article 5",
+        "Article 6",
+        "Article 50"
+      ],
+      "ref_subpoint_loose": 1.0,
+      "ref_subpoint_strict": 1.0,
+      "ref_subpoint_conciseness": 1.0,
+      "regulatory_tone": 1.0,
+      "keyword_recall": 1.0,
+      "mistakes_total": 2,
+      "mistakes_resolved": 2,
+      "mistakes_resolved_ids": [
+        "q06_m1",
+        "q06_m2"
+      ],
+      "mistakes_unresolved_ids": [],
+      "is_refusal": false,
+      "latency_ms": 1286.8,
+      "error": null,
+      "reasoning": {
+        "stage2_polish": false,
+        "stage2_model": null,
+        "complex": null,
+        "retrieval_path": "kb_fallback",
+        "engine_confidence": 0.85,
+        "cache_hit": false,
+        "answer_route": null
+      },
+      "attempts": 1
+    },
+    {
+      "id": "q07",
+      "question": "What are the guiding principles established by the AI Act?",
+      "verdict_original": "wrong_topic_shift",
+      "gold_refs": [
+        "Article 1"
+      ],
+      "pred_refs": [
+        "Article 1",
+        "Article 4"
+      ],
+      "predicted_answer": "The seven guiding principles of the EU AI Act are articulated in Recital 27 (the trustworthy-AI framework) and inform the human-centric purpose of Article 1: human agency and oversight; technical robustness and safety; privacy and data governance; transparency; diversity, non-discrimination and fairness; social and environmental wellbeing; and accountability. Article 4 operationalises these principles by requiring providers and deployers to ensure a sufficient level of AI literacy among their staff.",
+      "answer_preview": "The seven guiding principles of the EU AI Act are articulated in Recital 27 (the trustworthy-AI framework) and inform the human-centric purpose of Article 1: human agency and oversight; technical robustness and safety; privacy and data governance; transparency; diversity, non-discrimination and fairness; social and environmental wellbeing; and accountability. Article 4 operationalises these princi",
+      "ans_loose": 0.4727272727272727,
+      "ans_strict": 0.6666666666666666,
+      "ans_f1": 0.6419753086419754,
+      "ans_conciseness": 0.7110772549760646,
+      "ref_loose": 1.0,
+      "ref_strict": 0.6666666666666666,
+      "ref_conciseness": 0.25,
+      "gold_subpoint_refs": [
+        "Article 1"
+      ],
+      "ref_subpoint_loose": 1.0,
+      "ref_subpoint_strict": 0.6666666666666666,
+      "ref_subpoint_conciseness": 0.25,
+      "regulatory_tone": 1.0,
+      "keyword_recall": 1.0,
+      "mistakes_total": 2,
+      "mistakes_resolved": 2,
+      "mistakes_resolved_ids": [
+        "q07_m1",
+        "q07_m2"
+      ],
+      "mistakes_unresolved_ids": [],
+      "is_refusal": false,
+      "latency_ms": 668.8,
+      "error": null,
+      "reasoning": {
+        "stage2_polish": false,
+        "stage2_model": null,
+        "complex": null,
+        "retrieval_path": "kb_fallback",
+        "engine_confidence": 0.7,
+        "cache_hit": false,
+        "answer_route": null
+      },
+      "attempts": 1
+    },
+    {
+      "id": "q08",
+      "question": "What is the definition of a \"system of artificial intelligence\"?",
+      "verdict_original": "correct",
+      "gold_refs": [
+        "Article 3"
+      ],
+      "pred_refs": [
+        "Article 3.1"
+      ],
+      "predicted_answer": "A machine-based system that is designed to operate with varying levels of autonomy and that may exhibit adaptiveness after deployment, and that, for explicit or implicit objectives, infers, from the input it receives, how to generate outputs such as predictions, content, recommendations, or decisions that can influence physical or virtual environments.",
+      "answer_preview": "A machine-based system that is designed to operate with varying levels of autonomy and that may exhibit adaptiveness after deployment, and that, for explicit or implicit objectives, infers, from the input it receives, how to generate outputs such as predictions, content, recommendations, or decisions that can influence physical or virtual environments.",
+      "ans_loose": 0.9090909090909091,
+      "ans_strict": 0.9090909090909091,
+      "ans_f1": 0.9523809523809523,
+      "ans_conciseness": 0.8911359999999999,
+      "ref_loose": 1.0,
+      "ref_strict": 1.0,
+      "ref_conciseness": 1.0,
+      "gold_subpoint_refs": [
+        "Article 3.1"
+      ],
+      "ref_subpoint_loose": 1.0,
+      "ref_subpoint_strict": 1.0,
+      "ref_subpoint_conciseness": 1.0,
+      "regulatory_tone": 1.0,
+      "keyword_recall": 1.0,
+      "mistakes_total": 0,
+      "mistakes_resolved": 0,
+      "mistakes_resolved_ids": [],
+      "mistakes_unresolved_ids": [],
+      "is_refusal": false,
+      "latency_ms": 3319.6,
+      "error": null,
+      "reasoning": {
+        "stage2_polish": false,
+        "stage2_model": null,
+        "complex": null,
+        "retrieval_path": "kb_fallback",
+        "engine_confidence": 0.7,
+        "cache_hit": false,
+        "answer_route": null
+      },
+      "attempts": 1
+    },
+    {
+      "id": "q09",
+      "question": "What are the penalties for violating the provisions of the regulation for high-risk AI systems?",
+      "verdict_original": "wrong_by_omission",
+      "gold_refs": [
+        "Article 99"
+      ],
+      "pred_refs": [
+        "Article 99"
+      ],
+      "predicted_answer": "For high-risk AI systems the applicable penalty ceiling is set by Article 99(4): administrative fines of up to EUR 15 000 000 or, for an undertaking, up to 3 % of total worldwide annual turnover, whichever is higher, for non-compliance with the obligations on providers, deployers, importers and distributors (every obligation other than the Article 5 prohibitions, which carry the higher Article 99(3) ceiling of EUR 35 000 000 or 7 %). Under Article 99(6), for SMEs and start-ups each fine is capped at the lower of the percentage or the fixed amount. Penalties must be effective, proportionate and dissuasive.",
+      "answer_preview": "For high-risk AI systems the applicable penalty ceiling is set by Article 99(4): administrative fines of up to EUR 15 000 000 or, for an undertaking, up to 3 % of total worldwide annual turnover, whichever is higher, for non-compliance with the obligations on providers, deployers, importers and distributors (every obligation other than the Article 5 prohibitions, which carry the higher Article 99(",
+      "ans_loose": 0.3793103448275862,
+      "ans_strict": 0.6875,
+      "ans_f1": 0.5499999999999999,
+      "ans_conciseness": 0.34410109359648,
+      "ref_loose": 1.0,
+      "ref_strict": 1.0,
+      "ref_conciseness": 1.0,
+      "gold_subpoint_refs": [
+        "Article 99.4",
+        "Article 99.6"
+      ],
+      "ref_subpoint_loose": 0.0,
+      "ref_subpoint_strict": 0.0,
+      "ref_subpoint_conciseness": 0.25,
+      "regulatory_tone": 1.0,
+      "keyword_recall": 0.8333333333333334,
+      "mistakes_total": 2,
+      "mistakes_resolved": 2,
+      "mistakes_resolved_ids": [
+        "q09_m1",
+        "q09_m2"
+      ],
+      "mistakes_unresolved_ids": [],
+      "is_refusal": false,
+      "latency_ms": 210.0,
+      "error": null,
+      "reasoning": {
+        "stage2_polish": false,
+        "stage2_model": null,
+        "complex": null,
+        "retrieval_path": "kb_fallback",
+        "engine_confidence": 0.7,
+        "cache_hit": false,
+        "answer_route": null
+      },
+      "attempts": 1
+    },
+    {
+      "id": "q10",
+      "question": "What is the difference between the deployer and the provider?",
+      "verdict_original": "correct_substance",
+      "gold_refs": [
+        "Article 3",
+        "Article 25"
+      ],
+      "pred_refs": [
+        "Article 3",
+        "Article 25",
+        "Article 16",
+        "Article 26"
+      ],
+      "predicted_answer": "A provider (Article 3(3)) develops an AI system, or has one developed, and places it on the market or puts it into service under its own name or trademark. A deployer (Article 3(4)) uses an AI system under its authority in the course of a professional activity, so the provider bears the design and conformity duties of Article 16 while the deployer bears the use-phase duties of Article 26. Under Article 25 a deployer, distributor, importer, or other third party becomes a provider, and assumes the Article 16 provider obligations, where it puts its name or trademark on a high-risk AI system already on the market, makes a substantial modification to such a system, or modifies a system's intended purpose so that it becomes high-risk.",
+      "answer_preview": "A provider (Article 3(3)) develops an AI system, or has one developed, and places it on the market or puts it into service under its own name or trademark. A deployer (Article 3(4)) uses an AI system under its authority in the course of a professional activity, so the provider bears the design and conformity duties of Article 16 while the deployer bears the use-phase duties of Article 26. Under Ar",
+      "ans_loose": 0.48214285714285715,
+      "ans_strict": 0.7714285714285715,
+      "ans_f1": 0.6506024096385543,
+      "ans_conciseness": 0.3851396508545032,
+      "ref_loose": 1.0,
+      "ref_strict": 0.6666666666666666,
+      "ref_conciseness": 0.25,
+      "gold_subpoint_refs": [
+        "Article 3",
+        "Article 25"
+      ],
+      "ref_subpoint_loose": 1.0,
+      "ref_subpoint_strict": 0.6666666666666666,
+      "ref_subpoint_conciseness": 0.25,
+      "regulatory_tone": 1.0,
+      "keyword_recall": 0.6,
+      "mistakes_total": 2,
+      "mistakes_resolved": 2,
+      "mistakes_resolved_ids": [
+        "q10_m1",
+        "q10_m2"
+      ],
+      "mistakes_unresolved_ids": [],
+      "is_refusal": false,
+      "latency_ms": 119.9,
+      "error": null,
+      "reasoning": {
+        "stage2_polish": false,
+        "stage2_model": null,
+        "complex": null,
+        "retrieval_path": "kb_fallback",
+        "engine_confidence": 0.85,
+        "cache_hit": false,
+        "answer_route": null
+      },
+      "attempts": 1
+    },
+    {
+      "id": "q11",
+      "question": "Does the technical documentation of a high-risk AI system require to provide specifications regarding the required hardware?",
+      "verdict_original": "correct_substance_wrong_subcitation",
+      "gold_refs": [
+        "Article 11",
+        "Annex IV"
+      ],
+      "pred_refs": [
+        "Article 11",
+        "Annex IV"
+      ],
+      "predicted_answer": "Yes. Under Article 11, a provider must draw up technical documentation containing the information set out in Annex IV, which expressly requires a description of the hardware on which the AI system is intended to run (Annex IV point 1(e)) and, as part of the system's development description, the computational resources used to develop, train, test and validate it (Annex IV point 2(c)).",
+      "answer_preview": "Yes. Under Article 11, a provider must draw up technical documentation containing the information set out in Annex IV, which expressly requires a description of the hardware on which the AI system is intended to run (Annex IV point 1(e)) and, as part of the system's development description, the computational resources used to develop, train, test and validate it (Annex IV point 2(c)).",
+      "ans_loose": 0.5227272727272727,
+      "ans_strict": 0.696969696969697,
+      "ans_f1": 0.6865671641791046,
+      "ans_conciseness": 0.9489881083535311,
+      "ref_loose": 1.0,
+      "ref_strict": 1.0,
+      "ref_conciseness": 1.0,
+      "gold_subpoint_refs": [
+        "Annex IV.1.e",
+        "Annex IV.2.c",
+        "Article 11"
+      ],
+      "ref_subpoint_loose": 0.3333333333333333,
+      "ref_subpoint_strict": 0.4,
+      "ref_subpoint_conciseness": 0.4444444444444444,
+      "regulatory_tone": 1.0,
+      "keyword_recall": 1.0,
+      "mistakes_total": 2,
+      "mistakes_resolved": 2,
+      "mistakes_resolved_ids": [
+        "q11_m1",
+        "q11_m2"
+      ],
+      "mistakes_unresolved_ids": [],
+      "is_refusal": false,
+      "latency_ms": 113.4,
+      "error": null,
+      "reasoning": {
+        "stage2_polish": false,
+        "stage2_model": null,
+        "complex": null,
+        "retrieval_path": "kb_fallback",
+        "engine_confidence": 0.85,
+        "cache_hit": false,
+        "answer_route": null
+      },
+      "attempts": 1
+    },
+    {
+      "id": "q12",
+      "question": "Are AI systems intended for emotion recognition from biometric data always prohibited?",
+      "verdict_original": "correct_substance_wrong_subcitation",
+      "gold_refs": [
+        "Article 5",
+        "Annex III",
+        "Article 50"
+      ],
+      "pred_refs": [
+        "Article 5",
+        "Article 50.3",
+        "Article 5.1.f",
+        "Annex III.1.c",
+        "Article 50"
+      ],
+      "predicted_answer": "Emotion recognition is not categorically prohibited under the AI Act; the prohibition in Article 5 only applies in workplaces and educational institutions, with a narrow medical/safety exception. Elsewhere the system is high-risk under Annex III.1(c) and triggers Article 50(3) transparency duties toward exposed persons.",
+      "answer_preview": "Emotion recognition is not categorically prohibited under the AI Act; the prohibition in Article 5 only applies in workplaces and educational institutions, with a narrow medical/safety exception. Elsewhere the system is high-risk under Annex III.1(c) and triggers Article 50(3) transparency duties toward exposed persons.",
+      "ans_loose": 0.7352941176470589,
+      "ans_strict": 0.8620689655172413,
+      "ans_f1": 0.847457627118644,
+      "ans_conciseness": 0.993779175279743,
+      "ref_loose": 1.0,
+      "ref_strict": 1.0,
+      "ref_conciseness": 1.0,
+      "gold_subpoint_refs": [
+        "Article 5.1.f",
+        "Annex III.1.c",
+        "Article 50.3"
+      ],
+      "ref_subpoint_loose": 1.0,
+      "ref_subpoint_strict": 0.7499999999999999,
+      "ref_subpoint_conciseness": 0.36,
+      "regulatory_tone": 1.0,
+      "keyword_recall": 0.6666666666666666,
+      "mistakes_total": 2,
+      "mistakes_resolved": 2,
+      "mistakes_resolved_ids": [
+        "q12_m1",
+        "q12_m2"
+      ],
+      "mistakes_unresolved_ids": [],
+      "is_refusal": false,
+      "latency_ms": 728.1,
+      "error": null,
+      "reasoning": {
+        "stage2_polish": false,
+        "stage2_model": null,
+        "complex": null,
+        "retrieval_path": "kb_fallback",
+        "engine_confidence": 0.85,
+        "cache_hit": false,
+        "answer_route": null
+      },
+      "attempts": 1
+    },
+    {
+      "id": "q13",
+      "question": "Is an AI that transcribes doctor–patient conversations prohibited? Or is it high-risk as per the use cases of Annex III of the AI Act?",
+      "verdict_original": "correct_contradictory_citation",
+      "gold_refs": [
+        "Article 6",
+        "Annex I",
+        "Article 5",
+        "Article 50"
+      ],
+      "pred_refs": [
+        "Annex I",
+        "Annex III",
+        "Article 6.1",
+        "Article 6.2",
+        "Article 5",
+        "Article 50.1"
+      ],
+      "predicted_answer": "Neither prohibited nor high-risk by virtue of its use case, an AI system that transcribes doctor-patient conversations is high-risk only where it is itself, or a safety component of, a product covered by the Union harmonisation legislation listed in Annex I, in particular the medical device rules, and that product must undergo third-party conformity assessment, the cumulative test of Article 6(1). Article 5 does not reach mere transcription, and none of the Annex III use cases that Article 6(2) classifies as high-risk covers the transcription of clinical conversations. Absent the Article 6(1) route the system is limited risk, carrying the Article 50(1) transparency duty on the provider to inform natural persons that they are interacting with an AI system where that is not obvious.",
+      "answer_preview": "Neither prohibited nor high-risk by virtue of its use case, an AI system that transcribes doctor-patient conversations is high-risk only where it is itself, or a safety component of, a product covered by the Union harmonisation legislation listed in Annex I, in particular the medical device rules, and that product must undergo third-party conformity assessment, the cumulative test of Article 6(1).",
+      "ans_loose": 0.43283582089552236,
+      "ans_strict": 0.725,
+      "ans_f1": 0.6041666666666666,
+      "ans_conciseness": 0.30243047175797255,
+      "ref_loose": 1.0,
+      "ref_strict": 0.888888888888889,
+      "ref_conciseness": 0.6400000000000001,
+      "gold_subpoint_refs": [
+        "Article 6.1",
+        "Annex I"
+      ],
+      "ref_subpoint_loose": 1.0,
+      "ref_subpoint_strict": 0.5,
+      "ref_subpoint_conciseness": 0.1111111111111111,
+      "regulatory_tone": 1.0,
+      "keyword_recall": 0.8,
+      "mistakes_total": 1,
+      "mistakes_resolved": 1,
+      "mistakes_resolved_ids": [
+        "q13_m1"
+      ],
+      "mistakes_unresolved_ids": [],
+      "is_refusal": false,
+      "latency_ms": 11719.2,
+      "error": null,
+      "reasoning": {
+        "stage2_polish": true,
+        "stage2_model": "claude-opus-4-8",
+        "complex": true,
+        "retrieval_path": "kb_fallback",
+        "engine_confidence": 0.85,
+        "cache_hit": false,
+        "answer_route": "synthesis:complex_question"
+      },
+      "attempts": 1
+    },
+    {
+      "id": "q14",
+      "question": "We are a medical device manufacturer building an AI system to analyze X-rays to detect tumors. Is this system classified as high-risk, and what conformity assessment is required?",
+      "verdict_original": "correct_rule_generic_application",
+      "gold_refs": [
+        "Article 6",
+        "Annex I",
+        "Article 43"
+      ],
+      "pred_refs": [
+        "Article 6.1",
+        "Annex I",
+        "Article 43.3"
+      ],
+      "predicted_answer": "High-risk, since an AI system that is itself, or is a safety component of, a medical device covered by the Union harmonisation legislation listed in Annex I and required to undergo third-party conformity assessment is high-risk under Article 6(1), and a tumor-detection system placed on the market as a medical device under the Medical Device Regulation, which is one of the Annex I acts, meets both conditions. Because it is covered by that Annex I legislation, the conformity assessment follows Article 43(3): the provider undergoes the conformity assessment procedure required under the Medical Device Regulation, with its notified body, and the Chapter III Section 2 requirements form part of that single assessment. The Medical Device Regulation itself falls outside the scope answered here, but its notified-body route is what carries the assessment, yielding one CE marking rather than a separate procedure under this Regulation.",
+      "answer_preview": "High-risk, since an AI system that is itself, or is a safety component of, a medical device covered by the Union harmonisation legislation listed in Annex I and required to undergo third-party conformity assessment is high-risk under Article 6(1), and a tumor-detection system placed on the market as a medical device under the Medical Device Regulation, which is one of the Annex I acts, meets both ",
+      "ans_loose": 0.3142857142857143,
+      "ans_strict": 0.6666666666666666,
+      "ans_f1": 0.47826086956521735,
+      "ans_conciseness": 0.23011291000073053,
+      "ref_loose": 1.0,
+      "ref_strict": 1.0,
+      "ref_conciseness": 1.0,
+      "gold_subpoint_refs": [
+        "Article 6.1",
+        "Annex I",
+        "Article 43"
+      ],
+      "ref_subpoint_loose": 0.6666666666666666,
+      "ref_subpoint_strict": 0.6666666666666666,
+      "ref_subpoint_conciseness": 1.0,
+      "regulatory_tone": 1.0,
+      "keyword_recall": 0.7142857142857143,
+      "mistakes_total": 2,
+      "mistakes_resolved": 2,
+      "mistakes_resolved_ids": [
+        "q14_m1",
+        "q14_m2"
+      ],
+      "mistakes_unresolved_ids": [],
+      "is_refusal": true,
+      "latency_ms": 19333.8,
+      "error": null,
+      "reasoning": {
+        "stage2_polish": true,
+        "stage2_model": "claude-opus-4-8",
+        "complex": true,
+        "retrieval_path": "kb_fallback",
+        "engine_confidence": 0.85,
+        "cache_hit": false,
+        "answer_route": "synthesis:complex_question"
+      },
+      "attempts": 1
+    },
+    {
+      "id": "q15",
+      "question": "Can a hospital use an AI system to sort patients based on their biometric data to determine priority for an experimental clinical trial?",
+      "verdict_original": "half_right",
+      "gold_refs": [
+        "Article 5",
+        "Annex III",
+        "Article 6"
+      ],
+      "pred_refs": [
+        "Article 5.1.g",
+        "Article 6.2",
+        "Annex III.5.d",
+        "Annex III.1.b"
+      ],
+      "predicted_answer": "Prohibited only where the biometric sorting categorises the patients to deduce or infer race, political opinions, trade union membership, religious or philosophical beliefs, sex life or sexual orientation, which Article 5(1)(g) bars as biometric categorisation, and otherwise not prohibited. Sorting patients for a clinical trial is not the emergency healthcare patient triage of Annex III(5)(d), nor any other listed use case, so it is not high-risk on that route. It is high-risk under Article 6(2) where it constitutes biometric categorisation according to sensitive or protected attributes inferred from biometric data within Annex III(1)(b), the deciding fact being whether the system infers such attributes. Absent inference of sensitive attributes, prioritisation for an experimental trial falls outside both the Article 5 prohibitions and the Annex III high-risk use cases.",
+      "answer_preview": "Prohibited only where the biometric sorting categorises the patients to deduce or infer race, political opinions, trade union membership, religious or philosophical beliefs, sex life or sexual orientation, which Article 5(1)(g) bars as biometric categorisation, and otherwise not prohibited. Sorting patients for a clinical trial is not the emergency healthcare patient triage of Annex III(5)(d), nor",
+      "ans_loose": 0.3333333333333333,
+      "ans_strict": 0.5272727272727272,
+      "ans_f1": 0.5,
+      "ans_conciseness": 0.5393326899960188,
+      "ref_loose": 1.0,
+      "ref_strict": 1.0,
+      "ref_conciseness": 1.0,
+      "gold_subpoint_refs": [
+        "Article 6",
+        "Article 5.1.g"
+      ],
+      "ref_subpoint_loose": 0.5,
+      "ref_subpoint_strict": 0.3333333333333333,
+      "ref_subpoint_conciseness": 0.25,
+      "regulatory_tone": 1.0,
+      "keyword_recall": 0.5,
+      "mistakes_total": 2,
+      "mistakes_resolved": 0,
+      "mistakes_resolved_ids": [],
+      "mistakes_unresolved_ids": [
+        "q15_m1",
+        "q15_m2"
+      ],
+      "is_refusal": false,
+      "latency_ms": 16182.3,
+      "error": null,
+      "reasoning": {
+        "stage2_polish": true,
+        "stage2_model": "claude-opus-4-8",
+        "complex": false,
+        "retrieval_path": "kb_fallback",
+        "engine_confidence": 0.85,
+        "cache_hit": false,
+        "answer_route": "synthesis:synthesis_default"
+      },
+      "attempts": 1
+    },
+    {
+      "id": "q16",
+      "question": "Our life sciences startup developed a general-purpose AI model trained on massive amounts of genomic data. What transparency obligations apply to us?",
+      "verdict_original": "correct_substance_omissions",
+      "gold_refs": [
+        "Article 53",
+        "Article 51",
+        "Article 55"
+      ],
+      "pred_refs": [
+        "Article 53.1",
+        "Article 50",
+        "Article 51"
+      ],
+      "predicted_answer": "As the provider of a general-purpose AI model, the startup owes the transparency duties in Article 53(1): it must draw up and keep up-to-date the model's technical documentation per Annex XI for the AI Office and national competent authorities (Article 53(1)(a)), make available to downstream providers who integrate the model the information set out in Annex XII (Article 53(1)(b)), put in place a policy to comply with Union copyright law (Article 53(1)(c)), and draw up and make publicly available a sufficiently detailed summary of the content used for training according to the AI Office template (Article 53(1)(d)). Under Article 53(2) the technical documentation and downstream-information duties fall away where the model is released under a free and open-source licence that allows access, use, modification and distribution with publicly available parameters, but the copyright policy and the public training-data summary apply to every general-purpose AI model provider regardless of licence. If the model has systemic risk under Article 51, presumed where cumulative training compute exceeds 10^25 floating-point operations, that carve-out no longer applies and Article 55 adds further transparency-related duties, including performing and documenting model evaluation and adversarial testing and reporting serious incidents to the AI Office. The Article 50 transparency obligations bind providers and deployers of AI systems rather than the provider of a model as such, so they attach only where the startup also places an AI system on the market, and the genomic nature of the training data does not itself alter any of these duties.",
+      "answer_preview": "As the provider of a general-purpose AI model, the startup owes the transparency duties in Article 53(1): it must draw up and keep up-to-date the model's technical documentation per Annex XI for the AI Office and national competent authorities (Article 53(1)(a)), make available to downstream providers who integrate the model the information set out in Annex XII (Article 53(1)(b)), put in place a p",
+      "ans_loose": 0.2619047619047619,
+      "ans_strict": 0.7021276595744681,
+      "ans_f1": 0.4150943396226415,
+      "ans_conciseness": 0.0874320626378516,
+      "ref_loose": 0.6666666666666666,
+      "ref_strict": 0.6666666666666666,
+      "ref_conciseness": 1.0,
+      "gold_subpoint_refs": [
+        "Article 53.1",
+        "Article 55",
+        "Article 51"
+      ],
+      "ref_subpoint_loose": 0.6666666666666666,
+      "ref_subpoint_strict": 0.6666666666666666,
+      "ref_subpoint_conciseness": 1.0,
+      "regulatory_tone": 1.0,
+      "keyword_recall": 1.0,
+      "mistakes_total": 2,
+      "mistakes_resolved": 2,
+      "mistakes_resolved_ids": [
+        "q16_m1",
+        "q16_m2"
+      ],
+      "mistakes_unresolved_ids": [],
+      "is_refusal": false,
+      "latency_ms": 38846.7,
+      "error": null,
+      "reasoning": {
+        "stage2_polish": true,
+        "stage2_model": "claude-opus-4-8",
+        "complex": true,
+        "retrieval_path": "kb_fallback",
+        "engine_confidence": 0.85,
+        "cache_hit": false,
+        "answer_route": "synthesis:complex_question"
+      },
+      "attempts": 1
+    },
+    {
+      "id": "q17",
+      "question": "We are a university lab developing an AI model exclusively for scientific research and development into new life science drugs. Does the AI Act apply to our model before it is released to the market?",
+      "verdict_original": "correct",
+      "gold_refs": [
+        "Article 2"
+      ],
+      "pred_refs": [
+        "Article 2"
+      ],
+      "predicted_answer": "Under Article 2(6), the Regulation does not apply to AI systems or models, including their output, specifically developed and put into service for the sole purpose of scientific research and development. Article 2(8) further excludes any research, testing or development activity on AI systems prior to their being placed on the market or put into service, except testing in real-world conditions. The Act's obligations therefore attach only once the system leaves pure R&D and is placed on the market or put into service, at which point the operator's duties follow the system's risk classification.",
+      "answer_preview": "Under Article 2(6), the Regulation does not apply to AI systems or models, including their output, specifically developed and put into service for the sole purpose of scientific research and development. Article 2(8) further excludes any research, testing or development activity on AI systems prior to their being placed on the market or put into service, except testing in real-world conditions. Th",
+      "ans_loose": 0.41935483870967744,
+      "ans_strict": 0.5909090909090909,
+      "ans_f1": 0.5909090909090909,
+      "ans_conciseness": 0.9409,
+      "ref_loose": 1.0,
+      "ref_strict": 1.0,
+      "ref_conciseness": 1.0,
+      "gold_subpoint_refs": [
+        "Article 2.6"
+      ],
+      "ref_subpoint_loose": 0.0,
+      "ref_subpoint_strict": 0.0,
+      "ref_subpoint_conciseness": 1.0,
+      "regulatory_tone": 1.0,
+      "keyword_recall": 1.0,
+      "mistakes_total": 1,
+      "mistakes_resolved": 1,
+      "mistakes_resolved_ids": [
+        "q17_m1"
+      ],
+      "mistakes_unresolved_ids": [],
+      "is_refusal": false,
+      "latency_ms": 7006.2,
+      "error": null,
+      "reasoning": {
+        "stage2_polish": false,
+        "stage2_model": null,
+        "complex": null,
+        "retrieval_path": "kb_fallback",
+        "engine_confidence": 0.7,
+        "cache_hit": false,
+        "answer_route": null
+      },
+      "attempts": 1
+    },
+    {
+      "id": "q18",
+      "question": "We are developing a generative AI chatbot that will be deployed on a hospital website to answer general patient queries. What transparency obligations apply?",
+      "verdict_original": "half_right_missing_classification",
+      "gold_refs": [
+        "Article 50"
+      ],
+      "pred_refs": [
+        "Article 50.2",
+        "Article 50.1"
+      ],
+      "predicted_answer": "The chatbot is a limited risk system, so the operative transparency duties are those in Article 50, and they fall on the provider. Under Article 50(1) the provider must design the chatbot so that a patient is informed they are interacting with an AI system, unless that is obvious to a reasonably well-informed, observant and circumspect person. Under Article 50(2), because the chatbot generates synthetic text, the provider must ensure its outputs are marked in a machine-readable format and detectable as artificially generated or manipulated, using solutions that are effective, interoperable, robust and reliable. The deployer duties in Article 50(3) for emotion recognition and biometric categorisation and in Article 50(4) for deepfakes and for text published to inform the public on matters of public interest do not attach to answering general patient queries, so no further Article 50 disclosure is triggered here.",
+      "answer_preview": "The chatbot is a limited risk system, so the operative transparency duties are those in Article 50, and they fall on the provider. Under Article 50(1) the provider must design the chatbot so that a patient is informed they are interacting with an AI system, unless that is obvious to a reasonably well-informed, observant and circumspect person. Under Article 50(2), because the chatbot generates syn",
+      "ans_loose": 0.32926829268292684,
+      "ans_strict": 0.574468085106383,
+      "ans_f1": 0.4954128440366973,
+      "ans_conciseness": 0.43155230411723916,
+      "ref_loose": 1.0,
+      "ref_strict": 1.0,
+      "ref_conciseness": 1.0,
+      "gold_subpoint_refs": [
+        "Article 50.1",
+        "Article 50.2"
+      ],
+      "ref_subpoint_loose": 1.0,
+      "ref_subpoint_strict": 1.0,
+      "ref_subpoint_conciseness": 1.0,
+      "regulatory_tone": 1.0,
+      "keyword_recall": 0.5,
+      "mistakes_total": 3,
+      "mistakes_resolved": 2,
+      "mistakes_resolved_ids": [
+        "q18_m2",
+        "q18_m3"
+      ],
+      "mistakes_unresolved_ids": [
+        "q18_m1"
+      ],
+      "is_refusal": false,
+      "latency_ms": 20520.5,
+      "error": null,
+      "reasoning": {
+        "stage2_polish": true,
+        "stage2_model": "claude-opus-4-8",
+        "complex": true,
+        "retrieval_path": "kb_fallback",
+        "engine_confidence": 0.85,
+        "cache_hit": false,
+        "answer_route": "synthesis:complex_question"
+      },
+      "attempts": 1
+    },
+    {
+      "id": "q19",
+      "question": "A pharmaceutical company wants to use an AI system to monitor the emotions and stress levels of their manufacturing line workers to improve efficiency. Is this allowed?",
+      "verdict_original": "correct",
+      "gold_refs": [
+        "Article 5"
+      ],
+      "pred_refs": [
+        "Article 5.1.f",
+        "Annex III.4"
+      ],
+      "predicted_answer": "No. Inferring emotions of natural persons in the workplace is a prohibited practice under Article 5(1)(f), and monitoring workers' emotions and stress to improve efficiency falls squarely within that prohibition. The only carve-out is where the system is intended to be put into service or placed on the market for medical or safety reasons, which improving manufacturing efficiency is not. The prohibition applies regardless of the high-risk regime for employment and worker-management systems in Annex III(4), because a practice caught by Article 5 may not be placed on the market, put into service or used at all.",
+      "answer_preview": "No. Inferring emotions of natural persons in the workplace is a prohibited practice under Article 5(1)(f), and monitoring workers' emotions and stress to improve efficiency falls squarely within that prohibition. The only carve-out is where the system is intended to be put into service or placed on the market for medical or safety reasons, which improving manufacturing efficiency is not. The prohi",
+      "ans_loose": 0.35714285714285715,
+      "ans_strict": 0.6060606060606061,
+      "ans_f1": 0.5263157894736842,
+      "ans_conciseness": 0.41535513998988016,
+      "ref_loose": 1.0,
+      "ref_strict": 0.6666666666666666,
+      "ref_conciseness": 0.25,
+      "gold_subpoint_refs": [
+        "Article 5.1.f"
+      ],
+      "ref_subpoint_loose": 1.0,
+      "ref_subpoint_strict": 0.6666666666666666,
+      "ref_subpoint_conciseness": 0.25,
+      "regulatory_tone": 1.0,
+      "keyword_recall": 1.0,
+      "mistakes_total": 0,
+      "mistakes_resolved": 0,
+      "mistakes_resolved_ids": [],
+      "mistakes_unresolved_ids": [],
+      "is_refusal": false,
+      "latency_ms": 13740.1,
+      "error": null,
+      "reasoning": {
+        "stage2_polish": true,
+        "stage2_model": "claude-opus-4-8",
+        "complex": false,
+        "retrieval_path": "kb_fallback",
+        "engine_confidence": 0.85,
+        "cache_hit": false,
+        "answer_route": "synthesis:synthesis_default"
+      },
+      "attempts": 1
+    },
+    {
+      "id": "q20",
+      "question": "Is an AI system intended to be used as a safety component in robotic surgery considered high-risk under the AI Act?",
+      "verdict_original": "correct_rule_generic_application",
+      "gold_refs": [
+        "Article 6",
+        "Annex I",
+        "Article 14",
+        "Article 72"
+      ],
+      "pred_refs": [
+        "Article 6.1",
+        "Article 6",
+        "Article 14",
+        "Article 72"
+      ],
+      "predicted_answer": "Yes. An AI system intended as a safety component of a robotic surgical device is high-risk under Article 6(1) because a surgical robot is a Class IIb or Class III medical device requiring notified-body conformity assessment under Article 43. Since the AI operates in a real-time control loop, Article 14 requires robust human oversight measures to allow the surgeon to override or reverse decisions. Under Article 72 and Article 73, the provider must establish post-market monitoring and report serious incidents, coordinating with the Medical Device Regulation Article 83 for layered surveillance.",
+      "answer_preview": "Yes. An AI system intended as a safety component of a robotic surgical device is high-risk under Article 6(1) because a surgical robot is a Class IIb or Class III medical device requiring notified-body conformity assessment under Article 43. Since the AI operates in a real-time control loop, Article 14 requires robust human oversight measures to allow the surgeon to override or reverse decisions. ",
+      "ans_loose": 0.3787878787878788,
+      "ans_strict": 0.6410256410256411,
+      "ans_f1": 0.5494505494505495,
+      "ans_conciseness": 0.48393194706994325,
+      "ref_loose": 0.75,
+      "ref_strict": 0.8571428571428571,
+      "ref_conciseness": 0.5625,
+      "gold_subpoint_refs": [
+        "Article 6.1",
+        "Annex I",
+        "Article 14",
+        "Article 72"
+      ],
+      "ref_subpoint_loose": 0.75,
+      "ref_subpoint_strict": 0.75,
+      "ref_subpoint_conciseness": 1.0,
+      "regulatory_tone": 1.0,
+      "keyword_recall": 0.8571428571428571,
+      "mistakes_total": 1,
+      "mistakes_resolved": 1,
+      "mistakes_resolved_ids": [
+        "q20_m1"
+      ],
+      "mistakes_unresolved_ids": [],
+      "is_refusal": false,
+      "latency_ms": 344.8,
+      "error": null,
+      "reasoning": {
+        "stage2_polish": false,
+        "stage2_model": null,
+        "complex": null,
+        "retrieval_path": "kb_fallback",
+        "engine_confidence": 0.85,
+        "cache_hit": false,
+        "answer_route": null
+      },
+      "attempts": 1
+    }
+  ],
+  "antifragile_summary": {
+    "n": 20,
+    "n_ok": 20,
+    "n_error": 0,
+    "ans_loose": 0.4675,
+    "ans_strict": 0.7061,
+    "ans_f1": 0.623,
+    "ans_conciseness": 0.5518,
+    "ref_loose": 0.9458,
+    "ref_strict": 0.9061,
+    "ref_conciseness": 0.8046,
+    "ref_subpoint_loose": 0.7042,
+    "ref_subpoint_strict": 0.6155,
+    "ref_subpoint_conciseness": 0.6461,
+    "regulatory_tone": 1.0,
+    "keyword_recall": 0.8498,
+    "mistakes_total": 38,
+    "mistakes_resolved": 33,
+    "mistakes_resolved_rate": 0.8684,
+    "complex_fired": 4,
+    "stage2_polish": 9,
+    "latency_p50_ms": 7006.2,
+    "latency_p95_ms": 38846.7
+  }
+}

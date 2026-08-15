@@ -49,6 +49,8 @@ import app.engines._graph_rag_impl as impl
 from app.data.graph_rag_prompts import (
     USER_ANSWER_COVERAGE_CLAUSE,
     USER_REF_UNCERTAINTY_CLAUSE,
+    user_answer_coverage_clause,
+    user_ref_minimality_clause,
     user_ref_uncertainty_enabled,
 )
 from app.engines._graph_rag_impl import GraphContext
@@ -109,6 +111,10 @@ def _isolate_env():
         "REGENOLD_CITABLE_UNIVERSE_BLOCK",
         "REGENOLD_REF_UNCERTAINTY",
         "REGENOLD_ANSWER_COVERAGE",
+        # R340 — the composition selector. Popped so the module starts on the
+        # SHIPPED default (V2), and saved/restored so a case that pins the V1
+        # rollback cannot contaminate a later test.
+        "REGENOLD_PROMPT_V2",
         "REGENOLD_ANSWER_FIRST",
         "REGENOLD_REF_PARTITION",
         "REGENOLD_FUSION_STAGE2",
@@ -436,14 +442,22 @@ class TestRefUncertaintyClause:
         os.environ["REGENOLD_REF_UNCERTAINTY"] = "off"
         assert user_ref_uncertainty_enabled() is False
 
-    def test_it_does_not_replace_the_measured_minimality_clause(self):
+    @pytest.mark.parametrize("prompt_v2", ["1", "0"])
+    def test_it_does_not_replace_the_measured_minimality_clause(self, prompt_v2):
         """R298's minimality clause is default ON and measured (multi-turn ref
-        precision 0.423 -> 0.735). P3b is additive to it, never a swap."""
-        from app.data.graph_rag_prompts import USER_REF_MINIMALITY_CLAUSE
+        precision 0.423 -> 0.735). P3b is additive to it, never a swap.
 
+        R340 rebuilt the user-channel clauses too, so the delivered minimality
+        text is now whichever ``user_ref_minimality_clause()`` selects:
+        ``USER_REF_MINIMALITY_CLAUSE_V2`` by default, the V1 literal at
+        ``REGENOLD_PROMPT_V2=0``. Asserting the SELECTOR rather than a V1 literal
+        keeps this pinned to what it always meant — P3b never displaces the
+        minimality clause — and now proves it on BOTH compositions.
+        """
+        os.environ["REGENOLD_PROMPT_V2"] = prompt_v2
         os.environ["REGENOLD_REF_UNCERTAINTY"] = "1"
         user = _capture()
-        assert USER_REF_MINIMALITY_CLAUSE in user
+        assert user_ref_minimality_clause() in user
         assert USER_REF_UNCERTAINTY_CLAUSE in user
 
 
@@ -453,15 +467,40 @@ class TestRefUncertaintyClause:
 
 
 class TestAnswerCoverageAppendedOnce:
-    def test_coverage_clause_lands_exactly_once_when_enabled(self):
+    """P3c — the clause is appended ONCE, whichever composition is in force.
+
+    R340 rebuilt the user-channel clauses, so the delivered text is whichever
+    ``user_answer_coverage_clause()`` selects: ``USER_ANSWER_COVERAGE_CLAUSE_V2``
+    by default, the V1 literal at ``REGENOLD_PROMPT_V2=0``. The defect these
+    cases guard — two verbatim ``try/except`` pairs on the same flag appending
+    ~2.1 KB twice — is a property of the ASSEMBLY, not of either string, so they
+    assert the selector and run against both compositions.
+    """
+
+    @pytest.mark.parametrize("prompt_v2", ["1", "0"])
+    def test_coverage_clause_lands_exactly_once_when_enabled(self, prompt_v2):
+        os.environ["REGENOLD_PROMPT_V2"] = prompt_v2
         os.environ["REGENOLD_ANSWER_COVERAGE"] = "1"
         user = _capture()
-        assert user.count(USER_ANSWER_COVERAGE_CLAUSE) == 1
+        assert user.count(user_answer_coverage_clause()) == 1
         assert user.count("ANSWER COVERAGE:") == 1
 
-    def test_coverage_clause_lands_once_on_the_classification_branch_too(self):
+    @pytest.mark.parametrize("prompt_v2", ["1", "0"])
+    def test_coverage_clause_lands_once_on_the_classification_branch_too(
+        self, prompt_v2
+    ):
+        os.environ["REGENOLD_PROMPT_V2"] = prompt_v2
         os.environ["REGENOLD_ANSWER_COVERAGE"] = "1"
         user = _capture(is_general_classification=True)
+        assert user.count(user_answer_coverage_clause()) == 1
+
+    def test_the_rollback_path_delivers_the_v1_clause_verbatim(self):
+        """R340's rollback is documented as byte-identical, so at
+        ``REGENOLD_PROMPT_V2=0`` the delivered clause is the exact V1 literal
+        this module was originally written against."""
+        os.environ["REGENOLD_PROMPT_V2"] = "0"
+        os.environ["REGENOLD_ANSWER_COVERAGE"] = "1"
+        user = _capture()
         assert user.count(USER_ANSWER_COVERAGE_CLAUSE) == 1
 
     def test_coverage_clause_is_absent_when_disabled(self):
