@@ -6066,7 +6066,10 @@ def _build_scope_refusal_response(
             # non-existent-article refusal" or "every off-topic refusal"
             # without parsing the prose.
             "scope_reason": scope.reason.value,
-            "scope_evidence": scope.verdict.evidence[:200],
+            # R343 — guard: a None evidence (alternate verdict construction
+            # paths) previously raised TypeError INSIDE the broad except and
+            # silently dropped the WHOLE audit record.
+            "scope_evidence": (scope.verdict.evidence or "")[:200],
         }
         if scope.verdict.unknown_articles:
             chain_payload["unknown_articles"] = list(scope.verdict.unknown_articles)
@@ -10222,7 +10225,9 @@ def regenold_eu_ai_act_ask(
             "tier": "partner",
             "include_telemetry_requested": bool(include_telemetry),
             "scope_reason": scope.reason.value,
-            "scope_evidence": scope.verdict.evidence[:200],
+            # R343 — guard (see the refusal-class telemetry site above): a
+            # None evidence must not drop the whole audit record.
+            "scope_evidence": (scope.verdict.evidence or "")[:200],
         }
         if scope.anchor_articles:
             chain_payload["anchor_articles"] = list(scope.anchor_articles)
