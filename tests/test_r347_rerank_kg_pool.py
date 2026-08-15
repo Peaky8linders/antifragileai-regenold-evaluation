@@ -131,7 +131,9 @@ def test_pool_caps_extra_neighbours(monkeypatch):
 
     monkeypatch.setattr(embedded_graph, "embedded_backend_selected", lambda: True)
     monkeypatch.setattr(embedded_graph, "get_embedded_graph", lambda: _FakeGraph())
-    out = CR.build_kg_candidate_pool(["Art. 6"], max_extra=5, per_ref=3)
+    # max_extra=5 → hop-1 budget 3, hop-2 budget 2 → the cap is exactly
+    # 1 anchor + 5 extras, split across the hops.
+    out = CR.build_kg_candidate_pool(["Art. 6"], max_extra=5, per_ref=3, hops=2)
     assert len(out) == 6  # 1 anchor + 5 extra
 
 
@@ -261,6 +263,10 @@ def test_parse_feeds_kg_pool_and_context_when_gates_on(monkeypatch):
         captured["ctx"] = kw.get("query_context", "")
         return pool, True
 
+    # R348 — the wiring tries the reason-aware builder FIRST; make it return
+    # nothing so the plain-pool fallback (the R347 path) runs and its pool
+    # reaches the reranker.
+    monkeypatch.setattr(CR, "build_kg_candidate_pool_with_reasons", lambda refs, **kw: [])
     monkeypatch.setattr(CR, "build_kg_candidate_pool", _fake_pool)
     monkeypatch.setattr(CR, "rerank_enabled", _fake_enabled)
     monkeypatch.setattr(CR, "rerank_kg_candidates_enabled", _fake_kg_enabled)
@@ -276,6 +282,153 @@ def test_parse_feeds_kg_pool_and_context_when_gates_on(monkeypatch):
     assert "Art. 5" in captured["pool"]  # the KG neighbour reached the reranker
     assert any(a in captured["pool"] for a in q.entities)
     assert "risk: high" in captured["ctx"]
+
+
+# ---------------------------------------------------------------------------
+# R348 — semantic edge reasons + 2-hop depth
+# ---------------------------------------------------------------------------
+
+
+def test_hops_env_defaults_to_one_and_clamps(monkeypatch):
+    monkeypatch.delenv("REGENOLD_RERANK_KG_HOPS", raising=False)
+    assert CR.rerank_kg_hops() == 1
+    monkeypatch.setenv("REGENOLD_RERANK_KG_HOPS", "2")
+    assert CR.rerank_kg_hops() == 2
+    monkeypatch.setenv("REGENOLD_RERANK_KG_HOPS", "9")
+    assert CR.rerank_kg_hops() == 2  # clamped, never 9
+    monkeypatch.setenv("REGENOLD_RERANK_KG_HOPS", "junk")
+    assert CR.rerank_kg_hops() == 1  # malformed -> safe default
+
+
+def test_two_hop_budget_split(monkeypatch):
+    """Hop-2 must not starve hop-1: budget splits ~2:1."""
+    from app.graph import embedded_graph
+
+    class _FakeGraph:
+        enabled = True
+
+        def neighbors(self, ref, *, hops=1):  # noqa: ARG002
+            if ref == "Art. 6":
+                return ["Art. 5", "Art. 7"]  # hop-1
+            if ref in ("Art. 5", "Art. 7"):
+                return ["Art. 13", "Art. 14"]  # hop-2
+            return []
+
+    monkeypatch.setattr(embedded_graph, "embedded_backend_selected", lambda: True)
+    monkeypatch.setattr(embedded_graph, "get_embedded_graph", lambda: _FakeGraph())
+    # 1-hop: only the direct neighbours, even though 2 more exist deeper.
+    one = CR.build_kg_candidate_pool(["Art. 6"], max_extra=8, hops=1)
+    assert set(one) == {"Art. 6", "Art. 5", "Art. 7"}
+    # 2-hop: deeper neighbours appear, but capped by the hop-2 budget.
+    two = CR.build_kg_candidate_pool(["Art. 6"], max_extra=6, hops=2)
+    assert set(two) == {"Art. 6", "Art. 5", "Art. 7", "Art. 13", "Art. 14"}
+    # max_extra=3: hop-1 gets budget 2 (Art. 5, Art. 7), hop-2 gets budget 1
+    # (Art. 13) — 3 extras total, the direct neighbours outnumber the deeper ones.
+    three = CR.build_kg_candidate_pool(["Art. 6"], max_extra=3, hops=2)
+    assert three[:2] == ["Art. 6", "Art. 5"]
+    assert len(three) == 4  # 1 anchor + 3 extras (2 hop-1, 1 hop-2)
+
+
+def test_pool_with_reasons_superset_and_reasons(monkeypatch):
+    from app.data import kb_xrefs
+
+    def _with_reason(ref, *, limit=5):  # noqa: ARG002
+        return {
+            "Art. 6": (("Art. 13", "deployer reads provider's transparency schema"),),
+            "Art. 50": (),
+        }[ref]
+
+    monkeypatch.setattr(kb_xrefs, "cross_refs_with_reason", _with_reason)
+    pairs = CR.build_kg_candidate_pool_with_reasons(["Art. 6", "Art. 50"])
+    assert pairs == [("Art. 13", "deployer reads provider's transparency schema")]
+
+
+def test_pool_with_reasons_never_raises(monkeypatch):
+    from app.data import kb_xrefs
+
+    def _boom(*a, **k):  # pragma: no cover
+        raise RuntimeError("semantic layer down")
+
+    monkeypatch.setattr(kb_xrefs, "cross_refs_with_reason", _boom)
+    assert CR.build_kg_candidate_pool_with_reasons(["Art. 6"]) == []
+    assert CR.build_kg_candidate_pool_with_reasons(None) == []
+
+
+def test_rerank_pool_annotates_docs_with_reasons(monkeypatch):
+    monkeypatch.setenv("REGENOLD_COHERE_RERANK", "1")
+    monkeypatch.setenv("COHERE_API_KEY", "x")
+    seen: dict = {}
+
+    def _capture(q, d, top_n=None):  # noqa: ARG001
+        seen["docs"] = list(d)
+        return [(0, 1.0), (1, 0.9)]
+
+    monkeypatch.setattr(CR, "rerank_documents", _capture)
+    CR.rerank_pool(
+        "q",
+        ["Art. 6", "Art. 13"],
+        doc_reasons={"Art. 13": "deployer reads provider's transparency schema"},
+        text_for=lambda r: f"text of {r}",
+    )
+    assert "text of Art. 6" in seen["docs"][0]
+    assert "deployer reads provider's transparency schema" in seen["docs"][1]
+    assert seen["docs"][1].startswith("text of Art. 13")
+
+
+def test_parse_feeds_reasons_and_anchors_when_kg_on(monkeypatch):
+    """KG gate on → the pool is anchors + reason-annotated neighbours."""
+    monkeypatch.setenv("REGENOLD_COHERE_RERANK", "1")
+    monkeypatch.setenv("COHERE_API_KEY", "x")
+    monkeypatch.setenv("REGENOLD_RERANK_KG_CANDIDATES", "1")
+    captured: dict = {}
+
+    def _fake_reasons(refs, **kw):  # noqa: ARG002
+        return [("Art. 5", "prohibited practices are defined first")]
+
+    def _fake_rerank_pool(question, pool, **kw):  # noqa: ARG002
+        captured["pool"] = list(pool)
+        captured["reasons"] = kw.get("doc_reasons")
+        return pool, True
+
+    monkeypatch.setattr(CR, "build_kg_candidate_pool_with_reasons", _fake_reasons)
+    monkeypatch.setattr(CR, "rerank_pool", _fake_rerank_pool)
+
+    from app.engines._graph_rag_impl import _deterministic_parse
+
+    q = _deterministic_parse(
+        "What does Article 9 and Article 10 require for high risk AI?"
+    )
+    assert captured["pool"][: len(q.entities)] == list(q.entities)  # anchors first
+    assert "Art. 5" in captured["pool"]  # neighbour appended
+    assert captured["reasons"] == {"Art. 5": "prohibited practices are defined first"}
+
+
+def test_parse_reason_builder_failure_falls_back_to_plain_pool(monkeypatch):
+    """Reasons unavailable → plain KG pool (anchors + neighbours, no reasons)."""
+    monkeypatch.setenv("REGENOLD_COHERE_RERANK", "1")
+    monkeypatch.setenv("COHERE_API_KEY", "x")
+    monkeypatch.setenv("REGENOLD_RERANK_KG_CANDIDATES", "1")
+    captured: dict = {}
+
+    def _fake_reasons(refs, **kw):  # noqa: ARG002
+        return []  # semantic layer gave nothing
+
+    def _fake_rerank_pool(question, pool, **kw):  # noqa: ARG002
+        captured["pool"] = list(pool)
+        captured["reasons"] = kw.get("doc_reasons")
+        return pool, True
+
+    monkeypatch.setattr(CR, "build_kg_candidate_pool_with_reasons", _fake_reasons)
+    monkeypatch.setattr(CR, "build_kg_candidate_pool", lambda refs, **kw: list(refs))
+    monkeypatch.setattr(CR, "rerank_pool", _fake_rerank_pool)
+
+    from app.engines._graph_rag_impl import _deterministic_parse
+
+    q = _deterministic_parse(
+        "What does Article 9 and Article 10 require for high risk AI?"
+    )
+    assert captured["pool"] == list(q.entities)  # plain pool, no neighbours
+    assert captured["reasons"] is None
 
 
 def test_parse_kg_off_is_pure_r340_permutation(monkeypatch):
