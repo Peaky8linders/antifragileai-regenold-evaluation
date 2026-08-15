@@ -294,10 +294,14 @@ def main(argv: list[str] | None = None) -> int:
         r"C:\Users\th3un\Downloads\gemini-code-1779789422612.json",
         r"C:\Users\th3un\Downloads\gemini-code-1779789770156.json",
     ], help="OOB JSON input files (deduplicated by id).")
+    # R338 — was the SIBLING repo's service
+    # (regenold-eu-ai-act-rag-production), which deploys a different lineage.
+    # See the note in evals/regenold/antifragile_live.py: running on that
+    # default measures a codebase that does not contain the change under test.
     ap.add_argument(
         "--endpoint",
-        default="https://regenold-eu-ai-act-rag-production.up.railway.app/api/v1/regenold/eu-ai-act/ask?include_reasoning=true",
-        help="Live /ask endpoint URL.",
+        default="https://antifragileai-regenold-evaluation-production.up.railway.app/api/v1/regenold/eu-ai-act/ask?include_reasoning=true",
+        help="Live /ask endpoint URL (defaults to THIS repo's Railway service).",
     )
     ap.add_argument("--api-key", default=None, help="X-Regenold-Api-Key value.")
     ap.add_argument("--timeout", type=float, default=_DEFAULT_TIMEOUT_S)

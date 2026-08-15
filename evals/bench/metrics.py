@@ -121,12 +121,56 @@ METRIC_PROVENANCE: dict[str, Any] = {
             "ROUGE-L F1 (Lin 2004) on Longest Common Subsequence of normalized "
             "tokens; measures structural sequence completeness per Cappelli et al. (2026)."
         ),
-        "answer_semantic_similarity": (
-            "Semantic similarity proxy (Sentence-BERT / character-ngram cosine vector proxy) "
-            "capturing conceptual equivalence decoupled from surface lexical form."
+        # R338 [I9] — this entry used to read "Semantic similarity proxy
+        # (Sentence-BERT / character-ngram cosine vector proxy) capturing
+        # conceptual equivalence DECOUPLED FROM SURFACE LEXICAL FORM", under the
+        # key `answer_semantic_similarity`. There is no embedding model anywhere
+        # on the path (no sentence_transformers / MiniLM import in this repo);
+        # the function is 0.70 * cosine(character-3gram counts) + 0.30 *
+        # word-token Jaccard, i.e. a string counter. METRIC_PROVENANCE is
+        # serialised wholesale into every durable sidecar, so that claim was
+        # being stamped into artifacts of runs that never call the function.
+        # Measured against gold "Emotion recognition in the workplace is
+        # prohibited under Article 5(1)(f) except for medical or safety reasons":
+        # the conceptually EQUIVALENT low-lexical paraphrase "Employers may not
+        # deploy affect-inference AI on staff; the ban carves out health and
+        # security use cases" scores 0.0430, while a near-verbatim restatement
+        # scores 0.8851. A real all-MiniLM-L6-v2 scores that paraphrase pair
+        # ~0.85. The metric returns near-zero on exactly the case the old
+        # provenance string defined it by. Name and description now say what it
+        # computes; the axis NAME is the contract (R327 house rule).
+        "answer_trigram_jaccard": (
+            "char-trigram Jaccard (lexical proxy): 0.70 * cosine of character-3gram "
+            "counts + 0.30 * word-token Jaccard, on normalise_for_scoring() text. "
+            "SURFACE OVERLAP ONLY — this is NOT an embedding model; it scores "
+            "~0.04 on a conceptually equivalent low-lexical paraphrase (which a "
+            "real neural sentence encoder scores ~0.85). Do not read it as "
+            "conceptual equivalence."
         ),
-        "threshold_analysis": (
-            "Precision/recall/F1 sensitivity across similarity thresholds [0.10, 0.15, ... 0.90]."
+        "runner_field_alias": (
+            "evals/bench/run_cappelli_bench.py and run_live_deep_eval.py still "
+            "emit this metric into their result rows under the field name "
+            "`semantic_similarity` and print it as `SBERT:`. Both are the "
+            "answer_trigram_jaccard lexical proxy above — no embedding model ran. "
+            "R338 [I9]: those two runner files are outside this module and are "
+            "tracked for rename separately."
+        ),
+        # R338 [I6] — a `threshold_analysis` entry used to sit here describing
+        # "Precision/recall/F1 sensitivity across similarity thresholds". The
+        # only caller derived its ground-truth labels from the very score it
+        # thresholded (`all_relevance.append(sem_sim >= 0.25)` right after
+        # `all_sim_scores.append(sem_sim)`), which makes false positives
+        # unsatisfiable for every t >= 0.25 and pins precision at exactly 1.0 —
+        # the committed evals/bench/results/cappelli_bench_results.json shows
+        # precision 1.0000 at all eight thresholds >= 0.25 while the mean
+        # similarity it is derived from is 0.2885. There is no precision number
+        # to report, so none is reported; what survives is the label-free
+        # retention curve, which cannot manufacture one.
+        "score_threshold_retention": (
+            "SELF-CONSISTENCY DIAGNOSTIC, NOT a precision curve: the fraction of "
+            "rows whose score sits at or above each threshold. Takes no label "
+            "vector and emits no precision/recall/F1 key. It describes the score "
+            "DISTRIBUTION only and says nothing about whether the engine is right."
         ),
     },
 }
@@ -571,11 +615,28 @@ def answer_rouge_l(pred: str, gold: str, beta: float = 1.0) -> float:
     return (1 + beta * beta) * r_lcs * p_lcs / denom
 
 
-def answer_semantic_similarity_proxy(pred: str, gold: str) -> float:
-    """Multi-level semantic similarity proxy between predicted and gold answers.
+def answer_trigram_jaccard(pred: str, gold: str) -> float:
+    """Character-trigram cosine + word-token Jaccard. A LEXICAL proxy. 0.0-1.0.
 
-    Decoupled from surface phrasing using sub-token n-gram multiset cosine similarity
-    and word-token IDF weighting. Returns 0.0 to 1.0.
+    R338 [I9] — renamed from ``answer_semantic_similarity_proxy``, whose
+    docstring claimed it was "decoupled from surface phrasing" and whose
+    METRIC_PROVENANCE entry attributed it to Sentence-BERT. Neither was true:
+    the formula is ``0.70 * cosine(char-3gram counts) + 0.30 * word-token
+    Jaccard`` and there is no embedding model on the path (grep
+    ``sentence_transformers|MiniLM|SentenceTransformer`` -> no hits anywhere in
+    this repo). Measured, against gold *"Emotion recognition in the workplace is
+    prohibited under Article 5(1)(f) except for medical or safety reasons"*:
+
+        conceptually EQUIVALENT low-lexical paraphrase  -> 0.0430
+        near-verbatim restatement                       -> 0.8851
+
+    A real ``all-MiniLM-L6-v2`` scores that paraphrase pair ~0.85. So the metric
+    is near-zero on precisely the case an embedding similarity is defined by.
+    Read it as string overlap and nothing else.
+
+    The maths is UNCHANGED by the rename — this is a name correction, not a
+    formula change, so any historical number stays reproducible. (R327 house
+    rule cuts the other way too: if the name lies, fix the name.)
     """
     if not pred or not gold:
         return 0.0
@@ -607,39 +668,105 @@ def answer_semantic_similarity_proxy(pred: str, gold: str) -> float:
     return round(0.70 * char_sim + 0.30 * word_sim, 4)
 
 
-def threshold_precision_recall_curve(
-    sim_scores: list[float],
-    gold_relevance: list[bool],
-    thresholds: list[float] | None = None,
-) -> list[dict[str, float]]:
-    """Compute precision, recall, and F1 across a range of similarity thresholds.
+# R338 [I9] — back-compat import alias, NOT a second implementation.
+# `evals/bench/run_cappelli_bench.py` and `evals/bench/run_live_deep_eval.py`
+# still import the old name; those two files are outside this module's scope and
+# are tracked for rename separately. This is a bare rebinding of the same object
+# (one concept, one definition) so it cannot drift from the canonical function.
+# Delete it once both runners call `answer_trigram_jaccard` directly.
+answer_semantic_similarity_proxy = answer_trigram_jaccard
 
-    Directly replicates the Cappelli et al. (2026) threshold sensitivity analysis
-    to detect when loose similarity thresholds mask missing statutory precision.
+
+_DEFAULT_SCORE_THRESHOLDS = [
+    0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40, 0.50, 0.60, 0.70, 0.80,
+]
+
+
+def score_threshold_retention_curve(
+    sim_scores: list[float],
+    thresholds: list[float] | None = None,
+) -> list[dict[str, float | int]]:
+    """How many rows survive each score cut-off. A DISTRIBUTION shape, not a score.
+
+    R338 [I6] — replaces ``threshold_precision_recall_curve``, which was fed a
+    label vector derived from the very score it thresholded, and therefore
+    reported a precision of exactly 1.0 by construction (see the tombstone
+    below). This function takes **no label vector at all**, which is the point:
+    with nothing to call a false positive it structurally cannot manufacture a
+    precision, so the defect is unrepresentable rather than merely fixed.
+
+    What it is good for: seeing where a score distribution actually lives — e.g.
+    that the Cappelli batch's mean lexical similarity of 0.2885 means a 0.50 cut
+    retains **zero** rows, which is a real and useful fact about the *ruler*. It
+    says nothing whatsoever about whether the engine's answers are correct, and
+    it deliberately emits no key named ``precision``, ``recall`` or ``f1`` so it
+    cannot be mistaken for one downstream.
     """
     if thresholds is None:
-        thresholds = [0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40, 0.50, 0.60, 0.70, 0.80]
+        thresholds = _DEFAULT_SCORE_THRESHOLDS
 
-    total_pos = sum(1 for g in gold_relevance if g)
-    if total_pos == 0:
-        return [{"threshold": t, "precision": 0.0, "recall": 0.0, "f1": 0.0} for t in thresholds]
-
-    results = []
+    n_total = len(sim_scores)
+    results: list[dict[str, float | int]] = []
     for t in thresholds:
-        tp = sum(1 for s, g in zip(sim_scores, gold_relevance) if s >= t and g)
-        fp = sum(1 for s, g in zip(sim_scores, gold_relevance) if s >= t and not g)
-        fn = sum(1 for s, g in zip(sim_scores, gold_relevance) if s < t and g)
-
-        prec = tp / (tp + fp) if (tp + fp) > 0 else 1.0
-        rec = tp / (tp + fn) if (tp + fn) > 0 else 0.0
-        f1 = (2 * prec * rec / (prec + rec)) if (prec + rec) > 0 else 0.0
+        n_at = sum(1 for s in sim_scores if s >= t)
         results.append({
             "threshold": round(t, 2),
-            "precision": round(prec, 4),
-            "recall": round(rec, 4),
-            "f1": round(f1, 4),
+            "n_at_or_above": n_at,
+            "n_total": n_total,
+            "retention": round(n_at / n_total, 4) if n_total else 0.0,
         })
     return results
+
+
+def threshold_precision_recall_curve(*_args: Any, **_kwargs: Any) -> None:
+    """WITHDRAWN (R338 [I6]). Raises. Use ``score_threshold_retention_curve``.
+
+    This is a deliberate loud tombstone rather than a deletion, because an
+    ``ImportError`` at a call site carries no explanation and this one needs an
+    explanation.
+
+    The curve was sound as a primitive and correctly unit-tested with
+    independent labels — which is exactly why the test suite was blind to the
+    defect, since the defect lived entirely at the caller.
+    ``run_cappelli_bench.py`` built its label vector out of the score vector::
+
+        all_sim_scores.append(sem_sim)
+        all_relevance.append(sem_sim >= 0.25)     # the label IS the score
+
+    Substituting ``g := (s >= 0.25)`` into ``fp = #{s >= t and not g}`` makes a
+    false positive **unsatisfiable** for every ``t >= 0.25``, so precision is
+    identically 1.0; symmetrically ``fn = 0`` for every ``t <= 0.25``, so recall
+    is identically 1.0; at ``t == 0.25`` precision, recall and F1 are all exactly
+    1.0000. The committed
+    ``evals/bench/results/cappelli_bench_results.json`` shows precisely that
+    fingerprint — precision 1.0000 at all eight thresholds >= 0.25, F1 1.0000 at
+    0.25, varying only *below* the cut — while the mean similarity feeding it is
+    0.2885 and mean ROUGE-L is 0.1193. Its docstring claimed it detected "when
+    loose similarity thresholds mask missing statutory precision", which is the
+    one thing it cannot do.
+
+    A second, independent defect compounded it: ``prec = ... else 1.0`` reported
+    **perfect precision on an empty prediction set**, which is why the 0.50-0.80
+    rows of that artifact read ``precision 1.0 / recall 0.0``. The curve's only
+    two reachable shapes were "all zeros" (the ``total_pos == 0`` guard) and
+    "precision pinned at 1.0"; neither observes the engine.
+
+    Restoring a precision curve requires a label the score cannot author — an
+    explicit per-row ``is_relevant`` in the dataset, or
+    ``reference_correctness_loose(pred_refs, expected_refs) > 0``. Until such a
+    label exists, do not reintroduce one.
+    """
+    raise NotImplementedError(
+        "threshold_precision_recall_curve was WITHDRAWN in R338 [I6]: its only "
+        "caller derived gold_relevance from the same score it thresholded "
+        "(gold_relevance = [s >= 0.25 for s in sim_scores]), which pins "
+        "precision at exactly 1.0 for every threshold >= 0.25 by construction. "
+        "Use score_threshold_retention_curve(sim_scores) for the label-free "
+        "distribution diagnostic, or supply an independent per-row relevance "
+        "label (e.g. reference_correctness_loose(pred_refs, expected_refs) > 0) "
+        "and write a NEW function under a name that says where the label came "
+        "from."
+    )
 
 
 def answer_correctness_strict(pred: str, gold: str) -> float:

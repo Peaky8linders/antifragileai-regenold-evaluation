@@ -65,7 +65,23 @@ def _subpoint_metrics(pred_refs: list[str], gold_refs: list[str]) -> dict[str, f
     ratio = min(len(p), len(g)) / max(len(p), len(g))
     return {"loose": loose, "strict": strict, "conciseness": ratio * ratio}
 
+# R338 — this default used to be the SIBLING repo's service
+# (`regenold-eu-ai-act-rag-production.up.railway.app`), inherited text from when
+# this module was extracted. That is a different deployment of a different
+# lineage: `.kiro/steering/railway-redeploy.md` says in as many words "do not
+# verify a deploy from here against that URL, and do not assume a change here is
+# live there (or vice versa)". Running this eval on its defaults therefore
+# measured a codebase that does not contain the change under test — the
+# instrument trap, in the one place where the numbers get written into a report.
+#
+# THIS repo's service (project e19dc6ef / service 0086ff18 / env 2f6298dd):
 LIVE_ENDPOINT = (
+    "https://antifragileai-regenold-evaluation-production.up.railway.app"
+    "/api/v1/regenold/eu-ai-act/ask"
+)
+# The sibling's, kept only so `--endpoint $SIBLING_ENDPOINT` stays one flag away
+# for a deliberate cross-repo comparison. Never the default.
+SIBLING_ENDPOINT = (
     "https://regenold-eu-ai-act-rag-production.up.railway.app"
     "/api/v1/regenold/eu-ai-act/ask"
 )

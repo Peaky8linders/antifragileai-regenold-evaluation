@@ -1,5 +1,27 @@
 # R337 — A/B of the R333 sub-point leaf signal, and the veto that would have rejected it
 
+> ⚠ **CORRECTION, R338 (2026-08-15).** The A/B result below stands. The claim near
+> the end that *"R337 closes this: `dynamic_ab` now measures the gold's grain"*
+> did **not**, as shipped. The guard read the gold from `b[i].get("row")`, a key
+> `_run_arm` never puts in the row dicts it builds (`dynamic_ab.py:322-331`), so
+> `gold_refs` was always empty, `applicable` was always `False`, and the
+> exact-grain half of the hard-rule-#8 veto was **permanently disabled** — a
+> branch dropping 5 gold refs at exact grain printed `n/a` and no `REJECTED`.
+>
+> On this probe pool the buggy output and the intended output are the same
+> string apart from `gold_refs_total`, which is why it read as working. Its
+> tests passed 5/5 because the fixture injected the `"row"` key the real
+> producer omits — a test asserting a data shape production does not emit.
+>
+> R338 carries the gold through from `_run_arm`, decides the grain **per row**
+> rather than globally (one leaf-grained ref anywhere used to re-enable the
+> exact veto for every head-level row — the same false rejection this document
+> exists to prevent), and re-points the tests at the real row shape.
+>
+> The lesson this document already teaches applies to itself: **prove the guard
+> FIRES.** Every number below was measured on a pool where the guard's correct
+> behaviour and its broken behaviour are indistinguishable.
+
 **Date** 2026-08-15 · **Harness** `evals.harness.dynamic_ab` · **Path** live, wrapper
 (`openai_wrapper`, Stage-2 on) · **Lever** `REGENOLD_LEAF_BODY_SIGNAL`
 (baseline = shipped default ON, branch = OFF) · **Artifact**

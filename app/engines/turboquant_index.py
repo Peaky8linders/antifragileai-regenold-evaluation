@@ -50,6 +50,7 @@ the dense path closes the recall gap on paraphrased queries.
 """
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import threading
@@ -88,6 +89,69 @@ def is_compressed_available() -> bool:
     except Exception:  # noqa: BLE001 — any failure → no compression
         return False
     return True
+
+
+# ``id(bm25) -> (strong ref to that index, its digest)``. See _corpus_identity.
+# Tiny by construction: kb_search memoises exactly two corpora.
+_IDENTITY_MEMO: dict[int, tuple[object, str]] = {}
+_MAX_MEMOISED_IDENTITIES = 8
+
+
+def _corpus_identity(bm25: object) -> str:
+    """Fingerprint the BM25 corpus this dense index is joined against.
+
+    R338 [I2] — ``_DenseIndex._bm25_idx_map`` stores **raw positions** into the
+    BM25 corpus, not stable ids, and ``dense_top_k`` dereferences
+    ``bm25.article_refs[orig_idx]`` to label every hit. So the map is only
+    meaningful against the *exact* corpus it was built from. Since ``938933a``
+    the corpus is configuration-dependent — ``REGENOLD_ONTOLOGY_RISK_DOCS``
+    swings it 345 ↔ 373 docs, and because ``_build_ontology_docs`` is emitted in
+    the MIDDLE of the corpus (kb → ontology → corpus → definitions) the gate
+    shifts every later document by 28. Measured on this repo, one process that
+    built with the gate ON and then flipped it OFF answered
+    "serious incident reporting deadline" with ``Art. 111`` at the identical
+    0.8224 score that ``Art. 73`` had held — no IndexError, no log line, just a
+    relabelled ranking.
+
+    The fingerprint therefore covers everything the join depends on:
+
+    * ``n_docs`` — the array length the positions index into;
+    * ``avg_doc_len`` — cheap proof the BM25 statistics were rebuilt too (IDF
+      and length normalisation move for *every* pre-existing doc when the
+      corpus changes size);
+    * a digest of the parallel ``(article_ref, source)`` arrays — the actual
+      labels, so a same-size REORDER is caught as well as a resize.
+
+    Memoised by OBJECT IDENTITY, not by value: ``kb_search._build_index_cached``
+    is an ``lru_cache``, so each corpus is one long-lived frozen dataclass and
+    the same object comes back for the same gate. Measured, the digest itself is
+    **174 µs** over 373 docs — negligible against a live request but a third of
+    a 509 µs ``dense_top_k`` on the deterministic path, which a full offline
+    bench calls tens of thousands of times. The memo holds a strong reference to
+    the index alongside its digest so ``id()`` cannot be recycled onto a
+    different object underneath us; ``_BM25Index`` is frozen with tuple fields,
+    so a cached digest cannot go stale by mutation.
+    """
+    memo_key = id(bm25)
+    memo = _IDENTITY_MEMO.get(memo_key)
+    if memo is not None and memo[0] is bm25:
+        return memo[1]
+
+    refs = getattr(bm25, "article_refs", ())
+    sources = getattr(bm25, "sources", ())
+    h = hashlib.blake2s(digest_size=8)
+    for ref, src in zip(refs, sources):
+        h.update(str(ref).encode("utf-8", "replace"))
+        h.update(b"\x1f")
+        h.update(str(src).encode("utf-8", "replace"))
+        h.update(b"\x1e")
+    n_docs = len(getattr(bm25, "docs", ()))
+    avg_len = float(getattr(bm25, "avg_doc_len", 0.0) or 0.0)
+    identity = f"n{n_docs}:avg{avg_len:.4f}:{h.hexdigest()}"
+    if len(_IDENTITY_MEMO) >= _MAX_MEMOISED_IDENTITIES:
+        _IDENTITY_MEMO.clear()
+    _IDENTITY_MEMO[memo_key] = (bm25, identity)
+    return identity
 
 
 @dataclass(frozen=True)
@@ -148,6 +212,11 @@ class _DenseIndex:
         # Map filtered dense index → original BM25 doc index (for the
         # article_ref join). Populated after _setup().
         self._bm25_idx_map: list[int] = []
+        # R338 [I2] — fingerprint of the BM25 corpus the positions above index
+        # into. ``None`` until _build() runs. :func:`_resolve_index` compares it
+        # against the LIVE corpus on every call and swaps in a different
+        # instance rather than letting a stale map relabel dense hits.
+        self._corpus_id: str | None = None
 
     # --- lifecycle ------------------------------------------------------
     def _setup(self) -> bool:
@@ -178,6 +247,18 @@ class _DenseIndex:
         from pathlib import Path  # noqa: PLC0415
 
         import numpy as np  # noqa: PLC0415
+
+        # R338 [I2] — stamp the corpus this build is bound to BEFORE any of the
+        # three build paths run. Every one of them resolves the corpus through
+        # ``kb_search._build_index()``, which reads
+        # ``REGENOLD_ONTOLOGY_RISK_DOCS`` fresh and is memoised per gate value
+        # (``lru_cache(maxsize=2)``), so all of them see this same object within
+        # this call. Stamping it here means the identity always describes the
+        # corpus the vectors were ACTUALLY built from — not an assumption about
+        # what the env said afterwards.
+        from app.data.kb_search import _build_index as _kb_build_index  # noqa: PLC0415
+
+        self._corpus_id = _corpus_identity(_kb_build_index())
 
         self._use_external = False
         loaded_external = False
@@ -488,8 +569,126 @@ class _DenseIndex:
         ]
 
 
-# Process-wide singleton. Built on first use, kept alive for the worker.
+# Process-wide singleton for the CURRENT corpus. Built on first use, kept alive
+# for the worker. ⚠ Do not read this directly on a query path — go through
+# :func:`_resolve_index`, which is what keeps it aligned with the live corpus.
 _INDEX = _DenseIndex()
+
+# R338 [I2] — one built index PER CORPUS IDENTITY, mirroring the canonical
+# ``kb_search._build_index_cached(maxsize=2)`` one layer down: exactly the two
+# corpora ``REGENOLD_ONTOLOGY_RISK_DOCS`` can produce, so an in-process A/B
+# ping-ponging between the arms pays the SVD build once per arm rather than once
+# per flip (measured: 539 ms to build the gate-OFF corpus, 0.3 ms for the return
+# trip). Insertion-ordered and touched on use, so the eviction past
+# ``_MAX_CACHED_INDEXES`` is LRU and can never drop the index being served.
+_INDEX_BY_CORPUS: dict[str, _DenseIndex] = {}
+_INDEX_LOCK = threading.RLock()
+_MAX_CACHED_INDEXES = 2
+
+# Observability. A silent rebuild and a silent staleness look identical from the
+# outside, which is the whole reason this bug survived — so count both, expose
+# them in :func:`index_diagnostics`, and log every switch at WARNING.
+_CORPUS_SWITCHES = 0   # times the live corpus stopped matching the loaded index
+_STALE_REBUILDS = 0    # of those, how many needed a fresh SVD build (cache miss)
+
+
+def _resolve_index() -> tuple[_DenseIndex, object]:
+    """Return ``(index, bm25)`` guaranteed to describe the SAME corpus.
+
+    R338 [I2]. The old code read a **live, gate-resolved** ``_build_index()``
+    for the article-ref join but a **frozen** ``_bm25_idx_map`` from a singleton
+    with a ``_loaded`` latch, with a bounds check only against ``len(idx_map)``.
+    Every position in that map that still fell inside the new corpus therefore
+    resolved to a DIFFERENT article, silently. This is CLAUDE.md's canonical
+    inert-A/B shape ("a module-level lru_cache outliving the flip makes the A/B
+    inert even with the flag in ``_engine_cache_key``", R332) in its worse
+    variant: the arms here do not read flat, they read *confidently wrong*, so
+    ``dynamic_ab``'s fire check passes and it prints an axis table for a
+    configuration that never existed.
+
+    The fix is to stop trusting a memo that outlives the configuration: resolve
+    the live corpus first, fingerprint it, and hand back the index built for
+    THAT fingerprint — rebuilding if we have never seen it.
+
+    Returning the ``bm25`` object as well is deliberate: the caller must join
+    against the very object whose identity was checked, not re-resolve it and
+    reopen the race by one call width.
+    """
+    global _INDEX, _CORPUS_SWITCHES, _STALE_REBUILDS
+
+    from app.data.kb_search import _build_index  # noqa: PLC0415
+
+    bm25 = _build_index()
+    live_id = _corpus_identity(bm25)
+
+    with _INDEX_LOCK:
+        current = _INDEX
+        # ``_corpus_id is None`` = never built; let _setup() stamp it. A built
+        # index whose stamp still matches the live corpus is reused untouched —
+        # the common case, and the one production always takes (env is fixed per
+        # process, so this costs one fingerprint per query and nothing else).
+        if current._corpus_id is not None and current._corpus_id != live_id:
+            previous_id = current._corpus_id
+            _CORPUS_SWITCHES += 1
+            _INDEX_BY_CORPUS.setdefault(previous_id, current)
+            cached = _INDEX_BY_CORPUS.get(live_id)
+            if cached is None:
+                _STALE_REBUILDS += 1
+                cached = _DenseIndex()
+                logger.warning(
+                    "turboquant_index: BM25 corpus identity changed %s -> %s "
+                    "(live corpus %d docs); the loaded dense index maps %d "
+                    "positions into the OLD corpus, so REBUILDING rather than "
+                    "relabelling its hits. switches=%d rebuilds=%d",
+                    previous_id, live_id, len(bm25.docs),
+                    len(current._bm25_idx_map), _CORPUS_SWITCHES, _STALE_REBUILDS,
+                )
+            else:
+                logger.warning(
+                    "turboquant_index: BM25 corpus identity changed %s -> %s; "
+                    "swapping in the dense index already built for it. "
+                    "switches=%d rebuilds=%d",
+                    previous_id, live_id, _CORPUS_SWITCHES, _STALE_REBUILDS,
+                )
+            _INDEX = cached
+            current = cached
+
+        if not current._setup():
+            return current, bm25
+
+        if current._corpus_id is not None:
+            # Move-to-end on touch, so the eviction below is LRU and can never
+            # pick the index we are about to serve from.
+            _INDEX_BY_CORPUS.pop(current._corpus_id, None)
+            _INDEX_BY_CORPUS[current._corpus_id] = current
+            while len(_INDEX_BY_CORPUS) > _MAX_CACHED_INDEXES:
+                _INDEX_BY_CORPUS.pop(next(iter(_INDEX_BY_CORPUS)), None)
+
+        return current, bm25
+
+
+def _reset_index_cache() -> None:
+    """Drop every built dense index. Test / harness hook.
+
+    R338 [I2]. Poking ``_INDEX._loaded = False`` by hand — what
+    ``tests/test_turboquant_index.py`` used to do — is no longer a complete
+    reset: the instance the caller resets may not be the one
+    :func:`_resolve_index` serves, because a previously-built index for the LIVE
+    corpus can still be sitting in ``_INDEX_BY_CORPUS``. Reset both, or a test
+    that re-configures the build (external embeddings, outlier channels) silently
+    grades a cached index built under the old configuration.
+
+    Note this is NOT the mechanism that keeps an in-process A/B honest — that is
+    :func:`_resolve_index`, automatically, with no cooperation required from the
+    harness. This hook exists for the narrower case of changing something the
+    corpus fingerprint cannot see.
+    """
+    global _INDEX, _CORPUS_SWITCHES, _STALE_REBUILDS
+    with _INDEX_LOCK:
+        _INDEX_BY_CORPUS.clear()
+        _INDEX = _DenseIndex()
+        _CORPUS_SWITCHES = 0
+        _STALE_REBUILDS = 0
 
 
 def dense_top_k(question: str, *, k: int = 10) -> list[tuple[str, float]]:
@@ -510,18 +709,30 @@ def dense_top_k(question: str, *, k: int = 10) -> list[tuple[str, float]]:
     """
     if not is_enabled():
         return []
+    # R338 [I2] — resolve the index and the corpus TOGETHER. ``_resolve_index``
+    # rebuilds when the live BM25 corpus is not the one the stored positions
+    # index into, so the ``idx_map`` below can no longer address a corpus it was
+    # not built from.
+    index, bm25 = _resolve_index()
     # Over-fetch so the article-collapse below has room to pick distinct
     # articles even when multiple top docs share the same article ref.
-    hits = _INDEX.search(question, k=max(k * 4, 20))
+    hits = index.search(question, k=max(k * 4, 20))
     if not hits:
         return []
+    # Belt-and-braces: ``search()`` re-enters ``_setup``/``_build``, which touch
+    # ``kb_search._build_index()`` again, so re-verify rather than assume. A
+    # mismatch here means the corpus moved mid-query (only reachable from a
+    # concurrent env mutation); fail LOUD and EMPTY — an absent dense fill costs
+    # recall, a mislabelled one costs a wrong citation.
+    if index._corpus_id is not None and index._corpus_id != _corpus_identity(bm25):  # noqa: SLF001
+        logger.error(
+            "turboquant_index: corpus identity moved during the query "
+            "(index=%s live=%s); dropping the dense fill for this call.",
+            index._corpus_id, _corpus_identity(bm25),  # noqa: SLF001
+        )
+        return []
     # Collapse FILTERED doc_idx → original BM25 doc_idx → article_ref.
-    # Need the BM25 index for the parallel-array mapping. Lazy import to
-    # keep module-load cheap.
-    from app.data.kb_search import _build_index  # noqa: PLC0415
-
-    bm25 = _build_index()
-    idx_map = _INDEX._bm25_idx_map  # noqa: SLF001 — module-internal singleton
+    idx_map = index._bm25_idx_map  # noqa: SLF001 — module-internal singleton
     best: dict[str, float] = {}
     for hit in hits:
         # hit.doc_idx is in the FILTERED dense corpus; map back to BM25.
@@ -623,27 +834,39 @@ def index_diagnostics() -> dict[str, object]:
     Triggers a lazy build on first call. Returns ``{"loaded": False}`` if
     the index failed to build.
     """
-    if not _INDEX._setup():  # noqa: SLF001 — module-internal singleton
+    # R338 [I2] — goes through _resolve_index so a diagnostics call made after
+    # an in-process corpus flip reports the index that would actually SERVE the
+    # next query, not the one that happened to be built first.
+    index, _bm25 = _resolve_index()
+    if not index._setup():  # noqa: SLF001 — module-internal singleton
         return {"loaded": False, "reason": "build_failed"}
 
     # Safely probe outlier metadata if compression is active
     outlier_channels = 0
     outlier_bw = None
-    if _INDEX._compression_active and _INDEX._quantizer is not None:
-        outlier_channels = getattr(_INDEX._quantizer, "_outlier_channels", 0)
-        outlier_bw = getattr(_INDEX._quantizer, "_outlier_bit_width", None)
+    if index._compression_active and index._quantizer is not None:
+        outlier_channels = getattr(index._quantizer, "_outlier_channels", 0)
+        outlier_bw = getattr(index._quantizer, "_outlier_bit_width", None)
 
     return {
         "loaded": True,
-        "num_docs": _INDEX._num_docs,  # noqa: SLF001
-        "vocab_size": len(_INDEX._vocab),  # noqa: SLF001
+        "num_docs": index._num_docs,  # noqa: SLF001
+        "vocab_size": len(index._vocab),  # noqa: SLF001
         "projection_dim": _PROJECTION_DIM,
-        "compression_active": _INDEX._compression_active,  # noqa: SLF001
-        "bit_width": _QUANT_BIT_WIDTH if _INDEX._compression_active else None,  # noqa: SLF001
+        "compression_active": index._compression_active,  # noqa: SLF001
+        "bit_width": _QUANT_BIT_WIDTH if index._compression_active else None,  # noqa: SLF001
         "outlier_channels": outlier_channels,
         "outlier_bit_width": outlier_bw,
         "env_enabled": is_enabled(),
         "turboquant_available": is_compressed_available(),
+        # R338 [I2] — corpus provenance. ``corpus_id`` is the fingerprint the
+        # stored BM25 positions are valid against; the two counters make a
+        # stale-identity rebuild observable, because a silent rebuild and a
+        # silent staleness look the same from outside.
+        "corpus_id": index._corpus_id,  # noqa: SLF001
+        "corpus_switches": _CORPUS_SWITCHES,
+        "stale_rebuilds": _STALE_REBUILDS,
+        "cached_corpora": len(_INDEX_BY_CORPUS),
     }
 
 
