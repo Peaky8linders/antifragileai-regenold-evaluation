@@ -168,6 +168,84 @@ not the one we thought.
 
 ---
 
+## 4b. LLM-JUDGE answer- and reference-correctness (the numbers R338 lacked)
+
+`evals.judge.grounded`, `claude-sonnet-5` via the wrapper, both arms, n=20, 0 errors.
+
+⚠ **Grounding provenance matters more than the numbers.** `grounded._prepare` falls back to
+grounding answer-correctness on the answer's **own** `pred_refs` when a row has no independent gold —
+which makes the axis self-graded and structurally unable to see "cited the wrong provision entirely".
+`ANTIFRAGILE_GT` carries a synthesized `gold_answer` and `gold_refs` for all 20 rows, so the sidecar
+was built with them. Verified in the output: `answer_grounding_source = gold_refs` on **20/20 rows**.
+These numbers are independently grounded.
+
+| axis | A: bypasses ON | B: bypasses OFF |
+| --- | --- | --- |
+| **answer_correctness** pass rate | 17/20 = **0.85** | 18/20 = **0.90** |
+| mean factual score | 0.7741 | **0.8246** |
+| **reference_correctness** pass rate | 10/20 = **0.50** | 7/20 = **0.35** |
+| reference precision | **0.7935** | 0.7005 |
+| reference recall | **0.9150** | 0.9107 |
+| reference F1 | **0.8499** | 0.7919 |
+| **citation_faithfulness** | **1.00** (20/20) | 0.95 (19/20) |
+
+**This refines — and does not overturn — the §3 verdict.** Removing the bypasses buys a little
+ANSWER completeness (+0.05 pass, +0.05 factual) and costs REFERENCE quality materially
+(−0.15 pass, −0.093 precision, −0.058 F1) plus one citation-faithfulness failure. References are
+where CLAUDE.md says the entire remaining competitive gap lives, and the metric arms already showed
+conciseness and latency going the same way. **Keep the bypasses ON.**
+
+### Judge remarks — arm A, every failing row
+
+**9 of the 10 reference failures are over-citation.** This is CLAUDE.md's standing "over-citation is
+the whole remaining gap" finding, now with the specific wrong ref named per row:
+
+| row | axis | judge remark | wrong refs |
+| --- | --- | --- | --- |
+| q01 | reference | cited narrow derogation 6.3 instead of the operative 6(1)-(2); omitted Article 51 | `Article 6.3` |
+| q07 | reference | over-citation of AI literacy as a guiding principle | `Article 4` |
+| q10 | reference | over-citation of high-risk obligations beyond the definitional/role-shift provisions | `Article 16`, `Article 26` |
+| q12 | reference | redundant parent-article citations alongside their own sub-provisions (not minimal) | `Article 5`, `Article 50` |
+| q13 | reference | cited the Art 6(1) Annex I safety-component route instead of 6(2), the clause that actually makes Annex III systems high-risk | `Article 6.1` |
+| q14 | reference | over-citation of a substantial-modification provision the question never raised | `Article 43.4` |
+| q15 | reference | prohibition applied without evidence of inferring protected-class attributes | `Article 5.1.g` |
+| q16 | reference | cited deployer transparency (Art 50) instead of GPAI systemic-risk classification | `Article 50.1/.2`, missing `51`, `55` |
+| q18 | reference | over-citation of an inapplicable high-risk Annex III provision | `Annex III` |
+| q20 | reference | over-citation of downstream obligations + a redundant duplicate + missing Annex I | `Article 6`, `14`, `72` |
+| q02 | answer | misstates the social-scoring prohibition — drops the "unrelated context" prong | — |
+| q05 | answer | omits the Article 50(4) deepfake disclosure obligation | — |
+| q18 | answer | risk-classification claims unverifiable from the supplied text; omits the 50(4) text-publication limb | — |
+
+Two structural patterns worth acting on, both distinct from the trimmer/ranker families CLAUDE.md
+has already measured dead:
+
+1. **Parent + own sub-point cited together** (q12, and q01/q13 in the inverse direction). This is
+   exactly what `REGENOLD_PARENT_COLLAPSE` was built for and it is still **default OFF**. The judge
+   now supplies independent evidence for it on a gold set that carries sub-points.
+2. **Head-vs-sub-point mis-selection** (q01 cites 6.3 not 6(1)-(2); q13 cites 6.1 not 6.2). Not
+   over-citation — *wrong* coordinate selection within the right article. A trimmer cannot fix this;
+   it is a retrieval/grounding problem, consistent with CLAUDE.md's "attack GENERATION, not
+   selection".
+
+## 4c. `dynamic_ab` is the WRONG instrument for these two flags — measured
+
+The audit measured how often each gate actually fires, per dataset:
+
+| dataset | curated gate | definitional gate | either |
+| --- | --- | --- | --- |
+| Antifragile 20 | 10/20 | 1/20 | **11/20 (55%)** |
+| GraphRAG benchmark 40 | 11/40 | 3/40 | 14/40 (35%) |
+| Official batch 110 | 19/110 | 4/110 | 22/110 (20%) |
+| **`probe_set` (dynamic_ab) 132** | **2/132** | **0/132** | **2/132 (1.5%)** |
+
+So a `dynamic_ab` run on either flag would move ~2 of 132 rows and report a meaningless NULL — the
+inert-A/B trap, arriving through the *probe pool* rather than the harness. The Antifragile set at a
+55% fire rate is the correct instrument, which is why it was used.
+
+⚠ Worse: the provider gate at `_graph_rag_impl.py:8181` returns **before** both bypass gates, so
+under `provider=cli` neither flag is reachable at all. Any deterministic-arm A/B on them is inert by
+construction.
+
 ## 5. What is still open
 
 1. **The trace must record the primary provider's failure.** One `record_note` in the
