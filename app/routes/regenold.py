@@ -1980,6 +1980,9 @@ def _engine_cache_key(
             # query_expansion and changes the expansion round-trip budget, so
             # it belongs in the key like every other engine env read (R334).
             "REGENOLD_QUERY_EXPANSION_BEDROCK_TIMEOUT",
+            # R346.2 — the paraphrase model (frontier tier, no Haiku) is read
+            # fresh per call and changes the paraphrase surface.
+            "REGENOLD_QUERY_EXPANSION_MODEL",
         )
     )
     import json

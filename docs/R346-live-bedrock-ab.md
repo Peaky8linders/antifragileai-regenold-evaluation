@@ -13,12 +13,19 @@ for the live re-evaluation — and mix providers mid-A/B.
 **R346**: the paraphrase transport now follows the active Stage-2 provider:
 
 * `P2P_GRAPH_RAG_PROVIDER=bedrock` + Bedrock credentials present → Bedrock's own
-  Haiku 4.5 (`eu.anthropic.claude-haiku-4-5-20251001-v1:0`) via
-  `complete_with_fallback`, with a separate timeout budget
+  Sonnet 4.6 via `complete_with_fallback`, with a separate timeout budget
   (`REGENOLD_QUERY_EXPANSION_BEDROCK_TIMEOUT`, default 8 s — Bedrock carries
   cold-start latency the local wrapper does not, and a 2 s budget would fail
   every paraphrase and read as an inert lever).
 * Every other provider keeps the historical wrapper path, byte-identical.
+
+**R346.2 — no Haiku on the live path.** The paraphrase model is the frontier
+4.6 tier: `claude-sonnet-4-6` by default (the judge tier — a paraphrase is a
+light task, Opus buys nothing), pinned up with
+`REGENOLD_QUERY_EXPANSION_MODEL=claude-opus-4-6` for the generation tier.
+The intent-classifier fallback default also moved off Haiku to
+`claude-sonnet-4-6` (the live Stage-0 uses Groq per R94 regardless). The
+model env is registered in `_engine_cache_key` (R334 drift guard green).
 
 Gate-off (`REGENOLD_QUERY_EXPANSION=0`) is byte-identical by construction.
 The timeout env var is registered in `_engine_cache_key` (the R334 drift guard
@@ -164,8 +171,9 @@ FIRED 37/60 rows (refs 25, answers 37). Latency flat: 11.1 → 10.4 s mean.
 Directionally the strongest arm: ref_loose +0.039 and kw_recall +0.029 with
 their CIs mostly above zero, and the branch DROPS FEWER gold refs (−3).
 Exactly what the paraphrase-recall lever was built for; needs more rows to
-resolve. The Bedrock-Haiku paraphrase transport (R346) held up with zero
-failures.
+resolve. The Bedrock paraphrase transport (R346) held up with zero failures
+(this run predates R346.2 — it used the Haiku paraphrase tier; a re-run on
+the frontier Sonnet 4.6 tier is the follow-up measurement).
 
 ### A/B 3 — REGENOLD_PROMPT_V2=0 (V1 branch) vs V2 default
 
