@@ -46,11 +46,17 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
+
+# The SVD assets are built with ``kb_search._tokenize`` (the canonical
+# tokeniser — see ``scripts/build_embeddings_index.py``), so query-time
+# tokenisation MUST be the same function or the query vocabulary silently
+# misaligns with the index vocabulary (R343). This import is light (~80 ms;
+# the BM25 index build is lazy inside the search functions) and acyclic.
+from app.data.kb_search import _tokenize  # noqa: E402 — shared tokeniser
 
 if TYPE_CHECKING:  # pragma: no cover — only for type-checker
     import numpy as np  # type: ignore
@@ -81,54 +87,6 @@ _REQUIRED_FILES = (
     VOCAB_FILENAME,
     MANIFEST_FILENAME,
 )
-
-
-# ── Tokenizer (vendored to keep this module dependency-free) ─────────────
-
-
-# Same shape as :func:`app.data.kb_search._tokenize` — vendored here so
-# the runtime module is import-light (loading ``kb_search`` triggers a
-# 300+ doc BM25 index build that we don't need for an embedding query).
-# The build script uses the canonical ``_tokenize`` for index-time
-# tokenisation; the asset is keyed by the SAME tokeniser shape so the
-# query-time vocabulary alignment is exact.
-
-_TOKEN_RE = re.compile(r"[a-zA-Z0-9]+")
-
-_STOPWORDS = frozenset({
-    "the", "a", "an", "and", "or", "but", "if", "then", "of", "in", "on",
-    "at", "to", "for", "with", "by", "from", "as", "is", "are", "was",
-    "were", "be", "been", "being", "do", "does", "did", "have", "has",
-    "had", "having", "will", "would", "should", "could", "may", "might",
-    "must", "shall", "can", "cannot", "no", "not", "this", "that", "these",
-    "those", "it", "its", "they", "them", "their", "there", "here", "who",
-    "what", "which", "where", "when", "why", "how", "we", "us", "our",
-    "you", "your", "i", "me", "my", "any", "all", "some", "each", "every",
-    "either", "neither", "more", "most", "less", "least", "many", "much",
-    "few", "such", "also", "than", "so",
-    # AI Act prose recurring words (mirrors kb_search)
-    "system", "systems", "ai", "provider", "providers", "deployer",
-    "deployers", "obligation", "obligations", "requirement",
-    "requirements", "requires", "required", "include", "includes",
-    "including", "covered", "cover", "covers", "subject", "use", "used",
-    "using", "uses", "act", "regulation", "regulations", "article",
-    "articles", "annex", "annexes", "section", "sections", "art",
-})
-
-
-def _tokenize(text: str) -> list[str]:
-    """Local copy of :func:`app.data.kb_search._tokenize` — keeps this
-    module's import graph light."""
-    tokens: list[str] = []
-    for raw in _TOKEN_RE.findall((text or "").lower()):
-        if raw in _STOPWORDS:
-            continue
-        if len(raw) <= 1:
-            continue
-        if raw.isdigit() and len(raw) > 4:
-            continue
-        tokens.append(raw)
-    return tokens
 
 
 # ── Public dataclasses ───────────────────────────────────────────────────
