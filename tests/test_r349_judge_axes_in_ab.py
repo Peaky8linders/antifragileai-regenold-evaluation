@@ -168,7 +168,7 @@ class TestRunWiring:
 
         probe_rows = [_probe("1"), _probe("2")]
 
-        def _fake_load():
+        def _fake_load(**kw):  # noqa: ARG001
             return probe_rows
 
         def _fake_run_rows(rows, env, **kw):  # noqa: ARG001
@@ -201,7 +201,7 @@ class TestRunWiring:
 
     def test_run_without_judge_skips(self, monkeypatch):
         """judge_model=None (--no-judge) leaves the judge axes absent."""
-        def _fake_load():
+        def _fake_load(**kw):  # noqa: ARG001
             return [_probe("1")]
 
         monkeypatch.setattr(D, "load_probe_set", _fake_load)
