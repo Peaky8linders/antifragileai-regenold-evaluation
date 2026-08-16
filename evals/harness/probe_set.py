@@ -33,7 +33,7 @@ Pure stdlib + the existing scenario modules. No I/O at import time.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 
@@ -114,6 +114,20 @@ _PRIMARY_SOURCES: tuple[tuple[str, str, bool], ...] = (
     # Y?"). No other benchmark covers it, so it is the only sample that
     # exercises the R268 multi-article entity fix under ab_judge.
     ("evals.regenold.scenarios_multiarticle_r268", "multiarticle_r268", False),
+    # R350 — the GraphRAG-paper benchmark (40, GROUND_TRUTH) + the fresh
+    # medical/healthcare/life-sciences benchmark (24, grb_* with gold_answer)
+    # + the 20-question expert-review set (xr_*, gold derived from the EU AI
+    # Act expert's critique). Together these are the "significant sample >50"
+    # pool the live A/Bs measure: 84 rows across graphrag / medtech / expert.
+    ("evals.regenold.scenarios_graphrag_benchmark", "graphrag", False),
+    ("evals.regenold.scenarios_medtech_graphrag_v124", "medtech", False),
+    ("evals.regenold.scenarios_expert_review", "expert_review", False),
+    # R350.2 — 81 questions from "Regenold — Questions & Live Answers" (the
+    # attached live-batch file): question + live answer as gold + corrected
+    # References as expected_refs. Measures the system on real production
+    # questions (incl. 2 out-of-scope rows for the OOS guard) with the full
+    # metric set.
+    ("evals.regenold.scenarios_live_answers", "live_answers", False),
 )
 
 
@@ -143,7 +157,11 @@ def load_probe_set(
             mod = importlib.import_module(module_path)
         except Exception:  # noqa: BLE001 — a missing probe module is non-fatal
             continue
-        rows = getattr(mod, "SCENARIOS", None) or []
+        rows = (
+            getattr(mod, "SCENARIOS", None)
+            or getattr(mod, "GROUND_TRUTH", None)
+            or []
+        )
         normaliser = _norm_multi if is_mt else _norm_single
         for row in rows:
             pr = normaliser(row, source)

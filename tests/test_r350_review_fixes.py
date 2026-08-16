@@ -38,18 +38,68 @@ class TestKGPoolOrdersButNeverAdmits:
         assert pool, "no KG edges for Art. 50 — fixture assumption broken"
         assert all(ref not in ("Art. 50",) for ref, _ in pool)
 
-    def test_projection_preserves_membership_under_worst_case_rerank(self):
-        """The cross-encoder ranking every KG neighbour ABOVE the keyword hit
-        must still not change which provisions are cited."""
-        original = ["Art. 50"]
-        pairs = cr.build_kg_candidate_pool_with_reasons(original, per_ref=3)
-        pool = list(original) + [e for e, _ in pairs]
-        # Worst case: the rerank inverts, putting KG neighbours first.
-        reranked = list(reversed(pool))
-        projected = [r for r in reranked if r in set(original)]
-        assert projected == original
-        assert not (set(projected) - set(original)), (
-            "a KG-sourced provision reached the entity set — hard rule #10"
+    @staticmethod
+    def _parse_with_stubbed_rerank(monkeypatch, *, noncitable: bool):
+        """Drive the REAL `_deterministic_parse` with a stubbed cross-encoder.
+
+        ⚠ The first version of this test re-implemented the production
+        one-liner in its own body and asserted on the copy — this repo's own
+        "a test fixture that builds its own input is not a test of the
+        producer". It could not have caught a wiring change. This exercises the
+        actual call site, with the cross-encoder ranking BOTH KG neighbours
+        above BOTH keyword anchors (the worst case for gold).
+        """
+        monkeypatch.setenv("REGENOLD_COHERE_RERANK", "1")
+        monkeypatch.setenv("COHERE_API_KEY", "x")
+        monkeypatch.setenv("REGENOLD_RERANK_KG_CANDIDATES", "1")
+        monkeypatch.setenv("REGENOLD_RERANK_KG_NONCITABLE",
+                           "1" if noncitable else "0")
+        monkeypatch.setattr(cr, "build_kg_candidate_pool_with_reasons",
+                            lambda refs, **kw: [("Art. 5", "related"),
+                                                ("Art. 16", "provider chain")])
+        monkeypatch.setattr(cr, "rerank_enabled", lambda: True)
+        monkeypatch.setattr(cr, "rerank_kg_candidates_enabled", lambda: True)
+        monkeypatch.setattr(cr, "rerank_query_context", lambda **k: "")
+        monkeypatch.setattr(
+            cr, "rerank_pool",
+            lambda q, pool, **kw: (["Art. 5", "Art. 16", "Art. 9", "Art. 10"], True))
+
+        from app.engines._graph_rag_impl import _deterministic_parse
+
+        return list(_deterministic_parse(
+            "What does Article 9 and Article 10 require for high risk AI?"
+        ).entities)
+
+    def test_noncitable_arm_keeps_kg_neighbours_off_the_wire(self, monkeypatch):
+        """R350 arm — a KG-sourced provision must never reach the entity set,
+        which is what becomes obligations, CitationNodes and wire references."""
+        ents = self._parse_with_stubbed_rerank(monkeypatch, noncitable=True)
+        assert "Art. 5" not in ents and "Art. 16" not in ents, (
+            f"a KG neighbour reached the citation set: {ents}"
+        )
+        assert "Art. 9" in ents and "Art. 10" in ents, "an anchor was lost"
+
+    def test_default_arm_keeps_neighbours_but_tiers_them_behind_anchors(
+            self, monkeypatch):
+        """R351 arm (the DEFAULT) — neighbours stay citable, but every keyword
+        anchor precedes every neighbour, so the downstream budget cut can add
+        but never displace a gold anchor."""
+        ents = self._parse_with_stubbed_rerank(monkeypatch, noncitable=False)
+        nbrs = [i for i, e in enumerate(ents) if e in ("Art. 5", "Art. 16")]
+        anchors = [i for i, e in enumerate(ents) if e in ("Art. 9", "Art. 10")]
+        assert anchors and nbrs, f"expected both tiers, got {ents}"
+        assert max(anchors) < min(nbrs), (
+            f"a neighbour out-ranked an anchor: {ents}"
+        )
+
+    def test_the_two_arms_genuinely_differ(self, monkeypatch):
+        """If they did not, the A/B that is supposed to decide between them
+        would report INERT and settle nothing."""
+        strict = self._parse_with_stubbed_rerank(monkeypatch, noncitable=True)
+        tiered = self._parse_with_stubbed_rerank(monkeypatch, noncitable=False)
+        assert strict != tiered
+        assert set(strict) < set(tiered), (
+            "the strict arm must be a strict subset of the tiered arm"
         )
 
     def test_ok_is_true_even_for_a_noop_rerank(self):

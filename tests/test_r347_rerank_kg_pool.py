@@ -449,3 +449,74 @@ def test_parse_kg_off_is_pure_r340_permutation(monkeypatch):
 
     q = _deterministic_parse("What does Article 9 require for high risk AI?")
     assert captured["pool"] == q.entities  # no KG supplementation
+
+
+# ---------------------------------------------------------------------------
+# R351 — anchor-tier stabilization: KG neighbours can ADD, never displace
+# ---------------------------------------------------------------------------
+
+
+def test_stabilize_anchor_tier_basic():
+    """All anchors precede all neighbours; order within each tier preserved."""
+    ordered = ["Art. 50", "Art. 5", "Art. 13", "Art. 16"]
+    out = CR.stabilize_anchor_tier(ordered, anchors=["Art. 5", "Art. 13"])
+    # Anchors first, in rerank order; neighbours after, in rerank order.
+    assert out == ["Art. 5", "Art. 13", "Art. 50", "Art. 16"]
+    # Permutation invariant: same multiset.
+    assert sorted(out) == sorted(ordered)
+
+
+def test_stabilize_anchor_tier_is_noop_when_already_stable():
+    ordered = ["Art. 5", "Art. 13", "Art. 50", "Art. 16"]
+    assert CR.stabilize_anchor_tier(ordered, anchors=["Art. 5", "Art. 13"]) == ordered
+
+
+def test_stabilize_anchor_tier_no_anchors_returns_input():
+    ordered = ["Art. 5", "Art. 13"]
+    assert CR.stabilize_anchor_tier(ordered, anchors=[]) == ordered
+
+
+def test_stabilize_anchor_tier_preserves_rerank_order_within_tiers():
+    # Cross-encoder verdict: neighbour first, anchor second, neighbour third.
+    ordered = ["Art. 26", "Art. 13", "Art. 27"]
+    out = CR.stabilize_anchor_tier(ordered, anchors=["Art. 13"])
+    assert out == ["Art. 13", "Art. 26", "Art. 27"]
+    # The neighbour order (26 before 27) survives the stabilization.
+
+
+def test_parse_anchor_tier_stabilized_when_pool_expanded(monkeypatch):
+    """R351 — when the KG pool was expanded, the adopted entity order has
+    every keyword anchor ahead of every neighbour, so the citation budget
+    cut can never displace a gold anchor."""
+    monkeypatch.setenv("REGENOLD_COHERE_RERANK", "1")
+    monkeypatch.setenv("COHERE_API_KEY", "x")
+    monkeypatch.setenv("REGENOLD_RERANK_KG_CANDIDATES", "1")
+    captured: dict = {}
+
+    def _fake_reasons(refs, **kw):  # noqa: ARG002
+        # Anchors = the keyword entities; neighbours the KG supplements.
+        return [("Art. 5", "related"), ("Art. 16", "provider chain")]
+
+    def _fake_rerank_pool(question, pool, **kw):  # noqa: ARG002
+        captured["pool"] = list(pool)
+        # Cross-encoder verdict puts BOTH neighbours above the anchors.
+        return ["Art. 5", "Art. 16", "Art. 9", "Art. 10"], True
+
+    monkeypatch.setattr(CR, "build_kg_candidate_pool_with_reasons", _fake_reasons)
+    monkeypatch.setattr(CR, "rerank_enabled", lambda: True)
+    monkeypatch.setattr(CR, "rerank_kg_candidates_enabled", lambda: True)
+    monkeypatch.setattr(CR, "rerank_pool", _fake_rerank_pool)
+    monkeypatch.setattr(CR, "rerank_query_context", lambda **k: "")
+
+    from app.engines._graph_rag_impl import _deterministic_parse
+
+    q = _deterministic_parse(
+        "What does Article 9 and Article 10 require for high risk AI?"
+    )
+    anchors = [e for e in captured["pool"] if e not in ("Art. 5", "Art. 16")]
+    ents = list(q.entities)
+    # Every anchor precedes every neighbour in the FINAL order.
+    anchor_pos = {e: i for i, e in enumerate(ents) if e in anchors}
+    nbr_pos = {e: i for i, e in enumerate(ents) if e in ("Art. 5", "Art. 16")}
+    assert anchor_pos and nbr_pos
+    assert max(anchor_pos.values()) < min(nbr_pos.values())

@@ -1484,6 +1484,11 @@ def _engine_cache_key(
             # R348 — the expansion DEPTH (1 or 2 hops) changes the pool the
             # cross-encoder ranks the same way the gate itself does.
             "REGENOLD_RERANK_KG_HOPS",
+            # R350/R351 — which of the two competing KG-citability fixes runs.
+            # It decides whether a KG neighbour can become a WIRE CITATION, so
+            # it is engine-level by definition. Fresh read per call
+            # (`cohere_rerank.rerank_kg_noncitable`).
+            "REGENOLD_RERANK_KG_NONCITABLE",
             # R327 gate — the open-domain half of the semantic layers, separable
             # so constrained-only can be measured. Engine-level (it changes the
             # Stage-2 grounding block), so it must be keyed like its master.

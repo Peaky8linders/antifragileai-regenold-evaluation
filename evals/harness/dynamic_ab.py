@@ -759,9 +759,10 @@ def run(
     judge_concurrency: int = 4,
     judge_timeout: float = 120.0,
     judge_samples: int = 1,
+    probe_sources: tuple[str, ...] | None = None,
     emit: Callable[[str], None] = print,
 ) -> dict[str, Any]:
-    probe = load_probe_set()
+    probe = load_probe_set(sources=probe_sources)
     pool = _stratified(probe, min(max_rows, len(probe)), seed)
     emit(f"probe pool: {len(pool)} rows (stratified across "
          f"{len({r.source for r in pool})} sources)")
@@ -1194,9 +1195,12 @@ def _report(res: dict[str, Any], emit: Callable[[str], None] = print) -> None:
              f"{v['delta']:>+9.4f} {ci:>20} {n_col:>7}  {v['verdict']}")
     j = res.get("judge")
     if j:
+        # ASCII only: the cp1252 console crashes on box-drawing chars,
+        # and this line sits ABOVE the gold veto + the sidecar write.
+        # Pinned by test_r350_review_fixes.TestReportSurvivesOnACp1252Console.
         emit(f"  -- ans_corr / ref_corr / cite_faith / ans_conc are the "
              f"legal_v2 judge axes ({j.get('model')} via {j.get('provider')}, "
-             f"K={j.get('samples')}) — pass rate over paired non-error rows; "
+             f"K={j.get('samples')}) -- pass rate over paired non-error rows; "
              f"answer-level, per the Regenold rubric")
     emit("")
     for g, v in res["gold"].items():
@@ -1270,6 +1274,9 @@ def main() -> None:
                     help="judge self-consistency K (majority verdict; 2-way ties fail)")
     ap.add_argument("--no-judge", action="store_true",
                     help="skip the legal_v2 judge axes entirely")
+    ap.add_argument("--probe-sources", default=None,
+                    help="comma-separated probe source tags to run (e.g. "
+                         "graphrag,medtech,expert_review) — default: all")
     args = ap.parse_args()
 
     branch_env: dict[str, str] = {}
@@ -1319,6 +1326,8 @@ def main() -> None:
         judge_concurrency=args.judge_concurrency,
         judge_timeout=args.judge_timeout,
         judge_samples=args.judge_samples,
+        probe_sources=(tuple(s.strip() for s in args.probe_sources.split(",") if s.strip())
+                       if args.probe_sources else None),
     )
     # R350 — the sidecar is written in a `finally`. A single unencodable
     # character in the report (a U+2500 in the R349 judge-provenance line, on a

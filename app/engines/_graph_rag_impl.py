@@ -2620,8 +2620,10 @@ def _deterministic_parse(question: str) -> GraphQuery:
                 rerank_enabled,
                 rerank_kg_candidates_enabled,
                 rerank_kg_hops,
+                rerank_kg_noncitable,
                 rerank_pool,
                 rerank_query_context,
+                stabilize_anchor_tier,
             )
             if rerank_enabled():
                 # R347/R348 — hybrid-RAG pool: rank the keyword entities
@@ -2669,51 +2671,55 @@ def _deterministic_parse(question: str) -> GraphQuery:
                     question, pool, query_context=ctx, doc_reasons=doc_reasons
                 )
                 if ok:
-                    # ⚠ R350 — the KG pool ORDERS; it does not ADMIT.
+                    # TWO FIXES FOR ONE DEFECT — R350 and R351 landed the same
+                    # week, independently, on this exact statement. Both target
+                    # the same root cause: `entities = reranked` adopted the
+                    # whole KG-expanded pool, so a CROSS_REFERENCES neighbour
+                    # became a wire citation (`entities` -> one obligation each
+                    # -> `CitationNode` -> the wire `references`).
                     #
-                    # `entities = reranked` adopted the whole expanded pool, so
-                    # every CROSS_REFERENCES neighbour became a wire citation:
-                    # `entities` -> one obligation each (`"article": entity`)
-                    # -> `CitationNode` -> the wire `references`. Measured with
-                    # an identity rerank stub (the cross-encoder expressing NO
-                    # preference at all, which still returns ok=True — ok means
-                    # "the API answered", and a successful noop is ok too):
+                    #   R351 (DEFAULT, and the measured one) — tier the anchors.
+                    #     Every keyword entity stays ahead of every KG
+                    #     neighbour, rerank order preserved within each tier, so
+                    #     supplementation is strictly ADDITIVE: it can fill
+                    #     slots the anchors did not take, never displace one.
+                    #     Landed on a live 84-row A/B that measured
+                    #     `gold_dropped_head` 25 -> 27 — a hard rule #8 veto.
                     #
-                    #   "transparency obligations for chatbots"
-                    #       Art. 50  ->  Art. 50, Art. 56, Art. 98
-                    #   "do we need a FRIA?"        3 refs -> 11 refs
+                    #   R350 (`REGENOLD_RERANK_KG_NONCITABLE=1`) — project them
+                    #     out. Neighbours inform the ranking and never enter the
+                    #     citation set at all. Strictly subsumes the gold fix
+                    #     (something that cannot be cited cannot displace an
+                    #     anchor) and also closes the over-citation path R351
+                    #     leaves open: measured with an identity rerank stub,
+                    #     "transparency obligations for chatbots" gained
+                    #     `Art. 98` — *Committee procedure*, comitology — and a
+                    #     FRIA row went 3 refs -> 11.
                     #
-                    # Article 98 is *Committee procedure* — comitology — cited
-                    # on a chatbot question. That is hard rule #10 (the graph is
-                    # additive CONTEXT, never a wire citation) and it inflates
-                    # over-citation, the single axis this repo has left to win.
+                    # They are NOT redundant. R351 optimises RECALL (the lever
+                    # still buys candidates); R350 optimises PRECISION on the
+                    # over-citation axis this repo has left to win. The default
+                    # is R351 because it is the arm with a live measurement
+                    # behind it; R350 ships as a flag so the two can be A/B'd
+                    # head-to-head against gold on the same rows, which is what
+                    # the validation policy asks of any reference-affecting
+                    # change. Do not delete either side before that run.
                     #
-                    # So: restore the original membership. Genuine KG recall
-                    # may still be a good idea, but it is a reference-affecting
-                    # change and owes hard rule #8 a `gold_dropped` reading —
-                    # it does not get to arrive as a side effect of a rerank
-                    # placement.
-                    #
-                    # ⚠ CONSEQUENCE, stated plainly because the first version of
-                    # this comment got it wrong: with membership restored,
-                    # `REGENOLD_RERANK_KG_CANDIDATES` is a **provable no-op on
-                    # the wire**. Cohere `/v2/rerank` is POINTWISE — one
-                    # relevance score per (query, document) pair, independent of
-                    # the other documents in the request — so adding neighbour
-                    # documents cannot change the relative order of the original
-                    # entities. The projection then discards the neighbours.
-                    # Verified with a pointwise stub: no-KG and projected-KG arms
-                    # return identical entity order.
-                    #
-                    # That means an A/B of this flag will report INERT, and that
-                    # will be CORRECT, not a harness defect — do not spend a
-                    # round debugging `_engine_cache_key` or fresh-env reads.
-                    # `REGENOLD_RERANK_KG_HOPS` is dead weight behind it for the
-                    # same reason. To make the KG lever real it must ADMIT
-                    # candidates on a budget, with its own gold_dropped reading —
-                    # which is the measurement R350 declined to fake.
-                    _original = set(entities)
-                    entities = [r for r in reranked if r in _original]
+                    # ⚠ Under `REGENOLD_RERANK_KG_NONCITABLE=1` the KG lever is
+                    # a provable no-op on the wire: Cohere `/v2/rerank` is
+                    # POINTWISE — one score per (query, document) pair,
+                    # independent of the other documents — so adding neighbour
+                    # documents cannot reorder the originals, and the projection
+                    # then discards them. An A/B of `REGENOLD_RERANK_KG_HOPS`
+                    # in that arm will read INERT and that is CORRECT, not a
+                    # harness defect.
+                    if rerank_kg_noncitable():
+                        _original = set(entities)
+                        entities = [r for r in reranked if r in _original]
+                    elif pool is not entities:
+                        entities = stabilize_anchor_tier(reranked, entities)
+                    else:
+                        entities = reranked
         except Exception as exc:  # noqa: BLE001 — a rerank outage must never break parse
             logger.debug("cohere_rerank: parse-level entity rerank skipped: %s", exc)
 

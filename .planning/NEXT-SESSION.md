@@ -28,6 +28,7 @@ two; prefix any shared reference with the repo name. Sync by **cherry-pick** —
 | #34 | **R347** — hybrid-RAG KG supplementation for the Cohere rerank pool |
 | #35 | **R348** — semantic edge reasons + 2-hop depth in the KG rerank pool |
 | #36 | **R349** — legal_v2 judge axes join every `dynamic_ab` run (ans + ref correctness) |
+| #38 | **R350.2/R351** — live-stack A/B (84 rows) hit a hard-rule-#8 veto; fixed by `stabilize_anchor_tier` + the 81-row live-answers probe |
 
 Then **R350** (this session): a six-specialist code review of R341→R349, a skeptical
 verifier pass, and the fixes. Evidence:
@@ -53,44 +54,59 @@ answers. Four things to know:
    judge numbers on those two axes as suspect.
 3. **`REGENOLD_RERANK_KG_CANDIDATES` put graph-sourced provisions on the wire.**
    Measured: a chatbot question gained `Art. 98` (comitology); a FRIA row went 3 refs →
-   11. Now ordering-only.
+   11. ⚠ **R351 (PR #38) fixed the same defect independently and differently**, and both
+   fixes now ship: the DEFAULT is R351's anchor-tiering, and R350's projection is
+   `REGENOLD_RERANK_KG_NONCITABLE=1`. Deciding between them is open item #1.
 4. **`REGENOLD_RERANK_KG_HOPS` was inert** and would have reported a clean delta for a
    depth change that never happened, because the flag *was* cache-keyed so the fire
    check passed on Stage-2 noise. Now live.
 
 ## 3. Ranked next steps
 
-1. **Re-run the three R346 live A/Bs.** Their sidecars were written by the pre-R350
+1. **DECIDE THE KG-CITABILITY FORK — `REGENOLD_RERANK_KG_NONCITABLE`.**
+   R350 and R351 fixed the same defect independently, the same week, on the
+   same statement, and BOTH shipped: the default is R351's anchor-tiering
+   (neighbours citable, tiered behind anchors — backed by the live 84-row
+   `gold_dropped_head` 25→27 veto), and `=1` is R350's projection (neighbours
+   never citable — subsumes the gold fix and closes the over-citation path
+   R351 leaves open). They optimise different axes: R351 RECALL, R350
+   PRECISION. Run it with both KG flags on so the arms can differ:
+   `--flag REGENOLD_RERANK_KG_NONCITABLE` with
+   `REGENOLD_COHERE_RERANK=1 REGENOLD_RERANK_KG_CANDIDATES=1` and a real
+   `COHERE_API_KEY`, paced `--min-call-gap 6.5`. **The `gold_dropped` veto is
+   the gate**, and over-citation (ref_conc / ref_strict) is the tiebreak.
+   Delete the losing arm afterwards — leaving both is a fork, not a feature.
+2. **Re-run the three R346 live A/Bs.** Their sidecars were written by the pre-R350
    gate: the judge axes could score a timeout as a loss, `fire_check` could count a
    transport error as the lever firing, and any run whose report crashed left no file
    at all. The levers are unchanged; the instrument is not.
-2. **Resolve the query-expansion A/B on the frontier paraphrase tier.** Directionally
+3. **Resolve the query-expansion A/B on the frontier paraphrase tier.** Directionally
    the strongest arm (ref_loose +0.039, kw_recall +0.029, gold 17→14 — branch BETTER,
    flat latency) but UNDERPOWERED at n=60, and the measured run used the retired Haiku
    tier. Note R350 raised the wrapper paraphrase budget from a hard-coded 2.0 s to 20 s
    — on the wrapper's measured 12–17 s floor the old budget would have failed every
    call and read as INERT. The gold veto is the gate.
-3. **A/B the rerank KG pool now that both defects are fixed** — `REGENOLD_COHERE_RERANK`
+4. **A/B the rerank KG pool now that both defects are fixed** — `REGENOLD_COHERE_RERANK`
    × `REGENOLD_RERANK_KG_CANDIDATES` × `REGENOLD_RERANK_KG_HOPS`. Pace it:
    `--min-call-gap 6.5` on a Trial key, and note the fan-out is **up to 5 serial Cohere
    calls per request** (measured), so that gap is ~5× optimistic. Unpaced = false INERT.
-4. **Run `--mode hard`.** The graded turn (adversarial pushback, 67/111 rows). Still
+5. **Run `--mode hard`.** The graded turn (adversarial pushback, 67/111 rows). Still
    never run. Every decision so far is on the *easy* turn — that is the instrument trap.
-5. **Record the PRIMARY provider's failure in the reasoning trace**
+6. **Record the PRIMARY provider's failure in the reasoning trace**
    (`_graph_rag_impl.py` ~:880). Only the fallback's outcome is written, which is what
    turned R339's outage into a multi-hour diagnosis. Cheapest high-value change left.
-6. **Bound the Cohere fan-out** (see §2 / the review's Suggestions). Needs a
+7. **Bound the Cohere fan-out** (see §2 / the review's Suggestions). Needs a
    request-scoped call budget; deliberately not attempted untested in R350.
-7. **Gate the parent-collapse** with `easyhard_ab` — +0.018 F1 offline, one gold ref is
+8. **Gate the parent-collapse** with `easyhard_ab` — +0.018 F1 offline, one gold ref is
    the price.
-8. **Attack GENERATION, not selection** — the ~90% over-citation gap is upstream of the
+9. **Attack GENERATION, not selection** — the ~90% over-citation gap is upstream of the
    ranker (wrong ref 53% of the time at rank 3).
-9. **`CROSS_REFERENCES` backlinks (248 edges) as non-citable context** — best unshipped
+10. **`CROSS_REFERENCES` backlinks (248 edges) as non-citable context** — best unshipped
    graph idea. Note: **248**, not 249; CLAUDE.md said both.
-10. **Finish the judge audit.** R350 fixed the missing-array guard, but the
+11. **Finish the judge audit.** R350 fixed the missing-array guard, but the
     `GROUNDED_JUDGE_STRICT_GROUNDING` bypass and the head-lax `provision_exists`
     ghost-citation gate at `legal_v2.py:660` are still open.
-11. **Gate `REGENOLD_ONTOLOGY_RISK_DOCS`** — default-ON, live-shipping, 9/110 measured
+12. **Gate `REGENOLD_ONTOLOGY_RISK_DOCS`** — default-ON, live-shipping, 9/110 measured
     context regressions, no verdict. Do NOT just flip the default off.
 
 ## 4. Environment for a live Bedrock A/B
@@ -109,9 +125,13 @@ REGENOLD_BEDROCK_MODEL=claude-opus-4-6   # + _STAGE2_ / _COMPLEX_ / _STAGE1_
 py -3.12 -m evals.harness.dynamic_ab --flag REGENOLD_QUERY_EXPANSION --label x --max-rows 137
 ```
 
-⚠ **New in R350:** `--endpoint` now actually works and implies `--no-local`; the run
-prints which system is under test. Before R350 `--local` was `store_true, default=True`,
-so `--endpoint` was silently ignored and you measured your working tree.
+⚠ **`--endpoint` is now REJECTED with an explanation, and that is deliberate.** Before
+R350 `--local` was `store_true, default=True`, so `--endpoint` was parsed and silently
+ignored — you measured your working tree believing you measured the deployment. Making it
+reachable then exposed that it *cannot* work: the branch env is applied in THIS process
+and cannot reach a deployed service, so both arms would hit the same remote config,
+diverge on nothing, and report a false INERT. A/Bs run `--local`; probe a deployment with
+`runner_v2` instead.
 
 **Verify the key first**: `check_connectivity_and_permissions('claude-opus-4-6')` must
 say `status: ok` — ABSK keys expire after 30 days.
