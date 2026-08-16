@@ -563,6 +563,96 @@ def render_answer_crag_fine(r: dict[str, Any], gold_block: str) -> str:
     )
 
 
+# ── Axis 6 — Faithfulness (Ragas-style, reference-free) ─────────────────
+
+
+#: HyPA-RAG (Kalra et al., Holistic AI / UCL) evaluation metric #1, ported
+#: from Ragas: Faithfulness = |C_inferred| / |C_total| — the fraction of
+#: answer claims that are supported by the RETRIEVED context. Reference-free
+#: (uses the retrieved context, never the gold answer), so it scores the
+#: no-gold half of a benchmark that the gold-bound axes cannot touch.
+#: Grounding: verbatim provision text for the PREDICTED refs (what the
+#: answer claims to rely on). Verdict derived: pass iff all claims are
+#: supported (faithfulness = 1.0), the Ragas default threshold — a single
+#: unsupported claim is a hallucination-risk flag even at 0.8.
+_FAITHFULNESS_RUBRIC = (
+    "Decompose the PREDICTED ANSWER into discrete factual claims (one "
+    "assertion each). For EACH claim, using ONLY the verbatim text above "
+    "and no outside legal memory, decide whether the text ENTRAILS it "
+    "(states it directly or states premises that necessarily imply it).\n"
+    "  SUPPORTED — the text states it, or necessarily implies it.\n"
+    "  UNSUPPORTED — the text neither states nor implies it (may be "
+    "outside the retrieved provisions, invented, or unverifiable from "
+    "the text).\n"
+    "Do not penalise a claim merely because the retrieved context does "
+    "not cover a DIFFERENT part of the regulation the question also "
+    "touches: judge only what the answer asserts against the text "
+    "supplied. For every UNSUPPORTED claim, state in one short phrase "
+    "what the claim says and why the text does not support it.\n"
+)
+
+
+def render_answer_faithfulness(r: dict[str, Any], pred_map: dict[str, str]) -> str:
+    """Ragas Faithfulness (reference-free) — HyPA-RAG metric #1.
+
+    Faithfulness = supported claims / total claims, computed from the
+    retrieved context (predicted refs' verbatim text). Reference-free: no
+    gold answer or gold refs are used, so this scores the no-gold half of
+    a benchmark (e.g. graphrag_evals_dataset.txt B.2.2) that the
+    gold-bound axes (answer_correctness, answer_crag_fine,
+    reference_correctness) cannot touch.
+    """
+    pred_block = _block_from_map(pred_map)
+    return (
+        _ANTI_SYCOPHANCY +
+        "You are grading whether an answer is FAITHFUL to its cited "
+        "context: every claim in the answer must be entailed by the "
+        "retrieved text, not by the model's parametric memory.\n\n"
+        f"QUESTION: {r['question'][:500]}\n\n"
+        "VERBATIM RETRIEVED TEXT (the provisions the answer cites):\n"
+        f"{pred_block or '  (none — the answer cites no provisions)'}\n\n"
+        f"PREDICTED ANSWER: {r['answer']}\n\n"
+        f"{_FAITHFULNESS_RUBRIC}\n"
+        "Respond with ONE JSON object only (no prose, no markdown fences):\n"
+        '{"claims":[{"text":"...","status":"SUPPORTED"|"UNSUPPORTED",'
+        '"why":"<one short phrase, only for UNSUPPORTED>"}],'
+        '"failure_mode":"<one short phrase>"}'
+    )
+
+
+def render_answer_relevancy(r: dict[str, Any]) -> str:
+    """Ragas Answer Relevancy (reference-free) — HyPA-RAG metric #2.
+
+    Measures whether the answer actually addresses the QUESTION asked (vs
+    a fluent answer about a nearby topic). Reference-free: no gold answer
+    or refs are used. The paper's formula (generate questions from the
+    answer, cosine-sim their embeddings against the original query) is
+    approximated by a grounded LLM-judge relevancy score on the same 0-1
+    scale, per the paper's own human annotation criterion #2 ("Is the
+    answer relevant to the question?").
+    """
+    return (
+        _ANTI_SYCOPHANCY +
+        "You are grading whether an answer is RELEVANT to the question "
+        "asked. An answer can be accurate about its topic and still be "
+        "irrelevant if it answers a different question than the one posed.\n\n"
+        f"QUESTION: {r['question'][:500]}\n\n"
+        f"PREDICTED ANSWER: {r['answer']}\n\n"
+        "Scoring (Ragas answer-relevancy semantics):\n"
+        "  relevant = 1.0 if the answer directly addresses the question.\n"
+        "  relevant = 0.5 if it addresses a substantial part but misses a "
+        "core sub-question, or answers a closely-adjacent reading.\n"
+        "  relevant = 0.0 if it answers a different question, evades the "
+        "question, or its content does not respond to what was asked.\n"
+        "You may use intermediate values when the answer is partly on "
+        "target. Return the score on the Ragas 0-1 continuum.\n\n"
+        "Respond with ONE JSON object only (no prose, no markdown fences):\n"
+        '{"relevancy":0.0,"rationale":"<one short sentence: what the '
+        '"question asked and whether the answer addressed it>",'
+        '"failure_mode":"<one short phrase>"}'
+    )
+
+
 def render_answer_conciseness(r: dict[str, Any]) -> str:
     """Judges only what is PRESENT for load-bearing relevance; never rewards omission."""
     return (
@@ -627,6 +717,16 @@ def _prepare(axis: str, r: dict[str, Any]) -> tuple[str, dict[str, Any]]:
         candidate_refs = list(dict.fromkeys((r.get("gold_refs") or []) + (r.get("pred_refs") or [])))
         gold_map = _resolve_provision_texts(candidate_refs, _GOLD_TEXT_CAP, _MAX_GOLD_REFS)
         return render_answer_crag_fine(r, _block_from_map(gold_map)), {"union_map": gold_map}
+    if axis == "answer_faithfulness":
+        # Reference-free (Ragas faithfulness): the only evidence is the
+        # verbatim text of the PREDICTED refs — never the gold answer, and
+        # never gold refs, so the axis stays scorable on the no-gold half of
+        # a benchmark. Gold refs deliberately NOT consulted here.
+        pred_map = _resolve_provision_texts(r["pred_refs"], _PRED_TEXT_CAP, _MAX_PRED_REFS)
+        return render_answer_faithfulness(r, pred_map), {"pred_map": pred_map}
+    if axis == "answer_relevancy":
+        # Reference-free (Ragas answer relevancy): question + answer only.
+        return render_answer_relevancy(r), {}
     raise ValueError(f"unknown axis {axis!r}; valid: {AXES}")
 
 
@@ -653,6 +753,12 @@ _AXIS_KEYS: dict[str, tuple[str, ...]] = {
     "answer_conciseness": ("redundant_sentences", "unrequested_topics",
                            "sentence_count"),
     "answer_crag_fine": ("score", "class", "rationale", "missing", "hallucinated"),
+    # Structured carriers ONLY — a reply carrying just free-text
+    # (failure_mode/rationale) has not answered the axis and must be
+    # unscorable, never silently scored as a pass (R350: absent is not
+    # empty; empty [] claims IS a legitimate pass finding).
+    "answer_faithfulness": ("claims",),
+    "answer_relevancy": ("relevancy",),
 }
 
 
@@ -1035,6 +1141,84 @@ def _postprocess_answer_crag_fine(raw: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _postprocess_answer_faithfulness(raw: dict[str, Any]) -> dict[str, Any]:
+    """Ragas Faithfulness — HyPA-RAG metric #1, reference-free.
+
+    faithfulness = supported_claims / total_claims (the paper's formula,
+    ported from Ragas). Verdict: pass iff faithfulness == 1.0 — the Ragas
+    default threshold; a single unsupported claim is a hallucination-risk
+    flag even at 0.8, so only a fully-grounded answer passes. No gold
+    answer or gold refs are involved, so this scores the no-gold half of
+    a benchmark (graphrag_evals_dataset.txt B.2.2) that gold-bound axes
+    cannot touch.
+    """
+    if raw.get("judge_error"):
+        return dict(raw)
+    _unanswered = _axis_unanswered(raw, "answer_faithfulness")
+    if _unanswered is not None:
+        return _unanswered
+    claims = raw.get("claims") or []
+    supported = unsupported = 0
+    unsupported_claims: list[str] = []
+    for c in claims:
+        if not isinstance(c, dict):
+            continue
+        status = str(c.get("status") or "").strip().upper().replace(" ", "-")
+        if status == "UNSUPPORTED":
+            unsupported += 1
+            unsupported_claims.append(str(c.get("text") or c.get("why") or ""))
+        else:
+            # SUPPORTED and any malformed/unclassified entry: count as
+            # supported rather than dropping it from the denominator — an
+            # unclassified claim is never evidence of a hallucination.
+            supported += 1
+    total = supported + unsupported
+    # Ragas semantics: no claims decomposed -> nothing to be unfaithful to.
+    faithfulness = (supported / total) if total else 1.0
+    verdict = "pass" if unsupported == 0 else "fail"
+    return {
+        "verdict": verdict,
+        "faithfulness": round(faithfulness, 4),
+        "supported": supported,
+        "unsupported": unsupported,
+        "unsupported_claims": unsupported_claims,
+        "failure_mode": raw.get("failure_mode") or "",
+        "_raw": raw,
+    }
+
+
+def _postprocess_answer_relevancy(raw: dict[str, Any]) -> dict[str, Any]:
+    """Ragas Answer Relevancy — HyPA-RAG metric #2, reference-free.
+
+    relevancy on the 0-1 continuum (the prompt allows intermediate
+    values). Verdict: pass iff relevancy >= 0.5 — the Ragas default
+    threshold; an answer that addresses a substantial part of the
+    question passes (completeness is graded on answer_correctness /
+    answer_crag_fine, not here), while an answer that evades the question
+    or answers a different one fails. No gold involved.
+    """
+    if raw.get("judge_error"):
+        return dict(raw)
+    _unanswered = _axis_unanswered(raw, "answer_relevancy")
+    if _unanswered is not None:
+        return _unanswered
+    try:
+        relevancy = float(raw.get("relevancy"))
+    except (TypeError, ValueError):
+        return {"judge_error": "relevancy_not_numeric", "_raw": raw}
+    if not (0.0 <= relevancy <= 1.0):
+        return {"judge_error": f"relevancy_out_of_range: {relevancy}", "_raw": raw}
+    relevancy = round(relevancy, 4)
+    verdict = "pass" if relevancy >= 0.5 else "fail"
+    return {
+        "verdict": verdict,
+        "relevancy": relevancy,
+        "rationale": str(raw.get("rationale") or ""),
+        "failure_mode": raw.get("failure_mode") or "",
+        "_raw": raw,
+    }
+
+
 def _postprocess(axis: str, raw: dict[str, Any], r: dict[str, Any], ctx: dict[str, Any]) -> dict[str, Any]:
     if raw.get("judge_error"):
         return dict(raw)
@@ -1054,6 +1238,10 @@ def _postprocess(axis: str, raw: dict[str, Any], r: dict[str, Any], ctx: dict[st
         return _postprocess_answer_conciseness(raw, r["answer"])
     if axis == "answer_crag_fine":
         return _postprocess_answer_crag_fine(raw)
+    if axis == "answer_faithfulness":
+        return _postprocess_answer_faithfulness(raw)
+    if axis == "answer_relevancy":
+        return _postprocess_answer_relevancy(raw)
     raise ValueError(f"unknown axis {axis!r}; valid: {AXES}")
 
 
@@ -1065,6 +1253,8 @@ _NUMERIC_FIELDS: dict[str, tuple[str, ...]] = {
     "citation_faithfulness": ("faithful", "mismatched"),
     "answer_conciseness": ("redundant_sentence_count", "unrequested_topic_count"),
     "answer_crag_fine": ("crag_score", "truthfulness"),
+    "answer_faithfulness": ("faithfulness", "supported", "unsupported"),
+    "answer_relevancy": ("relevancy",),
 }
 
 
@@ -1339,6 +1529,33 @@ def _aggregate(judged: list[dict[str, Any]]) -> dict[str, Any]:
                 entry["truthfulness"] = round(sum(crag_scores), 4)
                 entry["mean_crag_score"] = round(sum(crag_scores) / len(crag_scores), 4)
             entry["hallucinated_rows"] = hallucinated_rows
+        if axis == "answer_faithfulness":
+            # HyPA-RAG metric #1 — mean faithfulness plus a count of rows
+            # carrying at least one unsupported (hallucination-risk) claim.
+            fth: list[float] = []
+            unsupported_rows = 0
+            for row in judged:
+                v = (row.get("verdicts") or {}).get(axis) or {}
+                if v.get("judge_error"):
+                    continue
+                if v.get("faithfulness") is not None:
+                    fth.append(_num(v["faithfulness"]))
+                if (v.get("unsupported") or 0) > 0:
+                    unsupported_rows += 1
+            if fth:
+                entry["mean_faithfulness"] = round(sum(fth) / len(fth), 4)
+            entry["unsupported_rows"] = unsupported_rows
+        if axis == "answer_relevancy":
+            # HyPA-RAG metric #2 — mean relevancy over the 0-1 continuum.
+            rel: list[float] = []
+            for row in judged:
+                v = (row.get("verdicts") or {}).get(axis) or {}
+                if v.get("judge_error"):
+                    continue
+                if v.get("relevancy") is not None:
+                    rel.append(_num(v["relevancy"]))
+            if rel:
+                entry["mean_relevancy"] = round(sum(rel) / len(rel), 4)
         agg[axis] = entry
 
     total_claims = global_substantiated + global_unsubstantiated
@@ -1552,6 +1769,15 @@ def _fmt(s: dict[str, Any]) -> str:
                 f"   omission_rows={a.get('omission_rows', 0)} "
                 f"fabrication_rows={a.get('fabrication_rows', 0)}"
             )
+        if axis == "answer_faithfulness":
+            if "mean_faithfulness" in a:
+                out.append(
+                    f"   mean_faithfulness={a['mean_faithfulness']} "
+                    f"unsupported_rows={a.get('unsupported_rows', 0)}"
+                )
+        if axis == "answer_relevancy":
+            if "mean_relevancy" in a:
+                out.append(f"   mean_relevancy={a['mean_relevancy']}")
         if "mean_judge_agreement" in a:
             out.append(f"   judge_agreement={a['mean_judge_agreement']}")
         for mode, c in (a.get("top_failure_modes") or [])[:5]:
