@@ -369,13 +369,15 @@ class TestJudgeAxisAnsweredGuard:
         """A new axis without an entry would silently never be guarded.
 
         R359 adds the opt-in ``answer_crag_fine`` axis (NICD paper C.2.2,
-        fine-grained CRAG answer scoring); it is NOT in the default AXES
-        tuple but it has its own key set, so it must be listed here too.
+        fine-grained CRAG answer scoring); R360 adds the opt-in
+        reference-free ``answer_faithfulness`` / ``answer_relevancy`` axes
+        (HyPA-RAG metrics #1/#2). None are in the default AXES tuple but
+        each has its own key set, so all must be listed here too.
         """
         assert set(L._AXIS_KEYS) == {
             "answer_correctness", "reference_correctness",
             "citation_faithfulness", "answer_conciseness",
-            "answer_crag_fine",
+            "answer_crag_fine", "answer_faithfulness", "answer_relevancy",
         }
 
 
