@@ -752,6 +752,7 @@ def run(
     timeout: float,
     null_band: float,
     seed: int,
+    min_rows: int = 0,
     control_layer: str | None = None,
     min_gap: float = 0.0,
     judge_model: str | None = "claude-sonnet-4-6",
@@ -897,7 +898,14 @@ def run(
             }
 
         # ── adaptive stop: every axis resolved? ────────────────────────────
-        if len(base_rows) >= batch * 2:
+        # R353.3 — ``--min-rows`` is a floor on the ADAPTIVE stop only. A
+        # small ``--batch`` checkpoints often (every batch, so the run is
+        # survivable and inspectable), but the stop check at ``batch * 2``
+        # would fire on a NULL-heavy sample and abort a lever that needs more
+        # rows to show signal. With a floor, the run keeps going until it has
+        # enough pairs to be representative; it still stops early on a clear
+        # WIN/LOSS verdict once past the floor.
+        if len(base_rows) >= max(batch * 2, min_rows):
             res = _analyse(base_rows, brch_rows, null_band=null_band)
             if all(v["verdict"] in ("WIN", "LOSS", "NULL")
                    for v in res["axes"].values()):
@@ -1237,6 +1245,10 @@ def main() -> None:
     ap.add_argument("--label", default="dynamic-ab")
     ap.add_argument("--max-rows", type=int, default=60)
     ap.add_argument("--batch", type=int, default=12)
+    ap.add_argument("--min-rows", type=int, default=0,
+                    help="floor on the adaptive stop — keep running until at "
+                         "least this many rows even if all axes resolve NULL "
+                         "early (checkpoints still land every batch)")
     # R350 — was `action="store_true", default=True`, which can only ever
     # produce True: `--endpoint` was parsed, threaded all the way through
     # run() and _run_rows, and then silently ignored, so an operator aiming the
@@ -1319,7 +1331,7 @@ def main() -> None:
         branch_env=branch_env, label=args.label, max_rows=args.max_rows,
         batch=args.batch, local=local, endpoint=args.endpoint,
         api_key=args.api_key or None, timeout=args.timeout,
-        null_band=args.null_band, seed=args.seed,
+        null_band=args.null_band, seed=args.seed, min_rows=args.min_rows,
         control_layer=args.control_layer, min_gap=args.min_call_gap,
         judge_model=(None if args.no_judge else args.judge_model),
         judge_provider=args.judge_provider,
