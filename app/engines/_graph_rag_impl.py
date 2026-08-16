@@ -2275,6 +2275,37 @@ def _deterministic_parse(question: str) -> GraphQuery:
         except Exception as exc:  # noqa: BLE001 — expansion must never break parse
             logger.debug("query_expansion_parse_failed: %s", exc)
 
+    # R353 — the R352 surviving hypothesis (``REGENOLD_RISK_CLASS_ANNEX``,
+    # default OFF): on the yes/no "is X high-risk / regulated under the AI
+    # Act?" shape, append ``Annex III`` (the list of high-risk use cases) as
+    # a RECALL SUPPLEMENT. Exact gold impact computed over the whole 297-row
+    # probe pool before this line existed (see
+    # ``app/engines/risk_classification.py`` module docstring): fires on 13
+    # rows, Annex III gold-but-missing on 7, zero non-gold additions after
+    # the prohibition exclusion. Appended AFTER the keyword anchors so it can
+    # only fill slots they did not take; the parse-level cross-encoder rerank
+    # (R340, below) then decides its final position — the reranker is the
+    # precision guard against a trigger misfire on an unseen question.
+    try:
+        from app.engines.risk_classification import (  # noqa: PLC0415
+            annex_iii_risk_class_anchor_enabled,
+            is_yes_no_risk_classification,
+        )
+        _r353_q = question
+        if "Latest question:\n" in question:
+            # Multi-turn flattening puts the live turn last; the trigger is
+            # a yes/no shape that the "Conversation so far:" preamble would
+            # otherwise mask.
+            _r353_q = question.rsplit("Latest question:\n", 1)[-1]
+        if (
+            annex_iii_risk_class_anchor_enabled()
+            and "Annex III" not in entities
+            and is_yes_no_risk_classification(_r353_q)
+        ):
+            entities.append("Annex III")
+    except Exception as exc:  # noqa: BLE001 — the anchor must never break parse
+        logger.debug("risk_class_annex_failed: %s", exc)
+
     # R137 — role-contrast obligational anchor (see module-level
     # ``_is_role_contrast_obligation``). Scans the LIVE turn only (post the
     # flatten marker) so a prior multi-turn turn mentioning one role can't
