@@ -1,89 +1,79 @@
-# Next session — handoff after R353
+# Next session — handoff (2026-08-16, after R354 Fix A)
 
-**State:** main clean at `0a747f2` (+ merge of #42). Full suite: 6574 passed / 0 failed.
-Bedrock daily quota is the binding constraint — check `Sonnet`/`Opus` with a spaced probe before any live run.
+## Where we are
 
-## PR ledger (latest first)
+**R354 deep-dive committed** (`docs/R354-veto-rows-deep-dive.md`): the six
+live-answers veto rows (la_q87/20/51/73/84/52) are THREE distinct mechanisms,
+not one bug:
 
-| PR | what | status |
-|---|---|---|
-| #42 | **R353 — Annex III anchor** for the yes/no "is X high-risk?" shape (`REGENOLD_RISK_CLASS_ANNEX`, default OFF). Exact gold impact 7/0 over 297 rows (100% precision). Review report: `docs/R353-reranker-review.md` | MERGED |
-| #41 | handoff doc | merged |
-| #40 | R350/R350.2 full checkpoint (1.28 MB, all live answers + judge remarks) | merged |
-| #38 | R351 anchor-tier stabilization | merged |
+1. **la_q73 — a real pipeline bug (fixed, R354 Fix A #48):** the R138
+   final citation-consistency pass was Stage-2-gated, so a Stage-2-failed
+   row shipped raw retrieval candidates even when the answer prose named a
+   gold ref the wire lacked. la_q73's branch answer names "Annex I" TWICE,
+   wire shipped `[Article 43, Article 6, Article 27, Article 49]` (Article
+   43 never named in the prose, Annex I missing).
+2. **la_q20 — a gold-coverage gap:** the branch is legally MORE correct
+   (Article 74(12) genuinely requires market-surveillance remote access);
+   the graded gold `[16, 26]` penalizes it. Gold edit, NOT a code edit.
+3. **la_q87 / la_q51 / la_q84 / la_q52 — generation/topic drift from the
+   KG-pool lever:** the candidate pool changes what Stage-2 writes; the wire
+   follows the prose. The decisive isolation A/B (rerank × expansion with
+   `REGENOLD_RERANK_KG_CANDIDATES` OFF) is still unrun.
 
-## The R353 lever — one measurement open
+**R354 Fix A shipped (#48, merged):** `REGENOLD_DETERMINISTIC_PROSE_CONSISTENCY`
+(default OFF) extends the R138 add-pass to the deterministic path. Measured
+BEFORE code on the 81-row checkpoint: **11 rows, 11 gold heads restorable**
+(la_q73 fully closed, la_q51 4→3, la_q84 9→8). 7 tests, 6591 suite green.
+Route-level (NOT in `_engine_cache_key` — the R79 doctrine), fresh read per
+call.
 
-**What it is:** on yes/no "is [ordinary software] high-risk / regulated under
-the AI Act?" questions, `_deterministic_parse` appends `Annex III` (the
-high-risk use-case list) to the entity list. R352 refuted the broad
-risk-classification triad (Art. 6 0% / Annex III 24% / Annex I 11% precise);
-this is the surviving narrow shape, computed exactly over the whole pool
-before any engine code (`scratch/verify_r352_final.py`): 11 fired rows, 7
-gold gains, 0 non-gold.
+## Running now
 
-**Verified so far (zero quota):**
-- parse appends Annex III on all 7 gain shapes (tests pin this);
-- `_retrieve_from_kb` produces a `kb-risk_mgmt-Annex III` obligation in the
-  branch arm, absent in baseline (engine-level half of the wire chain);
-- smoke A/B (6 clean rows, no throttle): lever fired 4/6, gold 1.0→1.0, no veto.
-
-**NOT yet measured (needs quota):** the wire half — does Stage-2 prose
-mention Annex III so Component D promotes it to the wire refs on the 7 gain
-rows? And all judge axes (ans_corr / ref_corr / cite_faith / ans_conc) +
-gold veto at full n.
-
-**Relaunch (when a quota window opens — Sonnet tier, within-model):**
 ```
-PYTHONPATH=. py -3.12 scratch/run_ab_r353.py --label r353-annex \
-    --branch-env REGENOLD_RISK_CLASS_ANNEX=1 --max-rows 133 --batch 8 \
-    --min-call-gap 8 --probe-sources lower_risk_v149,graphrag,live_answers
+scratch/run_ab_r354.py   (PID was 509736)
+label r354-fix-a, 81 rows (live_answers), batch=8 (checkpoint every 8),
+min-rows=48, gen sonnet-4-6, judge opus-4-6 (both healthy),
+REGENOLD_STAGE2_HARD_FAIL=1 (throttle errors the row, never silent fallback)
 ```
-Watch the log for `regenold_stage2_fallback_served` — a throttled run serves
-deterministic answers that look healthy on the wire (`err: None`), so kill it
-and keep only the rows before the first fallback warning. The 8s pacing on
-Sonnet exhausted the daily quota at ~n=16-40; a fresh day should clear 133.
 
-## The veto fork — still undecided (open item #1)
+Check: `evals/bench/results/dynamic-ab-r354-fix-a.json` (every ~8 rows) and
+`scratch/r354-fix-a.log`. Kill at the first `regenold_stage2_fallback_served`
+or `api_throttled_429` — a throttled Stage-2 must NOT serve the judge.
 
-`REGENOLD_RERANK_KG_NONCITABLE` — R351 (default, anchor-tiering) vs R350
-(projection). Every combination that INCLUDES KG-candidates has vetoed gold
-(R350 25→27, R350.2 46→49); expansion alone measured positive (17→14). The
-decisive isolation runs (expansion-only; rerank×expansion, no KG) have never
-been run on the live-answers probe. **The R353 review's finding #1:** the
-R350.2 blame of the KG pool is correlation (3 levers changed at once), not
-measurement.
+## The decision this A/B resolves
 
-## Review findings from R353 (docs/R353-reranker-review.md)
+Gate: gold_dropped is a veto (hard rule #8). If the branch does NOT drop gold
+and the judge axes are positive/neutral → flip `REGENOLD_DETERMINISTIC_PROSE_CONSISTENCY`
+default to ON in `app/routes/regenold.py` + CLAUDE.md. If it drops gold →
+keep OFF and revisit.
 
-1. R350.2 veto attribution = correlation (3-lever arm, one-lever blame).
-2. Wire refs are answer-driven (`engine refs ∩ prose`) ∪ Component-D prose
-   refs — cut-level guarantees (R351) cannot close generation-level vetoes;
-   judge retrieval levers at the WIRE (gold_dropped + judge axes), never the
-   entity list.
-3. `article_heads()` doesn't normalize short-form `Art.` — ad-hoc analyses
-   comparing parse entities vs gold inflate "missing"; a `parse_entity_heads`
-   helper would remove the trap.
-4. Cohere rerank is POINTWISE — the R351 KG lever ADDS candidates, it cannot
-   reorder anchors; flag-table language should say "addition".
-5. Up to 5 serial Cohere calls per request when both gates on — needs a
-   request-scoped call budget.
+**Caveat:** the flag only fires on rows where Stage-2 does NOT land. In this
+A/B, gen tier is healthy sonnet-4-6, so most rows WILL land Stage-2 → the
+deterministic arm may barely fire → expect mostly-identical arms (that is
+still a valid null, but the la_q73 class only shows when Stage-2 fails).
+If the arm is too quiet, the honest measurement is the replay harness with
+`REGENOLD_STAGE2_HARD_FAIL=1` forcing the deterministic path.
+
+## Next highest-value items (ranked)
+
+1. **The decisive KG-off isolation A/B** (R354 Fix C): rerun the 81-row
+   live-answers probe with `REGENOLD_COHERE_RERANK=1
+   REGENOLD_QUERY_EXPANSION=1` and `REGENOLD_RERANK_KG_CANDIDATES=0`
+   (or unset). Expansion alone had the only positive live evidence (R346:
+   gold 17→14). If the veto clears without the KG pool, the pool gets the
+   R352 deletion treatment (flag + branch + tests).
+2. **Judge the 81-row live-answers checkpoint** (`scratch/judge_live_answers.py`
+   — uses Opus 4.6 now, resume-aware, one arm at a time). The previous
+   attempt was 503-contaminated (13 clean base rows only).
+3. **Annotate la_q20's gold** in `evals/regenold/scenarios_live_answers.py`
+   as a known coverage gap (Article 74(12) is the correct provision) so the
+   veto book stops penalizing the legally-correct answer.
 
 ## Bedrock recipe
 
-- `.env` lives in the MAIN project folder; `scratch/live_ab_env.py` loads it
-  and forces `P2P_GRAPH_RAG_PROVIDER=bedrock`, embedded graph, no external
-  embeddings. Override the model envs to the tier with quota.
-- Throttle is a **per-model rotating daily window** — when Opus 429s, Sonnet
-  may be healthy and vice versa. Probe with 12s spacing before launching.
-- A throttled Stage-2 falls back to the deterministic answer with `err: None`
-  — the fire check passes on garbage. Grep the run log for
-  `regenold_stage2_fallback_served` and cut the run there.
-
-## Do-not-re-propose (keeps growing)
-
-- Anchoring the risk-classification triad (Art. 6 + Annex III + Annex I) —
-  R352: 12% precise, Art. 6 exactly 0% (gold cites the list, never the rule).
-- R329's first three rerank placements (inert); R142.1's final-ref clamp
-  (lost the pairwise judge 11-0); REGENOLD_REF_PARTITION; REGENOLD_COMPLETENESS_VERIFIER;
-  REGENOLD_PARENT_COLLAPSE un-gated; the five over-citation trimmer families.
+- `.env` in the MAIN project folder (`D:/Claude Projects/antifragileai-regenold-evaluation/.env`);
+  this worktree's scratch loads it via `scratch/live_ab_env.py`.
+- Tiers (2026-08-16): 4.6 both healthy. 5-series + 4.7/4.8 = 403-denied.
+- 503s are AWS-side outages (transient); probe with 2s spacing before a run.
+- Per-model daily quota: Opus 4.6 exhausts before Sonnet 4.6; the A/B is
+  within-model per arm so deltas stay unbiased even when the tier degrades.

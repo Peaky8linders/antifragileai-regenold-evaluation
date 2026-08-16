@@ -3434,7 +3434,7 @@ def _component_d_citable_only_enabled() -> bool:
 
 def _deterministic_prose_consistency_enabled() -> bool:
     """R354 — run the R138 prose-consistency ADD pass when Stage-2 did NOT
-    land? **OFF**.
+    land? **ON** (flipped after the live deterministic-path A/B).
 
     The R138 final consistency pass (every article/annex the SHIPPED answer
     names must appear in the wire references) is Stage-2-gated. On the
@@ -3442,15 +3442,19 @@ def _deterministic_prose_consistency_enabled() -> bool:
     gold ref can ship uncited while a cited-but-undescribed ref rides along
     — the la_q73 defect: branch answer names "Annex I" twice, wire ships
     [Article 43, Article 6, Article 27, Article 49] with no Annex I.
-    Measured over the 81-row live-answers checkpoint: 11 rows, 11 gold heads
-    restorable (la_q73 fully closed, la_q51 4→3, la_q84 9→8).
 
-    Default OFF per the validation policy: this is answer-affecting on the
-    deterministic path, so it ships behind an off-switch until the live A/B
-    (REGENOLD_DETERMINISTIC_PROSE_CONSISTENCY=1 vs default on the 81-row
-    probe) measures the gold veto. Fresh env read per call (R263.2).
+    DECISION (2026-08-16, deterministic-path A/B on the 81-row live-answers
+    probe, ``r354-fix-a-det``): gold_dropped_head base 72 → branch 60
+    (delta −12, ZERO regressions), FIRED 30 rows (29 refs, 1 answer — the
+    pass only ADDS refs, it never rewrites prose). The counterfactual over
+    the R350.2 checkpoint agreed: 76 → 65 (−11). The add is strictly
+    existence-gated + cross-instrument-guarded + capped (cannot invent a
+    reference), and the same pass is already A/B-accepted on the Stage-2
+    path (R134/R138). Flip kept an off-switch: set
+    ``REGENOLD_DETERMINISTIC_PROSE_CONSISTENCY=0`` to restore the old
+    Stage-2-only behaviour. Fresh env read per call (R263.2).
     """
-    return os.getenv("REGENOLD_DETERMINISTIC_PROSE_CONSISTENCY", "0").strip().lower() in (
+    return os.getenv("REGENOLD_DETERMINISTIC_PROSE_CONSISTENCY", "1").strip().lower() in (
         "1",
         "true",
         "yes",

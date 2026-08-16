@@ -49,11 +49,18 @@ _LA_Q73_CITABLE = frozenset({
 })
 
 
-def test_flag_default_off(monkeypatch):
-    """The flag must default OFF — the deterministic arm is inert until the
-    live A/B measures it (validation policy: answer-affecting ships behind
-    an off-switch)."""
+def test_flag_default_on(monkeypatch):
+    """The flag defaults ON after the live deterministic-path A/B
+    (r354-fix-a-det: gold_dropped_head base 72 → branch 60, delta −12,
+    zero regressions, FIRED 30 rows). The off-switch still exists for
+    rollback."""
     monkeypatch.delenv("REGENOLD_DETERMINISTIC_PROSE_CONSISTENCY", raising=False)
+    assert _deterministic_prose_consistency_enabled() is True
+
+
+def test_flag_explicitly_off_restores_old_behavior(monkeypatch):
+    """The off-switch must still disable the deterministic arm."""
+    monkeypatch.setenv("REGENOLD_DETERMINISTIC_PROSE_CONSISTENCY", "0")
     assert _deterministic_prose_consistency_enabled() is False
 
 
@@ -100,9 +107,9 @@ def test_no_citable_universe_uses_references_and_prose(monkeypatch):
 
 def test_flag_off_leaves_wire_untouched(monkeypatch):
     """Flag OFF: the route gate is inert, so a deterministic row ships its
-    raw candidates byte-identically — the davidath contract (no Stage-2 on
-    the bench → this arm must never fire there). The helper itself returns
-    False; the route gate short-circuits on it."""
+    raw candidates byte-identically — the pre-R354 behaviour is one env
+    flip away (the off-switch). The helper itself returns False; the route
+    gate short-circuits on it."""
     monkeypatch.setenv("REGENOLD_DETERMINISTIC_PROSE_CONSISTENCY", "0")
     assert _deterministic_prose_consistency_enabled() is False
 
