@@ -1146,6 +1146,20 @@ def _apply_fact_state_carry_forward(
     return out
 
 
+def _stage2_hard_fail_enabled() -> bool:
+    """R353.2 — hard-fail the route when the Stage-2 LLM is unavailable?
+
+    Default **OFF**: production keeps the deterministic fallback (fail-soft;
+    never 500 the route). The A/B harness turns it on so a throttled run
+    records ``http_503`` per row instead of silently serving deterministic
+    answers that pass the fire check (the R350.2 contamination trap). Fresh
+    env read per call (R263.2).
+    """
+    return os.getenv("REGENOLD_STAGE2_HARD_FAIL", "0").strip().lower() not in {
+        "0", "false", "no", "off", "",
+    }
+
+
 def _subpoint_existence_floor_enabled() -> bool:
     """R318 — is the sub-point existence floor on? Default ON.
 
@@ -10211,6 +10225,19 @@ def regenold_eu_ai_act_ask(
     # reasoning / answer / references by default.
     if graph_stats.get("stage2_call_failed"):
         logger.warning("regenold_stage2_fallback_served")
+        # R353.2 — A/B harness kill-switch. The deterministic Stage-2 fallback
+        # serves answers that look healthy on the wire (``err: None``), so a
+        # throttled run silently contaminates the checkpoint (the R350.2
+        # lesson: every ``regenold_stage2_fallback_served`` row is garbage).
+        # With this flag ON the route hard-fails instead, so the harness
+        # records ``http_503`` and the row is honestly errored. Default OFF —
+        # production keeps the fail-soft behaviour untouched. Fresh env read
+        # per call (R263.2).
+        if _stage2_hard_fail_enabled():
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="stage2_engine_unavailable",
+            )
 
     # Default response shape = competition spec only. Telemetry block
     # populated only when ?include_telemetry=true (and serialised via
