@@ -93,6 +93,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import random
 import statistics as st
@@ -116,6 +117,22 @@ _AXES = ("ref_loose", "ref_strict", "ref_conc", "kw_recall")
 
 _BOOTSTRAP_N = 2000
 _SEED = 20260814
+
+#: R350 — the minimum paired observations before an axis may print a RESOLVED
+#: verdict (WIN / LOSS / NULL). Below this, ``_verdict`` returns UNDERPOWERED
+#: however narrow the CI looks. The judge axes motivated it: they score only
+#: the rows that reach Stage-2 AND judged cleanly in BOTH arms, so an axis can
+#: land on 1-2 pairs while the run header advertises the much larger
+#: deterministic n — and a bootstrap over one observation has zero width,
+#: which read as the most resolved state instead of the least.
+_MIN_PAIRS_FOR_VERDICT = 3
+
+#: R350.1 — at or above this share of errored rows the run is a TRANSPORT
+#: failure, not a lever result. Excluding errored rows from the fire check is
+#: correct, but it means a dead endpoint collapses `common` to ~0 and reports
+#: INERT ("fix the feature") or BLIND_PROBE ("fix the rows") — both of which
+#: send the reader to debug something that is not broken.
+_TRANSPORT_FAILURE_RATIO = 0.5
 
 
 # ── citation grain ───────────────────────────────────────────────────────
@@ -267,6 +284,15 @@ def _judge_axes(
     plus the per-arm aggregate (pass/fail/error counts per axis). A pair is
     dropped from an axis when EITHER arm's verdict is an error or unscorable
     (counted in ``n_skipped``), so errors never masquerade as passes.
+
+    ⚠ R350 — that guarantee was NOT implemented as written. The filter tested
+    the verdict STRING only, but ``legal_v2._judge_row`` returns a real
+    ``{"verdict": "fail", "evaluation_error": "empty_answer"}`` for a row whose
+    answer came back empty — which is exactly what a branch-arm HTTP timeout
+    produces. So one network blip scored as the branch LOSING the axis. The
+    scorability test is now :func:`_scorable`, one definition shared with
+    :func:`_pair_scored`, and it rejects any verdict carrying an error marker
+    however the verdict string reads.
     """
     base = _judge_rows(base_records, probe_by_id, caller=caller,
                        samples=samples, concurrency=concurrency)
@@ -285,14 +311,23 @@ def _judge_axes(
         for rid in common:
             vb = (base["judged"][rid].get("verdicts") or {}).get(ax) or {}
             vc = (branch["judged"][rid].get("verdicts") or {}).get(ax) or {}
-            sb = str(vb.get("verdict") or "").lower()
-            sc = str(vc.get("verdict") or "").lower()
-            if (sb == "pass" or sb == "fail") and (sc == "pass" or sc == "fail"):
+            if _scorable(vb) and _scorable(vc):
+                sb = str(vb.get("verdict") or "").lower()
+                sc = str(vc.get("verdict") or "").lower()
                 deltas.append((1.0 if sc == "pass" else 0.0)
                               - (1.0 if sb == "pass" else 0.0))
             else:
                 skipped += 1
         if not deltas:
+            # R350.1 — an axis with zero scorable pairs used to vanish from the
+            # table with no row, no zero and no note, while the judge blurb
+            # still named all four. A whole competition axis could disappear
+            # from the merge gate's output silently.
+            axes[label] = {
+                "baseline": 0.0, "branch": 0.0, "delta": 0.0,
+                "ci_lo": 0.0, "ci_hi": 0.0, "n_changed": 0,
+                "verdict": "NO-DATA", "n_pairs": 0, "n_skipped": skipped,
+            }
             continue
         mean = st.fmean(deltas)
         lo, hi = _bootstrap_ci(deltas)
@@ -309,18 +344,38 @@ def _judge_axes(
                 else 0.0 for rid in pairs),
             "delta": mean, "ci_lo": lo, "ci_hi": hi,
             "n_changed": sum(1 for d in deltas if d != 0),
-            "verdict": _verdict(mean, lo, hi, null_band=null_band),
+            "verdict": _verdict(mean, lo, hi, null_band=null_band,
+                                n_pairs=len(deltas)),
             "n_pairs": len(deltas), "n_skipped": skipped,
         }
     return {"axes": axes, "base": base, "branch": branch}
 
 
+def _scorable(v: dict[str, Any]) -> bool:
+    """Is this ONE arm's verdict a real measurement?
+
+    R350 — the single definition of "scorable", shared by :func:`_judge_axes`
+    and :func:`_pair_scored`. Two conditions, and the second is the one that
+    was missing:
+
+    1. the verdict string is literally ``pass`` or ``fail`` — anything else
+       (``None``, a missing key, ``no_json``, ``unbalanced_json``) is absent,
+       and ABSENT IS NOT ZERO; and
+    2. the verdict carries NO error marker. ``legal_v2._judge_row`` emits
+       ``{"verdict": "fail", "evaluation_error": "empty_answer"}`` when the
+       answer is empty, which is what a transport timeout looks like from
+       here. Reading that as a genuine ``fail`` let one network blip score as
+       the branch losing an entire answer-quality axis.
+    """
+    if v.get("judge_error") or v.get("evaluation_error"):
+        return False
+    return str(v.get("verdict") or "").lower() in ("pass", "fail")
+
+
 def _pair_scored(base: dict[str, Any], branch: dict[str, Any], ax: str, rid: str) -> bool:
     vb = (base["judged"][rid].get("verdicts") or {}).get(ax) or {}
     vc = (branch["judged"][rid].get("verdicts") or {}).get(ax) or {}
-    sb = str(vb.get("verdict") or "").lower()
-    sc = str(vc.get("verdict") or "").lower()
-    return (sb == "pass" or sb == "fail") and (sc == "pass" or sc == "fail")
+    return _scorable(vb) and _scorable(vc)
 
 
 # ── statistics ───────────────────────────────────────────────────────────
@@ -333,11 +388,18 @@ def _bootstrap_ci(
 
     Paired deltas, so the resample unit is the row — which is what makes this
     valid on a small n where a t-test's normality assumption is not credible.
+
+    ⚠ R350 — the ``len == 1`` case used to return ``(d, d)``: a ZERO-WIDTH CI,
+    which ``_verdict`` then reads as WIN or as a "tight, useful NULL". A single
+    observation is the least resolved state there is, and it was printing as
+    the most resolved. Resampling one item is degenerate either way, so the
+    honest answer is an unbounded interval; :func:`_verdict` additionally
+    refuses to resolve any axis below ``_MIN_PAIRS_FOR_VERDICT`` pairs.
     """
     if not deltas:
         return (0.0, 0.0)
     if len(deltas) == 1:
-        return (deltas[0], deltas[0])
+        return (float("-inf"), float("inf"))
     rng = random.Random(_SEED)
     means: list[float] = []
     k = len(deltas)
@@ -349,8 +411,21 @@ def _bootstrap_ci(
     return (lo, hi)
 
 
-def _verdict(delta: float, lo: float, hi: float, *, null_band: float) -> str:
-    """Classify an axis result honestly, including 'not enough data'."""
+def _verdict(
+    delta: float, lo: float, hi: float, *, null_band: float,
+    n_pairs: int | None = None,
+) -> str:
+    """Classify an axis result honestly, including 'not enough data'.
+
+    ⚠ R350 — ``n_pairs`` is a floor on RESOLUTION, not a tie-break. The judge
+    axes score far fewer pairs than the deterministic ones (most rows bypass
+    Stage-2, and judge transport errors drop more), so an axis could reach a
+    confident WIN/NULL on one or two rows while the header advertised the much
+    larger deterministic n. Below ``_MIN_PAIRS_FOR_VERDICT`` no CI is credible
+    however narrow it looks, so say UNDERPOWERED and mean it.
+    """
+    if n_pairs is not None and n_pairs < _MIN_PAIRS_FOR_VERDICT:
+        return "UNDERPOWERED"
     if lo > 0:
         return "WIN"
     if hi < 0:
@@ -372,10 +447,23 @@ def fire_check(
     changes NOTHING is not "safe" — it is UNMEASURED, and the axis table that
     would follow is meaningless. This is the check every inert A/B in this
     repo's history was missing.
+
+    ⚠ R350 — AN ERROR IS NOT A DIVERGENCE. This compared ``pred_refs`` and
+    ``pred_answer`` with no error filter, while ``_analyse`` drops any row that
+    errored in EITHER arm. An errored row carries ``pred_answer == ""`` and
+    ``pred_refs == []``, which always differs from a healthy baseline — so a
+    branch-arm timeout counted as the lever firing, the INERT gate passed, and
+    the rows that "proved" it fired were then excluded from every axis. The
+    harness's defining property inverted: the instrument breaking made a dead
+    lever look alive. Errored rows are now excluded from the comparison and
+    reported separately as ``errored``, so a run that is mostly transport
+    failure says so instead of claiming a finding.
     """
     b = {r["id"]: r for r in baseline_rows}
     c = {r["id"]: r for r in branch_rows}
-    common = [i for i in b if i in c]
+    paired = [i for i in b if i in c]
+    errored = [i for i in paired if b[i].get("error") or c[i].get("error")]
+    common = [i for i in paired if i not in set(errored)]
     refs_diff = [
         i for i in common if b[i].get("pred_refs") != c[i].get("pred_refs")
     ]
@@ -386,6 +474,7 @@ def fire_check(
     changed = sorted(set(refs_diff) | set(ans_diff))
     return {
         "common": len(common),
+        "errored": len(errored),
         "refs_changed": len(refs_diff),
         "answers_changed": len(ans_diff),
         "any_changed": len(changed),
@@ -442,17 +531,39 @@ _LAYER_HINTS: tuple[tuple[str, str], ...] = (
     # the stage2 control (P2P_GRAPH_RAG_ENABLE_STAGE2=0), not the retrieval
     # fallback the name would otherwise infer.
     ("PROMPT", "stage2"),
+    # R350 — RERANK and EXPANSION must be matched BEFORE the "KG_" hint.
+    # `REGENOLD_RERANK_KG_CANDIDATES` and `REGENOLD_RERANK_KG_HOPS` contain
+    # "KG_", so they inferred layer=graph and probed with
+    # `REGENOLD_KG_CONTEXT=0` — a Stage-2 CONTEXT switch that cannot exercise
+    # the rerank pool at all. They are RETRIEVAL levers: they change the
+    # candidate set the cross-encoder ranks, and that set decides wire
+    # references. Getting this wrong flips the diagnosis between "fix the
+    # feature" (exit 2) and "fix the rows" (exit 3) — opposite actions. This is
+    # the R345 defect, on the flags added immediately after R345 fixed it.
+    ("RERANK", "retrieval"), ("EXPANSION", "retrieval"),
     ("KG_", "graph"), ("GRAPH", "graph"), ("SEMANTIC", "graph"),
     ("PPR", "graph"), ("VECTOR", "graph"), ("ONTOLOGY", "graph"),
 )
 
 
-def _infer_control_layer(branch_env: dict[str, str]) -> str:
+def _infer_control_layer(
+    branch_env: dict[str, str], emit: Callable[[str], None] = print
+) -> str:
+    """Which layer's control flag can prove these rows are not blind?
+
+    ⚠ R350 — an unmatched flag falls back to ``retrieval``, and that fallback is
+    now LOUD. A silent default is how `REGENOLD_PROMPT_V2` got probed at the
+    wrong layer for a whole round: the inference looked authoritative and was
+    guessing. Pass ``--control-layer`` to settle it explicitly.
+    """
     for name in branch_env:
         upper = name.upper()
         for frag, layer in _LAYER_HINTS:
             if frag in upper:
                 return layer
+    emit(f"control layer INFERRED as 'retrieval' by default — no hint matched "
+         f"{sorted(branch_env)}. If this lever is a Stage-2 or graph lever the "
+         f"sensitivity probe will test the wrong layer; pass --control-layer.")
     return "retrieval"
 
 
@@ -688,6 +799,31 @@ def run(
         except Exception:  # noqa: BLE001 — a checkpoint must never kill the run
             pass
 
+        # ── A DEAD ENDPOINT IS NOT A DEAD LEVER ───────────────────────────
+        #
+        # R350.1 — excluding errored rows from `fire_check` (correct: an error
+        # is not a divergence) created a new way to be wrong. If MOST rows
+        # error, `common` collapses, `fired` goes False, and the run reports
+        # INERT ("fix the lever — fresh env read? memo outliving the flip?") or
+        # BLIND_PROBE ("fix the rows — raise --max-rows"). Both remedies are
+        # wrong for a dead endpoint or an expired key, and `_report` returns
+        # early on exactly those two verdicts, so the `errored` line that would
+        # explain it never printed. Diagnose transport FIRST, with its own
+        # verdict and exit code, and say so unconditionally.
+        _errored = fired.get("errored", 0)
+        _seen = _errored + fired["common"]
+        if _seen and _errored / _seen >= _TRANSPORT_FAILURE_RATIO:
+            emit("")
+            emit(f"  TRANSPORT: {_errored}/{_seen} rows errored in one or both "
+                 f"arms. This is NOT a lever result — the endpoint, the "
+                 f"credential or the timeout is the problem. Fix that and "
+                 f"re-run; do not read INERT as a finding about the feature.")
+            res = {"label": label, "verdict": "TRANSPORT", "fire": fired,
+                   "n_scored": 0, "axes": {}, "gold": {},
+                   "baseline_rows": base_rows, "branch_rows": brch_rows}
+            _write_sidecar(res, label)
+            return res
+
         # ── THE GATE: a lever that never fired gets no axis table ──────────
         if not fired["fired"] and len(base_rows) >= min(batch * 2, len(pool)):
             # R336 — do NOT call it INERT until the probe has proven it could
@@ -789,12 +925,21 @@ def run(
                      f"(billed provider — REGENOLD_JUDGE_ALLOW_BILLED applies "
                      f"to the standalone CLI, not this in-run path)")
             probe_by_id = {str(pr.id): pr for pr in pool}
+            # R350 — the error filter must be SYMMETRIC. It used to drop only
+            # the BASELINE arm's errors and then select branch rows by id
+            # membership alone, so a branch-arm timeout reached the judge with
+            # an empty answer and scored as a real `fail` on all four axes:
+            # a network blip read as the branch losing answer quality. One
+            # predicate, both arms — matching `_analyse`, so the retrieval and
+            # judge axes are computed over the SAME population.
+            _healthy_branch = {c["id"] for c in brch_rows if not c.get("error")}
             common = [r for r in base_rows
-                      if r.get("id") in {c["id"] for c in brch_rows}
+                      if r.get("id") in _healthy_branch
                       and not r.get("error")]
+            _common_ids = {r["id"] for r in common}
             j = _judge_axes(
                 common,
-                [c for c in brch_rows if c.get("id") in {r["id"] for r in common}],
+                [c for c in brch_rows if c.get("id") in _common_ids],
                 probe_by_id,
                 caller=caller, samples=judge_samples,
                 concurrency=judge_concurrency, null_band=null_band,
@@ -805,15 +950,25 @@ def run(
                 for ax, v in j["axes"].items():
                     res["axes"][ax] = v
                 def _passfail(judged: dict[str, Any], ax: str) -> dict[str, int]:
-                    p = f = 0
+                    """R350.1 — route through `_scorable`, and report errors.
+
+                    This counted `verdict == "fail"` regardless of any error
+                    marker, so the SIDECAR's per-arm summary still scored
+                    empty-answer timeouts as genuine fails — the exact bug
+                    `_scorable` was written to kill, still live one level up in
+                    the durable artefact.
+                    """
+                    p = f = e = 0
                     for r in judged.values():
-                        v = str(((r.get("verdicts") or {}).get(ax) or {})
-                                .get("verdict") or "").lower()
-                        if v == "pass":
+                        v = (r.get("verdicts") or {}).get(ax) or {}
+                        if not _scorable(v):
+                            e += 1
+                            continue
+                        if str(v.get("verdict")).lower() == "pass":
                             p += 1
-                        elif v == "fail":
+                        else:
                             f += 1
-                    return {"pass": p, "fail": f}
+                    return {"pass": p, "fail": f, "error": e}
 
                 res["judge"] = {
                     "model": judge_model, "provider": judge_provider,
@@ -850,7 +1005,9 @@ def _analyse(
             "branch": st.fmean(c[i]["scores"][ax] for i in common),
             "delta": mean, "ci_lo": lo, "ci_hi": hi,
             "n_changed": sum(1 for d in deltas if d != 0),
-            "verdict": _verdict(mean, lo, hi, null_band=null_band),
+            "verdict": _verdict(mean, lo, hi, null_band=null_band,
+                                n_pairs=len(deltas)),
+            "n_pairs": len(deltas),
         }
     # ── the veto block ────────────────────────────────────────────────────
     #
@@ -948,6 +1105,30 @@ def _analyse(
     return {"axes": axes, "gold": gold, "n_scored": len(common)}
 
 
+def _json_safe(obj: Any) -> Any:
+    """Replace non-finite floats with ``None`` so the sidecar is VALID JSON.
+
+    ⚠ R350 — ``json.dumps`` emits bare ``Infinity`` / ``NaN`` for non-finite
+    floats. Python round-trips those happily, so a Python-only test would never
+    catch it, but they are **not JSON** (RFC 8259 has no such literals): ``jq``,
+    every browser, and any strict parser reject the whole file. The sidecar is
+    this repo's durable measurement artefact — a run that cannot be re-read by
+    standard tooling has lost its evidence.
+
+    This became reachable in the same round: ``_bootstrap_ci`` now returns
+    ``(-inf, +inf)`` for a single observation, which is the honest interval and
+    exactly the value that would have poisoned the file. ``null`` is the correct
+    JSON spelling of "no bound".
+    """
+    if isinstance(obj, float):
+        return obj if math.isfinite(obj) else None
+    if isinstance(obj, dict):
+        return {k: _json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_json_safe(v) for v in obj]
+    return obj
+
+
 def _write_sidecar(res: dict[str, Any], label: str) -> None:
     """Persist the run state as a JSON sidecar under evals/bench/results.
 
@@ -956,6 +1137,15 @@ def _write_sidecar(res: dict[str, Any], label: str) -> None:
     because the sidecar was written once, at the end. This is callable after
     EVERY batch, so a killed run still leaves the rows it completed, and the
     final call overwrites the checkpoint with the complete state.
+
+    ⚠ R350 — the write is now ATOMIC (temp file + ``os.replace``). It used to
+    be a bare ``write_text``, which truncates the existing file before a single
+    byte of the new content lands — so an interrupt during the write destroyed
+    the PREVIOUS good checkpoint as well as the new one, leaving unparseable
+    JSON. Ctrl-C during a multi-hour live A/B is the documented interruption
+    mode and lands in exactly that window, and the payload grows every batch,
+    so the window widens as the run gets more expensive to lose. ``os.replace``
+    is atomic on both Windows and POSIX.
     """
     _RESULTS.mkdir(parents=True, exist_ok=True)
     out = _RESULTS / f"dynamic-ab-{label}.json"
@@ -963,28 +1153,51 @@ def _write_sidecar(res: dict[str, Any], label: str) -> None:
             if k not in ("baseline_rows", "branch_rows")}
     slim["baseline_rows"] = res.get("baseline_rows", [])
     slim["branch_rows"] = res.get("branch_rows", [])
-    out.write_text(json.dumps(slim, indent=2), encoding="utf-8")
+    tmp = out.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(_json_safe(slim), indent=2), encoding="utf-8")
+    os.replace(tmp, out)
 
 
 def _report(res: dict[str, Any], emit: Callable[[str], None] = print) -> None:
-    if res.get("verdict") in ("INERT", "BLIND_PROBE"):
-        return
     f = res.get("fire") or {}
+    if res.get("verdict") in ("INERT", "BLIND_PROBE", "TRANSPORT"):
+        # R350.1 — print the error count even on the verdicts that return
+        # early. These are exactly the verdicts a transport outage produces,
+        # and the errored count is the one line that distinguishes "the lever
+        # is dead" from "the endpoint is dead".
+        if f.get("errored"):
+            emit(f"  {f['errored']} row(s) errored in one or both arms "
+                 f"({f.get('common', 0)} clean pairs compared)")
+        return
     emit("")
     emit(f"=== {res['label']} — n={res['n_scored']} paired "
          f"(stop: {res.get('stop_reason')}) ===")
     emit(f"  lever FIRED on {f.get('any_changed', 0)}/{f.get('common', 0)} rows "
          f"— numbers below are about a change that actually happened")
+    if f.get("errored"):
+        emit(f"  {f['errored']} row(s) errored in one or both arms and are "
+             f"excluded from the fire check AND every axis")
     emit("")
+    # R350 — `n` is PER AXIS. The judge axes score only the rows that reached
+    # Stage-2 and judged cleanly in BOTH arms, so they routinely run on a small
+    # fraction of the header's n. Printing one n for the whole table let a
+    # 2-pair judge axis borrow the credibility of a 60-row retrieval axis.
     emit(f"  {'axis':<12} {'baseline':>9} {'branch':>9} {'delta':>9} "
-         f"{'95% CI':>20}  verdict")
+         f"{'95% CI':>20} {'n/-skip':>7}  verdict")
     for ax, v in res["axes"].items():
         ci = f"[{v['ci_lo']:+.4f},{v['ci_hi']:+.4f}]"
+        n = v.get("n_pairs")
+        # R350.1 — `n_skipped` was stored and never shown. A reader saw n=4
+        # with no hint that 18 pairs were dropped for judge errors.
+        sk = v.get("n_skipped")
+        n_col = "-" if n is None else (f"{n}" if not sk else f"{n}/-{sk}")
         emit(f"  {ax:<12} {v['baseline']:>9.4f} {v['branch']:>9.4f} "
-             f"{v['delta']:>+9.4f} {ci:>20}  {v['verdict']}")
+             f"{v['delta']:>+9.4f} {ci:>20} {n_col:>7}  {v['verdict']}")
     j = res.get("judge")
     if j:
-        # ASCII only: the cp1252 console crashes on box-drawing chars.
+        # ASCII only: the cp1252 console crashes on box-drawing chars,
+        # and this line sits ABOVE the gold veto + the sidecar write.
+        # Pinned by test_r350_review_fixes.TestReportSurvivesOnACp1252Console.
         emit(f"  -- ans_corr / ref_corr / cite_faith / ans_conc are the "
              f"legal_v2 judge axes ({j.get('model')} via {j.get('provider')}, "
              f"K={j.get('samples')}) -- pass rate over paired non-error rows; "
@@ -1024,8 +1237,19 @@ def main() -> None:
     ap.add_argument("--label", default="dynamic-ab")
     ap.add_argument("--max-rows", type=int, default=60)
     ap.add_argument("--batch", type=int, default=12)
-    ap.add_argument("--local", action="store_true", default=True)
-    ap.add_argument("--endpoint")
+    # R350 — was `action="store_true", default=True`, which can only ever
+    # produce True: `--endpoint` was parsed, threaded all the way through
+    # run() and _run_rows, and then silently ignored, so an operator aiming the
+    # merge gate at the deployed Railway service measured their local working
+    # tree instead — with nothing in the sidecar recording which system was
+    # under test. BooleanOptionalAction gives a real `--no-local`, and passing
+    # `--endpoint` now implies it rather than being quietly dropped.
+    ap.add_argument("--local", action=argparse.BooleanOptionalAction,
+                    default=True,
+                    help="run the engine in-process (default). --no-local, or "
+                         "any --endpoint, POSTs to a deployed service instead")
+    ap.add_argument("--endpoint",
+                    help="deployed service base URL; implies --no-local")
     ap.add_argument("--api-key", default=os.getenv("REGENOLD_API_KEY", ""))
     ap.add_argument("--timeout", type=float, default=180.0)
     ap.add_argument("--null-band", type=float, default=0.01,
@@ -1064,9 +1288,36 @@ def main() -> None:
     if not branch_env:
         ap.error("nothing to A/B — pass --flag or --branch-env")
 
+    # R350 — --endpoint implies --no-local. Silently measuring the local tree
+    # while the operator believes they are measuring the deployed service is
+    # the instrument trap pointed at the wrong SYSTEM, not merely the wrong
+    # lens, so resolve it explicitly and say which one is under test.
+    local = bool(args.local)
+    if args.endpoint and "--local" not in sys.argv:
+        local = False
+    if args.endpoint and local:
+        ap.error("--endpoint with --local: pick one. --endpoint alone POSTs to "
+                 "the deployed service; --local runs the engine in-process.")
+    if not local and not args.endpoint:
+        ap.error("--no-local needs --endpoint")
+    if not local:
+        # R350.1 — making --endpoint reachable exposed that it CANNOT work:
+        # `_run_rows` applies the arm env to the LOCAL os.environ, and the POST
+        # body carries only the message history, so there is no mechanism to
+        # set the branch flag on a remote service. Both arms would hit the same
+        # deployed config, diverge on nothing, and report INERT — a confidently
+        # wrong "fix the feature". Refuse instead of measuring the wrong thing.
+        ap.error(
+            "--endpoint cannot run an A/B: the branch env is applied in THIS "
+            "process and cannot reach a deployed service, so both arms would "
+            "be identical and the run would report a false INERT. Use --local "
+            "(the default) for A/Bs; probe a deployment with runner_v2."
+        )
+    print(f"system under test: {'in-process engine' if local else args.endpoint}")
+
     res = run(
         branch_env=branch_env, label=args.label, max_rows=args.max_rows,
-        batch=args.batch, local=bool(args.local), endpoint=args.endpoint,
+        batch=args.batch, local=local, endpoint=args.endpoint,
         api_key=args.api_key or None, timeout=args.timeout,
         null_band=args.null_band, seed=args.seed,
         control_layer=args.control_layer, min_gap=args.min_call_gap,
@@ -1078,13 +1329,24 @@ def main() -> None:
         probe_sources=(tuple(s.strip() for s in args.probe_sources.split(",") if s.strip())
                        if args.probe_sources else None),
     )
-    _report(res)
-
-    _write_sidecar(res, args.label)
-    print(f"\nwrote {_RESULTS / ('dynamic-ab-' + args.label + '.json')}")
+    # R350 — the sidecar is written in a `finally`. A single unencodable
+    # character in the report (a U+2500 in the R349 judge-provenance line, on a
+    # cp1252 Windows console — the documented platform) used to raise between
+    # the axis table and the gold_dropped veto block, so the HARD RULE #8 VETO
+    # never printed AND the result file was never written: a multi-hour live
+    # A/B lost both its verdict and its data to a box-drawing character.
+    # Reporting is presentation; persistence must not depend on it.
+    try:
+        _report(res)
+    finally:
+        _write_sidecar(res, args.label)
+        print(f"\nwrote {_RESULTS / ('dynamic-ab-' + args.label + '.json')}")
     # 0 = measured, 2 = lever inert (fix the feature),
     # 3 = probe blind (fix the rows) — a different action, so a different code.
-    sys.exit({"INERT": 2, "BLIND_PROBE": 3}.get(res.get("verdict"), 0))
+    # 4 = TRANSPORT (fix the endpoint/credential) — distinct from 2 "fix the
+    # feature" and 3 "fix the rows", because the remedy is different again.
+    sys.exit({"INERT": 2, "BLIND_PROBE": 3, "TRANSPORT": 4}
+             .get(res.get("verdict"), 0))
 
 
 if __name__ == "__main__":
