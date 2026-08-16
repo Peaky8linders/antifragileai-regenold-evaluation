@@ -1146,6 +1146,20 @@ def _apply_fact_state_carry_forward(
     return out
 
 
+def _stage2_hard_fail_enabled() -> bool:
+    """R353.2 — hard-fail the route when the Stage-2 LLM is unavailable?
+
+    Default **OFF**: production keeps the deterministic fallback (fail-soft;
+    never 500 the route). The A/B harness turns it on so a throttled run
+    records ``http_503`` per row instead of silently serving deterministic
+    answers that pass the fire check (the R350.2 contamination trap). Fresh
+    env read per call (R263.2).
+    """
+    return os.getenv("REGENOLD_STAGE2_HARD_FAIL", "0").strip().lower() not in {
+        "0", "false", "no", "off", "",
+    }
+
+
 def _subpoint_existence_floor_enabled() -> bool:
     """R318 — is the sub-point existence floor on? Default ON.
 
@@ -1484,6 +1498,12 @@ def _engine_cache_key(
             # R348 — the expansion DEPTH (1 or 2 hops) changes the pool the
             # cross-encoder ranks the same way the gate itself does.
             "REGENOLD_RERANK_KG_HOPS",
+            # R353 — the R352 surviving-hypothesis anchor (Annex III on the
+            # yes/no "is X high-risk?" shape) APPENDS an engine entity, which
+            # changes the obligations and the citation set → engine-level.
+            # Fresh read per call (`risk_classification`). The R334 drift
+            # guard enforces its presence here.
+            "REGENOLD_RISK_CLASS_ANNEX",
             # R327 gate — the open-domain half of the semantic layers, separable
             # so constrained-only can be measured. Engine-level (it changes the
             # Stage-2 grounding block), so it must be keyed like its master.
@@ -1664,6 +1684,16 @@ def _engine_cache_key(
             "REGENOLD_STAGE1_MODEL_GROQ",
             "REGENOLD_STAGE2_MODEL_GROQ",
             "REGENOLD_INTENT_MODEL_GROQ",
+            # R350 — the NON-Groq intent model belongs here for the same
+            # reason its Groq sibling does, and it was missing. Stage-0's
+            # `bridging_context` flows into GraphRAGRequest and is rendered
+            # into the Stage-2 prompt, so this is an engine-level input, not a
+            # transport detail. It is the model that runs whenever GROQ_API_KEY
+            # is absent — i.e. the documented eval setup. Made fresh-read in
+            # the same round (`intent_classifier.intent_model()`); a keyed but
+            # frozen flag is worse than an unkeyed one, because the cache split
+            # lets the fire check pass on noise.
+            "REGENOLD_INTENT_MODEL",
             "REGENOLD_GENERAL_MODEL_GROQ",
             "REGENOLD_SAFETY_MODEL_GROQ",
             "REGENOLD_FUSION_MODEL_GROQ",
@@ -1987,6 +2017,9 @@ def _engine_cache_key(
             # query_expansion and changes the expansion round-trip budget, so
             # it belongs in the key like every other engine env read (R334).
             "REGENOLD_QUERY_EXPANSION_BEDROCK_TIMEOUT",
+            # R350.1 — the WRAPPER sibling, added in the same round and keyed
+            # here for the same reason. One concept, one treatment.
+            "REGENOLD_QUERY_EXPANSION_TIMEOUT",
             # R346.2 — the paraphrase model (frontier tier, no Haiku) is read
             # fresh per call and changes the paraphrase surface.
             "REGENOLD_QUERY_EXPANSION_MODEL",
@@ -3392,6 +3425,36 @@ def _component_d_citable_only_enabled() -> bool:
     Fresh env read per call (R263.2).
     """
     return os.getenv("REGENOLD_COMPONENT_D_CITABLE_ONLY", "0").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
+
+def _deterministic_prose_consistency_enabled() -> bool:
+    """R354 — run the R138 prose-consistency ADD pass when Stage-2 did NOT
+    land? **ON** (flipped after the live deterministic-path A/B).
+
+    The R138 final consistency pass (every article/annex the SHIPPED answer
+    names must appear in the wire references) is Stage-2-gated. On the
+    deterministic path (Stage-2 throttled / failed / skipped) a prose-named
+    gold ref can ship uncited while a cited-but-undescribed ref rides along
+    — the la_q73 defect: branch answer names "Annex I" twice, wire ships
+    [Article 43, Article 6, Article 27, Article 49] with no Annex I.
+
+    DECISION (2026-08-16, deterministic-path A/B on the 81-row live-answers
+    probe, ``r354-fix-a-det``): gold_dropped_head base 72 → branch 60
+    (delta −12, ZERO regressions), FIRED 30 rows (29 refs, 1 answer — the
+    pass only ADDS refs, it never rewrites prose). The counterfactual over
+    the R350.2 checkpoint agreed: 76 → 65 (−11). The add is strictly
+    existence-gated + cross-instrument-guarded + capped (cannot invent a
+    reference), and the same pass is already A/B-accepted on the Stage-2
+    path (R134/R138). Flip kept an off-switch: set
+    ``REGENOLD_DETERMINISTIC_PROSE_CONSISTENCY=0`` to restore the old
+    Stage-2-only behaviour. Fresh env read per call (R263.2).
+    """
+    return os.getenv("REGENOLD_DETERMINISTIC_PROSE_CONSISTENCY", "1").strip().lower() in (
         "1",
         "true",
         "yes",
@@ -9715,8 +9778,20 @@ def regenold_eu_ai_act_ask(
     # Runs BEFORE the R130 (Art. 3 sub-point) + R133 (prose sub-point) passes
     # so a newly-surfaced base article's named sub-points are surfaced too.
     # Env off-switch: REGENOLD_CITE_CONSISTENCY=0.
+    #
+    # R354 — the deterministic arm. The SAME defect fires when Stage-2 did
+    # NOT land: the deterministic answer's prose names a gold ref (la_q73
+    # names Annex I twice) while the raw retrieval candidates that shipped
+    # omit it (and can carry a cited-but-undescribed ref like Article 43).
+    # Stage-2-gating meant the deterministic path shipped this inconsistency
+    # unfixed. ``REGENOLD_DETERMINISTIC_PROSE_CONSISTENCY`` (default OFF)
+    # extends this pass to the deterministic path; the add is strictly
+    # existence-gated + cross-instrument-guarded + capped (it cannot invent,
+    # and a deterministic answer is still a real answer whose prose must be
+    # consistent with its citations). davidath byte-identical by
+    # construction: the flag is OFF in the bench env, so this arm is inert.
     if (
-        _stage2_landed
+        (_stage2_landed or _deterministic_prose_consistency_enabled())
         and answer_text
         and references
         and retrieval_path not in ("no_match", "verbatim_exact_text")
@@ -10187,6 +10262,19 @@ def regenold_eu_ai_act_ask(
     # reasoning / answer / references by default.
     if graph_stats.get("stage2_call_failed"):
         logger.warning("regenold_stage2_fallback_served")
+        # R353.2 — A/B harness kill-switch. The deterministic Stage-2 fallback
+        # serves answers that look healthy on the wire (``err: None``), so a
+        # throttled run silently contaminates the checkpoint (the R350.2
+        # lesson: every ``regenold_stage2_fallback_served`` row is garbage).
+        # With this flag ON the route hard-fails instead, so the harness
+        # records ``http_503`` and the row is honestly errored. Default OFF —
+        # production keeps the fail-soft behaviour untouched. Fresh env read
+        # per call (R263.2).
+        if _stage2_hard_fail_enabled():
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="stage2_engine_unavailable",
+            )
 
     # Default response shape = competition spec only. Telemetry block
     # populated only when ?include_telemetry=true (and serialised via

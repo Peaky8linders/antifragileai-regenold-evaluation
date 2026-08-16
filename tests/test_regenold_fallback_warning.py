@@ -84,6 +84,65 @@ def _cited_response(
     )
 
 
+class TestStage2HardFailSwitch:
+    """R353.2 — A/B harness kill-switch.
+
+    The deterministic Stage-2 fallback serves answers that look healthy on
+    the wire (``err: None``), so a throttled A/B run silently contaminates
+    the checkpoint. ``REGENOLD_STAGE2_HARD_FAIL=1`` turns the fallback into
+    an honest ``503`` so the harness records the row as errored. Default
+    OFF — production keeps the fail-soft contract.
+    """
+
+    def test_default_off_serves_fallback_200(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Without the flag, a failed Stage-2 still ships the deterministic
+        answer with a 200 — the competition contract must not change."""
+        monkeypatch.delenv("REGENOLD_STAGE2_HARD_FAIL", raising=False)
+        resp = _cited_response(stage2_call_failed=True)
+        with patch(
+            "app.routes.regenold.ask_compliance_question", return_value=resp
+        ):
+            r = _client().post(
+                "/api/v1/regenold/eu-ai-act/ask",
+                headers=_headers(),
+                json=_messages("What does Article 13 require?"),
+            )
+        assert r.status_code == 200, r.json()
+        assert r.json()["answer"]
+
+    def test_hard_fail_503_on_stage2_failure(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """With the flag on, a failed Stage-2 must hard-fail so the harness
+        records ``http_503`` instead of silently serving fallback text."""
+        monkeypatch.setenv("REGENOLD_STAGE2_HARD_FAIL", "1")
+        resp = _cited_response(stage2_call_failed=True)
+        with patch(
+            "app.routes.regenold.ask_compliance_question", return_value=resp
+        ):
+            r = _client().post(
+                "/api/v1/regenold/eu-ai-act/ask",
+                headers=_headers(),
+                json=_messages("What does Article 13 require?"),
+            )
+        assert r.status_code == 503, r.json()
+        assert "stage2_engine_unavailable" in r.json().get("detail", "")
+
+    def test_hard_fail_does_not_touch_healthy_path(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A healthy Stage-2 landing is 200 even with the flag on."""
+        monkeypatch.setenv("REGENOLD_STAGE2_HARD_FAIL", "1")
+        resp = _cited_response(stage2_call_failed=False)
+        with patch(
+            "app.routes.regenold.ask_compliance_question", return_value=resp
+        ):
+            r = _client().post(
+                "/api/v1/regenold/eu-ai-act/ask",
+                headers=_headers(),
+                json=_messages("What does Article 13 require?"),
+            )
+        assert r.status_code == 200, r.json()
+
+
 class TestFallbackSchemaWire:
     """Healthy and degraded answers have the same exact default schema."""
 

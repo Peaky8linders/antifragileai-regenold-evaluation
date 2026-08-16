@@ -547,9 +547,64 @@ def _prepare(axis: str, r: dict[str, Any]) -> tuple[str, dict[str, Any]]:
 # ── post-processing (quote-or-retract enforcement lives here) ───────────
 
 
+#: The raw reply keys that constitute ANSWERING each axis. An axis is
+#: unanswered only when the reply carries NONE of its keys.
+#:
+#: ⚠ R350.1 — the first cut of this guard tested ONE array per axis
+#: (``classifications``, ``redundant_sentences``, …) and that was too narrow in
+#: the direction that loses data. ``_postprocess_reference_correctness`` also
+#: reads ``missing_governing``; ``_postprocess_answer_conciseness`` also reads
+#: ``unrequested_topics`` and ``sentence_count``. Worse, the array a model is
+#: MOST likely to omit is the empty one — and empty is the PASS case. So the
+#: narrow test converted legitimate passes, and real ``missing_governing`` /
+#: ``unrequested_topics`` findings, into unscorable errors: it shrank n on the
+#: axes that already have the least data, and moved ``pass_rate_raw`` against
+#: the recorded baselines for reasons with nothing to do with the product.
+_AXIS_KEYS: dict[str, tuple[str, ...]] = {
+    "answer_correctness": ("propositions", "omission_present", "omission_detail"),
+    "reference_correctness": ("classifications", "missing_governing"),
+    "citation_faithfulness": ("citations",),
+    "answer_conciseness": ("redundant_sentences", "unrequested_topics",
+                           "sentence_count"),
+}
+
+
+def _axis_unanswered(raw: dict[str, Any], axis: str) -> dict[str, Any] | None:
+    """Unscorable if the reply never answered THIS axis at all.
+
+    ⚠ R350 — every ``_postprocess_*`` read its findings as ``raw.get(key) or []``
+    and computed a verdict from the result. But ``runner._parse_judge_json``
+    accepts any balanced JSON object carrying ANY key from a UNION target set,
+    not the keys THIS axis needs. So a reply like
+    ``{"verdict": "fail", "failure_mode": "Article 6 mismatched"}`` parsed
+    cleanly, arrived with none of the axis's own keys, and postprocess
+    recomputed the verdict from zero findings — turning the judge's own
+    ``fail`` into a ``pass``. Verified end-to-end on two axes
+    (citation_faithfulness, reference_correctness); both flipped fail -> pass,
+    the unsafe direction, and both then entered ``dynamic_ab``'s aggregate as a
+    genuine 1.0.
+
+    ABSENT IS NOT EMPTY. ``[]`` is a legitimate finding ("I checked and found
+    nothing") and MUST stay scorable — it is usually the pass. Only a reply
+    carrying NONE of the axis's keys is unanswered, so this tests key
+    membership across the whole axis, never the truthiness of one array.
+
+    Returning a ``judge_error`` (rather than a verdict) is what makes the row
+    unscorable downstream — ``dynamic_ab._scorable`` drops it from the axis and
+    counts it in ``n_skipped``, instead of scoring it as a pass or a fail.
+    """
+    keys = _AXIS_KEYS.get(axis, ())
+    if keys and not (set(raw) & set(keys)):
+        return {"judge_error": f"axis_unanswered_{axis}", "_raw": raw}
+    return None
+
+
 def _postprocess_answer_correctness(raw: dict[str, Any], union_map: dict[str, str]) -> dict[str, Any]:
     if raw.get("judge_error"):
         return dict(raw)
+    _unanswered = _axis_unanswered(raw, "answer_correctness")
+    if _unanswered is not None:
+        return _unanswered
     props = raw.get("propositions") or []
     union_pool = tuple(union_map.values())
     supported = contradicted = not_addressed = 0
@@ -632,6 +687,9 @@ def _postprocess_reference_correctness(
 ) -> dict[str, Any]:
     if raw.get("judge_error"):
         return dict(raw)
+    _unanswered = _axis_unanswered(raw, "reference_correctness")
+    if _unanswered is not None:
+        return _unanswered
     classifications = raw.get("classifications") or []
     by_ref: dict[str, dict[str, Any]] = {}
     for c in classifications:
@@ -723,6 +781,9 @@ def _postprocess_citation_faithfulness(
 ) -> dict[str, Any]:
     if raw.get("judge_error"):
         return dict(raw)
+    _unanswered = _axis_unanswered(raw, "citation_faithfulness")
+    if _unanswered is not None:
+        return _unanswered
     citations = raw.get("citations") or []
     by_ref: dict[str, dict[str, Any]] = {}
     for c in citations:
@@ -767,6 +828,9 @@ def _postprocess_citation_faithfulness(
 def _postprocess_answer_conciseness(raw: dict[str, Any], answer_text: str) -> dict[str, Any]:
     if raw.get("judge_error"):
         return dict(raw)
+    _unanswered = _axis_unanswered(raw, "answer_conciseness")
+    if _unanswered is not None:
+        return _unanswered
     raw_redundant = raw.get("redundant_sentences") or []
     redundant: list[str] = []
     unsub: list[dict[str, Any]] = []

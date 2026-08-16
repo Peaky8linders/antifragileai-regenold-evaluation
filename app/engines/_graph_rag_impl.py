@@ -2275,6 +2275,37 @@ def _deterministic_parse(question: str) -> GraphQuery:
         except Exception as exc:  # noqa: BLE001 — expansion must never break parse
             logger.debug("query_expansion_parse_failed: %s", exc)
 
+    # R353 — the R352 surviving hypothesis (``REGENOLD_RISK_CLASS_ANNEX``,
+    # default OFF): on the yes/no "is X high-risk / regulated under the AI
+    # Act?" shape, append ``Annex III`` (the list of high-risk use cases) as
+    # a RECALL SUPPLEMENT. Exact gold impact computed over the whole 297-row
+    # probe pool before this line existed (see
+    # ``app/engines/risk_classification.py`` module docstring): fires on 13
+    # rows, Annex III gold-but-missing on 7, zero non-gold additions after
+    # the prohibition exclusion. Appended AFTER the keyword anchors so it can
+    # only fill slots they did not take; the parse-level cross-encoder rerank
+    # (R340, below) then decides its final position — the reranker is the
+    # precision guard against a trigger misfire on an unseen question.
+    try:
+        from app.engines.risk_classification import (  # noqa: PLC0415
+            annex_iii_risk_class_anchor_enabled,
+            is_yes_no_risk_classification,
+        )
+        _r353_q = question
+        if "Latest question:\n" in question:
+            # Multi-turn flattening puts the live turn last; the trigger is
+            # a yes/no shape that the "Conversation so far:" preamble would
+            # otherwise mask.
+            _r353_q = question.rsplit("Latest question:\n", 1)[-1]
+        if (
+            annex_iii_risk_class_anchor_enabled()
+            and "Annex III" not in entities
+            and is_yes_no_risk_classification(_r353_q)
+        ):
+            entities.append("Annex III")
+    except Exception as exc:  # noqa: BLE001 — the anchor must never break parse
+        logger.debug("risk_class_annex_failed: %s", exc)
+
     # R137 — role-contrast obligational anchor (see module-level
     # ``_is_role_contrast_obligation``). Scans the LIVE turn only (post the
     # flatten marker) so a prior multi-turn turn mentioning one role can't
@@ -2591,12 +2622,30 @@ def _deterministic_parse(question: str) -> GraphQuery:
     # ``ask_compliance_question`` caps citations at 15 slots from that order
     # — so reranking here decides which entities (and their xrefs / paragraph
     # rows) survive the retrieval cap. Skip when the BM25 fallback already
-    # reranked (one Cohere call per request, never two). Gate-off no-op →
+    # reranked.
+    #
+    # ⚠ R350 — this used to claim "one Cohere call per request, never two".
+    # That is FALSE and the skip below does not deliver it. Counted with a
+    # stubbed transport and both flags ON: `_ranked_lists = [_bm25_hits_for(q)
+    # for q in expanded_queries]` runs the whole BM25 chain once per expanded
+    # query, and every `top_articles_by_relevance*` exit ends in
+    # `_maybe_rerank_fused` — **4 calls inside one `_deterministic_parse`**
+    # (docs [50, 43, 40, 37]), plus the kg-context rerank on the Stage-2 path
+    # = **5 serial calls**, each with a 6 s read timeout, all inside the
+    # request. Latency is a scored axis, and the Cohere Trial key is 10
+    # calls/min — so an A/B paced per-POST at `--min-call-gap 6.5` is really
+    # running at ~5x that budget and will 429 into a false INERT.
+    #
+    # NOT bounded here: a real fix needs a request-scoped call budget, which is
+    # a larger change than this round should make untested. Recorded as an open
+    # item instead of left as a comment asserting a guarantee the code lacks.
+    # Gate-off no-op →
     # davidath byte-identical BY CONSTRUCTION. Fail-soft + permutation-safe
     # via ``rerank_references``.
     if entities and not _bm25_fallback_used:
         try:
             from app.engines.cohere_rerank import (  # noqa: PLC0415
+                _pool_reasons,
                 build_kg_candidate_pool,
                 build_kg_candidate_pool_with_reasons,
                 rerank_enabled,
@@ -2617,27 +2666,32 @@ def _deterministic_parse(question: str) -> GraphQuery:
                 # KG-supplemented neighbour's rerank DOCUMENT with its curated
                 # semantic edge reason ("Relation: …") — the KG's semantic
                 # layer told the cross-encoder WHY the provision is relevant.
-                # The pool is a SUPERSET of the original entities — a
-                # permutation can reorder but never lose them — and the rerank
-                # ok-bit decides adoption: on any failure the ORIGINAL
-                # entities stand (no neighbour leakage). Gate-off and kg-off
-                # both degenerate to the R340 behaviour exactly.
+                # The pool is a SUPERSET of the original entities, so a
+                # permutation over it can never LOSE one — but it could ADD,
+                # which is what R350 closed below: the reranked ORDER is
+                # projected back onto the original membership, so KG
+                # neighbours inform the ranking and never become citations.
+                # On any rerank failure the ORIGINAL entities stand. Gate-off
+                # and kg-off both degenerate to the R340 behaviour exactly.
                 pool = entities
                 doc_reasons: dict[str, str] | None = None
                 if rerank_kg_candidates_enabled():
+                    # R350 — ``hops`` goes to BOTH builders. It used to reach
+                    # only the ``else`` branch, which is near-unreachable
+                    # because ``cross_refs_with_reason`` resolves a pair for
+                    # essentially every entity, so R348's depth knob was inert.
+                    _hops = rerank_kg_hops()
                     pairs = build_kg_candidate_pool_with_reasons(
-                        entities, per_ref=3
+                        entities, per_ref=3, hops=_hops
                     )
                     if pairs:
                         # Superset: the keyword entities stay first, the
                         # KG-supplemented neighbours (with their curated
                         # semantic edge reasons) follow.
                         pool = list(entities) + [e for e, _ in pairs]
-                        doc_reasons = {r: reason for r, reason in pairs}
+                        doc_reasons = _pool_reasons(entities, pairs)
                     else:
-                        pool = build_kg_candidate_pool(
-                            entities, hops=rerank_kg_hops()
-                        )
+                        pool = build_kg_candidate_pool(entities, hops=_hops)
                 ctx = rerank_query_context(
                     intent=intent,
                     risk_context=risk_context,
@@ -2647,17 +2701,25 @@ def _deterministic_parse(question: str) -> GraphQuery:
                     question, pool, query_context=ctx, doc_reasons=doc_reasons
                 )
                 if ok:
+                    # ONE FIX FOR ONE DEFECT — R351 anchor-tiering, now the
+                    # ONLY path. The competing R350 projection arm (neighbours
+                    # inform the ranking but never enter the citation set) was
+                    # A/B'd head-to-head against this one on 100 live rows
+                    # (`dynamic-ab-r352-kg-citability-full.json`) and LOST on
+                    # hard rule #8: the projection nets +1 gold HEAD drop and
+                    # +2 exact-coordinate drops vs this arm (4 regressed rows:
+                    # mt_v2_008 loses Article 51 entirely, st_v4_017 loses
+                    # Article 6, mt_v2_020 loses Article 113, la_q13 loses
+                    # both Annex XI and XII). Non-zero gold_dropped is a veto,
+                    # so the flag and its branch were deleted. See
+                    # docs/R352-kg-fork-decision.md.
+                    #
+                    # This arm tiers the anchors: every keyword entity stays
+                    # ahead of every KG neighbour, rerank order preserved
+                    # within each tier, so supplementation is strictly
+                    # ADDITIVE — it fills slots the anchors did not take,
+                    # never displaces one.
                     if pool is not entities:
-                        # R351 — the R347 superset guarantee must hold at the
-                        # CITATION CUT, not just at the pool. The cross-encoder
-                        # can score a KG neighbour above a gold anchor; without
-                        # this, the budget cut downstream lets the neighbour
-                        # DISPLACE the anchor (measured: R350 live A/B dropped
-                        # 5 gold heads 25 -> 27). Anchor-tier stabilization
-                        # keeps every keyword entity ahead of every neighbour
-                        # (rerank order preserved within each tier), so KG
-                        # supplementation can only ADD citations, never remove
-                        # a gold anchor. No-op when the pool was never expanded.
                         entities = stabilize_anchor_tier(reranked, entities)
                     else:
                         entities = reranked

@@ -136,8 +136,13 @@ def test_expansion_fires_and_adds_paraphrase_entity(monkeypatch):
 
     stats = QE.query_expansion_stats()
     assert stats["attempts"] == 1
-    assert stats["expanded"] >= 1
-    assert stats["failed"] == 0
+    assert stats["expanded_calls"] >= 1
+    # R350 — `paraphrases` is the UNION SURFACE size, which is what the lever
+    # actually buys; `expanded_calls` only counts calls. The old single
+    # `expanded` counter conflated them and under-reported 3x.
+    assert stats["paraphrases"] >= 1
+    assert stats["failed_transport"] == 0
+    assert stats["failed_parse"] == 0
     assert "Art. 72" in out
     assert out[0] == "Art. 72"  # the union hit leads the list
     # The BM25 lane still contributes — the union did not starve it
@@ -199,7 +204,12 @@ def test_provider_failure_is_fail_soft(monkeypatch):
 
     stats = QE.query_expansion_stats()
     assert stats["attempts"] == 1
-    assert stats["failed"] == 1
+    # R350 — a DEAD TRANSPORT and a clean empty reply used to increment the
+    # same `failed` counter, so the instrument that exists to prove the lever
+    # ran could not tell "the provider is down" from "the provider answered
+    # and had nothing". These two tests now pin the distinction.
+    assert stats["failed_transport"] == 1
+    assert stats["noop"] == 0
     assert out == base
 
 
@@ -213,7 +223,8 @@ def test_empty_paraphrase_response_is_fail_soft(monkeypatch):
 
     stats = QE.query_expansion_stats()
     assert stats["attempts"] == 1
-    assert stats["failed"] == 1
+    assert stats["noop"] == 1
+    assert stats["failed_transport"] == 0
     assert out == base
 
 
@@ -294,8 +305,13 @@ def test_bedrock_transport_fires(monkeypatch):
 
     stats = QE.query_expansion_stats()
     assert stats["attempts"] == 1
-    assert stats["expanded"] >= 1
-    assert stats["failed"] == 0
+    assert stats["expanded_calls"] >= 1
+    # R350 — `paraphrases` is the UNION SURFACE size, which is what the lever
+    # actually buys; `expanded_calls` only counts calls. The old single
+    # `expanded` counter conflated them and under-reported 3x.
+    assert stats["paraphrases"] >= 1
+    assert stats["failed_transport"] == 0
+    assert stats["failed_parse"] == 0
     assert len(calls) == 1
     # R346.2 — the paraphrase rides the frontier tier (Sonnet 4.6), never
     # Haiku, and defaults to the judge tier rather than the Opus generation
@@ -323,10 +339,29 @@ def test_bedrock_transport_honours_model_override(monkeypatch):
     assert len(out) == len(base)  # BM25 lane preserved, budget intact
 
 
-def test_bedrock_disabled_falls_back_to_wrapper(monkeypatch):
-    """provider=bedrock but Bedrock credentials absent → the historical
-    wrapper path serves the call (attempts>0) rather than silently
-    disabling expansion."""
+def test_bedrock_disabled_does_NOT_fall_back_to_wrapper(monkeypatch):
+    """R350 — under ``provider=bedrock`` an unavailable Bedrock must NOT hop
+    to the Claude-Max wrapper.
+
+    ⚠ This test previously asserted the OPPOSITE ("the historical wrapper path
+    serves the call"), pinning the exact behaviour this module's own docstring
+    forbids: *"under P2P_GRAPH_RAG_PROVIDER=bedrock the call goes to Bedrock's
+    own Sonnet 4.6, NOT the Claude-Max wrapper — mixing transports mid-A/B
+    contaminates both arms."* The old assertion enshrined a defect, so it was
+    inverted rather than deleted.
+
+    Two things went wrong together. ``_paraphrase_provider_available()`` tested
+    ``is_openai_wrapper_enabled()`` FIRST, and that returns False only for the
+    literal string ``"cli"`` — so under ``bedrock`` it returned True and
+    short-circuited, making R346's Bedrock branch dead code. Then
+    ``_complete_paraphrase`` fell through to the wrapper, at a different budget
+    and a different model routing, recorded by nothing but a ``logger.debug``
+    that never emits. The Bedrock arm of a live A/B was being served by the
+    wrapper and counted identically.
+
+    A contaminated arm is worse than a missing paraphrase, because it still
+    produces a number.
+    """
     import app.llm.bedrock_client as BC  # noqa: PLC0415
 
     monkeypatch.setenv("REGENOLD_QUERY_EXPANSION", "1")
@@ -343,10 +378,13 @@ def test_bedrock_disabled_falls_back_to_wrapper(monkeypatch):
     out = _deterministic_parse(_Q_NO_ENTITY).entities
 
     stats = QE.query_expansion_stats()
-    assert stats["attempts"] == 1
-    assert stats["failed"] == 0
-    assert len(wrapper_calls) == 1
-    assert "Art. 72" in out
+    assert wrapper_calls == [], "Bedrock arm hopped to the wrapper — arms contaminated"
+    # The gate refuses before any call is attempted, and says WHY: this is
+    # distinguishable from "ran and found nothing", which the pre-R350 single
+    # `failed` counter could not express.
+    assert stats["attempts"] == 0
+    assert stats["no_provider"] == 1
+    assert "Art. 72" not in out
 
 
 def test_bedrock_only_no_provider_no_call(monkeypatch):

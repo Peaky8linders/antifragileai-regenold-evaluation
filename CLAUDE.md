@@ -116,19 +116,24 @@ The Neo4j graph contributes **non-citable Stage-2 context** via
 and deontic classifications (Practice, OperatorRole, AnnexIIICategory, LifecyclePhase).
 It is additive: never a ranker, never a wire citation (hard rule #10).
 
-## Knowledge surface — measured 2026-08-09
+## Knowledge surface — re-measured 2026-08-15 at R349
+
+Every number in this table was re-measured at `6fdedcb`. Three were stale and are
+corrected here: `KB_VERSION` (v18 → **v21**), the full xref edge count
+(249 → **248**), and `USER_ANSWER_COVERAGE_CLAUSE` in the flag table
+(2,241 → **2,466** chars). Everything else reproduced exactly.
 
 | Module | Content |
 | ------ | ------- |
 | `app/data/article_existence.py` | **126** canonical refs = 113 articles + 13 annexes. The lint floor. |
-| `app/data/kb.py` | `EC_CHECKER_OBLIGATION_MAP` — **131 entries** covering all 126 provisions (some articles carry multiple stubs). `KB_VERSION = 2024.1689.v18`. |
+| `app/data/kb.py` | `EC_CHECKER_OBLIGATION_MAP` — **131 entries** covering all 126 provisions (some articles carry multiple stubs). `KB_VERSION = 2024.1689.v21`. ⚠ The live Aura graph is still seeded at **v18** — that gap is the seed hazard, not a bug in either side. |
 | `app/data/ontology.py` | `PRACTICE_REGISTRY` **×8**, `ANNEX_III_REGISTRY` **×8**, `PHASE_REGISTRY` **×4**, plus the six AIRO registries `938933a` added: `RISK_SCENARIO_REGISTRY` **×8**, `RISK_CONTROL_REGISTRY` **×9**, `GPAI_REGISTRY` **×4**, `CONFORMITY_ROUTE_REGISTRY` **×3**, `FRIA_REGISTRY` **×1**, `SERIOUS_INCIDENT_REGISTRY` **×3**. **All six feed the BM25 index.** 0 dangling citations (normalise the sub-point tail before resolving — `Art. 5.1.a` keys as `Art. 5`). |
 | `app/data/definitions.py` | **68** Art. 3 definitions. |
 | `app/data/provision_text.py` | Verbatim resolver: article / paragraph / point / sub-point / annex item, section-aware. |
 | `app/data/official_eu_ai_act.py` | Pinned EUR-Lex text, CELEX `32024R1689` (**pre-Omnibus**), 180 recitals. |
 | `app/data/kb_search.py` | BM25 index — **373 docs** by default (131 kb / 48 ontology / 126 corpus / 68 definition), measured 2026-08-15. **345** is the `REGENOLD_ONTOLOGY_RISK_DOCS=0` arm, i.e. the pre-`938933a` corpus. |
-| `app/data/kb_xrefs.py` | Cross-reference graph: **149 core** edges, **249 full**. |
-| `app/data/eu_ai_act_tree.py` | **1,412**-node document tree. |
+| `app/data/kb_xrefs.py` | Cross-reference graph: **149 core** edges, **248 full** (`all_edges()`). ⚠ This table said **249** while two other sections said 248; measured, it is **248**. One concept, one number. |
+| `app/data/eu_ai_act_tree.py` | **1,412**-node document tree (508 paragraph / 367 subpoint / 180 recital / 163 annex_point / 113 article / 68 definition / 13 annex). |
 | `app/engines/_assets/` | Embeddings index — `is_available()` True, **0** asset SHA mismatches vs the manifest. TurboQuant precomputed — enabled, staleness guard present and passing. |
 
 ⚠ Older round entries quote `~165` / `348` / `347` BM25 docs, `Practice ×9`,
@@ -553,6 +558,37 @@ correct only for exactly as long as that remains true.
   edge reason (``cross_refs_with_reason`` — the KG's semantic layer) plus a
   ``REGENOLD_RERANK_KG_HOPS=2`` depth option with a 2:1 budget split. Superset
   + dedup + cap + ok-bit adoption: gate-off is byte-identical to R340.
+  Unmeasured — the A/B (rerank × KG-candidates [× hops]) is the open
+  measurement. ⚠ **R350 found both halves defective before that A/B ran** — see
+  the next bullet.
+* **R350 — a six-specialist review of R341→R349, then a skeptical verifier.**
+  23 findings survived; full record in
+  [`docs/reviews/r350-multi-agent-review-2026-08-15.md`](docs/reviews/r350-multi-agent-review-2026-08-15.md).
+  **Nothing was broken in the shipped default configuration** (every rerank and
+  expansion lever is default-OFF), but the MERGE GATE was defective on its
+  default path and the levers about to be A/B'd would have answered
+  confidently and wrongly. The four that matter:
+  * `dynamic_ab._report` **raised `UnicodeEncodeError` between the axis table
+    and the `gold_dropped` veto**, and `_write_sidecar` ran after it — so a
+    live A/B lost its verdict AND its data to a U+2500. **Any judge-axis A/B
+    run between R349 and R350 lost its sidecar; re-run it.**
+  * `legal_v2` **silently converted a judge `fail` into `pass`** on
+    `citation_faithfulness` and `reference_correctness` when the reply omitted
+    its own array — the SHIPPED grading path, no flag. Pre-R350 numbers on
+    those two axes are biased upward by an unknown amount.
+  * `REGENOLD_RERANK_KG_CANDIDATES` **put graph-sourced provisions on the
+    wire**: measured, a chatbot question gained `Art. 98` (comitology) and a
+    FRIA row went 3 refs → 11. Now ordering-only.
+  * `REGENOLD_RERANK_KG_HOPS` **was inert on 5/5 questions** — and because it
+    was cache-keyed, the fire check would have PASSED on Stage-2 noise and
+    reported a delta for a depth change that never happened.
+  Also fixed: the fire check counting transport errors as the lever firing, a
+  1-pair axis printing a resolved verdict, a non-atomic checkpoint that
+  destroyed the previous one, a dead `--endpoint`, two keyed-but-frozen flags,
+  uncapped conversation egress to Cohere, and a rerank query that ranked
+  against prior turns instead of the live question. ⚠ One finding was
+  **REFUTED** by the verifier and deliberately NOT changed — see the closed
+  list in [`.planning/NEXT-SESSION.md`](.planning/NEXT-SESSION.md).
 * **R350 measured the full stack (rerank × KG-candidates × expansion) LIVE on
   84 rows (graphrag + medtech + expert-review): FIRED 57/84, retrieval axes
   ~flat (UNDERPOWERED), judge axes UNDERPOWERED (throttle), but HARD RULE #8
@@ -560,22 +596,41 @@ correct only for exactly as long as that remains true.
   (``stabilize_anchor_tier`` — a KG neighbour could out-score and displace a
   gold anchor at the citation budget cut; the anchor-tier invariant restores
   the superset guarantee AT THE CUT).
-* ⚠ **R350.2 re-measured the same full stack WITH the R351 fix on the 81-row
-  live-answers probe: VETO AGAIN — gold 46 → 49 (+3) at n=48 clean rows.**
-  The NEW mechanism is generation-level, and R351 cannot fix it: the wire
+
+* ⚠ **R350 and R351 fixed the SAME defect independently, the same week, on the
+  same statement — and the two fixes are BOTH shipped.** The defect:
+  `entities = reranked` adopted the whole KG-expanded pool, so a
+  `CROSS_REFERENCES` neighbour became a wire citation. R351 tiers the anchors
+  (**the survivor**): neighbours stay citable but can never displace a
+  keyword anchor, so supplementation is strictly ADDITIVE. The competing R350
+  projection (neighbours never citable) was A/B'd head-to-head on 100 live
+  rows and **lost on hard rule #8** — it nets +1 gold HEAD drop and +2 exact
+  drops vs R351 (4 regressed rows: mt_v2_008 loses Article 51 entirely,
+  st_v4_017 loses Article 6, mt_v2_020 loses Article 113, la_q13 loses both
+  Annex XI and XII). The flag and its branch are DELETED; the fork is
+  decided, not open. Full numbers in `docs/R352-kg-fork-decision.md`.
+* ⚠ **R350.2 re-measured the full stack (rerank × KG-candidates × expansion)
+  WITH the R351 fix on the 81-row live-answers probe: VETO AGAIN — gold
+  46 → 49 (+3) at n=48 clean rows (the account's daily Bedrock quota closed
+  the window before row 81).** The NEW mechanism is generation-level, and
+  NEITHER R351 NOR R350's non-citable projection can fully fix it: the wire
+
   references are ANSWER-DRIVEN (Component D extracts citations from the
   Stage-2 prose), and the KG pool changes what Opus WRITES. Measured on
   la_q87: branch prose said "listed in notably the Medical Devices Regulation"
   instead of "listed in Annex I" — the literal phrase never reached the
   prose, so Component D never extracted it, and the gold ref dropped. On
   la_q20 / la_q51 / la_q84 the branch's ENTIRE citation sets rerouted. No
-  anchor-tier protection at the parse can force an LLM to write a phrase the
-  context led it away from. R346's decomposition still points at the culprit:
-  rerank alone was a wash (gold 17→17), expansion alone was BETTER (17→14),
-  and every combination that includes the KG-candidates arm has vetoed
-  (R350 25→27, R350.2 46→49). **The KG-candidates arm stays OFF; the decisive
-  isolation run (expansion ONLY, no rerank, no KG) on live-answers is the
-  next measurement** — one command, listed in docs/R350-live-stack-ab.md.
+
+  anchor-tier or projection at the parse can force an LLM to write a phrase
+  the context led it away from. R346's decomposition still points at the
+  culprit: rerank alone was a wash (gold 17→17), expansion alone was BETTER
+  (17→14), and every combination that includes the KG-candidates arm has
+  vetoed (R350 25→27, R350.2 46→49). **The KG-candidates arm stays OFF; the
+  decisive isolation run (expansion ONLY, no rerank, no KG) on live-answers
+  is the next measurement** — one command, listed in
+  docs/R350-live-stack-ab.md.
+
 * ⚠ **R338's "−5 expert-mistake regression" (q03/q04/q14) is RETRACTED** — it was
   measured while Stage-2 was dead (the argv ceiling). With Stage-2 restored the
   same resolver gives **34/38**, above the R318 baseline's 33/38. Do not quote
@@ -751,6 +806,38 @@ correct only for exactly as long as that remains true.
   not `Article N`; ontology citations carry a sub-point tail (`Art. 5.1.a`) that
   must be normalised before resolving. Each has faked an "empty surface" alarm.
 * **Console `?` on Windows is cp1252 rendering, never data.** Verify by codepoint.
+  ⚠ **But an UNENCODABLE character is not a rendering artefact — it is an
+  exception.** `sys.stdout.encoding` is `cp1252` here, and cp1252 has no
+  U+2500 (`─`). R349's judge-provenance line used one, and it sat BETWEEN the
+  axis table and the `gold_dropped` veto block in `dynamic_ab._report`, with
+  `_write_sidecar` called after `_report`. So on the default path — judge axes
+  are ON by default — a multi-hour live A/B printed its axis table, raised
+  `UnicodeEncodeError`, and lost **both the HARD RULE #8 VETO and every row of
+  its data** to a box-drawing character. `—` (U+2014) survives because cp1252
+  has it at 0x97, which is exactly why this was easy to miss. R350 pinned it
+  with a test that encodes every `emit(`/`print(` line as cp1252, and put the
+  sidecar write in a `finally`: **persistence must never depend on
+  presentation.**
+* **KEYED BUT FROZEN is worse than UNKEYED.** A flag registered in
+  `_engine_cache_key` but read once at import gives the worst of both: the key
+  makes the two arms cache-distinct so the engine genuinely re-runs, live
+  Stage-2 is non-deterministic so the outputs differ, the **fire check passes**
+  — and the harness prints a confident axis table for a value that was
+  identical in both arms. An unkeyed frozen flag at least reports INERT. Two
+  shipped this way (`REGENOLD_QUERY_EXPANSION_BEDROCK_TIMEOUT`,
+  `REGENOLD_INTENT_MODEL`); both fixed R350. **When you add a flag to the cache
+  key, open the module and confirm the read is inside a function.**
+* **An ERROR is not a DIVERGENCE, and an error verdict is not a FAIL.** Both
+  halves of this shipped in `dynamic_ab`. `fire_check` compared `pred_refs` /
+  `pred_answer` with no error filter, and an errored row carries
+  `pred_answer=""` / `pred_refs=[]` — which always differs from a healthy
+  baseline, so a branch-arm timeout counted as *the lever firing* and the rows
+  that "proved" it were then dropped from every axis. Separately, `legal_v2`
+  returns a real `{"verdict": "fail", "evaluation_error": "empty_answer"}` for
+  an empty answer, and the judge-axis filter tested only the verdict STRING —
+  so one network blip scored as the branch losing an entire answer-quality
+  axis. **Whenever a failure mode of the instrument can push its own verdict
+  toward a conclusion, that is the bug**; check which direction it pushes.
 * **`/healthz/llm` lies** — verify the wrapper with a real POST.
 * **Never run two wrapper-bound jobs concurrently.**
 * **The instrument trap.** Repeatedly, an authoritative-looking instrument was
@@ -861,7 +948,25 @@ correct only for exactly as long as that remains true.
 
 ## Env flags that matter
 
-Defaults are the CODE default, re-measured 2026-08-09.
+Defaults are the CODE default. Re-verified 2026-08-15 at R349: **0 doc/code
+default mismatches** among the flags listed here.
+
+⚠ **This table is the flags recent ROUNDS touched, not the flags that matter
+most.** Measured at R350, `app/` reads **264** environment flags; this table
+documents ~57, and **81 default-ON flags are absent from it** — including ones
+that shape the wire references directly (`REGENOLD_ADAPTIVE_REF_CLAMP`,
+`REGENOLD_QA_REF_BUDGET`, `REGENOLD_REFS_RECONCILE`,
+`REGENOLD_PROSE_NAMED_REFS`, `REGENOLD_SUBPOINT_EMIT`). Since
+`railway.toml [deploy.envs]` has never applied and `.env` is gitignored, **the
+code default is what the deployed service runs**, so an undocumented default-ON
+flag is live behaviour nobody wrote down. The exhaustive index — every flag,
+its code default, its read site, and whether it is documented here — is
+[`docs/ENV-FLAGS.md`](docs/ENV-FLAGS.md), regenerated by
+`py -3.12 scripts/generate_env_flag_inventory.py` (pure-stdlib static read, no
+imports, no environment). It also reports flags read with **two different
+defaults at different call sites** — the "one concept, two definitions" defect;
+there are 10 today, and `REGENOLD_INTENT_MODEL` was one of them until R350.
+Keep the curated subset here; do not inline the index.
 
 | Flag | Default | Effect |
 | --- | --- | --- |
@@ -877,14 +982,19 @@ Defaults are the CODE default, re-measured 2026-08-09.
 | `REGENOLD_KG_MAX_CHARS` | **48000** | total graph-context ceiling. R328.4 — was 16000 |
 | `REGENOLD_KG_MAX_UNITS` | **70** | units per provision. R328.4 — was 24, which rendered Article 3 as 24 of its 68 definitions with 3(4)-3(8) (the five OPERATOR ROLE definitions) absent and unmarked |
 | `REGENOLD_KG_UNIT_CHARS` | **2000** | per-unit budget; `_UNIT_HARD_CEILING` **9000** for enumerations. R328.4 — were 900 / 2600 |
-| `REGENOLD_ANSWER_COVERAGE` | **ON** | delivers `USER_ANSWER_COVERAGE_CLAUSE` (2,241 chars) on the Stage-2 USER channel — delivered on every provider. ⚠ **`=0` is NOT a targeted rollback of anything inside it**: it also deletes the R318 `LEGAL VERSION` sentence, which is the ONLY place the no-Digital-Omnibus rule reaches the model. If you need to remove one sentence, remove that sentence |
+| `REGENOLD_ANSWER_COVERAGE` | **ON** | delivers `user_answer_coverage_clause()` (**2,466** chars — R344 made it self-contained, which grew it from 2,241; it is a FUNCTION now, not a module constant) on the Stage-2 USER channel — delivered on every provider. ⚠ **`=0` is NOT a targeted rollback of anything inside it**: it also deletes the R318 `LEGAL VERSION` sentence, which is the ONLY place the no-Digital-Omnibus rule reaches the model. If you need to remove one sentence, remove that sentence |
 | `REGENOLD_ONTOLOGY_RISK_DOCS` | **ON** | `938933a` — emits 28 virtual BM25 documents from the six AIRO registries (345 → **373** docs). Shipped default-ON with **no `dynamic_ab` verdict and no `gold_dropped` reading**; 9 of 110 official-batch rows lose a provision from their entity set. `=0` restores the pre-`938933a` corpus. In `_engine_cache_key` (`regenold.py:1434`) since R331/R332 |
 | `REGENOLD_COHERE_RERANK` | **OFF** | R331/R340.1 — cross-encoder rerank via Cohere at the parse-level entity list (the placement that reaches live traffic; the pool-level placement only fires on the rare no-entity BM25 fallback) and the retrieval candidate pool. Needs `COHERE_API_KEY`; fresh env read per call. **Live A/B (R346, n=60, Bedrock): FIRED 49/60 rows, all axes UNDERPOWERED (wash inside noise), gold 17→17 (+0), latency +1.0 s.** ⚠ Trial key = 10 calls/min: unpaced every call 429s and the lever reads INERT — pass `--min-call-gap 6.5` |
-| `REGENOLD_RERANK_KG_CANDIDATES` | **OFF** | R347/R348 — hybrid-RAG KG supplementation: the parse-level rerank ranks the keyword entities TOGETHER with their CROSS_REFERENCES neighbours from the KG taxonomy (embedded-graph `neighbors()` when the embedded backend is selected, canonical `kb_xrefs.cross_refs` adjacency otherwise), so a genuinely cross-referenced provision can be PROMOTED instead of only re-ordering a keyword-picked set. R348 annotates each KG-supplemented neighbour's rerank DOCUMENT with its curated semantic edge REASON (`cross_refs_with_reason` — e.g. "Art. 13: Art. 26(1) requires deployers to use the Art. 13 information from the provider"), so the cross-encoder scores WHY the provision is relevant. Pool is a superset (permutation-safe), capped at 8 extras, adopted only on cross-encoder success (the `rerank_pool` ok-bit — an outage never leaks neighbours). Also feeds the classifier's own labels (intent / risk tier / dimension) into the rerank QUERY via `rerank_query_context`. No-op unless `REGENOLD_COHERE_RERANK=1`; in `_engine_cache_key` (R334 drift-guarded). The A/B decides |
-| `REGENOLD_RERANK_KG_HOPS` | **1** | R348 — KG expansion depth: `2` walks one level further ("the provisions those provisions point at") on EITHER backend (embedded graph `neighbors()` or composed `cross_refs(cross_refs(ref))`). `max_extra` budget splits 2:1 (hop-1 gets 2/3) so a hub article's 2-hop closure can't starve the direct neighbours. Values outside 1–2 clamp to 1; in `_engine_cache_key` (R334 drift-guarded) |
+| `REGENOLD_RERANK_KG_CANDIDATES` | **OFF** | R347/R348 — hybrid-RAG KG supplementation: the parse-level rerank ranks the keyword entities TOGETHER with their CROSS_REFERENCES neighbours from the KG taxonomy (embedded-graph `neighbors()` when the embedded backend is selected, canonical `kb_xrefs.cross_refs` adjacency otherwise), so the cross-encoder can use a genuinely cross-referenced provision as EVIDENCE when ordering the keyword-picked set. ⚠ **R350 — it used to PROMOTE, and that was wrong on both backends, though for different reasons.** `entities = reranked` adopted the whole expanded pool, so every neighbour became a wire citation (`entities` → obligation → `CitationNode` → `references`). On the DEFAULT `neo4j` backend the pool comes from `kb_xrefs.cross_refs_with_reason` — a static in-repo module that already feeds retrieval — so there it is an **over-citation amplifier, not a rule #10 violation**. On `REGENOLD_GRAPH_BACKEND=embedded` it IS a rule #10 violation: verified, `Art. 98` yields zero xref pairs, so the builder falls through to `get_embedded_graph().neighbors()` and puts six graph-sourced refs into the adoptable pool. Keep the distinction — overstating it invites the fix being reverted as alarmist. Measured with an IDENTITY rerank stub — the cross-encoder expressing no preference, which still returns `ok=True`, because `ok` means "the API answered" and a successful noop is ok too: *"transparency obligations for chatbots"* went `Art. 50` → `Art. 50, Art. 56, **Art. 98**` (Art. 98 is *Committee procedure* — comitology), and the FRIA row went **3 refs → 11**. On the one axis this repo has left to win. The reranked ORDER is now projected back onto the original membership; genuine KG recall is still a live idea but it is a reference-affecting change that owes hard rule #8 a `gold_dropped` reading, not a side effect of a rerank placement. R348 annotates each KG-supplemented neighbour's rerank DOCUMENT with its curated semantic edge REASON (`cross_refs_with_reason` — e.g. "Art. 13: Art. 26(1) requires deployers to use the Art. 13 information from the provider"), so the cross-encoder scores WHY the provision is relevant. Pool is a superset (permutation-safe), capped at 8 extras, adopted only on cross-encoder success (the `rerank_pool` ok-bit — an outage never leaks neighbours). Also feeds the classifier's own labels (intent / risk tier / dimension) into the rerank QUERY via `rerank_query_context`. No-op unless `REGENOLD_COHERE_RERANK=1`; in `_engine_cache_key` (R334 drift-guarded). The A/B decides |
+| ~~`REGENOLD_RERANK_KG_NONCITABLE`~~ | — | **DELETED (R352 fork decided).** The R350 projection arm (neighbours never citable) lost the head-to-head A/B on hard rule #8: 100 live rows, nets +1 gold HEAD drop and +2 exact drops vs R351 anchor-tiering. Regressions: mt_v2_008 (loses Article 51 entirely), st_v4_017 (loses Article 6), mt_v2_020 (loses Article 113), la_q13 (loses both Annex XI and XII). R351 anchor-tiering is the only path (`stabilize_anchor_tier`). See `docs/R352-kg-fork-decision.md` |
+| `REGENOLD_RERANK_KG_HOPS` | **1** | R348 — KG expansion depth: `2` walks one level further ("the provisions those provisions point at"). ⚠ **R350 — this flag was INERT from the day it shipped until R350.** `rerank_kg_hops()` reached only `build_kg_candidate_pool`, which the caller uses solely in the `else` of `if pairs:` — and `cross_refs_with_reason` resolves a pair for essentially every entity, so that branch almost never ran. Measured: 5/5 representative questions produced BYTE-IDENTICAL pools at hops=1 and hops=2. Because the flag *was* registered in `_engine_cache_key`, the two arms were cache-DISTINCT and both genuinely re-ran, so the **fire check would have PASSED on Stage-2 noise** and `dynamic_ab` would have printed an axis table for a depth change that never happened — the inert-feature trap arriving *through* the guard built to catch it. `build_kg_candidate_pool_with_reasons` now takes `hops`; hop-2 reasons are labelled `via <hop-1 ref>: …`. The 2:1 budget split now applies ONLY at hops≥2 (it was unconditional, so hops=1 silently capped the pool at 5 of 8 — a depth knob must not change the depth-1 result). Values outside 1–2 clamp to 1; in `_engine_cache_key` |
+| `REGENOLD_RISK_CLASS_ANNEX` | **OFF** | R353 — the R352 surviving hypothesis, made concrete: on the yes/no "is X high-risk / regulated under the AI Act?" shape, append `Annex III` (the high-risk use-case list) to the entity list as a RECALL SUPPLEMENT. R352 refuted the broad risk-class triad (Art. 6 0% / Annex III 24% / Annex I 11% precise — gold cites the LIST, never the rule that points at it) and left this one shape open; the exact gold impact was computed over the whole 297-row probe pool BEFORE any engine code (replicated independently, `scratch/verify_r352_final.py`): fires on 11 rows, Annex III gold-but-missing on **7** (spam filter, music recommender, chatbot, translation, image generator, clinic scheduling, recipes), **0 non-gold added — 100% precision** (prohibition / technical-doc / medical shapes excluded; the cross-encoder rerank is the guard against an unseen misfire). Appended, never prepended; the parse-level rerank (R340) decides its final position. Engine-level, in `_engine_cache_key`, fresh read per call (R334 drift-guarded). The live A/B with all judge axes is the open measurement |
 | `REGENOLD_QUERY_EXPANSION` | **OFF** | R341 — multi-query expansion (RAG-Fusion) in `_deterministic_parse`: frontier-tier paraphrases scanned through the SAME high-precision keyword map (union capped at 3 new refs) plus the BM25 fallback RRF-combined across queries at the single-query budget. Skips explicit-anchor and multi-turn shapes; the fallback gate asks about the ORIGINAL lanes only (a lone paraphrase hit must not starve BM25). **Live A/B (R346, n=60, Bedrock, Haiku tier): FIRED 37/60, ref_loose +0.039 / kw_recall +0.029 (CIs mostly above zero), gold 17→14 (branch BETTER), latency flat — directionally positive, UNDERPOWERED at n=60; the R346.2 frontier-tier re-run is the open measurement** |
+| `REGENOLD_DETERMINISTIC_PROSE_CONSISTENCY` | **OFF** | R354 (Fix A) — extend the R138 final citation-consistency pass (every article/annex the SHIPPED answer names must appear in the wire refs) to the DETERMINISTIC path. The R138 pass was Stage-2-gated, so a Stage-2-failed row shipped raw retrieval candidates even when the answer prose named a gold ref the wire lacked — the la_q73 defect: branch answer names "Annex I" twice, wire ships `[Article 43, Article 6, Article 27, Article 49]` (Article 43 never named in the prose, Annex I missing). Measured over the 81-row live-answers checkpoint BEFORE code: **11 rows, 11 gold heads restorable** (la_q73 fully closed, la_q51 4→3, la_q84 9→8). Add is strictly existence-gated + cross-instrument-guarded + capped (cannot invent; a deterministic answer is still a real answer whose prose must match its citations). Default OFF per the validation policy (answer-affecting); route-level, NOT in `_engine_cache_key` (route post-processing over cached engine output — the R79 doctrine), fresh read per call (R263.2). The live A/B on the 81-row probe is the open measurement |
 | `REGENOLD_QUERY_EXPANSION_MODEL` | `claude-sonnet-4-6` | R346.2 — the paraphrase tier. **No Haiku on the live path**: frontier 4.6 by default (the judge tier — a paraphrase is a light task), pin `claude-opus-4-6` for the generation tier. Fresh read per call; in `_engine_cache_key` |
-| `REGENOLD_QUERY_EXPANSION_BEDROCK_TIMEOUT` | **8 s** | R346 — paraphrase read budget on the Bedrock transport (cold-start + frontier model). The wrapper's 2 s budget would fail every paraphrase and read as an inert lever (attempts>0, expanded=0, branch == baseline) |
+| `REGENOLD_QUERY_EXPANSION_BEDROCK_TIMEOUT` | **8 s** | R346 — paraphrase read budget on the Bedrock transport (cold-start + frontier model). ⚠ **R350 — it was read at IMPORT while `_engine_cache_key` documented it as "read fresh per call".** Keyed-but-frozen is strictly WORSE than unkeyed: the key makes the arms cache-distinct so the engine genuinely re-runs, the paraphrase call is non-deterministic so outputs differ, the fire check therefore PASSES — and the harness prints an axis table for a value identical in both arms. An unkeyed frozen flag at least reports INERT. Now read per call, and a malformed value warns and falls back instead of raising at import (the caller's import sits inside a broad `except`, so a typo silently switched expansion off) |
+| `REGENOLD_QUERY_EXPANSION_TIMEOUT` | **20 s** | R350 — the WRAPPER paraphrase budget, previously a hard-coded `2.0` with no override. The asymmetry was backwards: R102 measured the Claude-Max wrapper at a **12–17 s floor for a five-token request**, while R328.2's Bedrock invokes returned in **275–1595 ms** — so the SLOWER transport had the SMALLER budget. R341 sized 2.0 s against the Haiku tier; R346.2 swapped that tier for Sonnet 4.6 and left the budget, which would fail every wrapper paraphrase and read as an inert lever rather than a timeout |
+| `REGENOLD_INTENT_MODEL` | `claude-sonnet-4-6` | R346.2 default, R350 fixed. The NON-Groq Stage-0 intent model — the one that runs whenever `GROQ_API_KEY` is absent, i.e. the documented eval setup. It is engine-level (`bridging_context` → `GraphRAGRequest` → the Stage-2 prompt), so R350 made it fresh-read (`intent_classifier.intent_model()`) and registered it in `_engine_cache_key` beside its Groq sibling. ⚠ It was ALSO the last Haiku reference on the live path: `main.py`'s startup log re-derived the default itself as `claude-haiku-4-5-20251001`, so with the variable unset — the deployed configuration — the boot line advertised a model the process would never call |
 | `REGENOLD_JUDGE_CONCISENESS_LENIENCY` | **OFF** | R331.1 — the POST-PROCESSING half of `bb793ca`'s conciseness loosening (`legal_v2.py:821`). ⚠ **Its PROMPT half is UNGATED** (`legal_v2.py:488-514`, the UNREQUESTED-TOPIC / REDUNDANT definitions), and that is where the axis is actually defined — so `answer_conciseness` already sits on a different, strictly more permissive ruler than every pre-`bb793ca` number, under the same canonical name. Violates R327's "change the formula, change its NAME" |
 | `REGENOLD_JUDGE_FACTUAL_THRESHOLD` | **0.70** | `d7be457` — `legal_v2` factual-correctness pass floor (`legal_v2.py:607`). Was an implicit 1.0 ("every proposition addressed"); `=1.0` restores it. Same ruler-swap caution as the row above |
 | `REGENOLD_GRAPH_BACKEND` | `neo4j` | `embedded` = in-process SQLite, no external service |
@@ -1217,7 +1327,7 @@ $env:P2P_GRAPH_RAG_PROVIDER = "openai_wrapper"
 # deterministic env for every gate
 OPENAI_API_BASE=http://127.0.0.1:1/v1 P2P_GRAPH_RAG_PROVIDER=cli REGENOLD_EXTERNAL_EMBEDDINGS=0
 
-py -3.12 -m pytest tests/ -q -p no:cacheprovider          # full suite (~0 failures since R340)
+py -3.12 -m pytest tests/ -q -p no:cacheprovider          # 6491 passed, 35 skipped, 0 failed (235 s, measured at R349)
 
 # THE MERGE GATE — fire-checked, adaptively sized, gold_dropped veto.
 py -3.12 -m evals.harness.dynamic_ab --flag <FLAG> --label <L>
@@ -1274,7 +1384,22 @@ attributed, not Omnibus — and `tests/test_kb_stubs_filled.py` pins it.
 
 Full handoff: [`.planning/NEXT-SESSION.md`](.planning/NEXT-SESSION.md).
 
-1. **Re-measure the full optimised stack after R351's anchor-tier fix** — R350
+1. ~~**DECIDE THE KG-CITABILITY FORK**~~ — **DECIDED.** The R350 projection
+   arm lost the 100-row A/B on hard rule #8: it nets +1 gold HEAD drop and
+   +2 exact drops vs R351 anchor-tiering (4 regressed rows — mt_v2_008 loses
+   Article 51 entirely, st_v4_017 loses Article 6, mt_v2_020 loses Article
+   113, la_q13 loses both Annex XI and XII). Flag, cache-key entry and the
+   projection branch are deleted; R351 anchor-tiering is the only path.
+   Numbers in `docs/R352-kg-fork-decision.md`.
+2. **MEASURE THE R353 ANNEX-III ANCHOR LIVE (all judge axes, incl. ans/ref correctness).**
+   Shipped behind `REGENOLD_RISK_CLASS_ANNEX` (default OFF) with an exact
+   gold impact of 7/0 over the whole pool (100% precision — see
+   `docs/R353-reranker-review.md` §3). The A/B: baseline = shipped default,
+   branch = `REGENOLD_RISK_CLASS_ANNEX=1`, on the 297-row pool (or the
+   `lower_risk_v149,graphrag,live_answers` subset where the lever can fire),
+   `--judge-model claude-sonnet-4-6`, gold veto as the gate. Only then flip
+   default ON.
+3. **Re-measure the full optimised stack after R351's anchor-tier fix** — R350
    measured rerank × KG-candidates × expansion on 84 rows (graphrag + medtech
    + expert-review): FIRED 57/84, retrieval axes ~flat, judge axes
    UNDERPOWERED, and the hard-rule-#8 veto (gold 25→27, all 5 drops were KG
@@ -1282,40 +1407,40 @@ Full handoff: [`.planning/NEXT-SESSION.md`](.planning/NEXT-SESSION.md).
    (``stabilize_anchor_tier`` — anchors always precede neighbours at the
    cut). The R350.2 live batch on the 81-row live-answers probe decides
    whether the stack clears the veto. The gold veto is the gate.
-2. **Resolve the query-expansion A/B on the frontier paraphrase tier** (R346.2
+4. **Resolve the query-expansion A/B on the frontier paraphrase tier** (R346.2
    made the lever Haiku-free; the confirmatory live run was interrupted).
    Directionally positive on the Haiku tier (ref_loose +0.039, kw_recall
    +0.029, gold 17→14, flat latency) but UNDERPOWERED at n=60 — run the full
    probe (`--max-rows 137`) or the moved-row subset to converge the CI. The
    gold veto is the gate.
-3. **Ground the R346 sidecars with `evals.judge.grounded`** (`claude-sonnet-4-6`
+5. **Ground the R346 sidecars with `evals.judge.grounded`** (`claude-sonnet-4-6`
    via Bedrock — the frontier judge the operator specified) so the retrieval
    levers get a quality verdict beyond the heuristic axes. Verify
    sidecar-format compatibility with `grounded.py` first.
-4. **Run `--mode hard`.** It is **the graded turn** (the adversarial pushback;
+6. **Run `--mode hard`.** It is **the graded turn** (the adversarial pushback;
    67 of 111 hard rows carry it) and it has NEVER been run. Every optimisation
    decision on the table is being made on the *easy* turn — that is the
    instrument trap. Free, ~40-70 min.
-5. **Record the PRIMARY provider's failure in the reasoning trace.** Only the
+7. **Record the PRIMARY provider's failure in the reasoning trace.** Only the
    fallback's outcome is written today (`groq_auto_fallback_success` /
    `groq_fallback_failed`), so a reader sees Groq succeeding and cannot tell
    Claude was never reached — that is what turned R339's total Stage-2 outage
    into a multi-hour diagnosis. One `record_note` in the `groq_auto_fallback`
    branch (`_graph_rag_impl.py` ~:880). Highest-value single change outstanding.
-6. **Gate the parent-collapse** with `easyhard_ab` (davidath cannot see it).
+8. **Gate the parent-collapse** with `easyhard_ab` (davidath cannot see it).
    +0.018 F1 / +5 rows offline; one gold ref is the price. R339's judge adds
    independent evidence on sub-point-carrying gold: q12 fails reference
    correctness for citing a parent alongside its own sub-provision.
-7. **Attack GENERATION, not selection.** R325 closed the ranker, so the
+9. **Attack GENERATION, not selection.** R325 closed the ranker, so the
    remaining ~90% of the over-citation gap is upstream: why does a 3-ref answer
    name a wrong provision **53% of the time at rank 3**? The refs-per-row cliff
    is the shape of it — 1 ref → 0.88 pass, 2 → 0.54, **3 → 0.05**, 4+ → 0.06,
    with 41 of 100 rows sitting at exactly 3 (the QA budget). R327's constrained
    sub-provision layer is the first instrument aimed here.
-8. **`CROSS_REFERENCES` backlinks as non-citable context** — 248 edges, never
+10. **`CROSS_REFERENCES` backlinks as non-citable context** — 248 edges, never
    read as context, real legal signal. The best unshipped graph idea; needs its
    own gate, and prompt budget competes with Answer-Conciseness.
-9. **Fix the judge** before trusting any further answer number — the length
+11. **Fix the judge** before trusting any further answer number — the length
    artefact above. `evals/judge/legal_v2.py` already implements the
    quote-or-retract rule that catches it. ⚠ It also carries three defects of its
    own, all from the unreviewed commits and all still open: the
@@ -1323,10 +1448,10 @@ Full handoff: [`.planning/NEXT-SESSION.md`](.planning/NEXT-SESSION.md).
    guard together — fixing one leaves the axis running), the head-lax
    `provision_exists` ghost-citation gate at `:660`, and the ungated conciseness
    prompt loosening at `:488-514`. **Fix these before nominating it.**
-10. **Watch conciseness** — answers are **+41% longer** than the graded July-7
+11. **Watch conciseness** — answers are **+41% longer** than the graded July-7
     ones, on the one axis the official scorecard says we lead. Any bound must be
     SENTENCE-only (hard rule #2).
-11. **Run the owed gate on `REGENOLD_ONTOLOGY_RISK_DOCS`** — *ranks with #3*.
+12. **Run the owed gate on `REGENOLD_ONTOLOGY_RISK_DOCS`** — *ranks with #3*.
     `py -3.12 -m evals.harness.dynamic_ab --branch-env REGENOLD_ONTOLOGY_RISK_DOCS=0`
     against a **gold-carrying** set (July-7 has `gold_coverage=0.0`, so hard rule
     #8 cannot be read off it). This is a default-ON, live-shipping retrieval
