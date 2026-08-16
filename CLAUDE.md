@@ -677,6 +677,22 @@ correct only for exactly as long as that remains true.
   davidath** (`article_heads()` projection), so only `easyhard_ab` or the
   grounded judge can gate it.
 
+* **The BROAD risk-classification triad (`Art. 6` + `Annex III` + `Annex I`)
+  on "is X high-risk?" questions — R352, measured exactly over all 297 probe
+  rows, REFUTED.** ⚠ Read this before extending `REGENOLD_RISK_CLASS_ANNEX`:
+  the NARROW Annex-III-only rule R353 shipped is the *only* part that survived,
+  and widening it back toward the triad walks straight into the numbers below.
+  Trigger fires on 99/297 rows at **12% precision** — 25 gold gained against
+  189 non-gold added — and the headline is that **`Art. 6` is 0% precise:
+  0 gold gained, 61 junk added.** Article 6 IS the classification rule, but the
+  graded gold cites the *list* (`Annex III`), never the rule that points at the
+  list. **Legally correct is not gold-correct** — that is the durable lesson,
+  and it is why R353's rule appends one annex and nothing else. Full record:
+  [`docs/R352-annex-anchor-gap.md`](docs/R352-annex-anchor-gap.md).
+  ⚠ Nor should the gap be closed by widening `cross_refs` admission — that is
+  the KG supplement, measured at **1.2%** precision (18 gold out of 1,502
+  proposed; `Art. 98`, comitology, proposed 50 times).
+
 **Retrieval / graph:**
 * **Graph-primary retrieval** — the blunt risk-tier dump buries the operative
   article.
