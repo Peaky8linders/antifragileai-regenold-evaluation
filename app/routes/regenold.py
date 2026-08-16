@@ -3432,6 +3432,32 @@ def _component_d_citable_only_enabled() -> bool:
     )
 
 
+def _deterministic_prose_consistency_enabled() -> bool:
+    """R354 — run the R138 prose-consistency ADD pass when Stage-2 did NOT
+    land? **OFF**.
+
+    The R138 final consistency pass (every article/annex the SHIPPED answer
+    names must appear in the wire references) is Stage-2-gated. On the
+    deterministic path (Stage-2 throttled / failed / skipped) a prose-named
+    gold ref can ship uncited while a cited-but-undescribed ref rides along
+    — the la_q73 defect: branch answer names "Annex I" twice, wire ships
+    [Article 43, Article 6, Article 27, Article 49] with no Annex I.
+    Measured over the 81-row live-answers checkpoint: 11 rows, 11 gold heads
+    restorable (la_q73 fully closed, la_q51 4→3, la_q84 9→8).
+
+    Default OFF per the validation policy: this is answer-affecting on the
+    deterministic path, so it ships behind an off-switch until the live A/B
+    (REGENOLD_DETERMINISTIC_PROSE_CONSISTENCY=1 vs default on the 81-row
+    probe) measures the gold veto. Fresh env read per call (R263.2).
+    """
+    return os.getenv("REGENOLD_DETERMINISTIC_PROSE_CONSISTENCY", "0").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
+
 def _citable_base_guard_enabled() -> bool:
     """R327 — restrict prose-promotion to the retrieved citation universe? **ON**.
 
@@ -9748,8 +9774,20 @@ def regenold_eu_ai_act_ask(
     # Runs BEFORE the R130 (Art. 3 sub-point) + R133 (prose sub-point) passes
     # so a newly-surfaced base article's named sub-points are surfaced too.
     # Env off-switch: REGENOLD_CITE_CONSISTENCY=0.
+    #
+    # R354 — the deterministic arm. The SAME defect fires when Stage-2 did
+    # NOT land: the deterministic answer's prose names a gold ref (la_q73
+    # names Annex I twice) while the raw retrieval candidates that shipped
+    # omit it (and can carry a cited-but-undescribed ref like Article 43).
+    # Stage-2-gating meant the deterministic path shipped this inconsistency
+    # unfixed. ``REGENOLD_DETERMINISTIC_PROSE_CONSISTENCY`` (default OFF)
+    # extends this pass to the deterministic path; the add is strictly
+    # existence-gated + cross-instrument-guarded + capped (it cannot invent,
+    # and a deterministic answer is still a real answer whose prose must be
+    # consistent with its citations). davidath byte-identical by
+    # construction: the flag is OFF in the bench env, so this arm is inert.
     if (
-        _stage2_landed
+        (_stage2_landed or _deterministic_prose_consistency_enabled())
         and answer_text
         and references
         and retrieval_path not in ("no_match", "verbatim_exact_text")
