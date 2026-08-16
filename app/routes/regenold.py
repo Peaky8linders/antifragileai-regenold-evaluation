@@ -1484,6 +1484,11 @@ def _engine_cache_key(
             # R348 — the expansion DEPTH (1 or 2 hops) changes the pool the
             # cross-encoder ranks the same way the gate itself does.
             "REGENOLD_RERANK_KG_HOPS",
+            # R350/R351 — which of the two competing KG-citability fixes runs.
+            # It decides whether a KG neighbour can become a WIRE CITATION, so
+            # it is engine-level by definition. Fresh read per call
+            # (`cohere_rerank.rerank_kg_noncitable`).
+            "REGENOLD_RERANK_KG_NONCITABLE",
             # R327 gate — the open-domain half of the semantic layers, separable
             # so constrained-only can be measured. Engine-level (it changes the
             # Stage-2 grounding block), so it must be keyed like its master.
@@ -1664,6 +1669,16 @@ def _engine_cache_key(
             "REGENOLD_STAGE1_MODEL_GROQ",
             "REGENOLD_STAGE2_MODEL_GROQ",
             "REGENOLD_INTENT_MODEL_GROQ",
+            # R350 — the NON-Groq intent model belongs here for the same
+            # reason its Groq sibling does, and it was missing. Stage-0's
+            # `bridging_context` flows into GraphRAGRequest and is rendered
+            # into the Stage-2 prompt, so this is an engine-level input, not a
+            # transport detail. It is the model that runs whenever GROQ_API_KEY
+            # is absent — i.e. the documented eval setup. Made fresh-read in
+            # the same round (`intent_classifier.intent_model()`); a keyed but
+            # frozen flag is worse than an unkeyed one, because the cache split
+            # lets the fire check pass on noise.
+            "REGENOLD_INTENT_MODEL",
             "REGENOLD_GENERAL_MODEL_GROQ",
             "REGENOLD_SAFETY_MODEL_GROQ",
             "REGENOLD_FUSION_MODEL_GROQ",
@@ -1987,6 +2002,9 @@ def _engine_cache_key(
             # query_expansion and changes the expansion round-trip budget, so
             # it belongs in the key like every other engine env read (R334).
             "REGENOLD_QUERY_EXPANSION_BEDROCK_TIMEOUT",
+            # R350.1 — the WRAPPER sibling, added in the same round and keyed
+            # here for the same reason. One concept, one treatment.
+            "REGENOLD_QUERY_EXPANSION_TIMEOUT",
             # R346.2 — the paraphrase model (frontier tier, no Haiku) is read
             # fresh per call and changes the paraphrase surface.
             "REGENOLD_QUERY_EXPANSION_MODEL",

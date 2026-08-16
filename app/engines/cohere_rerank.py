@@ -39,11 +39,30 @@ Both ``amazon.rerank-v1:0`` and ``cohere.rerank-v3-5:0`` ARE available in
 becomes preferable the moment IAM credentials with ``bedrock:Rerank`` exist.
 See ``.planning/R329-PLAN-RANKER-AND-OVERCITATION.md`` §2.3.
 
-⚠ **Data-protection note.** This module sends the user's question and verbatim
-EU AI Act provision text to Cohere. The Act text is public law; the question is
-partner input. For an EU AI Act compliance product that is a residency decision
-the operator must make deliberately — which is why this ships **default OFF**
-and why the Bedrock path is the preferred destination.
+⚠ **Data-protection note.** This module sends to Cohere (``api.cohere.com``):
+
+* **the rerank QUERY** — the user's live question, bounded at
+  ``_MAX_RERANK_QUERY_CHARS`` (600), plus short repo-static context labels
+  (intent / risk tier / dimension); and
+* **the DOCUMENTS** — verbatim EU AI Act provision text, ≤4,000 chars each,
+  ≤50 docs, optionally annotated with a curated cross-reference reason
+  (≤240 chars, also repo-static).
+
+The Act text is public law; the question is partner input. For an EU AI Act
+compliance product that is a residency decision the operator must make
+deliberately — which is why this ships **default OFF** and why the Bedrock path
+is the preferred destination.
+
+⚠ **Corrected R350.** This note used to say "the user's question", and that was
+materially understated: on a MULTI-TURN request the engine question is the
+FLATTENED conversation (``Conversation so far: …`` — every prior user and
+assistant turn, up to 40 turns), and the 600-char cap applied only when a
+context string was present. The ``rerank_references`` callers pass none, so
+they sent it unbounded — measured, an entire 2,334-char conversation went out
+verbatim, against a 64,000-char input ceiling. :func:`_rerank_query` now
+extracts the LIVE turn and bounds every path. **If you change what goes into
+the query, change this note in the same edit** — a residency decision made on a
+stale description is not a decision.
 
 DESIGN — REORDER ONLY, NEVER DROP
 =================================
@@ -85,6 +104,7 @@ __all__ = [
     "build_kg_candidate_pool_with_reasons",
     "rerank_kg_candidates_enabled",
     "rerank_kg_hops",
+    "rerank_kg_noncitable",
     "rerank_stats",
     "reset_rerank_stats",
     "stabilize_anchor_tier",
@@ -109,6 +129,31 @@ def rerank_kg_candidates_enabled() -> bool:
         os.getenv(_RERANK_KG_ENV, "0").strip().lower()
         in _TRUTHY
     )
+
+
+_RERANK_KG_NONCITABLE_ENV = "REGENOLD_RERANK_KG_NONCITABLE"
+
+
+def rerank_kg_noncitable() -> bool:
+    """``REGENOLD_RERANK_KG_NONCITABLE`` — **DEFAULT OFF**, fresh read per call.
+
+    The R350 arm of the KG-citability question. OFF (default) is R351's
+    anchor-tier stabilization: KG neighbours stay citable but can never
+    displace a keyword anchor. ON projects them out of the citation set
+    entirely — they inform the cross-encoder's ranking and nothing else.
+
+    Both fix the same defect (`entities = reranked` adopted the whole expanded
+    pool, putting graph adjacency on the wire). R351 is the default because it
+    carries a live 84-row measurement (`gold_dropped_head` 25 -> 27); R350 is
+    the stricter arm on over-citation, which is the axis this repo has left to
+    win. Shipped as a flag so the two can be A/B'd head-to-head rather than
+    decided by whoever merged last.
+
+    Only meaningful with ``REGENOLD_COHERE_RERANK=1`` AND
+    ``REGENOLD_RERANK_KG_CANDIDATES=1`` — with no KG pool there is nothing to
+    project out and this is a no-op.
+    """
+    return os.getenv(_RERANK_KG_NONCITABLE_ENV, "0").strip().lower() in _TRUTHY
 
 
 _RERANK_KG_HOPS_ENV = "REGENOLD_RERANK_KG_HOPS"
@@ -317,6 +362,21 @@ def rerank_query_context(
     return "; ".join(parts)
 
 
+def _hop_budgets(max_extra: int, hops: int) -> tuple[int, int]:
+    """Split ``max_extra`` between hop-1 and hop-2. One definition, both pools.
+
+    At ``hops == 1`` there is no hop-2 to reserve for, so hop-1 gets the WHOLE
+    budget — anything else makes the depth knob change the depth-1 result.
+    At ``hops >= 2`` hop-1 keeps 2/3 so a hub article's 2-hop closure cannot
+    starve the direct neighbours.
+    """
+    total = max(0, int(max_extra))
+    if int(hops) < 2:
+        return total, 0
+    hop1 = max(1, total * 2 // 3)
+    return hop1, max(0, total - hop1)
+
+
 def build_kg_candidate_pool(
     references: Sequence[str],
     *,
@@ -378,8 +438,13 @@ def build_kg_candidate_pool(
         # Budget split (R348): hop-1 gets ~2/3 of ``max_extra``, hop-2 the
         # remaining 1/3 — a hub article's 2-hop closure must not starve the
         # direct neighbours. Each hop stops as soon as its own budget fills.
-        hop1_budget = max(1, int(max_extra * 2 // 3))
-        hop2_budget = max(0, int(max_extra) - hop1_budget)
+        #
+        # ⚠ R350 — the split applies ONLY at hops>=2. It used to be computed
+        # unconditionally, so ``hops=1`` silently capped the pool at 2/3 of
+        # ``max_extra`` (5 of 8) even though there was no hop-2 to reserve for.
+        # A depth knob must not change the depth-1 result, or "hops=1 is the
+        # existing behaviour" stops being true and the A/B measures two things.
+        hop1_budget, hop2_budget = _hop_budgets(max_extra, graph_hops)
 
         def _collect(frontier: list[str], budget: int) -> list[str]:
             """Neighbours of ``frontier`` not already seen, up to ``budget``."""
@@ -410,6 +475,7 @@ def build_kg_candidate_pool_with_reasons(
     *,
     max_extra: int = 8,
     per_ref: int = 3,
+    hops: int = 1,
 ) -> list[tuple[str, str]]:
     """R348 — like :func:`build_kg_candidate_pool`, but each neighbour carries
     the CURATED semantic reason for its edge (the KG's semantic layer).
@@ -425,22 +491,53 @@ def build_kg_candidate_pool_with_reasons(
     Deterministic, backend-independent, never raises: a reason-index failure
     degrades to the plain :func:`build_kg_candidate_pool` with a generic
     relation label. Returns ``(ref, reason)`` pairs in pool order.
+
+    ⚠ R350 — this function grew the ``hops`` parameter it always needed. R348
+    shipped ``REGENOLD_RERANK_KG_HOPS`` and wired it ONLY to
+    :func:`build_kg_candidate_pool`, which the caller reaches solely in the
+    ``else`` of ``if pairs:`` — and ``cross_refs_with_reason`` resolves a pair
+    for essentially every entity, so that branch almost never ran. Measured:
+    5/5 representative questions produced byte-identical pools at hops=1 and
+    hops=2. The flag was registered in ``_engine_cache_key``, so the two arms
+    were cache-DISTINCT and both genuinely re-ran — the fire check passed on
+    Stage-2 noise and the harness would have printed an axis table for a depth
+    change that never happened. That is the inert-feature trap arriving through
+    the guard built to catch it. Hop-2 reasons are labelled ``"via <hop-1 ref>:
+    …"`` so the cross-encoder can tell a direct edge from a transitive one.
     """
     base = [r for r in (references or [])]
     try:
         from app.data.kb_xrefs import cross_refs_with_reason  # noqa: PLC0415
 
         pairs: list[tuple[str, str]] = []
-        for ref in base:
-            try:
-                edges = cross_refs_with_reason(ref, limit=per_ref)
-            except Exception:  # noqa: BLE001 — one bad ref must not kill the pool
-                continue
-            for target, reason in edges:
-                if target not in base and target not in {p[0] for p in pairs}:
-                    pairs.append((target, str(reason).strip() or "cross-referenced"))
-                    if len(pairs) >= max_extra:
-                        return pairs
+        seen: set[str] = set(base)
+        graph_hops = max(1, int(hops))
+        hop1_budget, hop2_budget = _hop_budgets(max_extra, graph_hops)
+
+        def _collect(frontier: list[str], budget: int, *, via: bool) -> list[str]:
+            """Reason-carrying neighbours of ``frontier``, up to ``budget``."""
+            out: list[str] = []
+            for ref in frontier:
+                try:
+                    edges = cross_refs_with_reason(ref, limit=per_ref)
+                except Exception:  # noqa: BLE001 — one bad ref must not kill the pool
+                    continue
+                for target, reason in edges:
+                    if target in seen:
+                        continue
+                    text = str(reason).strip() or "cross-referenced"
+                    if via:
+                        text = f"via {ref}: {text}"
+                    seen.add(target)
+                    pairs.append((target, text))
+                    out.append(target)
+                    if len(out) >= budget or len(pairs) >= max_extra:
+                        return out
+            return out
+
+        hop1 = _collect(list(base), hop1_budget, via=False)
+        if graph_hops >= 2 and hop2_budget > 0 and len(pairs) < max_extra:
+            _collect(hop1, hop2_budget, via=True)
         return pairs
     except Exception:  # noqa: BLE001 — semantic layer must never break parse
         return []
@@ -461,6 +558,57 @@ def _pool_reasons(
         if ref and str(reason).strip():
             out[str(ref)] = str(reason).strip()[:240]
     return out or None
+
+
+#: Ceiling on the rerank QUERY. Bounds both what the cross-encoder scores
+#: against and what leaves the process — see :func:`_rerank_query`.
+_MAX_RERANK_QUERY_CHARS = 600
+
+
+def _rerank_query(question: str, query_context: str = "") -> str:
+    """Build the cross-encoder query: the LIVE turn, plus the context labels.
+
+    ⚠ R350 — this replaces ``f"{query} — {ctx}"[:600]``, which had two defects
+    and one disclosure problem.
+
+    1. **It sliced from the HEAD while the live question is at the TAIL.** The
+       multi-turn question is flattened as ``…Conversation so far:\\n{history}
+       \\n\\nLatest question:\\n{live}``. Measured on a 6-turn 2,334-char
+       question, the 600 chars actually sent began ``"Conversation so far:
+       User: In turn 0 …"`` and contained the live turn **not at all** — so the
+       cross-encoder ordered the citation candidates against PRIOR-TURN text.
+       Entity order decides which candidates survive the downstream slot cap.
+    2. **It discarded the enrichment it exists to add.** ``ctx`` is appended at
+       the tail, and at the parse-level call site ``ctx`` is ALWAYS non-empty
+       (``intent`` defaults to ``general_compliance``), so on any question over
+       600 chars the whole R347 intent/risk/dimension context was cut off the
+       end — the feature silently removing itself.
+    3. **The cap lived inside ``if ctx:``**, so the ``rerank_references``
+       callers (no context) sent the query UNBOUNDED. Measured: the entire
+       2,334-char flattened conversation — every prior user AND assistant turn
+       — was POSTed to ``api.cohere.com``, against a ``_MAX_QUESTION_CHARS``
+       ceiling of 64,000 and a route comment estimating ~10-25k for a 20-turn
+       legal conversation. The module's data-protection note claimed only "the
+       user's question" left the process.
+
+    So: take the live turn first, bound THAT, and keep the context labels —
+    they are short, repo-static, and the reason the query is enriched at all.
+    """
+    text = str(question or "").strip()
+    # The flattened multi-turn shape puts the live turn last; prefer it.
+    marker = "Latest question:"
+    if marker in text:
+        text = text.rsplit(marker, 1)[-1].strip()
+    ctx = (query_context or "").strip()
+    budget = max(0, _MAX_RERANK_QUERY_CHARS - (len(ctx) + 3 if ctx else 0))
+    text = text[:budget]
+    # R350.1 — clamp the RETURN, not just the question half. With a context
+    # string at or over the ceiling the budget goes to 0, the question is
+    # dropped entirely, and the result was still longer than the cap it is
+    # named for — a bound the data-protection note asserts must actually hold.
+    # Not reachable with today's short repo-static labels; enforced anyway.
+    out = f"{text} — {ctx}" if ctx else text
+    return out[:_MAX_RERANK_QUERY_CHARS]
 
 
 def rerank_pool(
@@ -542,10 +690,7 @@ def rerank_pool(
     if len(scorable) < 2:
         return list(refs), False
 
-    query = str(question).strip()
-    ctx = (query_context or "").strip()
-    if ctx:
-        query = f"{query} — {ctx}"[:600]
+    query = _rerank_query(question, query_context)
 
     ranked = rerank_documents(query, docs)
     if not ranked:

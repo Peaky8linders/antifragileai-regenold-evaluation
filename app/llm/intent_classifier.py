@@ -346,12 +346,44 @@ class IntentResult:
 # R346.2 — no Haiku on the live path: the non-Groq intent fallback uses the
 # frontier tier too. (Groq is the R94 default Stage-0 provider; this model
 # only answers when the operator opts out of Groq.)
-_DEFAULT_MODEL = os.getenv("REGENOLD_INTENT_MODEL", "claude-sonnet-4-6")
+_DEFAULT_INTENT_MODEL = "claude-sonnet-4-6"
+
+
+def intent_model() -> str:
+    """The non-Groq intent model, read FRESH per call.
+
+    ⚠ R350 — this was ``_DEFAULT_MODEL = os.getenv(...)`` at module scope, so
+    the value froze at import. Its output is not local: ``bridging_context``
+    flows into ``GraphRAGRequest`` and is rendered into the Stage-2 prompt, so
+    this is an ENGINE-level input, and every peer model-id knob
+    (``REGENOLD_COHERE_RERANK_MODEL``, ``REGENOLD_QUERY_EXPANSION_MODEL``) is
+    both fresh-read and registered in ``_engine_cache_key`` under the standing
+    "a model id is not exempt for being a string" rule. Frozen, the rollback
+    A/B ``--branch-env REGENOLD_INTENT_MODEL=claude-haiku-4-5-20251001`` would
+    have called Sonnet 4.6 in BOTH arms and reported a number for a model swap
+    that never happened.
+    """
+    return (
+        os.getenv("REGENOLD_INTENT_MODEL", "").strip()
+        or _DEFAULT_INTENT_MODEL
+    )
 # Round 52+: Groq Stage-0 model. Migrated to openai/gpt-oss-120b. Override
 # via REGENOLD_INTENT_MODEL_GROQ.
-_DEFAULT_GROQ_MODEL = os.getenv(
-    "REGENOLD_INTENT_MODEL_GROQ", default_groq_model()
-)
+def intent_groq_model() -> str:
+    """The Groq Stage-0 model, read FRESH per call.
+
+    ⚠ R350.1 — frozen at import while ``_engine_cache_key`` registered it
+    (`regenold.py:1666`). That is the keyed-but-frozen shape: the key makes the
+    arms cache-distinct so the engine re-runs, live Stage-2 differs, the fire
+    check PASSES, and the harness prints a table for a value identical in both
+    arms. And Groq is the DEFAULT Stage-0 provider (R94), so this is the model
+    that actually runs — the round that hardened the non-Groq sibling two lines
+    away left the live one frozen.
+    """
+    return (
+        os.getenv("REGENOLD_INTENT_MODEL_GROQ", "").strip()
+        or default_groq_model()
+    )
 _TIMEOUT_SECONDS = float(os.getenv("REGENOLD_INTENT_TIMEOUT", "3.5"))
 _CACHE_MAX = int(os.getenv("REGENOLD_INTENT_CACHE_MAX", "2048"))
 _FAILURE_THRESHOLD = int(os.getenv("REGENOLD_INTENT_FAILURE_THRESHOLD", "3"))
@@ -665,9 +697,9 @@ def _resolve_intent_provider() -> tuple[Any, str] | None:
     enabled.
     """
     if is_groq_intent_provider_enabled():
-        return get_groq_intent_provider(), _DEFAULT_GROQ_MODEL
+        return get_groq_intent_provider(), intent_groq_model()
     if is_openai_wrapper_enabled():
-        return get_openai_wrapper_provider(), _DEFAULT_MODEL
+        return get_openai_wrapper_provider(), intent_model()
     return None
 
 
@@ -777,10 +809,10 @@ def classify_intent(
             raise Exception(f"Provider error: {response.error}")
     except Exception as exc:  # noqa: BLE001 — fail-soft contract
         # Fallback to OpenAI wrapper (Sonnet) if Groq fails
-        if model == _DEFAULT_GROQ_MODEL and is_openai_wrapper_enabled():
+        if model == intent_groq_model() and is_openai_wrapper_enabled():
             logger.debug("intent_classifier_exception on Groq: %s, falling back to Sonnet", str(exc)[:200])
             provider = get_openai_wrapper_provider()
-            model = _DEFAULT_MODEL
+            model = intent_model()
             try:
                 response = provider.complete(
                     OpenAIWrapperRequest(
