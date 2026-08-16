@@ -130,6 +130,8 @@ _RETRYABLE_ERROR_SUBSTRINGS: tuple[str, ...] = (
     "timed out",
     "connect",                         # "connection refused", "connection reset", etc.
     "transport",                       # httpx transport errors
+    "throttled",                       # api_throttled_429 — rate-limit windows pass; backoff rides them out
+    "_429",                            # belt-and-braces for any 429-shaped error string
     "remote disconnected",
     "remotedisconnected",
     "connectionreseterror",
@@ -288,6 +290,15 @@ def _call_judge_bedrock(prompt: str, timeout_s: float = 30.0) -> dict[str, Any]:
         )
     except (TypeError, ValueError):
         max_tokens = _judge_max_tokens()
+    # R355 — per-call Bedrock extended thinking for the judge. ``> 0`` enables
+    # Claude extended thinking (reasoningConfig) on every judge call on this
+    # transport; ``0``/unset keeps the historical no-thinking fast path.
+    try:
+        thinking_budget = int(
+            os.getenv("REGENOLD_BEDROCK_JUDGE_THINKING_TOKENS", "").strip() or "0"
+        )
+    except (TypeError, ValueError):
+        thinking_budget = 0
     req = BedrockRequest(
         system=_JUDGE_SYSTEM,
         user=prompt,
@@ -295,6 +306,7 @@ def _call_judge_bedrock(prompt: str, timeout_s: float = 30.0) -> dict[str, Any]:
         max_tokens=max_tokens,
         temperature=0.0,
         timeout_seconds=timeout_s,
+        thinking_budget=thinking_budget,
     )
     try:
         # R328.2 — same ordered entitlement failover as the RAG path. The pinned
