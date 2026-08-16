@@ -596,6 +596,7 @@ correct only for exactly as long as that remains true.
   (``stabilize_anchor_tier`` — a KG neighbour could out-score and displace a
   gold anchor at the citation budget cut; the anchor-tier invariant restores
   the superset guarantee AT THE CUT).
+
 * ⚠ **R350 and R351 fixed the SAME defect independently, the same week, on the
   same statement — and the two fixes are BOTH shipped.** The defect:
   `entities = reranked` adopted the whole KG-expanded pool, so a
@@ -613,12 +614,14 @@ correct only for exactly as long as that remains true.
   46 → 49 (+3) at n=48 clean rows (the account's daily Bedrock quota closed
   the window before row 81).** The NEW mechanism is generation-level, and
   NEITHER R351 NOR R350's non-citable projection can fully fix it: the wire
+
   references are ANSWER-DRIVEN (Component D extracts citations from the
   Stage-2 prose), and the KG pool changes what Opus WRITES. Measured on
   la_q87: branch prose said "listed in notably the Medical Devices Regulation"
   instead of "listed in Annex I" — the literal phrase never reached the
   prose, so Component D never extracted it, and the gold ref dropped. On
   la_q20 / la_q51 / la_q84 the branch's ENTIRE citation sets rerouted. No
+
   anchor-tier or projection at the parse can force an LLM to write a phrase
   the context led it away from. R346's decomposition still points at the
   culprit: rerank alone was a wash (gold 17→17), expansion alone was BETTER
@@ -627,6 +630,7 @@ correct only for exactly as long as that remains true.
   decisive isolation run (expansion ONLY, no rerank, no KG) on live-answers
   is the next measurement** — one command, listed in
   docs/R350-live-stack-ab.md.
+
 * ⚠ **R338's "−5 expert-mistake regression" (q03/q04/q14) is RETRACTED** — it was
   measured while Stage-2 was dead (the argv ceiling). With Stage-2 restored the
   same resolver gives **34/38**, above the R318 baseline's 33/38. Do not quote
