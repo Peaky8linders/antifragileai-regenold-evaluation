@@ -366,10 +366,16 @@ class TestJudgeAxisAnsweredGuard:
         assert ref.get("judge_error") is None
 
     def test_every_axis_has_a_key_set(self):
-        """A new axis without an entry would silently never be guarded."""
+        """A new axis without an entry would silently never be guarded.
+
+        R359 adds the opt-in ``answer_crag_fine`` axis (NICD paper C.2.2,
+        fine-grained CRAG answer scoring); it is NOT in the default AXES
+        tuple but it has its own key set, so it must be listed here too.
+        """
         assert set(L._AXIS_KEYS) == {
             "answer_correctness", "reference_correctness",
             "citation_faithfulness", "answer_conciseness",
+            "answer_crag_fine",
         }
 
 
