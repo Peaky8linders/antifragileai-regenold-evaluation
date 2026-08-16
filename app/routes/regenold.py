@@ -1489,6 +1489,12 @@ def _engine_cache_key(
             # it is engine-level by definition. Fresh read per call
             # (`cohere_rerank.rerank_kg_noncitable`).
             "REGENOLD_RERANK_KG_NONCITABLE",
+            # R353 — the R352 surviving-hypothesis anchor (Annex III on the
+            # yes/no "is X high-risk?" shape) APPENDS an engine entity, which
+            # changes the obligations and the citation set → engine-level.
+            # Fresh read per call (`risk_classification`). The R334 drift
+            # guard enforces its presence here.
+            "REGENOLD_RISK_CLASS_ANNEX",
             # R327 gate — the open-domain half of the semantic layers, separable
             # so constrained-only can be measured. Engine-level (it changes the
             # Stage-2 grounding block), so it must be keyed like its master.
