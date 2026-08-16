@@ -276,13 +276,46 @@ def _longest_contiguous_run(
 # ── provision-text grounding (per-ref map, for substantiation checks) ───
 
 
+_RECITAL_REF_RE = re.compile(r"^Recital\s+(\d{1,3})$", re.IGNORECASE)
+
+
+def _resolve_ref_text(ref: str) -> str:
+    """Verbatim text for a ref — Article/Annex via ``get_provision_text``,
+    ``Recital N`` via the official recital corpus (R361 — the paper's
+    related-recital retrieval makes recital-cited claims measurable; the
+    engine already retrieves recitals via ``fetch_recital_anchors`` /
+    ``_expand_referenced_annexes_and_recitals`` but the judge could not
+    ground them). Returns "" for a non-existent ref."""
+    from app.data.provision_text import get_provision_text  # local heavy import
+
+    txt = get_provision_text(ref)
+    if txt:
+        return txt
+    m = _RECITAL_REF_RE.match(str(ref).strip())
+    if m:
+        try:
+            from app.data.official_eu_ai_act import OFFICIAL_RECITAL_TEXT  # noqa: PLC0415
+            return str(OFFICIAL_RECITAL_TEXT.get(int(m.group(1)), "")).strip()
+        except Exception:  # noqa: BLE001 — a missing corpus must not kill a run
+            return ""
+    return ""
+
+
+def _ref_exists(ref: str) -> bool:
+    """Resolution-based existence check. Deliberately NOT the head-lax
+    ``provision_exists`` (``provision_exists("Article 3.999") is True`` —
+    a documented open finding): a ref exists iff its verbatim text actually
+    resolves, Articles/Annexes via the provision resolver and ``Recital N``
+    via the official recital corpus."""
+    return bool(_resolve_ref_text(ref))
+
+
 def _resolve_provision_texts(refs: list[str], cap: int, max_refs: int) -> dict[str, str]:
     """Resolve each ref at its exact cited coordinate. Unlike
     ``grounded._provision_block`` this returns a
     ``ref -> text`` MAP so post-processing can substantiate a quote
-    against the exact provision it was claimed against."""
-    from app.data.provision_text import get_provision_text  # local heavy import
-
+    against the exact provision it was claimed against. Recital refs
+    resolve via ``OFFICIAL_RECITAL_TEXT`` (R361)."""
     out: dict[str, str] = {}
     seen: set[str] = set()
     for r in refs[:max_refs]:
@@ -290,7 +323,7 @@ def _resolve_provision_texts(refs: list[str], cap: int, max_refs: int) -> dict[s
         if not key or key in seen:
             continue
         seen.add(key)
-        txt = get_provision_text(key)
+        txt = _resolve_ref_text(key)
         out[key] = (txt or "").strip()[:cap]
     return out
 
@@ -905,10 +938,12 @@ def _postprocess_reference_correctness(
         c = by_ref.get(ref) or {}
         cls = str(c.get("class") or "").strip().upper()
         quote = c.get("quote") or ""
-        # Check if ref is a non-existent provision in the EU AI Act catalog
-        from app.data.provision_text import provision_exists
-
-        if not provision_exists(ref):
+        # Check if ref is a non-existent provision in the EU AI Act catalog.
+        # R361 — resolution-based (``_ref_exists``), NOT the head-lax
+        # ``provision_exists`` (which returns True for ``Article 3.999`` and
+        # False for real ``Recital N`` refs — both wrong directions, the
+        # second documented in R360).
+        if not _ref_exists(ref):
             wrong.append(ref)
             unsub.append({"ref": ref, "claimed": "NON_EXISTENT_PROVISION", "quote": quote})
             continue

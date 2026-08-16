@@ -10,8 +10,8 @@ Judge: claude-sonnet-4-6 via Bedrock, no thinking. HyPA-RAG metrics #1/#2 (Faith
 
 ## GraphReader base vs af_only (no-gold half — now scorable)
 
-- **Faithfulness**: base 0.505 (0/10 pass) vs af_only 0.592 (0/10 pass) -> delta +0.087
-- **Relevancy**: base 0.900 (10/10 pass) vs af_only 0.890 (10/10 pass) -> delta -0.010
+- **Faithfulness**: base 0.663 (1/10 pass) vs af_only 0.724 (0/10 pass) -> delta +0.061
+- **Relevancy**: base 0.890 (10/10 pass) vs af_only 0.890 (10/10 pass) -> delta +0.000
 
 ---
 # R360 — HyPA-RAG reference-free judge report
@@ -39,7 +39,7 @@ Population: 40 rows (20 expert-reviewed, 10 GraphReader-base, 10 GraphReader-af_
   - rationale: The question asks about all risk categories in the EU AI Act, but the answer only addresses the unacceptable-risk tier (Article 5 prohibited practices), omittin
 - **crag_fine**: -0.5 (MIXED)
   - missing: ['High Risk', 'Limited Risk', 'Minimal Risk']
-  - hallucinated: ['eight AI practices outright banned including subliminal/manipulative techniques, exploitation of vulnerabilities, social scoring, biometric categorisation by sensitive attributes, real-time remote biometric identification — with narrow carve-outs']
+  - hallucinated: ['eight AI practices outright banned', 'subliminal/manipulative techniques causing significant harm', 'exploitation of vulnerabilities based on age or disability', 'social scoring by public authorities', 'biometric categorisation by sensitive attributes', 'real-time remote biometric identification in public spaces by law enforcement', 'narrow exhaustively-defined carve-outs']
 
 *expert critique:* The answer is partially wrong and incomplete, plus an error. The question asks about risk categories, the AI Act establishes a tiered framework: unacceptable (Art. 5), high-risk (Art. 6 via Annex I and Annex III), plus GPAI Art. 51-55 as a 
 
@@ -48,10 +48,9 @@ Population: 40 rows (20 expert-reviewed, 10 GraphReader-base, 10 GraphReader-af_
 **Q:** What types of AI systems or practices are explicitly prohibited by the AI Act?
 
 - **expert**: FAIL
-- **faithfulness**: 0.4 (fail) [2.0 sup / 3.0 unsup]
+- **faithfulness**: 0.5 (fail) [2.0 sup / 2.0 unsup]
   - unsupported: Article 5 of the EU AI Act prohibits eight categories of AI practice outright
   - unsupported: Social scoring by public authorities producing unjustified detrimental treatment across unrelated contexts is prohibited
-  - unsupported: The answer claims only three prohibitions exist when the text lists eight
 - **relevancy**: 0.7 (pass)
   - rationale: The answer directly addresses the question about prohibited AI practices under Article 5, but only covers 3 of the 8 categories it claims exist, leaving major p
 - **crag_fine**: +0.5 (PARTIAL_CLEAN)
@@ -64,13 +63,13 @@ Population: 40 rows (20 expert-reviewed, 10 GraphReader-base, 10 GraphReader-af_
 **Q:** What is the definition of high risk?
 
 - **expert**: FAIL
-- **faithfulness**: 0.6 (fail) [3.0 sup / 2.0 unsup]
+- **faithfulness**: 0.5 (fail) [2.0 sup / 2.0 unsup]
   - unsupported: The Union harmonisation legislation covers machinery, toys, radio equipment, medical devices, lifts, civil aviation, mot
   - unsupported: There are eight use-case categories in Annex III
 - **relevancy**: 0.9 (pass)
   - rationale: The question asks for the definition of high risk, and the answer directly addresses the classification criteria for high-risk AI systems under Article 6, cover
 - **crag_fine**: +0.5 (PARTIAL_CLEAN)
-  - missing: ['to the health and safety or the fundamental rights of persons, considering both the severity of the possible harm and the probability of its occurrence']
+  - missing: ['risk to the health and safety or the fundamental rights of persons, considering severity and probability of harm', 'explicit naming of the two categories: AI Systems Integrated into Products and Stand-alone High-Risk AI Systems']
 
 *expert critique:* Mostly correct, with two material omissions. The two-route framework is right and the Annex I legislation list is a reasonable abbreviation (omitting IVDR, pressure equipment, recreational craft, equipment for explosive atmospheres, and gas
 
@@ -81,12 +80,12 @@ Population: 40 rows (20 expert-reviewed, 10 GraphReader-base, 10 GraphReader-af_
 - **expert**: FAIL
 - **faithfulness**: 0.7857 (fail) [11.0 sup / 3.0 unsup]
   - unsupported: Under Article 6 read with Annex III, an AI system is high-risk when it falls into one of eight use-case categories
-  - unsupported: Employment category covers performance evaluation affecting workers' fundamental rights
+  - unsupported: Performance evaluation affecting workers' fundamental rights is covered under the employment category
   - unsupported: Administration of justice and democratic processes is a high-risk category under Annex III
 - **relevancy**: 1.0 (pass)
-  - rationale: The question asks which sectors/applications are high-risk under the regulation, and the answer directly lists all eight Annex III categories with specific exam
+  - rationale: The question asks which sectors/applications are high-risk, and the answer directly lists all eight Annex III categories with specific examples.
 - **crag_fine**: +0.5 (PARTIAL_CLEAN)
-  - missing: ['AI system is intended to be used as a safety component of a product, or the AI system is itself a product, covered by the Union harmonisation legislation listed in Annex I, AND the product is required to undergo a third-party conformity assessment pursuant to Annex I legislation (Article 6(1) conditions)']
+  - missing: ['AI system intended to be used as a safety component of a product, or the AI system is itself a product, covered by the Union harmonisation legislation listed in Annex I, AND required to undergo a third-party conformity assessment (Article 6(1) conditions)']
 
 *expert critique:* Half-right, and one structural omission. The eight Annex III areas are listed correctly. But "sectors or applications" means the Annex I as well and the answer omits this route entirely. Citations include Article 25 (value-chain responsibil
 
@@ -100,7 +99,7 @@ Population: 40 rows (20 expert-reviewed, 10 GraphReader-base, 10 GraphReader-af_
 - **relevancy**: 1.0 (pass)
   - rationale: The question asks how users should be informed when interacting with AI systems, and the answer directly addresses this by citing Article 50(1) disclosure requi
 - **crag_fine**: +0.5 (PARTIAL_CLEAN)
-  - missing: ['Information should be provided at the latest at the time of the first interaction or exposure in a clear and distinguishable manner', 'Information should conform to the applicable accessibility requirements', 'The law enforcement exception does not apply where systems are available to the public for reporting criminal offences (nuance on emotion recognition/biometric categorisation systems)', 'Deployers of AI systems generating or manipulating text published to inform the public on matters of public interest shall disclose that the text has been artificially generated or manipulated (this was mentioned but the ground truth frames it as a deployer obligation)']
+  - missing: ['Deployers of an AI system that generates or manipulates text, which is published to inform the public on matters of public interest, shall disclose that the text has been artificially generated or manipulated.', 'Information should be provided to the natural persons concerned in a clear and distinguishable manner at the latest at the time of the first interaction or exposure.', 'This information should conform to the applicable accessibility requirements.']
 
 *expert critique:* Mostly right, with a provider/deployer role error. Art. 50(1) interaction disclosure is correctly stated and correctly attributed to providers. The role error: Art. 50(3) the obligation is on deployers, not providers. Lexy puts it on provid
 
@@ -111,13 +110,13 @@ Population: 40 rows (20 expert-reviewed, 10 GraphReader-base, 10 GraphReader-af_
 - **expert**: FAIL
 - **faithfulness**: 0.6364 (fail) [7.0 sup / 4.0 unsup]
   - unsupported: AI systems with minimal risks are those that fall outside the eight high-risk use-case categories
-  - unsupported: The eight high-risk categories include administration of justice
-  - unsupported: Membership in the high-risk categories triggers the full compliance burden
+  - unsupported: The eight high-risk categories are: biometrics, critical infrastructure, education and vocational training, employment a
+  - unsupported: Membership in those high-risk categories triggers the full compliance burden
 - **relevancy**: 0.5 (pass)
   - rationale: The question asks what AI systems with minimal risks are, but the answer defines them only negatively (by exclusion from high-risk categories) rather than direc
 - **crag_fine**: -1.0 (WRONG)
   - missing: ['An AI system that transforms unstructured data into structured data', 'An AI system that classifies incoming documents into categories', 'An AI system used to detect duplicates among a large number of applications', 'An AI system that improves the language used in documents without changing their substance', 'An AI system that detects decision-making patterns or deviations from prior patterns', 'An AI system that performs tasks preparatory to an assessment']
-  - hallucinated: ['AI systems with minimal risks are those outside the eight high-risk use-case categories (biometrics, critical infrastructure, education, employment, essential services, law enforcement, migration, administration of justice)']
+  - hallucinated: ['AI systems outside the eight high-risk use-case categories (biometrics, critical infrastructure, education, employment, essential services, law enforcement, migration, administration of justice) have minimal risks']
 
 *expert critique:* Half-right, partial definition and entirely irrelevant citations. Minimal-risk in the AI Act framework is the residual category, meaning systems that are neither prohibited under Art. 5, nor high-risk via Annex I, nor high-risk via Annex II
 
@@ -152,14 +151,13 @@ Population: 40 rows (20 expert-reviewed, 10 GraphReader-base, 10 GraphReader-af_
 **Q:** What are the penalties for violating the provisions of the regulation for high-risk AI systems?
 
 - **expert**: FAIL
-- **faithfulness**: 0.6667 (fail) [4.0 sup / 2.0 unsup]
-  - unsupported: The answer characterizes Art. 99(4) as the substantively correct answer for high-risk AI system penalties
-  - unsupported: The answer states Lexy recites Art. 99(1) as the generic Member State obligation
+- **faithfulness**: 0.7143 (fail) [5.0 sup / 2.0 unsup]
+  - unsupported: The correct answer for high-risk AI system penalties is Article 99(4)
+  - unsupported: The overall Article 99 cited is right
 - **relevancy**: 0.4 (fail)
   - rationale: The question asks specifically about penalties for high-risk AI system violations, but the answer only addresses the general Member State obligation to establis
 - **crag_fine**: -1.0 (WRONG)
-  - missing: ["Breaches of other provisions concerning high-risk AI systems can result in administrative fines of up to 15,000,000 EUR or 3% of the offender's total worldwide annual turnover"]
-  - hallucinated: ['The prediction only recites the generic Art. 99(1) obligation without providing the specific penalty amounts required by the question']
+  - missing: ["administrative fines of up to 15,000,000 EUR or 3% of the offender's total worldwide annual turnover for breaches of provisions concerning high-risk AI systems"]
 
 *expert critique:* Wrong by omission. The question asks specifically about high-risk penalties. The substantively correct answer is Art. 99(4). SMEs benefit from a lower-of-two-amounts rule under Art 99(6). Lexy recites Art. 99(1), the generic Member State ob
 
@@ -168,12 +166,12 @@ Population: 40 rows (20 expert-reviewed, 10 GraphReader-base, 10 GraphReader-af_
 **Q:** What is the difference between the deployer and the provider?
 
 - **expert**: PASS
-- **faithfulness**: 0.0 (fail) [0.0 sup / 3.0 unsup]
+- **faithfulness**: 0.0 (fail) [0.0 sup / 4.0 unsup]
   - unsupported: A provider is any natural or legal person who develops an AI system (or has one developed) and puts it into service or p
   - unsupported: A deployer is any person who uses an AI system under their own authority
   - unsupported: A deployer's use excludes personal, non-professional use
 - **relevancy**: 1.0 (pass)
-  - rationale: The question asks for the difference between deployer and provider, and the answer directly defines both roles and contrasts them.
+  - rationale: The question asks for the difference between deployer and provider, and the answer directly addresses both definitions and their distinction.
 - **crag_fine**: +0.5 (PARTIAL_CLEAN)
   - missing: ['The provider bears the primary responsibility for ensuring the AI system complies with the requirements of the AI Act, especially if it is classified as a high-risk system.', 'The deployer is the entity that uses the AI system for its intended purpose.']
 
@@ -185,7 +183,7 @@ Population: 40 rows (20 expert-reviewed, 10 GraphReader-base, 10 GraphReader-af_
 
 - **expert**: FAIL
 - **faithfulness**: 0.75 (fail) [6.0 sup / 2.0 unsup]
-  - unsupported: The system description, design specifications, and system architecture encompass the hardware infrastructure on which th
+  - unsupported: The system description, design specifications, and system architecture 'encompass the hardware infrastructure on which t
   - unsupported: Hardware specifications fall squarely within the Annex IV scope as part of the architectural and design record needed to
 - **relevancy**: 1.0 (pass)
   - rationale: The question asks whether technical documentation must include hardware specifications, and the answer directly addresses this by citing Article 11 and Annex IV
@@ -199,7 +197,7 @@ Population: 40 rows (20 expert-reviewed, 10 GraphReader-base, 10 GraphReader-af_
 - **expert**: FAIL
 - **faithfulness**: 1.0 (pass) [5.0 sup / 0.0 unsup]
 - **relevancy**: 1.0 (pass)
-  - rationale: The question asks whether emotion recognition AI systems are always prohibited, and the answer directly addresses this by explaining they are not categorically 
+  - rationale: The question asks whether emotion recognition AI systems are always prohibited, and the answer directly addresses this by explaining they are not always prohibi
 
 *expert critique:* Correct on substance, partly wrong sub-citation. The three-layer reasoning is right: the Article 5(1)(f). Citation of  Annex III.5 is wrong. Emotion recognition is at Annex III.1(c) For Art. 50, the precise reference is 50(3).
 
@@ -234,8 +232,8 @@ Population: 40 rows (20 expert-reviewed, 10 GraphReader-base, 10 GraphReader-af_
 - **expert**: FAIL
 - **faithfulness**: 0.5 (fail) [4.0 sup / 4.0 unsup]
   - unsupported: Clinical trial selection falls under Annex III(5)(d) as essential services
-  - unsupported: Biometric data used to determine priority for a clinical trial automatically triggers Article 5(1)(g)
-  - unsupported: Clinical trial selection might fall under Annex III(5)(a) covering eligibility for essential public assistance benefits 
+  - unsupported: Biometric data used to determine priority for a clinical trial automatically triggers the Article 5(1)(g) prohibition
+  - unsupported: Clinical trial selection might fall under Annex III(5)(a) as eligibility for essential public assistance benefits and se
 - **relevancy**: 0.75 (pass)
   - rationale: The answer directly addresses the question about using AI with biometric data for patient prioritization in a clinical trial, covering both high-risk classifica
 
@@ -261,7 +259,7 @@ Population: 40 rows (20 expert-reviewed, 10 GraphReader-base, 10 GraphReader-af_
 - **faithfulness**: 0.8 (fail) [4.0 sup / 1.0 unsup]
   - unsupported: Obligations apply according to the model's risk classification
 - **relevancy**: 1.0 (pass)
-  - rationale: The question asks whether the AI Act applies to a university lab's AI model before market release, and the answer directly addresses this by explaining the rese
+  - rationale: The question asks whether the AI Act applies to a university lab's AI model before market release, and the answer directly addresses pre-release applicability (
 
 *expert critique:* Correct. A more precise citation Art 2(6). The answer could also reference Art 2(8) on pre-market testing in real-world conditions, which is related but distinct for the testing phase between R&D and market placement.
 
@@ -270,12 +268,12 @@ Population: 40 rows (20 expert-reviewed, 10 GraphReader-base, 10 GraphReader-af_
 **Q:** We are developing a generative AI chatbot that will be deployed on a hospital website to answer general patient queries. What transparency obligations apply?
 
 - **expert**: FAIL
-- **faithfulness**: 0.3636 (fail) [4.0 sup / 7.0 unsup]
-  - unsupported: The general patient-query chatbot on a hospital website is probably not high-risk
+- **faithfulness**: 0.5833 (fail) [7.0 sup / 5.0 unsup]
+  - unsupported: A general patient-query chatbot on a hospital website is probably not high-risk
   - unsupported: The chatbot is not Annex III.5(d) emergency triage
   - unsupported: The chatbot is not Annex III.5(a) eligibility-for-benefits unless it determines eligibility
 - **relevancy**: 0.85 (pass)
-  - rationale: The answer directly addresses transparency obligations for a generative AI chatbot on a hospital website, citing Article 50(1) and 50(2) as the core applicable 
+  - rationale: The answer directly addresses transparency obligations for a generative AI chatbot on a hospital website, citing Article 50 provisions on AI disclosure and synt
 
 *expert critique:* Half-right. The horizontal principle, that Art. 50 transparency obligations apply regardless of risk tier and apply cumulatively on Art 13 where both apply, is conceptually correct. The classification question within the answer is missing: 
 
@@ -284,10 +282,9 @@ Population: 40 rows (20 expert-reviewed, 10 GraphReader-base, 10 GraphReader-af_
 **Q:** A pharmaceutical company wants to use an AI system to monitor the emotions and stress levels of their manufacturing line workers to improve efficiency. Is this allowed?
 
 - **expert**: PASS
-- **faithfulness**: 0.625 (fail) [5.0 sup / 3.0 unsup]
-  - unsupported: Fatigue detection to prevent industrial accidents is an example of a safety reason that would qualify for the exception
-  - unsupported: The primary purpose of medical or safety use must be established at the point of market-placement
-  - unsupported: The medical/safety purpose cannot be retrofitted after initial deployment
+- **faithfulness**: 0.6667 (fail) [4.0 sup / 2.0 unsup]
+  - unsupported: The exception requires the medical or safety purpose to be established at the point of market-placement and cannot be re
+  - unsupported: 'Efficiency improvement' does not qualify as a medical or safety reason under Article 5(1)(f)
 - **relevancy**: 1.0 (pass)
   - rationale: The question asks whether emotion/stress monitoring of manufacturing workers is allowed under the EU AI Act, and the answer directly addresses this by citing Ar
 
@@ -299,7 +296,7 @@ Population: 40 rows (20 expert-reviewed, 10 GraphReader-base, 10 GraphReader-af_
 
 - **expert**: PASS
 - **faithfulness**: 0.9 (fail) [9.0 sup / 1.0 unsup]
-  - unsupported: The full Chapter III Section 2 obligations stack on top of the sectoral requirements.
+  - unsupported: The full Chapter III Section 2 obligations stack on top of the sectoral requirements
 - **relevancy**: 0.9 (pass)
   - rationale: The answer directly addresses whether an AI system used as a safety component in a medical device (robotic surgery) is high-risk under the AI Act by citing Arti
 
@@ -309,10 +306,8 @@ Population: 40 rows (20 expert-reviewed, 10 GraphReader-base, 10 GraphReader-af_
 
 **Q:** What criteria exist for assessing the risk of an AI system?
 
-- **faithfulness**: 0.8095 (fail) [17.0 sup / 4.0 unsup]
-  - unsupported: High-risk AI systems must comply with requirements regarding risk management, quality of datasets, technical documentati
-  - unsupported: Identification of high-risk AI systems is based on methodology and criteria for future amendments as per the Commission'
-  - unsupported: Stand-alone high-risk AI systems are classified based on their potential to harm health and safety or fundamental rights
+- **faithfulness**: 0.9524 (fail) [20.0 sup / 1.0 unsup]
+  - unsupported: Certain mandatory requirements should apply to high-risk AI systems, taking into account their intended purpose and cont
 - **relevancy**: 0.9 (pass)
   - rationale: The answer directly addresses criteria for assessing AI system risk, covering likelihood of harm, extent of use, health/safety impacts, context of use, residual
 
@@ -340,10 +335,10 @@ Population: 40 rows (20 expert-reviewed, 10 GraphReader-base, 10 GraphReader-af_
 
 **Q:** What requirements must AI systems classified as high-risk meet?
 
-- **faithfulness**: 0.4444 (fail) [8.0 sup / 10.0 unsup]
-  - unsupported: High-risk AI systems must adhere to accessibility requirements in accordance with Directives (EU) 2016/2102 and (EU) 201
-  - unsupported: Providers must ensure full compliance with accessibility directives per Recital 80
-  - unsupported: High-risk AI systems must be trained and tested on data to ensure effectiveness
+- **faithfulness**: 0.7059 (fail) [12.0 sup / 5.0 unsup]
+  - unsupported: This accessibility compliance requirement is attributed to Article 16(13).
+  - unsupported: High-risk AI systems must be trained and tested on data to ensure effectiveness — Article 42(1).
+  - unsupported: Notified bodies are entitled to control conformity and conduct periodic audits to assess compliance with the quality man
 - **relevancy**: 0.9 (pass)
   - rationale: The answer directly addresses the question about requirements for high-risk AI systems, covering multiple relevant areas including risk management, data, confor
 
@@ -351,10 +346,10 @@ Population: 40 rows (20 expert-reviewed, 10 GraphReader-base, 10 GraphReader-af_
 
 **Q:** What obligations do providers of high-risk AI systems have in terms of transparency and technical documentation?
 
-- **faithfulness**: 0.6667 (fail) [8.0 sup / 4.0 unsup]
-  - unsupported: It is necessary to establish transparency obligations specifically for certain AI systems as per Recital 26
+- **faithfulness**: 0.75 (fail) [9.0 sup / 3.0 unsup]
   - unsupported: Providers are required to allow notified bodies access to their premises for the design, development, and testing of AI 
-  - unsupported: Providers must verify that the design and development processes of the AI system align with the technical documentation 
+  - unsupported: Providers must verify that the design and development processes of the AI system align with the technical documentation.
+  - unsupported: The technical documentation should be examined to ensure compliance with the essential requirements set out in Chapter I
 - **relevancy**: 0.95 (pass)
   - rationale: The answer directly addresses provider obligations for transparency and technical documentation in high-risk AI systems, covering documentation provision, reten
 
@@ -362,8 +357,8 @@ Population: 40 rows (20 expert-reviewed, 10 GraphReader-base, 10 GraphReader-af_
 
 **Q:** What does a conformity assessment consist of?
 
-- **faithfulness**: 0.4375 (fail) [7.0 sup / 9.0 unsup]
-  - unsupported: Article 3(21) defines the purpose of conformity assessment as demonstrating whether certain requirements have been fulfi
+- **faithfulness**: 0.5263 (fail) [10.0 sup / 9.0 unsup]
+  - unsupported: Article 3(21) defines the purpose of conformity assessment as demonstrating whether requirements have been fulfilled
   - unsupported: The conformity assessment body must demonstrate its conformity with specific criteria per Article 32(1)
   - unsupported: Conformity assessment encompasses third-party activities such as testing, certification, and inspection per Article 3(22
 - **relevancy**: 0.85 (pass)
@@ -373,10 +368,10 @@ Population: 40 rows (20 expert-reviewed, 10 GraphReader-base, 10 GraphReader-af_
 
 **Q:** What does systemic-risk mean?
 
-- **faithfulness**: 0.4444 (fail) [8.0 sup / 10.0 unsup]
+- **faithfulness**: 0.5 (fail) [8.0 sup / 8.0 unsup]
   - unsupported: Systemic risk refers to a risk that is specific to the high-impact capabilities of general-purpose AI models
-  - unsupported: This definition is found in Article 3(66)
-  - unsupported: Systemic risk can lead to actual or reasonably foreseeable negative effects on safety
+  - unsupported: Article 3(66) is the source for the definition of systemic risk
+  - unsupported: Systemic risk can lead to negative effects on safety
 - **relevancy**: 0.9 (pass)
   - rationale: The answer directly addresses the definition of systemic risk as asked, providing the core definition from Article 3(66) and related provisions, though it inclu
 
@@ -384,10 +379,10 @@ Population: 40 rows (20 expert-reviewed, 10 GraphReader-base, 10 GraphReader-af_
 
 **Q:** What is the definition of General-purpose AI?
 
-- **faithfulness**: 0.0 (fail) [0.0 sup / 11.0 unsup]
+- **faithfulness**: 0.4167 (fail) [5.0 sup / 7.0 unsup]
   - unsupported: General-purpose AI is defined as a system that possesses the capability to serve a variety of purposes.
-  - unsupported: A general-purpose AI system is based on a general-purpose AI model trained with a large amount of data using self-superv
-  - unsupported: The model displays significant generality and is capable of competently performing a wide range of distinct tasks.
+  - unsupported: A general-purpose AI system is based on a general-purpose AI model, which is an AI model trained with a large amount of 
+  - unsupported: A general-purpose AI model displays significant generality and is capable of competently performing a wide range of dist
 - **relevancy**: 0.9 (pass)
   - rationale: The answer directly addresses the definition of General-purpose AI as asked, citing Article 3(67) and related provisions, though it pads the response with tange
 
@@ -395,9 +390,9 @@ Population: 40 rows (20 expert-reviewed, 10 GraphReader-base, 10 GraphReader-af_
 
 **Q:** What are the components of a quality management system?
 
-- **faithfulness**: 0.7647 (fail) [13.0 sup / 4.0 unsup]
-  - unsupported: Safety components may include systems for monitoring water pressure or fire alarm controlling systems in cloud computing
-  - unsupported: The seven principles of AI mentioned in Recital 27 may inform the framework of a QMS, including human agency and oversig
+- **faithfulness**: 0.7895 (fail) [15.0 sup / 4.0 unsup]
+  - unsupported: Examples of safety components may include systems for monitoring water pressure or fire alarm controlling systems in clo
+  - unsupported: The seven principles of AI mentioned in Recital 27 may inform the framework of a QMS
   - unsupported: Requirements for high-risk AI systems include aspects of risk management, quality and relevance of data sets, technical 
 - **relevancy**: 0.9 (pass)
   - rationale: The answer directly addresses the question about QMS components, listing most elements from Article 17(1), though it dilutes focus with tangential recital refer
@@ -406,21 +401,17 @@ Population: 40 rows (20 expert-reviewed, 10 GraphReader-base, 10 GraphReader-af_
 
 **Q:** What are the requirements for documenting bias mitigation measures in AI models?
 
-- **faithfulness**: 0.6667 (fail) [8.0 sup / 4.0 unsup]
-  - unsupported: Providers are responsible for identifying risks or adverse impacts and implementing mitigation measures for known and fo
-  - unsupported: High-risk AI systems intended for use by judicial authorities must specifically address the risks of potential biases, e
-  - unsupported: Principles related to bias mitigation should be integrated into the design and use of AI models (Recital 27).
+- **faithfulness**: 0.9091 (fail) [10.0 sup / 1.0 unsup]
+  - unsupported: Mandatory requirements should apply to high-risk AI systems considering their intended purpose and context of use, accor
 - **relevancy**: 0.9 (pass)
-  - rationale: The answer directly addresses documentation requirements for bias mitigation in AI models, covering data governance, risk management documentation, and technica
+  - rationale: The answer directly addresses documentation requirements for bias mitigation measures in AI models, covering data governance, risk management documentation, and
 
 ### nogold_base_q01  (no_gold_base)
 
 **Q:** What criteria exist for assessing the risk of an AI system?
 
-- **faithfulness**: 0.7273 (fail) [8.0 sup / 3.0 unsup]
-  - unsupported: For high-risk AI systems, requirements regarding risk management, data set quality and relevance, technical documentatio
-  - unsupported: Mandatory requirements should apply to mitigate risks from high-risk AI systems, considering the intended purpose and co
-  - unsupported: The risk-management system should adopt the most appropriate measures in light of the state of the art in AI, per Recita
+- **faithfulness**: 0.9167 (fail) [11.0 sup / 1.0 unsup]
+  - unsupported: The answer omits several Article 7(2) criteria: extent of use (b), extent of harm already caused (e detail), potential e
 - **relevancy**: 0.9 (pass)
   - rationale: The answer directly addresses the question about criteria for assessing AI system risk, listing multiple relevant factors such as intended purpose, autonomy, da
 
@@ -428,10 +419,7 @@ Population: 40 rows (20 expert-reviewed, 10 GraphReader-base, 10 GraphReader-af_
 
 **Q:** What are the sanctions for violating the provisions of the regulation for transparencyrisk systems?
 
-- **faithfulness**: 0.7143 (fail) [10.0 sup / 4.0 unsup]
-  - unsupported: Recital 46 discusses operational flexibility for providers of high-risk AI systems
-  - unsupported: Recital 46 does not specifically address sanctions or penalties
-  - unsupported: Recitals 52 and 49 do not provide relevant information regarding sanctions for transparency-risk systems
+- **faithfulness**: 1.0 (pass) [11.0 sup / 0.0 unsup]
 - **relevancy**: 1.0 (pass)
   - rationale: The question asks about sanctions for violating transparency-risk system provisions, and the answer directly addresses administrative fines, penalties framework
 
@@ -442,7 +430,7 @@ Population: 40 rows (20 expert-reviewed, 10 GraphReader-base, 10 GraphReader-af_
 - **faithfulness**: 0.8333 (fail) [20.0 sup / 4.0 unsup]
   - unsupported: Deployers must carry out a data protection impact assessment.
   - unsupported: The data protection impact assessment obligation is based on Article 26(9).
-  - unsupported: The deployer must be aware of and take into account obligations when using the high-risk AI system, as referenced in Rec
+  - unsupported: The deployer must be aware of and take into account obligations when using the high-risk AI system, based on Recital 65.
 - **relevancy**: 1.0 (pass)
   - rationale: The question asks about deployer obligations for high-risk AI systems, and the answer directly addresses this by listing specific obligations with article citat
 
@@ -450,10 +438,10 @@ Population: 40 rows (20 expert-reviewed, 10 GraphReader-base, 10 GraphReader-af_
 
 **Q:** What requirements must AI systems classified as high-risk meet?
 
-- **faithfulness**: 0.0 (fail) [0.0 sup / 12.0 unsup]
-  - unsupported: High-risk AI systems must establish a comprehensive risk management process.
-  - unsupported: The quality and relevance of data sets used for training the AI systems are crucial.
+- **faithfulness**: 0.4167 (fail) [5.0 sup / 7.0 unsup]
   - unsupported: Providers must prepare technical documentation that is subject to assessment by a notified body, ensuring compliance wit
+  - unsupported: Documentation must include details about the AI system, quality management system, and procedures to maintain system eff
+  - unsupported: Providers must apply to a notified body for the assessment of their technical documentation.
 - **relevancy**: 0.85 (pass)
   - rationale: The answer directly addresses what requirements high-risk AI systems must meet, covering risk management, data quality, technical documentation, transparency, h
 
@@ -461,9 +449,9 @@ Population: 40 rows (20 expert-reviewed, 10 GraphReader-base, 10 GraphReader-af_
 
 **Q:** What obligations do providers of high-risk AI systems have in terms of transparency and technical documentation?
 
-- **faithfulness**: 0.7368 (fail) [14.0 sup / 5.0 unsup]
+- **faithfulness**: 0.7778 (fail) [14.0 sup / 4.0 unsup]
   - unsupported: A detailed description of the AI system and its development process must be provided, including methods used, design spe
-  - unsupported: The system's risk management measures must also be documented — citing Annex 4(6).
+  - unsupported: The system's risk management measures must also be documented (cited as Annex 4(6)).
   - unsupported: Providers must include detailed descriptions of monitoring, functioning, control, and known risks associated with the AI
 - **relevancy**: 0.95 (pass)
   - rationale: The answer directly addresses the question about transparency and technical documentation obligations for providers of high-risk AI systems, covering technical 
@@ -474,7 +462,7 @@ Population: 40 rows (20 expert-reviewed, 10 GraphReader-base, 10 GraphReader-af_
 
 - **faithfulness**: 0.4118 (fail) [7.0 sup / 10.0 unsup]
   - unsupported: Providers must verify that their quality management system complies with Article 17.
-  - unsupported: Providers must verify that the design and development process is consistent with the technical documentation referenced 
+  - unsupported: Providers must verify that the design and development process of the AI system is consistent with the technical document
   - unsupported: Providers examine the technical documentation to ensure compliance with essential requirements set out in Chapter III, S
 - **relevancy**: 0.8 (pass)
   - rationale: The answer directly addresses what a conformity assessment consists of, covering its components, procedures, and requirements, though it mixes in tangential det
@@ -483,10 +471,10 @@ Population: 40 rows (20 expert-reviewed, 10 GraphReader-base, 10 GraphReader-af_
 
 **Q:** What does systemic-risk mean?
 
-- **faithfulness**: 0.2 (fail) [2.0 sup / 8.0 unsup]
+- **faithfulness**: 0.125 (fail) [1.0 sup / 7.0 unsup]
   - unsupported: Systemic risk refers to a risk that is specific to the high-impact capabilities of general-purpose AI models.
-  - unsupported: Systemic risk is defined in Article 3(66).
   - unsupported: Systemic risk can propagate at scale across the value chain.
+  - unsupported: Systemic risk can have actual or reasonably foreseeable negative effects on society as a whole.
 - **relevancy**: 1.0 (pass)
   - rationale: The question asks for the definition of 'systemic risk' and the answer directly addresses this by providing the definition from Article 3(66) along with related
 
@@ -494,10 +482,10 @@ Population: 40 rows (20 expert-reviewed, 10 GraphReader-base, 10 GraphReader-af_
 
 **Q:** What is the definition of General-purpose AI?
 
-- **faithfulness**: 0.0 (fail) [0.0 sup / 8.0 unsup]
+- **faithfulness**: 0.375 (fail) [3.0 sup / 5.0 unsup]
   - unsupported: A general-purpose AI model is defined as an AI model that exhibits significant generality and is capable of competently 
   - unsupported: A general-purpose AI model can be integrated into various downstream systems or applications, excluding those used for r
-  - unsupported: This definition is attributed to Article 3(64).
+  - unsupported: This definition is from Article 3(64).
 - **relevancy**: 0.9 (pass)
   - rationale: The answer directly addresses the question by providing the definition of General-purpose AI model (Article 3(64)) and General-purpose AI system (Article 3(67))
 
@@ -506,8 +494,8 @@ Population: 40 rows (20 expert-reviewed, 10 GraphReader-base, 10 GraphReader-af_
 **Q:** What are the components of a quality management system?
 
 - **faithfulness**: 0.875 (fail) [14.0 sup / 2.0 unsup]
-  - unsupported: The seven principles relevant to the QMS are: Human agency and oversight, Technical robustness and safety, Privacy and d
-  - unsupported: Requirements applicable to high-risk AI systems include Risk management, Quality and relevance of data sets, Technical d
+  - unsupported: The seven principles relevant to the quality management system are: Human agency and oversight, Technical robustness and
+  - unsupported: Requirements applicable to high-risk AI systems include risk management, quality and relevance of data sets used, techni
 - **relevancy**: 0.8 (pass)
   - rationale: The answer directly addresses the question about QMS components under Article 17(1), listing relevant elements, though it introduces unsupported content like 's
 
@@ -515,9 +503,7 @@ Population: 40 rows (20 expert-reviewed, 10 GraphReader-base, 10 GraphReader-af_
 
 **Q:** What are the requirements for documenting bias mitigation measures in AI models?
 
-- **faithfulness**: 0.5556 (fail) [5.0 sup / 4.0 unsup]
-  - unsupported: Providers must identify risks or adverse impacts and implement mitigation measures for known and reasonably foreseeable 
-  - unsupported: Requirements regarding risk management, quality and relevance of data sets, technical documentation and record-keeping, 
-  - unsupported: High-risk AI systems intended to assist judicial authorities must specifically address potential biases, errors, and opa
-- **relevancy**: 0.8 (pass)
-  - rationale: The answer directly addresses documentation requirements for bias mitigation in AI models, covering risk management systems, technical documentation, and confor
+- **faithfulness**: 0.9 (fail) [9.0 sup / 1.0 unsup]
+  - unsupported: The application of bias mitigation principles should be integrated into the design and use of AI models.
+- **relevancy**: 0.7 (pass)
+  - rationale: The answer addresses documentation requirements for AI systems broadly and mentions bias-related recitals, but conflates general documentation/risk management r

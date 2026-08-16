@@ -641,6 +641,25 @@ correct only for exactly as long as that remains true.
   — the R142.1 trade. **All the headroom is in identifying WHICH tail reference
   is wrong.** Quote **F1 0.768** alongside the 0.31 conjunctive pass rate.
 
+* **R360 — reference-free judge axes + HyPA-RAG validation.** Two opt-in
+  `legal_v2` axes, both reference-free (the no-gold half of a benchmark is now
+  scorable): `answer_faithfulness` (HyPA-RAG metric #1, Ragas semantics —
+  claims vs the cited provisions' verbatim text; pass iff 1.0) and
+  `answer_relevancy` (metric #2 — question+answer only; pass iff >=0.5).
+  Structured-carrier-only `_AXIS_KEYS` (a failure_mode-only reply is
+  unscorable, never a silent pass). 40-row Bedrock-only validation
+  (20 expert-reviewed + 20 GraphReader base/af_only no-gold A/B, sonnet-4-6,
+  0 errors): judge-vs-expert agreement 0.55 / 0.50 / 0.60 (faithfulness /
+  relevancy / crag_fine) — relevancy is a weak discriminator of expert fails
+  by design (relevant-but-wrong passes it), faithfulness is stricter than the
+  human (claims judged only against cited text); no-gold A/B: af_only
+  +0.087 faithfulness over base. Recital citations are not resolvable by the
+  judge's grounding (conservative direction, unbiased across arms). The
+  paper's own Table 2 shows the KG params (K,S) HURT faithfulness
+  (0.8328 vs PA 0.9044 — consistent with R329); the reranker is the paper's
+  champion (k,Q+reranker 0.9098) and remains the next measurement:
+  `REGENOLD_COHERE_RERANK=1` graded with these axes.
+
 ## Do not re-propose — measured and dead
 
 **Over-citation trimming (five families):**
