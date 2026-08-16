@@ -2651,7 +2651,6 @@ def _deterministic_parse(question: str) -> GraphQuery:
                 rerank_enabled,
                 rerank_kg_candidates_enabled,
                 rerank_kg_hops,
-                rerank_kg_noncitable,
                 rerank_pool,
                 rerank_query_context,
                 stabilize_anchor_tier,
@@ -2702,52 +2701,25 @@ def _deterministic_parse(question: str) -> GraphQuery:
                     question, pool, query_context=ctx, doc_reasons=doc_reasons
                 )
                 if ok:
-                    # TWO FIXES FOR ONE DEFECT — R350 and R351 landed the same
-                    # week, independently, on this exact statement. Both target
-                    # the same root cause: `entities = reranked` adopted the
-                    # whole KG-expanded pool, so a CROSS_REFERENCES neighbour
-                    # became a wire citation (`entities` -> one obligation each
-                    # -> `CitationNode` -> the wire `references`).
+                    # ONE FIX FOR ONE DEFECT — R351 anchor-tiering, now the
+                    # ONLY path. The competing R350 projection arm (neighbours
+                    # inform the ranking but never enter the citation set) was
+                    # A/B'd head-to-head against this one on 100 live rows
+                    # (`dynamic-ab-r352-kg-citability-full.json`) and LOST on
+                    # hard rule #8: the projection nets +1 gold HEAD drop and
+                    # +2 exact-coordinate drops vs this arm (4 regressed rows:
+                    # mt_v2_008 loses Article 51 entirely, st_v4_017 loses
+                    # Article 6, mt_v2_020 loses Article 113, la_q13 loses
+                    # both Annex XI and XII). Non-zero gold_dropped is a veto,
+                    # so the flag and its branch were deleted. See
+                    # docs/R352-kg-fork-decision.md.
                     #
-                    #   R351 (DEFAULT, and the measured one) — tier the anchors.
-                    #     Every keyword entity stays ahead of every KG
-                    #     neighbour, rerank order preserved within each tier, so
-                    #     supplementation is strictly ADDITIVE: it can fill
-                    #     slots the anchors did not take, never displace one.
-                    #     Landed on a live 84-row A/B that measured
-                    #     `gold_dropped_head` 25 -> 27 — a hard rule #8 veto.
-                    #
-                    #   R350 (`REGENOLD_RERANK_KG_NONCITABLE=1`) — project them
-                    #     out. Neighbours inform the ranking and never enter the
-                    #     citation set at all. Strictly subsumes the gold fix
-                    #     (something that cannot be cited cannot displace an
-                    #     anchor) and also closes the over-citation path R351
-                    #     leaves open: measured with an identity rerank stub,
-                    #     "transparency obligations for chatbots" gained
-                    #     `Art. 98` — *Committee procedure*, comitology — and a
-                    #     FRIA row went 3 refs -> 11.
-                    #
-                    # They are NOT redundant. R351 optimises RECALL (the lever
-                    # still buys candidates); R350 optimises PRECISION on the
-                    # over-citation axis this repo has left to win. The default
-                    # is R351 because it is the arm with a live measurement
-                    # behind it; R350 ships as a flag so the two can be A/B'd
-                    # head-to-head against gold on the same rows, which is what
-                    # the validation policy asks of any reference-affecting
-                    # change. Do not delete either side before that run.
-                    #
-                    # ⚠ Under `REGENOLD_RERANK_KG_NONCITABLE=1` the KG lever is
-                    # a provable no-op on the wire: Cohere `/v2/rerank` is
-                    # POINTWISE — one score per (query, document) pair,
-                    # independent of the other documents — so adding neighbour
-                    # documents cannot reorder the originals, and the projection
-                    # then discards them. An A/B of `REGENOLD_RERANK_KG_HOPS`
-                    # in that arm will read INERT and that is CORRECT, not a
-                    # harness defect.
-                    if rerank_kg_noncitable():
-                        _original = set(entities)
-                        entities = [r for r in reranked if r in _original]
-                    elif pool is not entities:
+                    # This arm tiers the anchors: every keyword entity stays
+                    # ahead of every KG neighbour, rerank order preserved
+                    # within each tier, so supplementation is strictly
+                    # ADDITIVE — it fills slots the anchors did not take,
+                    # never displaces one.
+                    if pool is not entities:
                         entities = stabilize_anchor_tier(reranked, entities)
                     else:
                         entities = reranked

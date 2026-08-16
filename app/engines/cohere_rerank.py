@@ -104,7 +104,6 @@ __all__ = [
     "build_kg_candidate_pool_with_reasons",
     "rerank_kg_candidates_enabled",
     "rerank_kg_hops",
-    "rerank_kg_noncitable",
     "rerank_stats",
     "reset_rerank_stats",
     "stabilize_anchor_tier",
@@ -129,31 +128,6 @@ def rerank_kg_candidates_enabled() -> bool:
         os.getenv(_RERANK_KG_ENV, "0").strip().lower()
         in _TRUTHY
     )
-
-
-_RERANK_KG_NONCITABLE_ENV = "REGENOLD_RERANK_KG_NONCITABLE"
-
-
-def rerank_kg_noncitable() -> bool:
-    """``REGENOLD_RERANK_KG_NONCITABLE`` — **DEFAULT OFF**, fresh read per call.
-
-    The R350 arm of the KG-citability question. OFF (default) is R351's
-    anchor-tier stabilization: KG neighbours stay citable but can never
-    displace a keyword anchor. ON projects them out of the citation set
-    entirely — they inform the cross-encoder's ranking and nothing else.
-
-    Both fix the same defect (`entities = reranked` adopted the whole expanded
-    pool, putting graph adjacency on the wire). R351 is the default because it
-    carries a live 84-row measurement (`gold_dropped_head` 25 -> 27); R350 is
-    the stricter arm on over-citation, which is the axis this repo has left to
-    win. Shipped as a flag so the two can be A/B'd head-to-head rather than
-    decided by whoever merged last.
-
-    Only meaningful with ``REGENOLD_COHERE_RERANK=1`` AND
-    ``REGENOLD_RERANK_KG_CANDIDATES=1`` — with no KG pool there is nothing to
-    project out and this is a no-op.
-    """
-    return os.getenv(_RERANK_KG_NONCITABLE_ENV, "0").strip().lower() in _TRUTHY
 
 
 _RERANK_KG_HOPS_ENV = "REGENOLD_RERANK_KG_HOPS"
