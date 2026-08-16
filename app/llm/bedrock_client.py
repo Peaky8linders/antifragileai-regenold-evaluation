@@ -75,6 +75,15 @@ class BedrockRequest:
     """Bedrock Converse ``toolConfig`` dict — pass through as-is. See
     https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_Converse.html"""
 
+    thinking_budget: int = 0
+    """R355 — extended-thinking budget for this call. ``> 0`` enables Claude
+    extended thinking on the Converse request via
+    ``additionalModelRequestFields.reasoning_config``
+    (``type: enabled``, ``budget_tokens: N`` — Bedrock accepts the
+    SNAKE_CASE form, not the Anthropic camelCase). ``0`` (default) sends no
+    thinking config — plain fast mode, unchanged behaviour. Per-call only;
+    no global state."""
+
 
 @dataclass
 class BedrockResponse:
@@ -508,6 +517,23 @@ def _build_converse_kwargs(req: BedrockRequest) -> dict[str, Any]:
 
     if req.tool_config:
         kwargs["toolConfig"] = req.tool_config
+
+    if req.thinking_budget and req.thinking_budget > 0:
+        # R355 — Bedrock Converse uses SNAKE_CASE for Claude extended-thinking
+        # fields inside additionalModelRequestFields (camelCase "reasoningConfig"
+        # is rejected: "Extra inputs are not permitted"), Claude requires
+        # temperature == 1 when thinking is enabled (a plain 0 is rejected too),
+        # and maxTokens must EXCEED the thinking budget (equal is a 400 as well).
+        budget = max(256, int(req.thinking_budget))
+        if int(inference_config.get("maxTokens") or 0) <= budget:
+            inference_config["maxTokens"] = budget + 512
+        inference_config["temperature"] = 1.0
+        kwargs["additionalModelRequestFields"] = {
+            "reasoning_config": {
+                "type": "enabled",
+                "budget_tokens": budget,
+            }
+        }
 
     return kwargs
 
