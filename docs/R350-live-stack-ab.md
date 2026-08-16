@@ -85,9 +85,56 @@ Q42 (irrelevant refs dropped → Art. 26), Q77 (Art. 3.25 → Art. 3). Q55/Q56
 are out-of-scope probes (refusal gold) measuring the OOS guard. All 81
 expected refs resolve in the provision text.
 
-## Next step
+## R350.2 — the re-measurement on the live-answers probe: the veto persists
 
-Re-run the A/B on the 81-row live-answers probe with the R351 fix in the
-branch. The gate is the gold veto: if the stack clears it (and ideally keeps
-the ans_corr / cite_faith direction positive), it earns its second live
-measurement; if not, the KG-candidates arm is the suspect.
+Re-ran the SAME full stack (rerank × KG-candidates × expansion, now WITH the
+R351 anchor-tier fix) on the 81-row live-answers probe. Result at n=48 clean
+rows (before the account's daily Bedrock quota closed the window):
+
+**gold_dropped_head 46 → 49 (+3) — hard-rule-#8 veto again.**
+
+Regressions (branch dropped more gold): la_q87 (+1), la_q20 (+2), la_q51
+(+2), la_q73 (+1), la_q84 (+2). Improvements: la_q76, la_q18, la_q79, la_q37
+(4 rows). The lever fired on 29/48 rows.
+
+### The new mechanism: generation-level citation drift (R351 cannot fix it)
+
+The R350 drops were KG neighbours displacing anchors AT THE CUT — R351 fixed
+that. The R350.2 drops are different: the wire references are ANSWER-DRIVEN
+(Component D extracts citations from the Stage-2 prose), and the KG pool
+changes what Opus WRITES. Measured on la_q87: the branch answer said *"the
+Union harmonisation legislation listed in notably the Medical Devices
+Regulation"* instead of *"listed in Annex I"* — the literal ``Annex I`` never
+reached the prose, so Component D never extracted it, so the gold reference
+dropped. On la_q20 / la_q51 / la_q84 the branch's ENTIRE citation sets
+shifted (la_q84: base cited {10, 13, 15, 16, 54, 9, 96}; branch cited {16,
+17, 47, 49, 71, 80, 94}) — a wholesale generation-level rerouting, not a
+single displacement. No anchor-tier protection at the parse can force an LLM
+to write a phrase the context led it away from.
+
+### The R346 decomposition still points at the culprit
+
+R346 measured the levers SEPARATELY: rerank alone gold 17→17 (wash), query
+expansion alone 17→14 (**better**, no veto). Every combination that INCLUDES
+the KG-candidates arm has vetoed (R350 25→27, R350.2 46→49). Expansion is
+the only arm with positive live evidence; the KG pool is the only arm that
+has never shipped a clean live measurement.
+
+### Decision
+
+The full optimised stack (rerank × KG-candidates × expansion) does NOT clear
+the hard-rule-#8 gate. The KG-candidates arm is the prime suspect and should
+stay OFF (its default). The decisive isolation run — query-expansion ONLY
+(no rerank, no KG) on the live-answers probe — is the next measurement, and
+it is one command away when the account quota window reopens:
+
+```
+PYTHONPATH=. py -3.12 scratch/run_ab_r351.py --branch-env REGENOLD_QUERY_EXPANSION=1 \
+    --label r350-live-expansion --max-rows 81 --batch 6 --min-call-gap 15 \
+    --probe-sources live_answers --no-judge
+```
+
+Checkpoint of the clean 48 rows: `evals/bench/results/dynamic-ab-r350-live-answers.json`
+(partial:true — the throttle stopped the run before row 81; rows after the
+window closed are NOT in the checkpoint because the harness was killed before
+the next batch checkpoint).

@@ -556,16 +556,26 @@ correct only for exactly as long as that remains true.
 * **R350 measured the full stack (rerank × KG-candidates × expansion) LIVE on
   84 rows (graphrag + medtech + expert-review): FIRED 57/84, retrieval axes
   ~flat (UNDERPOWERED), judge axes UNDERPOWERED (throttle), but HARD RULE #8
-  VETO — gold_dropped_head 25 → 27.** R351 found and fixed the mechanism: the
-  KG-expanded pool is a superset, but the citation budget cut downstream from
-  the REORDERED entities lets a KG neighbour displace a gold anchor (measured
-  on all 5 dropped rows: Annex XI / Art. 49.2 / Art. 25 / Art. 47 / Art. 17 /
-  Annex V out-ranking Art. 51.2 / Annex III / Art. 9 / Annex VI-VII).
-  ``stabilize_anchor_tier`` restores the superset guarantee AT THE CUT: every
-  keyword anchor precedes every neighbour (rerank order preserved within each
-  tier), so KG supplementation can only ADD citations, never remove a gold
-  anchor. Re-measurement is the open question — the R350.2 live batch on the
-  81-row live-answers probe is the next A/B.
+  VETO — gold_dropped_head 25 → 27.** R351 fixed the cut-level mechanism
+  (``stabilize_anchor_tier`` — a KG neighbour could out-score and displace a
+  gold anchor at the citation budget cut; the anchor-tier invariant restores
+  the superset guarantee AT THE CUT).
+* ⚠ **R350.2 re-measured the same full stack WITH the R351 fix on the 81-row
+  live-answers probe: VETO AGAIN — gold 46 → 49 (+3) at n=48 clean rows.**
+  The NEW mechanism is generation-level, and R351 cannot fix it: the wire
+  references are ANSWER-DRIVEN (Component D extracts citations from the
+  Stage-2 prose), and the KG pool changes what Opus WRITES. Measured on
+  la_q87: branch prose said "listed in notably the Medical Devices Regulation"
+  instead of "listed in Annex I" — the literal phrase never reached the
+  prose, so Component D never extracted it, and the gold ref dropped. On
+  la_q20 / la_q51 / la_q84 the branch's ENTIRE citation sets rerouted. No
+  anchor-tier protection at the parse can force an LLM to write a phrase the
+  context led it away from. R346's decomposition still points at the culprit:
+  rerank alone was a wash (gold 17→17), expansion alone was BETTER (17→14),
+  and every combination that includes the KG-candidates arm has vetoed
+  (R350 25→27, R350.2 46→49). **The KG-candidates arm stays OFF; the decisive
+  isolation run (expansion ONLY, no rerank, no KG) on live-answers is the
+  next measurement** — one command, listed in docs/R350-live-stack-ab.md.
 * ⚠ **R338's "−5 expert-mistake regression" (q03/q04/q14) is RETRACTED** — it was
   measured while Stage-2 was dead (the argv ceiling). With Stage-2 restored the
   same resolver gives **34/38**, above the R318 baseline's 33/38. Do not quote
