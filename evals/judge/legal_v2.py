@@ -485,6 +485,84 @@ def render_citation_faithfulness(r: dict[str, Any], pred_map: dict[str, str]) ->
     )
 
 
+# ── Axis 5 — fine-grained CRAG answer score (NICD paper, Appendix C.2.2) ─
+
+
+#: The fine-grained CRAG scale, from Wedge et al., "Reducing Hallucinations
+#: in Complex Question Answering using Simple Graph-based RAG" (NICD /
+#: Newcastle), Appendix C.2.2. The paper's rubric is ported VERBATIM below;
+#: the scale is asymmetric BY DESIGN — a hallucinated claim (extras) costs
+#: more than a missing one, and an honest refusal scores 0 (neutral) rather
+#: than being penalised like a wrong answer. The paper's headline metric,
+#: truthfulness = sum of scores, is computed in :func:`_postprocess_answer_crag_fine`
+#: and surfaced on the aggregate so a run reports correct − hallucinated
+#: rather than a binary pass/fail.
+_CRAG_SCALE = (
+    "+1.0  fully correct: the prediction matches ALL provided gold answers.\n"
+    "+0.5  partially correct: matches a SUBSET of the gold answers and\n"
+    "      includes NO incorrect answers (missing claims, but no hallucination).\n"
+    " 0.0  the model says 'unknown' / 'cannot answer' / that it lacks the\n"
+    "      information — an honest refusal, not an error.\n"
+    "-0.5  mixed: includes SOME correct gold answers AND at least one\n"
+    "      incorrect answer (correct + hallucinated claims together).\n"
+    "-1.0  incorrect: the prediction matches NONE of the gold answers.\n"
+)
+
+
+def render_answer_crag_fine(r: dict[str, Any], gold_block: str) -> str:
+    """Fine-grained CRAG answer score — the paper's Appendix C.2.2 rubric
+    applied to the ANSWER (not the reference set). Distinct from
+    ``answer_correctness`` (LeMAJ LDP decomposition, pass/fail): this axis
+    returns the paper's 5-level truthfulness scale and its asymmetry
+    (hallucination −0.5/−1 > omission +0.5 > refusal 0). The verdict is
+    derived from the score: pass iff score >= +0.5 (fully or cleanly
+    partial, i.e. no hallucinated claim), fail otherwise — a hallucination
+    always fails even when it also contains correct claims.
+
+    Gold answers come from the probe set (``gold_answer``); verbatim
+    provision text for the union of gold + predicted refs is supplied as
+    grounding so the judge never leans on parametric legal memory — the
+    repo's quote-or-retract discipline, applied to the gold answers.
+    """
+    gold_answers = str(r.get("gold_answer") or "").strip()
+    return (
+        _ANTI_SYCOPHANCY +
+        "You are grading a Q&A answer on the fine-grained CRAG truthfulness "
+        "scale. Judge whether the prediction matches the Ground Truth "
+        "answers, using the QUESTION and the provided GROUND TRUTH answers to "
+        "decide — never by string matching alone (different wording may "
+        "express the same answer; 1% tolerance on numerical answers).\n"
+        "Do not rely on your own legal knowledge: use ONLY the Ground Truth "
+        "answers and the verbatim text supplied below.\n\n"
+        "QUESTION: " + str(r["question"])[:600] + "\n\n"
+        "GROUND TRUTH ANSWERS:\n"
+        f"{gold_answers or '(none supplied)'}\n\n"
+        "VERBATIM EU AI ACT TEXT (provisions relevant to this question):\n"
+        f"{gold_block or '  (none)'}\n\n"
+        "PREDICTED ANSWER:\n" + str(r["answer"]) + "\n\n"
+        "Follow these steps:\n"
+        "  1. If the prediction returns 'unknown', says it cannot answer, or "
+        "says it lacks the information to answer, return 0.0.\n"
+        "  2. If the prediction makes a claim but it matches NONE of the "
+        "Ground Truth answers, return -1.0.\n"
+        "  3. If the prediction matches ALL provided Ground Truth answers, "
+        "return +1.0.\n"
+        "  4. If the prediction matches a SUBSET of the Ground Truth answers "
+        "(some correct answers missing) but includes NO additional incorrect "
+        "answers, return +0.5.\n"
+        "  5. If the prediction includes some correct Ground Truth answers "
+        "AND at least one incorrect answer (an answer not in the Ground "
+        "Truth list), return -0.5.\n\n"
+        f"SCALE:\n{_CRAG_SCALE}\n"
+        "Return ONLY one JSON object (no prose, no markdown fences):\n"
+        '{"score":1.0|"0.5"|0.0|"-0.5"|-1.0,"class":"FULLY_CORRECT"|'
+        '"PARTIAL_CLEAN"|"REFUSED"|"MIXED"|"WRONG",'
+        '"rationale":"<one short sentence citing which gold answer(s) matched "'
+        '"or were missed>","missing":["<gold claim omitted>"],'
+        '"hallucinated":["<predicted claim not in gold>"]}'
+    )
+
+
 def render_answer_conciseness(r: dict[str, Any]) -> str:
     """Judges only what is PRESENT for load-bearing relevance; never rewards omission."""
     return (
@@ -541,6 +619,14 @@ def _prepare(axis: str, r: dict[str, Any]) -> tuple[str, dict[str, Any]]:
         return render_citation_faithfulness(r, pred_map), {"pred_map": pred_map}
     if axis == "answer_conciseness":
         return render_answer_conciseness(r), {}
+    if axis == "answer_crag_fine":
+        # Grounding for the CRAG judge: gold answers (from the probe set) are
+        # the primary evidence; verbatim provision text for the union of gold
+        # + predicted refs backs the gold claims so the judge never leans on
+        # parametric memory (quote-or-retract discipline applied to gold).
+        candidate_refs = list(dict.fromkeys((r.get("gold_refs") or []) + (r.get("pred_refs") or [])))
+        gold_map = _resolve_provision_texts(candidate_refs, _GOLD_TEXT_CAP, _MAX_GOLD_REFS)
+        return render_answer_crag_fine(r, _block_from_map(gold_map)), {"union_map": gold_map}
     raise ValueError(f"unknown axis {axis!r}; valid: {AXES}")
 
 
@@ -566,6 +652,7 @@ _AXIS_KEYS: dict[str, tuple[str, ...]] = {
     "citation_faithfulness": ("citations",),
     "answer_conciseness": ("redundant_sentences", "unrequested_topics",
                            "sentence_count"),
+    "answer_crag_fine": ("score", "class", "rationale", "missing", "hallucinated"),
 }
 
 
@@ -904,6 +991,50 @@ def _postprocess_answer_conciseness(raw: dict[str, Any], answer_text: str) -> di
     }
 
 
+def _postprocess_answer_crag_fine(raw: dict[str, Any]) -> dict[str, Any]:
+    """Map the judge's CRAG reply onto the 5-level truthfulness scale.
+
+    The score is the paper's headline output — truthfulness per row, with
+    the asymmetry (hallucination costs more than omission; refusal is
+    neutral 0). The derived ``verdict`` (pass iff score >= +0.5) keeps the
+    axis compatible with the binary ``_aggregate`` while the score itself
+    is carried through for truthfulness aggregation: a MIXED (-0.5) or
+    WRONG (-1.0) answer always fails even when it also contains correct
+    claims; a REFUSED (0.0) answer fails the binary pass gate but scores
+    neutral on truthfulness, exactly as the paper intends.
+    """
+    if raw.get("judge_error"):
+        return dict(raw)
+    _unanswered = _axis_unanswered(raw, "answer_crag_fine")
+    if _unanswered is not None:
+        return _unanswered
+    try:
+        score = float(raw.get("score"))
+    except (TypeError, ValueError):
+        # A non-numeric score is a shape failure — the model did not answer
+        # the axis. Unscorable, not a verdict.
+        return {"judge_error": "crag_score_not_numeric", "_raw": raw}
+    # Clamp to the legal scale (the prompt demands these 5 values; a model
+    # that drifts is a shape failure, not a new scale).
+    if score not in (-1.0, -0.5, 0.0, 0.5, 1.0):
+        return {"judge_error": f"crag_score_out_of_scale: {score}", "_raw": raw}
+    cls = str(raw.get("class") or "").strip().upper()
+    score = round(score, 1)
+    verdict = "pass" if score >= 0.5 else "fail"
+    missing = [str(x) for x in (raw.get("missing") or [])]
+    hallucinated = [str(x) for x in (raw.get("hallucinated") or [])]
+    return {
+        "verdict": verdict,
+        "crag_score": score,
+        "truthfulness": score,  # truthfulness = score per the paper
+        "class": cls,
+        "missing_claims": missing,
+        "hallucinated_claims": hallucinated,
+        "failure_mode": raw.get("failure_mode") or "",
+        "_raw": raw,
+    }
+
+
 def _postprocess(axis: str, raw: dict[str, Any], r: dict[str, Any], ctx: dict[str, Any]) -> dict[str, Any]:
     if raw.get("judge_error"):
         return dict(raw)
@@ -921,6 +1052,8 @@ def _postprocess(axis: str, raw: dict[str, Any], r: dict[str, Any], ctx: dict[st
         return _postprocess_citation_faithfulness(raw, ctx["pred_map"], r["pred_refs"])
     if axis == "answer_conciseness":
         return _postprocess_answer_conciseness(raw, r["answer"])
+    if axis == "answer_crag_fine":
+        return _postprocess_answer_crag_fine(raw)
     raise ValueError(f"unknown axis {axis!r}; valid: {AXES}")
 
 
@@ -931,6 +1064,7 @@ _NUMERIC_FIELDS: dict[str, tuple[str, ...]] = {
     "reference_correctness": ("focus_precision", "legal_soundness_precision", "recall", "n_predicted"),
     "citation_faithfulness": ("faithful", "mismatched"),
     "answer_conciseness": ("redundant_sentence_count", "unrequested_topic_count"),
+    "answer_crag_fine": ("crag_score", "truthfulness"),
 }
 
 
@@ -1082,6 +1216,16 @@ def _judge_row(
                 "grounding_status": "unscorable",
                 "_samples_n": 0,
             }
+        elif axis == "answer_crag_fine" and not str(r.get("gold_answer") or "").strip():
+            # The CRAG axis judges the ANSWER against the probe-set gold
+            # answer text; without gold there is nothing to grade against
+            # (references alone are not enough — this axis is not about
+            # citation set overlap). Unscorable, not a failure.
+            verdicts[axis] = {
+                "judge_error": "no_gold_answer",
+                "grounding_status": "unscorable",
+                "_samples_n": 0,
+            }
         else:
             verdicts[axis] = _judge_axis(axis, r, caller, k, retries)
     return {"id": r["id"], "category": r["category"], "verdicts": verdicts}
@@ -1094,14 +1238,24 @@ def _aggregate(judged: list[dict[str, Any]]) -> dict[str, Any]:
     agg: dict[str, Any] = {}
     global_substantiated = 0.0
     global_unsubstantiated = 0
-    for axis in AXES:
+    # R359 — aggregate every axis present in the rows, not only the default
+    # ``AXES``. ``answer_crag_fine`` is opt-in (direct ``_judge_axis``
+    # dispatch) so it never appears in standard 4-axis runs, but when a run
+    # DOES carry it the aggregate must surface its truthfulness — silently
+    # dropping it would make a CRAG run unreadable at the scorecard level.
+    _axes = list(AXES) + [
+        ax for ax in (set().union(*(set(r.get("verdicts") or {}) for r in judged)) if judged else set())
+        if ax not in AXES
+    ]
+    for axis in _axes:
         n = len(judged)
         p = f = e = 0
         modes: dict[str, int] = {}
         gov_total = sup_total = wrong_total = missing_total = 0
         prec_focus: list[float] = []; prec_sound: list[float] = []; rec: list[float] = []
         fact: list[float] = []
-        omission_rows = fabrication_rows = unsupported_rows = 0
+        crag_scores: list[float] = []
+        omission_rows = fabrication_rows = unsupported_rows = hallucinated_rows = 0
         agreements: list[float] = []
         for row in judged:
             v = (row.get("verdicts") or {}).get(axis) or {}
@@ -1146,6 +1300,15 @@ def _aggregate(judged: list[dict[str, Any]]) -> dict[str, Any]:
                 if v.get("unsupported_present"):
                     unsupported_rows += 1
                 global_substantiated += _num(v.get("contradicted"))
+            if axis == "answer_crag_fine":
+                # Truthfulness = sum of per-row CRAG scores (the paper's
+                # headline metric: accurate answers minus hallucinated ones),
+                # plus a hallucination count so a run reports how many rows
+                # shipped a MIXED (-0.5) or WRONG (-1.0) claim.
+                if v.get("crag_score") is not None:
+                    crag_scores.append(_num(v["crag_score"]))
+                if v.get("hallucinated_claims"):
+                    hallucinated_rows += 1
         entry: dict[str, Any] = {
             "n": n, "pass": p, "fail": f, "error": e,
             "pass_rate_raw": round(p / n, 4) if n else 0.0,
@@ -1171,6 +1334,11 @@ def _aggregate(judged: list[dict[str, Any]]) -> dict[str, Any]:
             entry["omission_rows"] = omission_rows
             entry["fabrication_rows"] = fabrication_rows
             entry["unsupported_rows"] = unsupported_rows
+        if axis == "answer_crag_fine":
+            if crag_scores:
+                entry["truthfulness"] = round(sum(crag_scores), 4)
+                entry["mean_crag_score"] = round(sum(crag_scores) / len(crag_scores), 4)
+            entry["hallucinated_rows"] = hallucinated_rows
         agg[axis] = entry
 
     total_claims = global_substantiated + global_unsubstantiated
