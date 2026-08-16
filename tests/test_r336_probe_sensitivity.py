@@ -125,7 +125,7 @@ def test_sensitivity_check_reports_sensitive_when_control_moves_the_rows(monkeyp
 
 
 def _run_gate(monkeypatch, *, control_moves: bool):
-    monkeypatch.setattr(D, "load_probe_set", lambda: _rows(4))
+    monkeypatch.setattr(D, "load_probe_set", lambda **kw: _rows(4))
     _stub_run_rows(monkeypatch, control_moves=control_moves)
     return D.run(
         branch_env={"REGENOLD_ENTITY_BOOST": "0"}, label="unit",

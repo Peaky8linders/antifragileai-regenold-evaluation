@@ -87,6 +87,7 @@ __all__ = [
     "rerank_kg_hops",
     "rerank_stats",
     "reset_rerank_stats",
+    "stabilize_anchor_tier",
 ]
 
 #: R347 — hybrid-RAG candidate supplementation: the parse-level rerank may
@@ -588,3 +589,39 @@ def rerank_references(
     order, any failure returns the input unchanged).
     """
     return rerank_pool(question, references, text_for=text_for)[0]
+
+
+def stabilize_anchor_tier(
+    ordered: Sequence[str],
+    anchors: Sequence[str],
+) -> list[str]:
+    """R351 — restore the R347 superset guarantee at the CUT, not just the pool.
+
+    ``rerank_pool`` is a permutation, so the KG-expanded pool (anchors +
+    neighbours) is a true superset of the keyword entities — but the citation
+    budget downstream cuts from the *reordered* entity order, and a
+    cross-encoder can score a KG neighbour above a gold anchor, pushing the
+    anchor out of the budget. The live R350 A/B (84 rows, graphrag + medtech +
+    expert-review) measured exactly this: 5 rows lost gold heads (25 -> 27,
+    hard-rule-#8 veto) where the displaced ref was a KG neighbour (Annex XI,
+    Art. 49.2, Art. 25, Art. 47, Art. 17, Annex V) that had out-ranked a gold
+    anchor (Art. 51.2, Annex III, Art. 9, Annex VI/VII).
+
+    This function makes supplementation strictly ADDITIVE at the cut: every
+    anchor precedes every neighbour, so a neighbour can only fill a slot the
+    anchors did not take — it can never displace one. Rerank order is
+    preserved WITHIN each tier, so the cross-encoder's ranking signal is not
+    thrown away. Deterministic, idempotent, never raises, and a no-op when
+    the input already satisfies the invariant or contains no anchors.
+    """
+    try:
+        anchor_set = set(str(a) for a in anchors)
+        if not anchor_set:
+            return list(ordered)
+        anchored: list[str] = []
+        supplements: list[str] = []
+        for r in ordered:
+            (anchored if str(r) in anchor_set else supplements).append(r)
+        return anchored + supplements
+    except Exception:  # noqa: BLE001 — a stability failure must never change the cut
+        return list(ordered)

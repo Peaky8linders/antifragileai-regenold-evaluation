@@ -553,8 +553,19 @@ correct only for exactly as long as that remains true.
   edge reason (``cross_refs_with_reason`` — the KG's semantic layer) plus a
   ``REGENOLD_RERANK_KG_HOPS=2`` depth option with a 2:1 budget split. Superset
   + dedup + cap + ok-bit adoption: gate-off is byte-identical to R340.
-  Unmeasured — the A/B (rerank × KG-candidates [× hops]) is the open
-  measurement.
+* **R350 measured the full stack (rerank × KG-candidates × expansion) LIVE on
+  84 rows (graphrag + medtech + expert-review): FIRED 57/84, retrieval axes
+  ~flat (UNDERPOWERED), judge axes UNDERPOWERED (throttle), but HARD RULE #8
+  VETO — gold_dropped_head 25 → 27.** R351 found and fixed the mechanism: the
+  KG-expanded pool is a superset, but the citation budget cut downstream from
+  the REORDERED entities lets a KG neighbour displace a gold anchor (measured
+  on all 5 dropped rows: Annex XI / Art. 49.2 / Art. 25 / Art. 47 / Art. 17 /
+  Annex V out-ranking Art. 51.2 / Annex III / Art. 9 / Annex VI-VII).
+  ``stabilize_anchor_tier`` restores the superset guarantee AT THE CUT: every
+  keyword anchor precedes every neighbour (rerank order preserved within each
+  tier), so KG supplementation can only ADD citations, never remove a gold
+  anchor. Re-measurement is the open question — the R350.2 live batch on the
+  81-row live-answers probe is the next A/B.
 * ⚠ **R338's "−5 expert-mistake regression" (q03/q04/q14) is RETRACTED** — it was
   measured while Stage-2 was dead (the argv ceiling). With Stage-2 restored the
   same resolver gives **34/38**, above the R318 baseline's 33/38. Do not quote
@@ -1253,40 +1264,48 @@ attributed, not Omnibus — and `tests/test_kb_stubs_filled.py` pins it.
 
 Full handoff: [`.planning/NEXT-SESSION.md`](.planning/NEXT-SESSION.md).
 
-1. **Resolve the query-expansion A/B on the frontier paraphrase tier** (R346.2
+1. **Re-measure the full optimised stack after R351's anchor-tier fix** — R350
+   measured rerank × KG-candidates × expansion on 84 rows (graphrag + medtech
+   + expert-review): FIRED 57/84, retrieval axes ~flat, judge axes
+   UNDERPOWERED, and the hard-rule-#8 veto (gold 25→27, all 5 drops were KG
+   neighbours displacing gold anchors). R351 fixes the displacement
+   (``stabilize_anchor_tier`` — anchors always precede neighbours at the
+   cut). The R350.2 live batch on the 81-row live-answers probe decides
+   whether the stack clears the veto. The gold veto is the gate.
+2. **Resolve the query-expansion A/B on the frontier paraphrase tier** (R346.2
    made the lever Haiku-free; the confirmatory live run was interrupted).
    Directionally positive on the Haiku tier (ref_loose +0.039, kw_recall
    +0.029, gold 17→14, flat latency) but UNDERPOWERED at n=60 — run the full
    probe (`--max-rows 137`) or the moved-row subset to converge the CI. The
    gold veto is the gate.
-2. **Ground the R346 sidecars with `evals.judge.grounded`** (`claude-sonnet-4-6`
+3. **Ground the R346 sidecars with `evals.judge.grounded`** (`claude-sonnet-4-6`
    via Bedrock — the frontier judge the operator specified) so the retrieval
    levers get a quality verdict beyond the heuristic axes. Verify
    sidecar-format compatibility with `grounded.py` first.
-3. **Run `--mode hard`.** It is **the graded turn** (the adversarial pushback;
+4. **Run `--mode hard`.** It is **the graded turn** (the adversarial pushback;
    67 of 111 hard rows carry it) and it has NEVER been run. Every optimisation
    decision on the table is being made on the *easy* turn — that is the
    instrument trap. Free, ~40-70 min.
-4. **Record the PRIMARY provider's failure in the reasoning trace.** Only the
+5. **Record the PRIMARY provider's failure in the reasoning trace.** Only the
    fallback's outcome is written today (`groq_auto_fallback_success` /
    `groq_fallback_failed`), so a reader sees Groq succeeding and cannot tell
    Claude was never reached — that is what turned R339's total Stage-2 outage
    into a multi-hour diagnosis. One `record_note` in the `groq_auto_fallback`
    branch (`_graph_rag_impl.py` ~:880). Highest-value single change outstanding.
-5. **Gate the parent-collapse** with `easyhard_ab` (davidath cannot see it).
+6. **Gate the parent-collapse** with `easyhard_ab` (davidath cannot see it).
    +0.018 F1 / +5 rows offline; one gold ref is the price. R339's judge adds
    independent evidence on sub-point-carrying gold: q12 fails reference
    correctness for citing a parent alongside its own sub-provision.
-6. **Attack GENERATION, not selection.** R325 closed the ranker, so the
+7. **Attack GENERATION, not selection.** R325 closed the ranker, so the
    remaining ~90% of the over-citation gap is upstream: why does a 3-ref answer
    name a wrong provision **53% of the time at rank 3**? The refs-per-row cliff
    is the shape of it — 1 ref → 0.88 pass, 2 → 0.54, **3 → 0.05**, 4+ → 0.06,
    with 41 of 100 rows sitting at exactly 3 (the QA budget). R327's constrained
    sub-provision layer is the first instrument aimed here.
-7. **`CROSS_REFERENCES` backlinks as non-citable context** — 248 edges, never
+8. **`CROSS_REFERENCES` backlinks as non-citable context** — 248 edges, never
    read as context, real legal signal. The best unshipped graph idea; needs its
    own gate, and prompt budget competes with Answer-Conciseness.
-8. **Fix the judge** before trusting any further answer number — the length
+9. **Fix the judge** before trusting any further answer number — the length
    artefact above. `evals/judge/legal_v2.py` already implements the
    quote-or-retract rule that catches it. ⚠ It also carries three defects of its
    own, all from the unreviewed commits and all still open: the
@@ -1294,10 +1313,10 @@ Full handoff: [`.planning/NEXT-SESSION.md`](.planning/NEXT-SESSION.md).
    guard together — fixing one leaves the axis running), the head-lax
    `provision_exists` ghost-citation gate at `:660`, and the ungated conciseness
    prompt loosening at `:488-514`. **Fix these before nominating it.**
-9. **Watch conciseness** — answers are **+41% longer** than the graded July-7
-   ones, on the one axis the official scorecard says we lead. Any bound must be
-   SENTENCE-only (hard rule #2).
-10. **Run the owed gate on `REGENOLD_ONTOLOGY_RISK_DOCS`** — *ranks with #3*.
+10. **Watch conciseness** — answers are **+41% longer** than the graded July-7
+    ones, on the one axis the official scorecard says we lead. Any bound must be
+    SENTENCE-only (hard rule #2).
+11. **Run the owed gate on `REGENOLD_ONTOLOGY_RISK_DOCS`** — *ranks with #3*.
     `py -3.12 -m evals.harness.dynamic_ab --branch-env REGENOLD_ONTOLOGY_RISK_DOCS=0`
     against a **gold-carrying** set (July-7 has `gold_coverage=0.0`, so hard rule
     #8 cannot be read off it). This is a default-ON, live-shipping retrieval
@@ -1306,7 +1325,7 @@ Full handoff: [`.planning/NEXT-SESSION.md`](.planning/NEXT-SESSION.md).
     exact A/B, so the instrument is ready. **Do not just flip the default OFF** —
     that is an equally unmeasured change in the other direction and it de-aligns
     the committed TurboQuant assets, which were rebuilt for the 373-doc corpus.
-11. **`ab_judge`'s new swap-consistency metric counts judge ERRORS as
+12. **`ab_judge`'s new swap-consistency metric counts judge ERRORS as
     agreement** — `_judge_one` collapses every transport/parse failure into the
     same `"tie"` a real tie uses, so each errored pair simultaneously pushes
     `swap_consistency_rate` toward 1.0 and `effective_win_rate_b` toward 0.5:

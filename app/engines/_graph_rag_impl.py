@@ -2604,6 +2604,7 @@ def _deterministic_parse(question: str) -> GraphQuery:
                 rerank_kg_hops,
                 rerank_pool,
                 rerank_query_context,
+                stabilize_anchor_tier,
             )
             if rerank_enabled():
                 # R347/R348 — hybrid-RAG pool: rank the keyword entities
@@ -2646,7 +2647,20 @@ def _deterministic_parse(question: str) -> GraphQuery:
                     question, pool, query_context=ctx, doc_reasons=doc_reasons
                 )
                 if ok:
-                    entities = reranked
+                    if pool is not entities:
+                        # R351 — the R347 superset guarantee must hold at the
+                        # CITATION CUT, not just at the pool. The cross-encoder
+                        # can score a KG neighbour above a gold anchor; without
+                        # this, the budget cut downstream lets the neighbour
+                        # DISPLACE the anchor (measured: R350 live A/B dropped
+                        # 5 gold heads 25 -> 27). Anchor-tier stabilization
+                        # keeps every keyword entity ahead of every neighbour
+                        # (rerank order preserved within each tier), so KG
+                        # supplementation can only ADD citations, never remove
+                        # a gold anchor. No-op when the pool was never expanded.
+                        entities = stabilize_anchor_tier(reranked, entities)
+                    else:
+                        entities = reranked
         except Exception as exc:  # noqa: BLE001 — a rerank outage must never break parse
             logger.debug("cohere_rerank: parse-level entity rerank skipped: %s", exc)
 
