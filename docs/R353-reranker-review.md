@@ -138,4 +138,47 @@ against the question and can demote it on a misfire). That division of
 labour is the design the R352 computation validates.
 
 **Scripts:** `scratch/verify_r352.py` (R352 replication), `scratch/verify_r352_final.py`
-(trigger fit + exact impact), both reproducible, neither needs network.
+(trigger fit + exact impact), `scratch/r352_true_gaps.py` (the R353.1 gap
+analysis), all reproducible, none needs network.
+
+## 6. R353.1 — the TRUE retrieval gaps, with honest head normalisation
+
+Review finding #3 made concrete: `parse_entity_head(s)` (NEW — `evals/bench/
+metrics.py`) canonicalises BOTH the engine's short-form `Art. N` and the wire
+long-form `Article N`, so parse-vs-gold comparisons stop reporting the
+`Art.`/`Article` form difference as a false gap (`article_head` stays strict
+per R327). Re-run of the R352-style missing-ref analysis over the 297-row
+pool with the honest normaliser (`scratch/r352_true_gaps.py`):
+
+| gold head | rows where gold-but-not-anchored | reachable via KG pool |
+|---|---|---|
+| `Article 6` | **31** | 0 |
+| `Annex III` | **26** | 15 |
+| `Article 50` | **18** | 0 |
+| `Article 5` | **15** | 0 |
+| `Annex I` | **12** | 4 |
+| `Article 55` | **10** | 0 |
+| `Article 43` | **9** | 0 |
+| `Article 51` | **9** | 0 |
+| `Annex IV` | **8** | 6 |
+
+Shapes: `Art. 50` on chatbot/interaction questions (the R353 gain rows still
+miss it — R353 closes 1 of their 3 gold heads); `Art. 5` on biometric-
+categorisation shapes; `Art. 55` on FLOPs/systemic-risk (incl. a likely
+`systemic-risk` hyphen-normalisation miss); `Art. 43` on conformity questions.
+R352's refutation covers ADDING Art. 6 on the is/are/does-classification
+trigger only — the 31 rows here are OTHER shapes ("what risk level applies",
+"does the EU AI Act impose"), and any candidate trigger owes the same exact
+gold-impact computation (R352 §5) before code.
+
+## 7. Judge-bias caveat (pre-R350 numbers)
+
+Any judge-axis number (ref_corr / cite_faith / ans_corr / ans_conc) measured
+BEFORE the R350 harness fix is biased: the pre-R350 filter tested the verdict
+STRING only, so a branch-arm HTTP timeout — which `legal_v2` returns as a real
+`{"verdict": "fail", "evaluation_error": "empty_answer"}` — scored as the
+branch LOSING the axis, and errored rows could masquerade as passes in the
+fire check. Numbers from R346 and earlier on the judge axes are not comparable
+to post-R350 numbers; quote them only with the caveat, or re-run. The
+R353/R353.1 measurements use the post-R350 harness with the error-aware
+`_scorable` filter.

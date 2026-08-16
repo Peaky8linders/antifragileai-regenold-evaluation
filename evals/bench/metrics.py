@@ -273,6 +273,56 @@ def article_heads(refs: Iterable[str]) -> set[str]:
     return out
 
 
+# R353.1 — the analysis-side normaliser for ENGINE parse entities.
+# ``article_head`` is deliberately strict: it only accepts the WIRE long-form
+# (``Article 13``), because the scoring paths feed it already-canonicalised
+# wire references and a formula change under the same name would violate the
+# R327 "change the formula, change its NAME" rule. But the ENGINE's
+# ``_deterministic_parse`` emits short-form ``Art. N`` entities, so any
+# analysis that compares parse entities against gold (the R352-style
+# missing-ref scans) silently reports EVERY article as "missing" — the
+# ``Art.``/``Article`` form difference is a false gap. These helpers are the
+# R353 review finding #3, made concrete.
+_SHORT_ARTICLE_HEAD_RE = re.compile(r"^(?:Art\.?|Article)\s+(\d+)(?:\..*)?$", re.IGNORECASE)
+
+
+def parse_entity_head(ref: str) -> str | None:
+    """Canonical head for BOTH the engine's parse entities (``Art. 5``,
+    ``Art 5``) and wire long-form (``Article 5``).
+
+    Analysis-scope ONLY: use :func:`article_head` where the input is already
+    known to be wire-shaped. Returns ``None`` for anything that is not an
+    article/annex coordinate (never guesses).
+    """
+    if not isinstance(ref, str):
+        return None
+    m = _SHORT_ARTICLE_HEAD_RE.match(ref.strip())
+    if m:
+        return f"Article {int(m.group(1))}"
+    m = _ANNEX_HEAD_RE.match(ref.strip())
+    if m:
+        return f"Annex {m.group(1).upper()}"
+    m = re.match(r"^Annex\s+([ivxlc]+)(?:\..*)?$", ref.strip(), re.IGNORECASE)
+    if m:
+        return f"Annex {m.group(1).upper()}"
+    return None
+
+
+def parse_entity_heads(refs: Iterable[str]) -> set[str]:
+    """Unique canonical heads for a mixed list of engine entities + gold refs.
+
+    The helper the R353 review's finding #3 asks for: compares apples to
+    apples when an analysis joins ``GraphQuery.entities`` (short-form) with
+    probe gold (long-form).
+    """
+    out: set[str] = set()
+    for r in refs or ():
+        h = parse_entity_head(r)
+        if h is not None:
+            out.add(h)
+    return out
+
+
 def _canonical_ref(ref: Any, *, predicted: bool) -> str | None:
     """Return a real, canonical full EU AI Act coordinate or ``None``.
 
