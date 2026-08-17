@@ -7,7 +7,7 @@ WHAT WAS ACTUALLY WRONG
 =======================
 
 The graph was never broken — it was BYPASSED. Measured this round against the
-live instance (``151d4e69``, seed ``2026-07-24-r291-fullseed``, kb_version
+live instance (``0644b854``, seed ``2026-07-24-r291-fullseed``, kb_version
 ``2024.1689.v18``):
 
     Article 113   Annex 13   Paragraph 656   Point 416   Recital 180
