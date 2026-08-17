@@ -110,9 +110,23 @@ REGENOLD_GRAPH_2HOP_FULL_CAP = "1"
 # code. NOTE: Railway dashboard service variables override this [deploy.envs]
 # block (the R80.2 phenomenon) — verify the dashboard does not pin
 # P2P_GRAPH_RAG_PROVIDER / REGENOLD_INTENT_PROVIDER to stale values.
+# R370 — Stage-2 provider. Default stays ``openai_wrapper`` (the Claude Max
+# tunnel). Flip to ``openrouter`` for the tunnel-free Stage-2 path: lower
+# latency (no tunnel hop) + per-token model choice via OpenRouter
+# (https://openrouter.ai/api/v1). OPENROUTER_API_KEY is a dashboard secret.
+#   * Standard Stage-2 model:  REGENOLD_STAGE2_MODEL_OPENROUTER
+#     (default anthropic/claude-sonnet-4.6)
+#   * Complex-tier model:      REGENOLD_STAGE2_COMPLEX_MODEL_OPENROUTER
+#     (default anthropic/claude-opus-4.6)
+#   * Routing mode:            REGENOLD_OPENROUTER_ROUTING = balanced | nitro | exacto
+#     (balanced = price+speed default; nitro = throughput-first latency lever;
+#     exacto = quality/tool-calling-first — irrelevant here, Stage-2 calls no tools)
+#   * Rollover chain:          REGENOLD_OPENROUTER_FALLBACK_CHAIN
+#     (default qwen/qwen3-235b-a22b-2507,deepseek/deepseek-chat-v3.1)
+#   * Timeout:                 OPENROUTER_TIMEOUT_SECONDS (default 60)
 P2P_GRAPH_RAG_PROVIDER = "openai_wrapper"
-# Stage-2 polish + reasoning ALWAYS on (the Claude Max tunnel). The code default
-# is already ON (R80.2); pinned here explicitly per the operator directive.
+# Stage-2 polish + reasoning ALWAYS on. The code default is already ON (R80.2);
+# pinned here explicitly per the operator directive.
 P2P_GRAPH_RAG_ENABLE_STAGE2 = "1"
 # R146 — Stage-2 fidelity guard (the intelligent Stage-1/Stage-2 combine). The
 # deterministic Stage-1 draft is the CONTENT source of truth. The guard acts

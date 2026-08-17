@@ -1850,6 +1850,17 @@ def _engine_cache_key(
             "REGENOLD_BEDROCK_FALLBACK_CHAIN",
             "BEDROCK_DEFAULT_MODEL",
             "BEDROCK_REGION",
+            # R370 — the OpenRouter Stage-2 knobs: which model serves (standard
+            # vs complex) flips the polished answer, the routing mode
+            # (Balanced/Nitro/Exacto) flips WHICH provider serves the model
+            # (→ different prose/latency), and the rollover chain decides the
+            # fallback tier. Same R30/R56/R79/R263.2 doctrine as the Bedrock /
+            # Groq model knobs above — unkeyed, an in-process A/B serves the
+            # other arm's cached GraphRAGResponse and measures nothing.
+            "REGENOLD_STAGE2_MODEL_OPENROUTER",
+            "REGENOLD_STAGE2_COMPLEX_MODEL_OPENROUTER",
+            "REGENOLD_OPENROUTER_ROUTING",
+            "REGENOLD_OPENROUTER_FALLBACK_CHAIN",
             # R328.2 — this gates whether Stage-2 LANDS AT ALL (a rejected
             # verdict falls back to deterministic Stage-1), so it changes both
             # the answer and the references. It was missing from this list while
@@ -10109,7 +10120,8 @@ def regenold_eu_ai_act_ask(
     # names Annex I twice) while the raw retrieval candidates that shipped
     # omit it (and can carry a cited-but-undescribed ref like Article 43).
     # Stage-2-gating meant the deterministic path shipped this inconsistency
-    # unfixed. ``REGENOLD_DETERMINISTIC_PROSE_CONSISTENCY`` (default OFF)
+    # unfixed. ``REGENOLD_DETERMINISTIC_PROSE_CONSISTENCY`` (default ON since
+    # R354 — the env read defaults to "1")
     # extends this pass to the deterministic path; the add is strictly
     # existence-gated + cross-instrument-guarded + capped (it cannot invent,
     # and a deterministic answer is still a real answer whose prose must be
