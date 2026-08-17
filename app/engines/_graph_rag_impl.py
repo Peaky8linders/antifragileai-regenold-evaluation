@@ -723,6 +723,25 @@ def _bedrock_complete_for_graph_rag(
                     "graph_rag.bedrock_fallback_chain_served primary=%s served_by=%s",
                     model_id, _mid,
                 )
+            # F4/F5 — Stage-2 model provenance in the reasoning trace. The
+            # wrapper and OpenRouter paths already record ``stage2_model=``;
+            # this was the one Stage-2 provider that did NOT, so a R366.1
+            # chain rollover (primary 429/truncated → qwen3-235b / nemotron /
+            # devstral / qwen3-32b) was invisible to every consumer of the
+            # trace and the sidecar ``stage2_models`` harvest. Record the
+            # SERVED model (``_mid``), not the requested primary, so a rollover
+            # is audible; a fully-failed chain records nothing (deterministic
+            # fallback is not an LLM-served answer).
+            try:
+                from app.integrations.regenold.reasoning_trace import (  # noqa: PLC0415
+                    record_note as _rn,
+                )
+                _rn(
+                    f"stage2_model={_mid} complex={complex_question} "
+                    f"provider=bedrock"
+                )
+            except Exception:  # noqa: BLE001 — trace is best-effort
+                pass
             return resp.text
         logger.warning("graph_rag.bedrock_call_failed (chain exhausted): %s", last_error)
         return None
@@ -1107,6 +1126,189 @@ def _openai_wrapper_complete_for_graph_rag(
     return response.text
 
 
+# ─── R370 — OpenRouter Stage-2 path (tunnel-free, per-token models) ───────────
+#
+# Replaces the Cloudflare-tunnel Claude-Max wrapper for Stage-2 synthesis when
+# ``P2P_GRAPH_RAG_PROVIDER=openrouter``: lower latency (no tunnel hop) and
+# per-token model choice. OpenRouter is OpenAI-spec, so the generic
+# ``_OpenAIWrapperProvider`` drives it. The internal rollover chain mirrors the
+# R366.1 Bedrock chain (primary → qwen3-235b → deepseek-chat), and the routing
+# mode (Balanced / Nitro / Exacto) maps to a ``:nitro`` / ``:exacto`` model
+# suffix. All knobs are fresh env reads (R263.2) and keyed in
+# ``_engine_cache_key``.
+
+_OPENROUTER_STAGE2_MODEL_DEFAULT = "anthropic/claude-sonnet-4.6"
+_OPENROUTER_COMPLEX_MODEL_DEFAULT = "anthropic/claude-opus-4.6"
+_OPENROUTER_FALLBACK_CHAIN_DEFAULT = (
+    "qwen/qwen3-235b-a22b-2507,deepseek/deepseek-chat-v3.1"
+)
+
+
+def _openrouter_routing_suffix() -> str:
+    """Routing-mode suffix for OpenRouter model names.
+
+    OpenRouter sorts providers per request: no suffix = Balanced
+    (price + speed — the default), ``:nitro`` = throughput-first (the latency
+    lever), ``:exacto`` = quality/tool-calling-first. Stage-2 legal synthesis
+    calls no tools, so Exacto's tool-call axis is irrelevant here; Balanced is
+    the default and ``REGENOLD_OPENROUTER_ROUTING=nitro`` is the documented
+    latency lever. Fresh env read per call (R263.2).
+    """
+    mode = os.getenv("REGENOLD_OPENROUTER_ROUTING", "").strip().lower()
+    if mode == "nitro":
+        return ":nitro"
+    if mode == "exacto":
+        return ":exacto"
+    return ""
+
+
+def _openrouter_model(complex_question: bool) -> str:
+    """Resolve the Stage-2 OpenRouter model (fresh env read per call).
+
+    Standard Stage-2 → ``REGENOLD_STAGE2_MODEL_OPENROUTER`` (default
+    ``anthropic/claude-sonnet-4.6``); complex →
+    ``REGENOLD_STAGE2_COMPLEX_MODEL_OPENROUTER`` (default
+    ``anthropic/claude-opus-4.6``), falling back to the standard model when
+    the complex knob is unset. The routing suffix is appended per
+    ``REGENOLD_OPENROUTER_ROUTING``.
+    """
+    standard = os.getenv("REGENOLD_STAGE2_MODEL_OPENROUTER", "").strip()
+    complex_model = os.getenv(
+        "REGENOLD_STAGE2_COMPLEX_MODEL_OPENROUTER", ""
+    ).strip()
+    # Mirrors the wrapper path's tier fallback: complex → complex_env or
+    # standard_env or the complex default; standard → standard_env or the
+    # standard default.
+    if complex_question:
+        model = complex_model or standard or _OPENROUTER_COMPLEX_MODEL_DEFAULT
+    else:
+        model = standard or _OPENROUTER_STAGE2_MODEL_DEFAULT
+    return model + _openrouter_routing_suffix()
+
+
+def _openrouter_complete_for_graph_rag(
+    *, system: str, user: str, max_tokens: int, temperature: float,
+    complex_question: bool = False, stage_name: str = "Stage",
+) -> str | None:
+    """One OpenRouter Chat Completions call for Stage-2 synthesis.
+
+    R370 — the tunnel-free Stage-2 path. Routes through
+    ``get_openrouter_provider()`` with a per-call model resolution and an
+    internal rollover chain (mirror of the R366.1 Bedrock chain) so a
+    throttled primary serves from the next healthy model instead of dropping
+    the row. Returns ``None`` on ANY failure so callers fall back to
+    deterministic. Never raises.
+
+    The full system prompt is passed through unchanged: OpenRouter providers
+    have no Claude-Code-CLI argv ceiling, so the R342 wrapper cap does not
+    apply here.
+    """
+    try:
+        from app.llm.openai_wrapper_provider import (  # noqa: PLC0415
+            OpenAIWrapperRequest,
+            get_openrouter_provider,
+            is_openrouter_provider_enabled,
+        )
+    except Exception:  # noqa: BLE001 — provider layer must never break Stage-2
+        return None
+    if not is_openrouter_provider_enabled():
+        return None
+
+    model = _openrouter_model(complex_question)
+    try:
+        chain_env = os.getenv("REGENOLD_OPENROUTER_FALLBACK_CHAIN", "").strip()
+        if chain_env:
+            chain = [m.strip() for m in chain_env.split(",") if m.strip()]
+        else:
+            chain = [
+                m + _openrouter_routing_suffix()
+                for m in _OPENROUTER_FALLBACK_CHAIN_DEFAULT.split(",")
+            ]
+    except Exception:  # noqa: BLE001 — a broken chain must not break the call
+        chain = []
+    ordered: list[str] = []
+    for _cand in (model, *chain):
+        if _cand and _cand not in ordered:
+            ordered.append(_cand)
+
+    try:
+        from app.integrations.regenold.reasoning_trace import record_note as _rn  # noqa: PLC0415
+        try:
+            _rn(
+                f"stage2_model={model} provider=openrouter complex={complex_question}"
+            )
+        except Exception:  # noqa: BLE001 — trace is best-effort
+            pass
+    except Exception:  # noqa: BLE001
+        pass
+
+    _verdict_guard = (
+        os.getenv("REGENOLD_STAGE2_VERDICT_GUARD", "1").strip().lower()
+        in ("1", "true", "yes", "on")
+    )
+    try:
+        provider = get_openrouter_provider()
+    except Exception as exc:  # noqa: BLE001 — provider init must never break Stage-2
+        logger.warning("graph_rag.openrouter_provider_init_failed: %s", exc)
+        return None
+    last_error = ""
+    for _idx, _mid in enumerate(ordered):
+        try:
+            resp = provider.complete(
+                OpenAIWrapperRequest(
+                    system=system,
+                    user=user,
+                    model=_mid,
+                    max_tokens=max_tokens or 1024,
+                    temperature=temperature,
+                )
+            )
+        except Exception as exc:  # noqa: BLE001 — fail-soft contract
+            last_error = str(exc)[:200]
+            if _idx < len(ordered) - 1:
+                logger.warning(
+                    "graph_rag.openrouter_model_rolled primary=%s tried=%s error=%s",
+                    model, _mid, last_error[:120],
+                )
+            continue
+        if resp.error or not resp.text:
+            last_error = str(resp.error or "empty")
+            if _idx < len(ordered) - 1:
+                logger.warning(
+                    "graph_rag.openrouter_model_rolled primary=%s tried=%s error=%s",
+                    model, _mid, last_error[:120],
+                )
+            continue
+        # R91 — finish_reason=length means the model hit max_tokens before
+        # naturally stopping; the text is partial. Soft-fail → next tier.
+        if getattr(resp, "finish_reason", None) == "length":
+            last_error = "finish_reason=length"
+            logger.warning(
+                "graph_rag.openrouter_truncated_length tried=%s — rolling to next",
+                _mid,
+            )
+            continue
+        # R102/R142 — structural + verdict truncation guards, mirroring the
+        # wrapper path (the verdict guard is env-gated the same way).
+        if _looks_structurally_truncated(resp.text) or (
+            _verdict_guard and _looks_incomplete_verdict(resp.text)
+        ):
+            last_error = "structural_truncation"
+            logger.warning(
+                "graph_rag.openrouter_truncated_structural tried=%s — rolling to next",
+                _mid,
+            )
+            continue
+        if _mid != model:
+            logger.warning(
+                "graph_rag.openrouter_fallback_chain_served primary=%s served_by=%s",
+                model, _mid,
+            )
+        return resp.text
+    logger.warning("graph_rag.openrouter_call_failed (chain exhausted): %s", last_error)
+    return None
+
+
 def _stage2_complete(
     *, system: str, user: str, max_tokens: int, temperature: float = 0.0,
     complex_question: bool = False, stage_name: str = "Stage",
@@ -1161,6 +1363,16 @@ def _stage2_complete(
             return None
         if env_provider == "bedrock":
             return _bedrock_complete_for_graph_rag(
+                system=system, user=user, max_tokens=max_tokens,
+                temperature=temperature, complex_question=complex_question,
+                stage_name=stage_name,
+            )
+        if env_provider == "openrouter":
+            # R370 — the tunnel-free Stage-2 path. Falls back to None (→
+            # deterministic) when OpenRouter is unkeyed/unhealthy; no
+            # cross-provider hop (same doctrine as the R366 live-model-test
+            # arms staying on their own transport).
+            return _openrouter_complete_for_graph_rag(
                 system=system, user=user, max_tokens=max_tokens,
                 temperature=temperature, complex_question=complex_question,
                 stage_name=stage_name,
@@ -7693,6 +7905,124 @@ def _context_article_refs(context: GraphContext | None) -> list[str]:
     return out
 
 
+# ─── R329 P3a — the explicit CITABLE UNIVERSE block ──────────────────────────
+#
+# RESTORED (R370) — R364.5 (b07afa4) deleted these three functions and their
+# call site while stripping the query-expansion guard; the block is the
+# Stage-2 prompt's explicit permission set ("CITABLE PROVISIONS — the ONLY
+# values that may appear in a citation"), documented default-ON in CLAUDE.md,
+# and 30 tests in tests/test_r329_citable_universe.py guarded it. The flag
+# REGENOLD_CITABLE_UNIVERSE_BLOCK stayed registered in _engine_cache_key, so
+# the A/B fire check passed for a feature that no longer emitted anything
+# (the R350 keyed-but-dead trap). Restored verbatim from b07afa4~1.
+#
+# DEFAULT ON as of 2026-08-13 (operator decision, UNGATED). Railway's
+# ``[deploy.envs]`` has never applied, so a default-OFF flag never reaches the
+# deployment at all — a code default is the only delivery mechanism. Off-switch
+# ``REGENOLD_CITABLE_UNIVERSE_BLOCK=0``; the env is read FRESH per call (the
+# R263.2 doctrine) so an in-process two-arm A/B is still valid.
+#
+# ⚠ ENGINE-LEVEL FLAG. It changes the Stage-2 input, so it MUST be registered in
+# ``_engine_cache_key``'s env tuple (app/routes/regenold.py) before any
+# in-process A/B is run — otherwise arm B is served arm A's ``_ENGINE_CACHE``
+# entry and the A/B measures nothing (the R326/R327 inert-A/B trap). Check the
+# branch arm's latency as the cheapest detector.
+
+#: The slices :func:`_build_context_references_block` renders in the
+#: unpartitioned (production-default) path. Mirrored here so the citable list is
+#: a subset of what the model can actually read.
+_CITABLE_OBLIGATIONS_RENDER_CAP = 20
+_CITABLE_ARTICLE_INFO_RENDER_CAP = 15
+
+_CITABLE_ANNEX_RE = re.compile(r"\bAnnex\s+([IVXLCDM]+)\b", re.IGNORECASE)
+_CITABLE_ARTICLE_RE = re.compile(r"\b(?:Art\.?|Articles?)\s*(\d{1,3})\b", re.IGNORECASE)
+
+
+def _citable_universe_enabled() -> bool:
+    """R329 P3a — emit the explicit CITABLE PROVISIONS list? Default **ON**.
+
+    Off-switch: ``REGENOLD_CITABLE_UNIVERSE_BLOCK=0``.
+
+    Uses the negative form rather than ``_env_enabled`` deliberately: that helper
+    matches POSITIVELY, so with a ``"1"`` default any unrecognised value ("yep",
+    "") would silently read as OFF. Every other default-ON engine flag in this
+    repo (``REGENOLD_KG_CONTEXT``, ``REGENOLD_SUBPARAGRAPH_ATTRIBUTION``) uses
+    the negative form, where only an explicit off-value disables. One concept,
+    one definition.
+    """
+    return os.getenv("REGENOLD_CITABLE_UNIVERSE_BLOCK", "1").strip().lower() not in (
+        "0",
+        "false",
+        "no",
+        "off",
+    )
+
+
+def _citable_universe_refs(context: GraphContext | None) -> list[str]:
+    """The provisions the engine actually retrieved, in wire-citation form.
+
+    Returns head-level strings — ``Article N`` (Arabic) / ``Annex R`` (Roman,
+    uppercase), per hard rule #1; never ``Art. N`` and never ``Annex 3``.
+
+    Sorted (articles ascending, then annexes in Roman order) rather than left in
+    retrieval-rank order, so the list reads as a PERMISSION SET and not as a
+    ranked agenda — ``USER_REF_MINIMALITY_CLAUSE`` explicitly tells the model the
+    references are "NOT an agenda", and a rank-ordered list would fight it.
+    """
+    if context is None:
+        return []
+    # Reuse the canonical source (_context_article_refs reads the same ``article``
+    # keys _build_context_references_block renders), narrowed to the rendered
+    # slices. No new retrieval, no second traversal.
+    view = GraphContext(
+        obligations=list(getattr(context, "obligations", None) or [])[
+            :_CITABLE_OBLIGATIONS_RENDER_CAP
+        ],
+        article_info=list(getattr(context, "article_info", None) or [])[
+            :_CITABLE_ARTICLE_INFO_RENDER_CAP
+        ],
+    )
+    articles: set[int] = set()
+    annexes: set[str] = set()
+    for raw in _context_article_refs(view):
+        m_ann = _CITABLE_ANNEX_RE.search(raw)
+        if m_ann:
+            annexes.add(m_ann.group(1).upper())
+            continue
+        m_art = _CITABLE_ARTICLE_RE.search(raw)
+        if m_art:
+            articles.add(int(m_art.group(1)))
+    out = [f"Article {n}" for n in sorted(articles)]
+    try:
+        from app.data.ids import roman_to_int  # noqa: PLC0415
+
+        annex_order = sorted(annexes, key=roman_to_int)
+    except Exception:  # noqa: BLE001 — ordering must never break a prompt
+        annex_order = sorted(annexes)
+    out.extend(f"Annex {r}" for r in annex_order)
+    return out
+
+
+def _citable_universe_block(context: GraphContext | None) -> str:
+    """Render the CITABLE PROVISIONS block, or ``""`` when nothing is citable.
+
+    Empty is the correct degradation: with no list to point at, the citation
+    instruction keeps its pre-R329 wording ("the EU AI ACT REFERENCES block"),
+    so a context that retrieved nothing behaves exactly as it does today.
+    """
+    refs = _citable_universe_refs(context)
+    if not refs:
+        return ""
+    return (
+        "CITABLE PROVISIONS (the ONLY values that may appear in a citation):\n"
+        + ", ".join(refs)
+        + "\nA sub-paragraph of a listed provision (for example Article 5(1)(f)) "
+        "counts as that provision. Nothing outside this list may be cited, "
+        "including a provision named only in another section of the EU AI ACT "
+        "REFERENCES block.\n\n"
+    )
+
+
 # Regexes used by the post-Stage-2 hallucination guard. Tight enough to
 # pick up the citation shapes Sonnet emits in prose, loose enough not to
 # false-positive on incidental digits.
@@ -8363,6 +8693,26 @@ def _claude_max_enhance_answer(
                 + "\n\n"
             )
 
+        # R329 P3a — CITABLE UNIVERSE (RESTORED, R370). Emitted here, immediately
+        # ahead of the instruction paragraph that carries the citation-scope
+        # sentence, so the instruction's "the CITABLE PROVISIONS list above" has
+        # an antecedent in BOTH branches below. When the flag is OFF (or the
+        # context retrieved nothing citable) ``_citable_block`` is "" and
+        # ``_cite_scope_phrase`` keeps the pre-R329 wording, making the
+        # assembled prompt BYTE-IDENTICAL to the R364.5+ stripped form — that
+        # byte-identity is the regression guard, pinned in
+        # tests/test_r329_citable_universe.py.
+        _citable_block = (
+            _citable_universe_block(context) if _citable_universe_enabled() else ""
+        )
+        if _citable_block:
+            user_message += _citable_block
+        _cite_scope_phrase = (
+            "the CITABLE PROVISIONS list above"
+            if _citable_block
+            else "the EU AI ACT REFERENCES block"
+        )
+
         if is_general_classification:
             user_message += (
                 f"BACKGROUND RISK FRAMEWORK:\n{kg_answer}\n\n"
@@ -8375,7 +8725,8 @@ def _claude_max_enhance_answer(
                 "Do NOT use essay introductions, meta-commentary, headings, or titles (e.g., do NOT output 'EU AI Act Classification Analysis:'). "
                 "Write ONE cohesive, flowing answer, NOT a sectioned justification memo: after the verdict, name the operative provisions and the deciding condition once, then stop. Do NOT introduce heading-like sub-topic fragments ('Why it is not prohibited (Article 5).', 'Why it is not Annex III high-risk.', 'The condition that would make it high-risk (Article 6).'), and do NOT restate the same conclusion (for example that the system is not listed in Annex III, or is not prohibited) more than once. "
                 "Apply logical deduction: objectively evaluate the described system against the strict definitions of prohibited or high-risk practices in the references; when the verdict turns on a fact (e.g. whether a medical device requires third-party conformity assessment), state the classification as conditional on that fact in regulatory terms ('High-risk only where the device requires third-party conformity assessment') rather than asserting a tier the facts do not establish. "
-                "Write in formal, neutral regulatory language. Cite only articles and annexes from the EU AI ACT REFERENCES block.\n"
+                "Write in formal, neutral regulatory language. "
+                f"Cite only articles and annexes from {_cite_scope_phrase}.\n"
             )
         else:
             # R312 — ANSWER-FIRST vs REFINE-THE-DRAFT.
@@ -8424,7 +8775,7 @@ def _claude_max_enhance_answer(
                 "context. Never introduce a sector, use-case, or fact (medical, "
                 "employment, biometric, law-enforcement, etc.) that the latest "
                 "question did not state. Cite only articles, annexes and "
-                "obligations that appear in the EU AI ACT REFERENCES block, "
+                f"obligations that appear in {_cite_scope_phrase}, "
                 "and make sure every article or annex you cite is described "
                 "in the prose: state in a few words what it requires, never "
                 "cite a bare number. Lead with a DIRECT verdict: for a yes/no, "
@@ -8463,19 +8814,30 @@ def _claude_max_enhance_answer(
         try:
             from app.data.graph_rag_prompts import (  # noqa: PLC0415
                 USER_CHALLENGE_BREVITY_CLAUSE,
-                USER_REF_MINIMALITY_CLAUSE,
+                USER_REF_UNCERTAINTY_CLAUSE,
                 USER_SUBPARAGRAPH_ATTRIBUTION_CLAUSE,
                 challenge_brevity_enabled,
                 is_challenge_turn,
                 subparagraph_attribution_enabled,
+                user_ref_minimality_clause,
                 user_ref_minimality_enabled,
                 user_ref_partition_enabled,
+                user_ref_uncertainty_enabled,
             )
 
             if subparagraph_attribution_enabled():
                 user_message += USER_SUBPARAGRAPH_ATTRIBUTION_CLAUSE
             if user_ref_minimality_enabled():
-                user_message += USER_REF_MINIMALITY_CLAUSE
+                user_message += user_ref_minimality_clause()
+            # R329 P3b — the CRAG asymmetry (uncertainty, not relevance).
+            # RESTORED (R370) — the R364.5 strip also removed this emission
+            # (same keyed-but-dead trap as P3a: REGENOLD_REF_UNCERTAINTY stayed
+            # registered in _engine_cache_key). DEFAULT OFF; own flag
+            # REGENOLD_REF_UNCERTAINTY so it A/Bs apart from R329 P3a. Placed
+            # immediately after minimality because the two are the same
+            # paragraph of argument, on different axes.
+            if user_ref_uncertainty_enabled():
+                user_message += USER_REF_UNCERTAINTY_CLAUSE
             if user_ref_partition_enabled():
                 user_message += (
                     " OPERATIVE VS BACKGROUND PARTITION: CITE ONLY the provisions "
@@ -8589,12 +8951,12 @@ def _claude_max_enhance_answer(
         # that, a same-process A/B silently serves arm A's cache to arm B.
         try:
             from app.data.graph_rag_prompts import (  # noqa: PLC0415
-                USER_ANSWER_COVERAGE_CLAUSE,
                 answer_coverage_enabled,
+                user_answer_coverage_clause,
             )
 
             if answer_coverage_enabled():
-                user_message += USER_ANSWER_COVERAGE_CLAUSE
+                user_message += user_answer_coverage_clause()
         except Exception:  # noqa: BLE001 — a prompt add-on must never break Stage-2
             pass
 
@@ -8671,6 +9033,15 @@ def _claude_max_enhance_answer(
         _use_anthropic_sdk = False
         _use_gemini = False
         _use_bedrock = False
+        _use_openrouter = False
+        if _env_provider == "openrouter":
+            try:
+                from app.llm.openai_wrapper_provider import (  # noqa: PLC0415
+                    is_openrouter_provider_enabled,
+                )
+                _use_openrouter = is_openrouter_provider_enabled()
+            except Exception:  # noqa: BLE001
+                _use_openrouter = False
         if _env_provider == "bedrock":
             try:
                 from app.llm.bedrock_client import is_bedrock_provider_enabled
@@ -8828,6 +9199,15 @@ def _claude_max_enhance_answer(
                 complex_question=complex_q,
                 stage_name="Stage 2 (Polishing)"
             )
+        elif _use_openrouter:
+            text_raw = _openrouter_complete_for_graph_rag(
+                system=system_prompt,
+                user=user_message,
+                max_tokens=max_tokens,
+                temperature=0.0,
+                complex_question=complex_q,
+                stage_name="Stage 2 (Polishing)"
+            )
         else:
             text_raw = _openai_wrapper_complete_for_graph_rag(
                 system=system_prompt,
@@ -8847,7 +9227,12 @@ def _claude_max_enhance_answer(
         # operator-specified opus-4-6 tier: when the primary Bedrock call
         # failed (throttle/entitlement/truncation) we retry the SAME prompt
         # once via ``claude-opus-4-6``. No Gemini, no Mistral, no wrapper.
-        if text_raw is None and not _use_gemini and not _fusion_used:
+        # R370 — the Bedrock opus-4-6 retry is the R366 operator directive for
+        # BEDROCK runs only. The OpenRouter path has its own internal rollover
+        # chain and must NOT cross-provider hop to Bedrock (an explicit
+        # provider choice stays on its own transport, per the live-model-test
+        # integrity rule); its failure falls straight to deterministic.
+        if text_raw is None and not _use_gemini and not _fusion_used and not _use_openrouter:
             try:
                 from app.integrations.regenold.reasoning_trace import record_note
                 record_note("stage2_primary_failed_fallback_bedrock_opus46")

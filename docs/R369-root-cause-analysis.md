@@ -1,6 +1,13 @@
 # R369 — Root-Cause Analysis: Low Answer & Reference Correctness (81 live rows)
 
 **Run:** R365 live batch (81 rows, bedrock, Qwen judge, base arm = merged R353.1+R366+R366.1+R367 engine, R368 supplements OFF)
+
+> **Judge provenance (F3):** every judge axis in this report and in
+> `docs/R369-golden-read.md` was graded by **`qwen.qwen3-32b-v1:0` via Bedrock**
+> (K=1) — NOT `claude-sonnet-4-6` (the `dynamic_ab` default) and NOT
+> `claude-sonnet-5` (the July-7 baseline's grader). These numbers are NOT
+> comparable to any Claude-judged baseline; the same-engine A/B comparisons
+> within this report are valid because both arms shared the same Qwen judge.
 **Judge (base arm):** answer_correctness 43/77 pass (**56%**), reference_correctness 30/79 pass (**38%**), answer_faithfulness 31/81 (38%), citation_faithfulness 75/81 (93%), answer_relevancy 72/81 (89%).
 **Evidence:** `evals/bench/results/checkpoints/dynamic-ab-r365-live-FINAL-81rows-7axes.json` (per-row answers, refs, deterministic scores) + Antifragile expert review of the 20 gold questions + `scratch/r369_classified.json` (per-row failure classes).
 

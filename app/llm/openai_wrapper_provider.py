@@ -882,6 +882,64 @@ def _reset_gemini_singleton_for_tests() -> None:
         _GEMINI_SINGLETON = None
 
 
+# ── OpenRouter provider (OpenAI-compatible) ──────────────────────────────────
+#
+# R370 — Stage-2 synthesis via OpenRouter (https://openrouter.ai), replacing the
+# Cloudflare-tunnel Claude-Max wrapper for lower latency + per-token model choice.
+# OpenRouter is OpenAI-spec Chat Completions, so the generic
+# ``_OpenAIWrapperProvider`` drives it unchanged. Gated on ``OPENROUTER_API_KEY``;
+# default endpoint is OpenRouter's public base (override via
+# ``OPENROUTER_API_BASE``). Routing mode (Balanced / Nitro / Exacto) is applied by
+# the engine as a ``:nitro`` / ``:exacto`` model-name suffix (see
+# ``_openrouter_complete_for_graph_rag``), NOT here — this provider stays a plain
+# OpenAI client.
+
+_OPENROUTER_DEFAULT_BASE = "https://openrouter.ai/api/v1"
+_OPENROUTER_SINGLETON: _OpenAIWrapperProvider | None = None
+_OPENROUTER_SINGLETON_LOCK = threading.Lock()
+
+
+def is_openrouter_provider_enabled() -> bool:
+    """True iff the OpenRouter provider is enabled — requires ``OPENROUTER_API_KEY``."""
+    return bool(os.getenv("OPENROUTER_API_KEY", "").strip())
+
+
+def get_openrouter_provider() -> _OpenAIWrapperProvider:
+    """Return the process-wide pooled OpenRouter provider.
+
+    Same double-checked-locking shape as the default singleton. Reads
+    ``OPENROUTER_API_BASE`` (default ``https://openrouter.ai/api/v1``) and
+    ``OPENROUTER_API_KEY`` at first construction. The 60 s default timeout
+    matches Stage-2 needs; per-request overrides stay available via
+    ``OpenAIWrapperRequest.timeout_seconds``.
+    """
+    global _OPENROUTER_SINGLETON
+    if _OPENROUTER_SINGLETON is None:
+        with _OPENROUTER_SINGLETON_LOCK:
+            if _OPENROUTER_SINGLETON is None:
+                _OPENROUTER_SINGLETON = _OpenAIWrapperProvider(
+                    base_url=(
+                        os.getenv("OPENROUTER_API_BASE", "").strip()
+                        or _OPENROUTER_DEFAULT_BASE
+                    ),
+                    api_key=os.getenv("OPENROUTER_API_KEY", ""),
+                    timeout=float(os.getenv("OPENROUTER_TIMEOUT_SECONDS", "60")),
+                )
+    return _OPENROUTER_SINGLETON
+
+
+def _reset_openrouter_singleton_for_tests() -> None:
+    """Reset the OpenRouter singleton. Test-only — not part of the public API."""
+    global _OPENROUTER_SINGLETON
+    with _OPENROUTER_SINGLETON_LOCK:
+        if _OPENROUTER_SINGLETON is not None:
+            try:
+                _OPENROUTER_SINGLETON._close()  # noqa: SLF001 — test hook
+            except Exception:  # noqa: BLE001
+                pass
+        _OPENROUTER_SINGLETON = None
+
+
 # ── Mistral provider (OpenAI-compatible) ─────────────────────────────────────
 #
 # R-Fusion — Mistral Large is a diverse non-Anthropic panel member for the
