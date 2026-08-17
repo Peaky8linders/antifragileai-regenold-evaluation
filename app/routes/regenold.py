@@ -1620,6 +1620,13 @@ def _engine_cache_key(
             "REGENOLD_BEDROCK_STAGE1_MODEL",
             "REGENOLD_BEDROCK_STAGE2_MODEL",
             "REGENOLD_BEDROCK_COMPLEX_MODEL",
+            # R366.1 — the cross-model Bedrock rollover chain: when the primary
+            # model 429s/errors, _bedrock_complete_for_graph_rag serves from
+            # the next tier (qwen3-235b / nemotron / devstral). Which model
+            # serves flips the answer text ⇒ must be in the cache key (R30 /
+            # R56 / R79 / R263.2 doctrine — otherwise an A/B arm that changes
+            # the chain serves the other arm's cached engine output).
+            "REGENOLD_BEDROCK_FALLBACK_CHAIN",
             "BEDROCK_DEFAULT_MODEL",
             "BEDROCK_REGION",
             # R328.2 — this gates whether Stage-2 LANDS AT ALL (a rejected

@@ -68,9 +68,13 @@ from typing import Any
 from app.llm.openai_wrapper_provider import (
     OpenAIWrapperRequest,
     default_groq_model,
+    get_gemini_provider,
     get_groq_intent_provider,
+    get_mistral_provider,
     get_openai_wrapper_provider,
+    is_gemini_provider_enabled,
     is_groq_intent_provider_enabled,
+    is_mistral_provider_enabled,
     is_openai_wrapper_enabled,
 )
 from app.security.prompt_guard import sanitize_for_llm
@@ -313,7 +317,17 @@ _validate_intent_taxonomy()
 
 BRIDGING_NODES: dict[str, list[str]] = {
     "data_governance": ["GDPR Art. 9 (Special Categories of Data)"],
-    "high_risk_annex_i": ["Machinery Regulation", "Medical Device Regulation (MDR)"],
+    # R367 — the old key ``high_risk_annex_i`` is NOT an intent label (the
+    # taxonomy emits ``annex_harmonisation_law`` for Annex I), so the
+    # MDR/Machinery bridging context NEVER fired. Remapped to the real label
+    # so an Annex-I harmonisation-law intent seeds the cross-framework
+    # sectoral legislation into the retrieval context.
+    "annex_harmonisation_law": [
+        "Machinery Regulation",
+        "Medical Device Regulation (MDR)",
+        "IVDR (In Vitro Diagnostic Regulation)",
+        "Radio Equipment Directive (RED)",
+    ],
     "quality_management_system": ["ISO 42001", "ISO 9001"],
 }
 
@@ -434,9 +448,31 @@ _CACHE: OrderedDict[str, IntentResult] = OrderedDict()
 _CACHE_LOCK = threading.Lock()
 
 
+_PROMPT_HASH: str | None = None
+"""R367 — prompt-version stamp for the cache key (lazily computed once
+``_SYSTEM_PROMPT`` is defined below). A prompt edit changes the label
+distribution; without this, cached intents from the old prompt would keep
+serving until eviction (2048 rows). Keying on the prompt hash makes a prompt
+change a clean cache invalidation, so the R367 prompt calibration is actually
+measured, not masked by stale hits."""
+
+
+def _prompt_hash() -> str:
+    global _PROMPT_HASH
+    if _PROMPT_HASH is None:
+        _PROMPT_HASH = hashlib.sha256(_SYSTEM_PROMPT.encode("utf-8")).hexdigest()
+    return _PROMPT_HASH
+
+
 def _cache_key(question: str, model: str) -> str:
-    """SHA-256 of question + model. Short, deterministic, model-scoped."""
+    """SHA-256 of prompt-version + question + model.
+
+    Short, deterministic, scoped to BOTH the model and the exact system
+    prompt (R367). A prompt edit invalidates the cache for every question.
+    """
     h = hashlib.sha256()
+    h.update(_prompt_hash().encode("utf-8"))
+    h.update(b"\0")
     h.update(model.encode("utf-8"))
     h.update(b"\0")
     h.update(question.strip().lower().encode("utf-8"))
@@ -553,7 +589,17 @@ primary_anchor must be ONE of:
 alternate_anchors: a list of additional Art./Annex anchors (max 3),
 same shape as primary_anchor. Empty list if none.
 
-confidence: 0.0 (unsure) to 1.0 (certain). Use < 0.6 when ambiguous.
+confidence: 0.0 (unsure) to 1.0 (certain). Calibrate to the ENGINE'S
+actual gates (R367): below 0.7 your anchors are IGNORED (no narrowing),
+so set < 0.7 whenever you are not certain the primary_anchor is the
+single most-load-bearing article for this question. Use 0.7-0.85 when
+fairly confident (narrows the citation set), and >= 0.85 only when the
+anchor is unmistakable (promotes it to the top of the reference list).
+
+Keep "reasoning" to AT MOST one short sentence (<= 20 words). The
+intent + anchors are the payload; a long reasoning field risks
+pushing the JSON past the output budget and losing the classification
+entirely.
 
 Disambiguation guidance (judge-driven):
 - Prohibition ("is X banned?", "is Y prohibited?", "is Z illegal under the
@@ -695,9 +741,27 @@ def _resolve_intent_provider() -> tuple[Any, str] | None:
     ``REGENOLD_INTENT_PROVIDER=groq`` and ``GROQ_API_KEY`` are set;
     otherwise we fall through to the existing wrapper path if it's
     enabled.
+
+    R367 — Groq → Gemini → Mistral → wrapper. The operator directive
+    keeps the intent-detection provider chain ON (Gemini/Mistral are
+    separate-quota fast tiers, 1-2 s), so a Groq 429/outage degrades to
+    Gemini/Mistral before the slow wrapper instead of dropping intent
+    entirely. Each provider is included only when its key is wired;
+    acquisition stays inside :func:`classify_intent`'s try-block so a
+    singleton init failure falls through to the next tier.
     """
     if is_groq_intent_provider_enabled():
         return get_groq_intent_provider(), intent_groq_model()
+    # R367 — intent chain continues: Gemini then Mistral (fast,
+    # separately-quota'd), then the wrapper as the last resort.
+    if is_gemini_provider_enabled():
+        return get_gemini_provider(), os.getenv(
+            "REGENOLD_INTENT_MODEL_GEMINI", "gemini-2.5-flash"
+        )
+    if is_mistral_provider_enabled():
+        return get_mistral_provider(), os.getenv(
+            "REGENOLD_INTENT_MODEL_MISTRAL", "mistral-large-latest"
+        )
     if is_openai_wrapper_enabled():
         return get_openai_wrapper_provider(), intent_model()
     return None
@@ -793,49 +857,66 @@ def classify_intent(
     # this guard, those exceptions propagate to
     # ``app/routes/regenold.py::_intent_anchor_set`` and turn into a
     # 500 instead of the deterministic-fallback path.
+    # R367 — provider chain resolution. The chain is Groq → Gemini →
+    # Mistral → wrapper (each included only when wired). We iterate the
+    # ENTIRE chain on failure — a Groq outage degrades to Gemini, then
+    # Mistral, then the wrapper — instead of the historical single
+    # Groq→wrapper hop. ``selection`` is the chain head; the rest is
+    # derived from the same provider gates so the ordering stays
+    # consistent with :func:`_resolve_intent_provider`.
+    def _intent_chain() -> list[tuple[Any, str]]:
+        out: list[tuple[Any, str]] = []
+        if is_groq_intent_provider_enabled():
+            out.append((get_groq_intent_provider(), intent_groq_model()))
+        if is_gemini_provider_enabled():
+            out.append((get_gemini_provider(), os.getenv(
+                "REGENOLD_INTENT_MODEL_GEMINI", "gemini-2.5-flash"
+            )))
+        if is_mistral_provider_enabled():
+            out.append((get_mistral_provider(), os.getenv(
+                "REGENOLD_INTENT_MODEL_MISTRAL", "mistral-large-latest"
+            )))
+        if is_openai_wrapper_enabled():
+            out.append((get_openai_wrapper_provider(), intent_model()))
+        return out
+
     start = time.perf_counter()
-    try:
-        response = provider.complete(
-            OpenAIWrapperRequest(
-                system=_SYSTEM_PROMPT,
-                user=_USER_TEMPLATE.format(q=trimmed),
-                model=model,
-                max_tokens=250, # Increased max_tokens to accommodate reasoning
-                temperature=0.0,
-                timeout_seconds=_TIMEOUT_SECONDS,
-            )
-        )
-        if response.error:
-            raise Exception(f"Provider error: {response.error}")
-    except Exception as exc:  # noqa: BLE001 — fail-soft contract
-        # Fallback to OpenAI wrapper (Sonnet) if Groq fails
-        if model == intent_groq_model() and is_openai_wrapper_enabled():
-            logger.debug("intent_classifier_exception on Groq: %s, falling back to Sonnet", str(exc)[:200])
-            provider = get_openai_wrapper_provider()
-            model = intent_model()
-            try:
-                response = provider.complete(
-                    OpenAIWrapperRequest(
-                        system=_SYSTEM_PROMPT,
-                        user=_USER_TEMPLATE.format(q=trimmed),
-                        model=model,
-                        max_tokens=250,
-                        temperature=0.0,
-                        timeout_seconds=_TIMEOUT_SECONDS,
-                    )
+    response = None
+    tried: list[str] = []
+    for _provider, _model in _intent_chain():
+        tried.append(_model)
+        try:
+            response = _provider.complete(
+                OpenAIWrapperRequest(
+                    system=_SYSTEM_PROMPT,
+                    user=_USER_TEMPLATE.format(q=trimmed),
+                    model=_model,
+                    max_tokens=250,  # Increased max_tokens to accommodate reasoning
+                    temperature=0.0,
+                    timeout_seconds=_TIMEOUT_SECONDS,
                 )
-                if response.error:
-                    _BREAKER.record_failure()
-                    logger.debug("intent_classifier_failure on fallback: %s", response.error[:120])
-                    return None
-            except Exception as fallback_exc:
-                _BREAKER.record_failure()
-                logger.debug("intent_classifier_exception on fallback: %s", str(fallback_exc)[:200])
-                return None
-        else:
-            _BREAKER.record_failure()
-            logger.debug("intent_classifier_exception: %s", str(exc)[:200])
-            return None
+            )
+            if not response.error:
+                model = _model
+                provider = _provider
+                break
+            logger.debug(
+                "intent_classifier_error provider=%s model=%s: %s — trying next",
+                getattr(_provider, "_base_url", "?")[:40], _model,
+                response.error[:120],
+            )
+        except Exception as exc:  # noqa: BLE001 — fail-soft contract
+            logger.debug(
+                "intent_classifier_exception provider=%s model=%s: %s — trying next",
+                getattr(_provider, "_base_url", "?")[:40], _model,
+                str(exc)[:120],
+            )
+    if response is None or response.error:
+        _BREAKER.record_failure()
+        logger.debug(
+            "intent_classifier_all_providers_failed tried=%s", ",".join(tried),
+        )
+        return None
     elapsed_ms = int((time.perf_counter() - start) * 1000)
 
     parsed = _parse_intent_json(response.text or "")
