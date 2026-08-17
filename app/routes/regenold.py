@@ -2023,6 +2023,21 @@ def _engine_cache_key(
             # R346.2 — the paraphrase model (frontier tier, no Haiku) is read
             # fresh per call and changes the paraphrase surface.
             "REGENOLD_QUERY_EXPANSION_MODEL",
+            # R365 — engine-side levers from the R356/R357/R358 rounds, keyed
+            # per the R30/R56/R79/R263.2 doctrine: each flips
+            # GraphRAGResponse.references or the answer. Registered by the
+            # R355 cache-key completeness test.
+            "REGENOLD_EMOTION_CURATED_EMIT",
+            "REGENOLD_RISK_FRAMEWORK_ANCHOR",
+            "REGENOLD_STAGE2_TRUNCATION_GUARD",
+            "REGENOLD_VERBATIM_MAX_CHARS",
+            "REGENOLD_VERBATIM_MAX_PROVISIONS",
+            "REGENOLD_VERBATIM_PARA_CHARS",
+            "REGENOLD_EXTERNAL_EMBEDDINGS",
+            "REGENOLD_SEMANTIC_ANN_FANOUT",
+            "REGENOLD_SEMANTIC_GLOSS_FANOUT",
+            "REGENOLD_TREE_EXTRACT",
+            "REGENOLD_VECTOR_RERANK",
         )
     )
     import json
