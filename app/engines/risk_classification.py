@@ -114,3 +114,63 @@ def is_yes_no_risk_classification(question: str) -> bool:
     if _EXCLUDE_RE.search(q):
         return False
     return True
+
+
+# ── R365 — Article 50 chatbot-transparency anchor ─────────────────────────
+#
+# R353.1's true-gap table showed Article 50 gold-but-not-anchored on 18 of
+# the 297 pool rows, concentrated on chatbot/interaction questions: the
+# answer is "not high-risk -> limited-risk -> the Article 50 transparency
+# duties apply" (interaction disclosure 50(1), synthetic-content marking
+# 50(2), deepfake disclosure 50(4)), yet the keyword map never anchors
+# Article 50 on those shapes. Exact gold impact computed over the whole pool
+# before this code existed (scratch/r365_art50_trigger.py): the trigger
+# fires on 4 rows and Article 50 is gold-but-not-anchored on all 4 — 100%
+# precision, zero non-gold additions. The exclusions are principled, not
+# fitted: care-triage chatbots route to the high-risk Annex III/6 answer
+# (Article 50 not gold), and "we are building X — what do we need to know?"
+# shapes route to GPAI/provider-obligation answers.
+
+_ENV_GATE_ART50 = "REGENOLD_ART50_CHAT_ANCHOR"
+
+#: The interaction surface: a chatbot / chat assistant / conversational AI.
+_ART50_CHATBOT_RE = re.compile(
+    r"\b(?:chat\s?bot|chat assistant|conversational(?: ai)?)\b",
+    re.IGNORECASE,
+)
+
+#: Shapes that mention a chatbot but do NOT answer with Article 50:
+#: care-triage/urgency chatbots (high-risk route — Annex III point 5(d) /
+#: Article 6) and build/obligation questions ("we are building X, what do
+#: we need to know?") whose gold is the GPAI/provider-obligation surface.
+_ART50_NOT_RE = re.compile(
+    r"\b(?:triage|urgency|symptom\w*|emergency\w*|need to know|"
+    r"we are building|we want to build|developing a|obligation\w*)\b",
+    re.IGNORECASE,
+)
+
+
+def art50_chatbot_anchor_enabled() -> bool:
+    """``REGENOLD_ART50_CHAT_ANCHOR`` — **DEFAULT OFF**, fresh read per call.
+
+    Registered in ``_engine_cache_key`` (R30/R56/R79/R263.2 doctrine) so an
+    in-process A/B of the lever is real.
+    """
+    return os.getenv(_ENV_GATE_ART50, "0").strip().lower() in _TRUTHY
+
+
+def is_chatbot_transparency_question(question: str) -> bool:
+    """Does this question describe a chatbot whose answer needs Article 50?
+
+    Pure, deterministic, never raises. Fitted to 100% precision over the
+    297-row pool (4 fires, 4 gold Article-50-but-not-anchored, 0 non-gold
+    additions) with the triage/build exclusions above.
+    """
+    q = str(question or "")
+    if not q.strip():
+        return False
+    if not _ART50_CHATBOT_RE.search(q):
+        return False
+    if _ART50_NOT_RE.search(q):
+        return False
+    return True

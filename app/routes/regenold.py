@@ -1504,6 +1504,11 @@ def _engine_cache_key(
             # Fresh read per call (`risk_classification`). The R334 drift
             # guard enforces its presence here.
             "REGENOLD_RISK_CLASS_ANNEX",
+            # R365 — Article 50 chatbot-transparency anchor (sibling of
+            # REGENOLD_RISK_CLASS_ANNEX): appends Article 50 to the parse
+            # entities on chatbot/interaction shapes, flipping
+            # GraphRAGResponse.references. Same R263.2 doctrine.
+            "REGENOLD_ART50_CHAT_ANCHOR",
             # R327 gate — the open-domain half of the semantic layers, separable
             # so constrained-only can be measured. Engine-level (it changes the
             # Stage-2 grounding block), so it must be keyed like its master.
