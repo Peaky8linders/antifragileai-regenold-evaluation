@@ -450,7 +450,7 @@ def resolve_bedrock_model(model_name: str) -> str:
         return _resolve_default_model()
 
     # If already a full profile ID / ARN
-    if name.startswith(("us.", "eu.", "ap.", "global.", "arn:", "anthropic.", "amazon.", "meta.")):
+    if name.startswith(("us.", "eu.", "ap.", "global.", "arn:", "anthropic.", "amazon.", "meta.", "qwen.", "nvidia.", "mistral.", "cohere.", "ai21.", "deepseek.")):
         return _warn_on_geography_mismatch(model_name)
 
     resolved = BEDROCK_MODEL_ALIASES.get(name)

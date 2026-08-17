@@ -402,3 +402,158 @@ def test_bedrock_only_no_provider_no_call(monkeypatch):
 
     assert QE.query_expansion_stats()["attempts"] == 0
     assert out == base
+
+
+
+# ── R364.1 — the reference-grounding guard ─────────────────────────────────
+#
+# la_q73 measured the failure: the paraphrase LLM answered a medical-device
+# conformity question with "Annex VI"/"Annex VII" — the AI Act's own
+# conformity-assessment-procedure annexes — even though the gold route is
+# Annex I + Article 6 (the MDR route). The phantom annexes surfaced as
+# citations and displaced Annex I (gold_dropped_head 0 -> 1). The guard is
+# deterministic: a paraphrase may restate a provision the question or the
+# seed refs ground, but a provision number neither mentions is dropped and
+# counted in ``ref_filtered``.
+
+
+_Q_MEDTECH_CONFORMITY = (
+    "What conformity-assessment route applies to an AI system that is a "
+    "safety component of a CE-marked medical device?"
+)
+
+#: The kind of paraphrase that caused the la_q73 failure — cites the AI
+#: Act's OWN conformity-assessment annexes (Annex VII = notified-body
+#: procedure), absent from both the question and the seed.
+_PARAPHRASE_PHANTOM_ANNEX = (
+    "Under which conformity-assessment procedure in Annex VI or Annex VII "
+    "is a medical-device AI safety component assessed?"
+)
+
+
+def test_ref_guard_strips_phantom_annex_paraphrase(monkeypatch):
+    """R364.5 surgical strip: a paraphrase citing an Annex absent from the
+    question and the seed refs has the PHANTOM REFS REMOVED and the rest of
+    the text kept (ref_filtered counts stripped refs). The la_q73 shape: seed
+    refs are [Art. 6, Annex I] (the keyword-map entities), so Annex VI/VII
+    must never reach the entity list — but the paraphrase still expands."""
+    base = _deterministic_parse(_Q_MEDTECH_CONFORMITY).entities
+    assert base  # the original question anchors Art. 6 / Annex I
+
+    _enable_expansion(monkeypatch, _PARAPHRASE_PHANTOM_ANNEX)
+    out = _deterministic_parse(_Q_MEDTECH_CONFORMITY).entities
+
+    stats = QE.query_expansion_stats()
+    assert stats["attempts"] == 1
+    # TWO annex refs stripped (VI and VII), paraphrase kept and expanded.
+    assert stats["ref_filtered"] == 2, stats
+    assert stats["expanded_calls"] == 1, stats
+    # The guard fired: the phantom annexes never reached the entities.
+    assert "Annex VI" not in out
+    assert "Annex VII" not in out
+    # And the original grounding is preserved — Art. 6 / Annex I survive.
+    assert "Art. 6" in out
+    assert "Annex I" in out
+
+
+def test_ref_guard_keeps_grounded_paraphrase(monkeypatch):
+    """A paraphrase that restates only question/seed-grounded refs (or none)
+    passes the guard untouched — recall is preserved."""
+    _enable_expansion(
+        monkeypatch,
+        "Under Article 6(1) and Annex I, how is a medical-device AI safety "
+        "component assessed for conformity?",
+    )
+    out = _deterministic_parse(_Q_MEDTECH_CONFORMITY).entities
+
+    stats = QE.query_expansion_stats()
+    assert stats["attempts"] == 1
+    assert stats["ref_filtered"] == 0, stats
+    assert "Art. 6" in out
+    assert "Annex I" in out
+
+
+def test_ref_guard_unit_extractor():
+    """The deterministic extractor: base-level refs, compound plurals, and
+    the annex roman shape the la_q73 failure introduced."""
+    assert QE._refs_in_text("Article 6(1) route") == {("art", "6")}
+    assert QE._refs_in_text("Art. 6.1 and Annex I") == {
+        ("art", "6"), ("annex", "I"),
+    }
+    assert QE._refs_in_text("Articles 5 and 6") == {("art", "5"), ("art", "6")}
+    assert QE._refs_in_text("Arts. 11 and 18") == {("art", "11"), ("art", "18")}
+    assert QE._refs_in_text("Annexes I and III") == {
+        ("annex", "I"), ("annex", "III"),
+    }
+    assert QE._refs_in_text("Annex VII procedure") == {("annex", "VII")}
+    assert QE._refs_in_text("no refs here") == set()
+
+
+def test_ref_guard_seed_refs_passed_from_engine(monkeypatch):
+    """The engine passes its keyword-map entities as the seed: the la_q73
+    question's own grounding ([Art. 6, Annex I]) is the allowlist the
+    paraphrase must stay inside."""
+    _enable_expansion(monkeypatch, _PARAPHRASE_PHANTOM_ANNEX)
+    out = _deterministic_parse(_Q_MEDTECH_CONFORMITY).entities
+    # Byte-level check that the seed really travelled: with the guard OFF
+    # (expansion disabled) the entities are exactly the question's own.
+    assert out[0] == "Art. 6"
+
+
+# ── R364.5 — surgical-strip unit tests ─────────────────────────────────────
+
+
+def test_ref_guard_strip_unit_annex_compound():
+    """A compound with one grounded + one ungrounded member keeps the grounded
+    member — the strip is surgical, never whole-drop."""
+    out, n = QE._strip_bad_refs(
+        "Annexes I and VI procedure", {("annex", "VI")})
+    assert out == "Annexes I procedure"
+    assert n == 1
+
+
+def test_ref_guard_strip_unit_annex_or():
+    """'Annex VI or Annex VII' is two single-member spans; both are removed."""
+    out, n = QE._strip_bad_refs(
+        "the AI Act's own Annex VI or Annex VII procedure",
+        {("annex", "VI"), ("annex", "VII")},
+    )
+    assert "Annex VI" not in out and "Annex VII" not in out
+    assert n == 2
+
+
+def test_ref_guard_strip_unit_article_compound():
+    """Article compounds get the same surgical treatment."""
+    out, n = QE._strip_bad_refs(
+        "Articles 5 and 6 route", {("art", "6")})
+    assert out == "Articles 5 route"
+    assert n == 1
+
+
+def test_ref_guard_strip_grounded_members_untouched():
+    """Refs inside the allowlist are never touched."""
+    out, n = QE._strip_bad_refs(
+        "Under Article 6(1) and Annex I, how is a medical-device AI safety "
+        "component assessed?", {("art", "5")})
+    assert "Article 6(1)" in out and "Annex I" in out
+    assert n == 0
+
+
+def test_ref_guard_strip_too_short_dropped():
+    """A paraphrase stripped below the usability floor is dropped and counted."""
+    kept, stripped = QE._strip_ungrounded_refs(
+        ["Annex VI only"], "Some unrelated question?", ["Art. 6"])
+    assert kept == []
+    assert stripped == 1
+
+
+def test_ref_guard_strip_la_q73_shape():
+    """The exact la_q73 failure: the phantom annexes are removed and the
+    rest of the paraphrase is KEPT for retrieval (R364.5's whole point)."""
+    kept, stripped = QE._strip_ungrounded_refs(
+        [_PARAPHRASE_PHANTOM_ANNEX], _Q_MEDTECH_CONFORMITY,
+        ["Art. 6", "Annex I"])
+    assert stripped == 2
+    assert len(kept) == 1
+    assert "Annex VI" not in kept[0] and "Annex VII" not in kept[0]
+    assert "conformity-assessment" in kept[0]  # expansion value preserved
