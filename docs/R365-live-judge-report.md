@@ -195,11 +195,14 @@ ran on the deterministic KB fallback. The live instance is `0644b854.databases.n
 **1786 nodes** — matches the R338 census). The stale `151d4e69` reference in
 `app/engines/kg_context.py`'s module docstring was corrected to `0644b854`.
 
-**Remaining — graph still down after the env-var update** (confirmed by 3 polls over
-~2.5 min post-redeploy; identical `graph_ok:false`, ~1.53 s constant latency = fast
+**Remaining — graph still down after the env-var update** (confirmed by repeated polls
+over several minutes; identical `graph_ok:false`, ~1.53 s constant latency = fast
 failure, not a timeout). The client reads `NEO4J_URI` directly from the process env and
 the local driver test PROVES the working set — so the deployed process is still not
-seeing the verified values. Exact dashboard checklist (all four must match the repo's
+seeing the verified values. **Deployment ID evidence:** the live deployment
+(`e30cfb22`, commit `eb1bee6`) is UNCHANGED across the env-var save, so the running
+process still holds the pre-save environment — a restart/redeploy after the save is
+required, not optional. Exact dashboard checklist (all four must match the repo's
 `.env`):
 
 1. `NEO4J_URI` = `neo4j+s://0644b854.databases.neo4j.io` (scheme `neo4j+s://` — a
