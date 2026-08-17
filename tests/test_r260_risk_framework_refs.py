@@ -90,3 +90,58 @@ def test_enforce_preserves_existing_order_appends_missing() -> None:
 def test_enforce_fail_soft_on_bad_response() -> None:
     out = _enforce_risk_framework_refs(["Article 5"], object())
     assert out == ["Article 5"]
+
+
+# ── R369 — closed-set TRIM (tier primaries only, GPAI detail filtered) ────
+def test_enforce_filters_gpai_detail_out_of_categories_set() -> None:
+    """R369: on a risk-categories row the 11-ref GPAI set collapses to the
+    six tier primaries. Evidence: R365 gold [Article 5] for la_q47/la_q22;
+    paper Q1 gold heads {3, 5, 6, 50}."""
+    class _Cit:
+        def __init__(self, ar: str) -> None:
+            self.article_ref = ar
+
+    class _Resp:
+        citations = [
+            _Cit(ar) for ar in (
+                "Art. 5", "Art. 6", "Art. 50", "Art. 51", "Art. 52",
+                "Annex I", "Annex III", "Art. 53", "Art. 54", "Art. 55",
+                "Art. 56",
+            )
+        ]
+
+    wire = [
+        "Article 5", "Article 6", "Article 50", "Article 51", "Article 52",
+        "Annex I", "Annex III", "Article 53", "Article 54", "Article 55",
+        "Article 56",
+    ]
+    out = _enforce_risk_framework_refs(wire, _Resp())
+    heads = set(out)
+    assert {"Article 5", "Article 6", "Article 50", "Article 51",
+            "Annex I", "Annex III"} <= heads
+    assert not ({"Article 52", "Article 53", "Article 54",
+                 "Article 55", "Article 56"} & heads)
+
+
+def test_enforce_rescues_question_named_ref_past_the_filter() -> None:
+    """R369 — a ref the live question explicitly names is never filtered
+    (the R281 question-named rescue)."""
+    class _Cit:
+        def __init__(self, ar: str) -> None:
+            self.article_ref = ar
+
+    class _Resp:
+        citations = [_Cit("Art. 53")]
+
+    out = _enforce_risk_framework_refs(
+        ["Article 53"], _Resp(), live_question="What are the Article 53 duties?"
+    )
+    assert "Article 53" in out
+
+
+def test_enforce_never_empties() -> None:
+    class _Resp:
+        citations = []
+
+    out = _enforce_risk_framework_refs(["Article 52"], _Resp())
+    assert out == ["Article 52"]  # non-canon but the answer must not empty

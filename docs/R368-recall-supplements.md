@@ -55,8 +55,12 @@ shapes (la_q69 is Article 5(1)(f), not Article 50).
 
 - **`app/engines/risk_classification.py`** — 7 pure trigger functions under
   two gates: `REGENOLD_ANNEXIII_RECALL_SUPPLEMENTS` and
-  `REGENOLD_ART50_RECALL_SUPPLEMENTS` (both **default OFF**, fresh env read
-  per call, never raise).
+  `REGENOLD_ART50_RECALL_SUPPLEMENTS` (**default ON since R369**, fresh env
+  read per call, never raise). R369 re-validated the impact against the R365
+  FINAL checkpoint (`scratch/r369_sim_r368.py`): 11/81 rows fire, 12 gold
+  heads recovered (la_q83 additionally fires the medical trigger), 0 false
+  positives, ref_loose 0.764 -> 0.833. `0` restores the pre-R369 wire for
+  the A/B arm.
 - **`app/engines/_graph_rag_impl.py`** — two append blocks after the R365
   anchor, before the R340 rerank (the R353.1/R365.1 load-bearing placement:
   AFTER the BM25 fallback + vector lane so the append can only fill slots the
@@ -93,15 +97,17 @@ shapes (la_q69 is Article 5(1)(f), not Article 50).
   (`test_ambiguous_rescue_routes_to_rag_not_groq` — fails identically on a
   stashed baseline; the test env's wrapper endpoint refuses the connection).
 
-## Flags (for the A/B)
+## Flags (default ON since R369; `0` = pre-R369 wire for the A/B arm)
 
 ```
 REGENOLD_ANNEXIII_RECALL_SUPPLEMENTS=1   # medical / MSA / EU-db / operator shapes
 REGENOLD_ART50_RECALL_SUPPLEMENTS=1      # VLOP-transparency / fines / biometric shapes
+REGENOLD_R368_WIRE_GUARD=1               # route re-instates trigger heads the lossy passes drop
 ```
 
-Both registered in `_engine_cache_key`, so an in-process A/B over either is
-real. Suggested next step: the 60-row Bedrock A/B with both flags ON vs OFF
-to confirm the 10-row gold recovery converts into the deterministic axes
-(ref_loose/ref_strict) without FP cost, plus a Qwen judge pass on the
-rescued VLOP rows (Article 50 recovers on la_q60/63/91).
+Both supplement gates are registered in `_engine_cache_key`, so an in-process
+A/B over either is real. The R369 wire guard is a route-level pass (not in
+the engine cache key — it re-runs on every hit, the R79 doctrine). The live
+re-evaluation (R369, Bedrock, no tunnel) is the measured gate; see
+docs/R369-fixes.md for the before/after wire audit on the 22 golden rows
+from the two attached datasets.
