@@ -211,7 +211,11 @@ class TestRouteEndToEnd:
         assert "workers' representatives" in ans or "workers’ representatives" in ans
         # NOT the old Art 3/48/102 stub dump.
         assert "civil aviation" not in ans.lower()
-        assert "Article 26.7" in d["references"]
+        # R369 — the leaf+head collapse (default ON) reduces the wire to the
+        # bare head; la_q42's R365 gold is ['Article 26'] (head-grained), so
+        # the collapsed wire IS the gold-exact form.
+        assert "Article 26" in d["references"]
+        assert "Article 26.7" not in d["references"]
 
     def test_q012_includes_8a_and_8b(self, client):
         d = _ask(client, Q012)
