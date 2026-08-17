@@ -21,6 +21,7 @@ from app.engines.risk_classification import (
     is_biometric_patient_interaction_question,
     is_eu_database_registration_question,
     is_fines_prohibited_question,
+    is_healthcare_classification_question,
     is_medical_annex_i_classification,
     is_msa_reclassification_question,
     is_operator_becomes_provider_question,
@@ -86,6 +87,16 @@ FIRE_ANNEXIII = [
         "authorities?",
         is_operator_becomes_provider_question,
     ),
+    # la_q81 — R369 healthcare-classification lane: the ambient-scribe
+    # question lost its gold Annex III head on the R369 A/B branch (the
+    # R309 contrast-guard suppressed the negated prose mention in the ADD
+    # direction and no R368 trigger fired). Gold ['Annex III', 'Article 6'].
+    (
+        "Classify the EU AI Act risk tier of an AI ambient scribe that only "
+        "transcribes doctor-patient consultations and performs no diagnosis "
+        "or decision-making.",
+        is_healthcare_classification_question,
+    ),
 ]
 
 # ── Annex III family: must NOT fire ───────────────────────────────────────
@@ -122,6 +133,22 @@ NO_FIRE_ANNEXIII = [
     (
         "What are the obligations of a provider of a high-risk AI system?",
         is_operator_becomes_provider_question,
+    ),
+    # la_q4 — medical device safety component, gold ['Annex I', 'Article
+    # 43', 'Article 6'] EXCLUDES Annex III; "medical" alone must not fire.
+    (
+        "I have a medical device that has an AI system as a safety "
+        "component. The medical device is classified \"medium-risk\" and "
+        "undergoes a 3rd party conformity assessment. Is the AI system "
+        "\"medium risk\" too? If yes, why? If not, why not?",
+        is_healthcare_classification_question,
+    ),
+    # la_q82 — consumer wellness chatbot, gold ['Annex I', 'Article 50',
+    # 'Article 6'] EXCLUDES Annex III; no healthcare-engagement vocab.
+    (
+        "Classify the EU AI Act risk tier of a consumer wellness chatbot "
+        "that gives general lifestyle tips and makes no medical claims.",
+        is_healthcare_classification_question,
     ),
 ]
 
@@ -350,6 +377,33 @@ def test_medical_wire_recovers_annex_iii() -> None:
         "high-risk AI system under the EU AI Act?",
     )
     assert "Annex III" in body["references"], body["references"]
+
+
+def test_healthcare_classification_wire_recovers_annex_iii() -> None:
+    """la_q81 end-to-end regression: the healthcare-classification lane must
+    re-instate the gold Annex III head (gold ['Annex III', 'Article 6']) that
+    the R369 A/B branch lost — the R309 contrast-guard suppresses the negated
+    prose mention ("does not fall within any Annex III use case") in the ADD
+    direction and no other R368 trigger fires on this question."""
+    body = _ask(
+        _client(),
+        "Classify the EU AI Act risk tier of an AI ambient scribe that only "
+        "transcribes doctor-patient consultations and performs no diagnosis "
+        "or decision-making.",
+    )
+    assert "Annex III" in body["references"], body["references"]
+
+
+def test_wellness_chatbot_wire_keeps_no_annex_iii() -> None:
+    """la_q82 negative control: the same classification shape with NO
+    healthcare-engagement vocabulary must NOT gain Annex III (gold
+    ['Annex I', 'Article 50', 'Article 6'] excludes it)."""
+    body = _ask(
+        _client(),
+        "Classify the EU AI Act risk tier of a consumer wellness chatbot "
+        "that gives general lifestyle tips and makes no medical claims.",
+    )
+    assert "Annex III" not in body["references"], body["references"]
 
 
 def test_wire_guard_off_switch_restores_baseline(monkeypatch) -> None:

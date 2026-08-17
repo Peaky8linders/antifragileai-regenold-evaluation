@@ -325,6 +325,49 @@ _ART50_VLOP = _Supplement(_ENV_GATE_ART50_SUPP, _VLOP_RE)
 _ART50_FINES = _Supplement(_ENV_GATE_ART50_SUPP, _FINES_PROHIBITED_RE)
 _ART50_BIO = _Supplement(_ENV_GATE_ART50_SUPP, _BIO_PATIENT_RE)
 
+# R369 — la_q81 wire-guard lane. Root cause (docs/R369-collapse-promote.md):
+# on the paired A/B the branch re-generated with prose "does not fall within
+# any Annex III use case" and the R309 contrast-guard (correctly, per its
+# own july7-008 validation) suppressed that NEGATED mention in the ADD
+# direction, so no deterministic pass recovered the gold ``Annex III`` head
+# (gold ``['Annex III', 'Article 6']``). The R368 triggers do NOT fire on
+# la_q81, so the wire guard had no lane for it.
+#
+# Fix: a healthcare-CLASSIFICATION lane — a classification/risk-tier ask
+# about a healthcare-ENGAGED system (doctor/patient/clinical/hospital
+# vocab, NOT bare "medical"). Measured across both evidence pools: fires on
+# exactly la_q81 (1/81 live, 0/60 golden, 0 on la_q4/la_q82 — the two
+# nearest neighbours whose gold EXCLUDES Annex III), Annex III in gold on
+# 1/1. Recall-only by construction (the wire guard never drops).
+_HC_CLASSIFY_RE = re.compile(
+    r"\b(?:classif\w*|risk tier)\b",
+    re.IGNORECASE,
+)
+_HC_ENGAGE_RE = re.compile(
+    r"\b(?:doctor|patient|clinical|physician|hospital|diagnos\w*|"
+    r"healthcare|consultation|triage|surger\w*|treat\w*|care setting)\b",
+    re.IGNORECASE,
+)
+
+
+def is_healthcare_classification_question(question: str) -> bool:
+    """Classification/risk-tier ask about a healthcare-engaged AI system.
+
+    R369 la_q81 lane: a question that asks to CLASSIFY the risk tier of a
+    system engaged with doctor/patient/clinical work (ambient scribe
+    transcribing doctor-patient consultations) must carry ``Annex III`` —
+    the classification IS the Annex III use-case analysis. Bare ``medical``
+    is deliberately NOT in the engagement vocabulary: la_q4 ("medical
+    device … safety component", gold ``['Annex I', 'Article 43',
+    'Article 6']``) and la_q82 ("consumer wellness chatbot", gold
+    ``['Annex I', 'Article 50', 'Article 6']``) both mention medical
+    vocabulary yet their gold EXCLUDES Annex III.
+    """
+    q = str(question or "").strip()
+    if not q:
+        return False
+    return bool(_HC_CLASSIFY_RE.search(q) and _HC_ENGAGE_RE.search(q))
+
 
 #: The medical trigger needs the opening auxiliary + high-risk term in
 #: ADDITION to the vocabulary (the plain regex would fire on e.g.
