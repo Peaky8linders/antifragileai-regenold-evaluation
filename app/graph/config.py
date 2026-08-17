@@ -35,7 +35,13 @@ class GraphSettings(BaseSettings):
     # uses TLS + routing and REQUIRES ``NEO4J_PASSWORD`` (username defaults
     # to the Aura ``neo4j``); without the password the client cannot
     # authenticate and the engine falls back to the deterministic KB path.
-    uri: str = "neo4j+s://6fc3fff5.databases.neo4j.io"
+    # NOTE: this default is INERT — the client activation gate requires
+    # ``NEO4J_URI`` in the process environment, so only the dashboard/.env
+    # value is ever used. Kept pointing at the LIVE instance (0644b854) so
+    # a doc/comment reader never mistakes it for a stale one (the dead
+    # 151d4e69 instance was the deployed-URI root cause of the 2026-08-17
+    # production graph outage).
+    uri: str = "neo4j+s://0644b854.databases.neo4j.io"
     # R98 — accept BOTH ``NEO4J_USERNAME`` (the env_prefix default) and
     # ``NEO4J_USER`` (what the seeder CLI sets and what many Neo4j Aura
     # deploys / Railway dashboards use). The user's Railway instance names

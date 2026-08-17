@@ -3591,8 +3591,12 @@ class TestR273NearOosGrounded:
         ).json()
 
     @pytest.mark.parametrize("q", [
-        "What are the algorithmic transparency obligations for a Very Large Online Platform content-moderation AI?",
-        "What are the transparency rules for a Very Large Online Platform's content-moderation AI?",
+        # R368 — the AI-Act-shaped VLOP transparency question is now rescued
+        # to in-scope (answered by the grounded RAG engine, never the
+        # general assistant); these pure-DSA shapes (no standalone ``ai``
+        # subject) stay NEAR_OOS and keep the R273 branded-refusal contract.
+        "What are the transparency obligations for Very Large Online Platforms?",
+        "Explain DSA's VLOP transparency requirements.",
     ])
     def test_near_oos_vlop_not_general_assistant(self, q, monkeypatch) -> None:
         calls = self._patch(
@@ -3604,6 +3608,35 @@ class TestR273NearOosGrounded:
         assert "52a" not in ans, f"hallucinated general-assistant answer leaked: {ans!r}"
         assert "Digital Services Act" in ans, f"expected branded DSA refusal, got: {ans!r}"
         assert calls["n"] == 0, "general assistant must NOT be called for near_oos"
+
+    def test_rescued_vlop_transparency_question_never_reaches_general_assistant(
+        self, monkeypatch
+    ) -> None:
+        """R368 — the rescued VLOP-transparency shape is IN_SCOPE at the
+        scope gate, so the route never reaches the wrong-framework branch
+        (and never the ungrounded general assistant). The R273 ``52a``
+        hallucination guard is untouched for the pure-DSA shapes that stay
+        NEAR_OOS (pinned by ``test_near_oos_vlop_not_general_assistant``
+        above)."""
+        monkeypatch.delenv("REGENOLD_WRONG_FRAMEWORK_GENERAL", raising=False)
+        from app.integrations.regenold.scope import (
+            ScopeReason,
+            classify_scope,
+        )
+        v = classify_scope(
+            "What are the algorithmic transparency obligations for a "
+            "Very Large Online Platform content-moderation AI?"
+        )
+        assert v.in_scope
+        assert v.reason == ScopeReason.IN_SCOPE
+        # The R273 wrong-framework gate still guards the non-rescued shape.
+        from app.routes.regenold import _general_answer_reason_ok
+        v2 = classify_scope(
+            "What are the transparency obligations for Very Large Online Platforms?"
+        )
+        assert not v2.in_scope
+        assert v2.reason == ScopeReason.NEAR_OOS
+        assert not _general_answer_reason_ok(v2.reason)
 
     def test_benign_off_topic_still_uses_general_assistant(self, monkeypatch) -> None:
         calls = self._patch(monkeypatch, "Paris is the capital of France.")

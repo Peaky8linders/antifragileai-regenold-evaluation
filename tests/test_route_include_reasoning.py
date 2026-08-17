@@ -137,14 +137,16 @@ class TestIncludeReasoning:
         """R49-B near_oos refusals must surface the framework name in
         the reasoning trace so the judge can attribute the refusal to
         the right cause."""
+        # R368 — the AI-Act-shaped VLOP transparency question ("content-
+        # moderation AI") is now rescued to in-scope; use the pure-DSA
+        # shape (no standalone ``ai`` subject) to pin the near_oos trace.
         resp = _client.post(
             "/api/v1/regenold/eu-ai-act/ask?include_reasoning=true",
             json=[{
                 "role": "user",
                 "content": (
-                    "What are the algorithmic transparency obligations "
-                    "for a Very Large Online Platform content-"
-                    "moderation AI?"
+                    "What are the transparency obligations for Very "
+                    "Large Online Platforms?"
                 ),
             }],
         )

@@ -32,9 +32,13 @@ class TestNearOOSDetection:
     correct framework name in the refusal copy."""
 
     def test_dsa_vlop_question_is_near_oos(self) -> None:
+        """R368 — a question about the PLATFORM's DSA duties (no standalone
+        ``ai`` subject) stays NEAR_OOS. The AI-Act-shaped transparency
+        question (``content-moderation AI``) is now rescued to in-scope;
+        see ``test_dsa_ai_act_transparency_question_rescued``."""
         v = classify_scope(
-            "What are the algorithmic transparency obligations for a "
-            "Very Large Online Platform's content-moderation AI?"
+            "What are the transparency obligations for Very Large "
+            "Online Platforms?"
         )
         assert not v.in_scope
         assert v.reason == ScopeReason.NEAR_OOS
@@ -42,6 +46,22 @@ class TestNearOOSDetection:
         assert "Digital Services Act" in copy or "DSA" in copy
         assert "EU AI Act" in copy
         assert "not the" in copy.lower()
+
+    def test_dsa_ai_act_transparency_question_rescued(self) -> None:
+        """R368 — an AI system's transparency obligations are an AI Act
+        Article 50 question even when the system sits on a VLOP / does
+        content moderation (DSA terminology). The operator directive:
+        answer these as AI Act questions, do not refuse."""
+        v = classify_scope(
+            "What are the algorithmic transparency obligations for a "
+            "Very Large Online Platform's content-moderation AI?"
+        )
+        assert v.in_scope
+        assert v.reason == ScopeReason.IN_SCOPE
+        # The pure-DSA shape (no ``ai`` subject) must NOT be rescued.
+        v2 = classify_scope("Explain DSA's VLOP transparency requirements.")
+        assert not v2.in_scope
+        assert v2.reason == ScopeReason.NEAR_OOS
 
     def test_pld_property_damage_question_is_near_oos(self) -> None:
         v = classify_scope(

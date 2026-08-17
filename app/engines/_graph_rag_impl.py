@@ -2752,6 +2752,79 @@ def _deterministic_parse(question: str) -> GraphQuery:
     except Exception as exc:  # noqa: BLE001 — the anchor must never break parse
         logger.debug("art50_chat_anchor_failed: %s", exc)
 
+    # R368 — Annex III recall supplements (``REGENOLD_ANNEXIII_RECALL_``
+    # ``SUPPLEMENTS``, default OFF): deterministic supplements for the
+    # residual Annex III gap measured on the 81 live rows (10/29 missed at
+    # head level; see ``app/engines/risk_classification.py`` R368 section
+    # for the exact gold impact computed BEFORE this code existed). Fires on
+    # four narrow shapes — medical/Annex-I-route classification (the
+    # dual-route counterpart gold expects), MSA reclassification (also adds
+    # Art. 79 + Art. 80), EU-database registration, operator-becomes-
+    # provider — and appends ``Annex III`` in canonical form. Placement is
+    # load-bearing, IDENTICAL to R353.1/R365.1: AFTER the BM25 fallback and
+    # vector lane (so the append can only fill slots the earlier lanes did
+    # not take), BEFORE the R340 rerank (the cross-encoder is the precision
+    # guard).
+    try:
+        from app.engines.risk_classification import (  # noqa: PLC0415
+            annexiii_recall_supplements_enabled,
+            is_eu_database_registration_question,
+            is_medical_annex_i_classification,
+            is_msa_reclassification_question,
+            is_operator_becomes_provider_question,
+        )
+        _r368_q = question
+        if "Latest question:\n" in question:
+            _r368_q = question.rsplit("Latest question:\n", 1)[-1]
+        if annexiii_recall_supplements_enabled():
+            _msa = is_msa_reclassification_question(_r368_q)
+            if (
+                "Annex III" not in entities
+                and (
+                    _msa
+                    or is_medical_annex_i_classification(_r368_q)
+                    or is_eu_database_registration_question(_r368_q)
+                    or is_operator_becomes_provider_question(_r368_q)
+                )
+            ):
+                entities.append("Annex III")
+            if _msa:
+                for _art in ("Art. 79", "Art. 80"):
+                    if _art not in entities:
+                        entities.append(_art)
+    except Exception as exc:  # noqa: BLE001 — the anchor must never break parse
+        logger.debug("annexiii_recall_supplements_failed: %s", exc)
+
+    # R368 — Article 50 recall supplements (``REGENOLD_ART50_RECALL_``
+    # ``SUPPLEMENTS``, default OFF): the residual Article 50 gap (7/15
+    # missed at head level). Three narrow shapes — VLOP / content-
+    # moderation AI transparency (scope-rescued to in-scope by R368's
+    # scope.py rescue), fines + prohibited practices (Art. 99(4) tier
+    # enumerates the Art. 50 duties), biometric/patient interaction with
+    # natural persons — append ``Art. 50`` in canonical short form.
+    try:
+        from app.engines.risk_classification import (  # noqa: PLC0415
+            art50_recall_supplements_enabled,
+            is_biometric_patient_interaction_question,
+            is_fines_prohibited_question,
+            is_vlop_transparency_question,
+        )
+        _r368_q = question
+        if "Latest question:\n" in question:
+            _r368_q = question.rsplit("Latest question:\n", 1)[-1]
+        if (
+            art50_recall_supplements_enabled()
+            and "Art. 50" not in entities
+            and (
+                is_vlop_transparency_question(_r368_q)
+                or is_fines_prohibited_question(_r368_q)
+                or is_biometric_patient_interaction_question(_r368_q)
+            )
+        ):
+            entities.append("Art. 50")
+    except Exception as exc:  # noqa: BLE001 — the anchor must never break parse
+        logger.debug("art50_recall_supplements_failed: %s", exc)
+
     # R340 — cross-encoder rerank of the FINAL assembled entity list. This is
     # the placement that actually fires on the COMMON path: the keyword map
     # extracts an entity for nearly every question, so
