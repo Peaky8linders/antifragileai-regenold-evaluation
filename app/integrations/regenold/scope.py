@@ -842,6 +842,50 @@ def _detect_near_oos_framework(text: str) -> str | None:
     return None
 
 
+# ── R368 — DSA-transparency rescue ───────────────────────────────────────
+#
+# Operator directive: do NOT refuse the VLOP / content-moderation
+# transparency questions (la_q60/63/91) — answer them as EU AI Act
+# questions. The expert gold for all three is ``Article 50`` (the
+# transparency duties apply to the AI system insofar as it performs one
+# of Article 50's listed functions). The R49-B DSA detector fires on
+# ``VLOP`` / ``content-moderation`` fact-patterns, which is correct for a
+# pure DSA question ("Explain DSA's VLOP transparency requirements") but
+# wrong when the object being asked about is an AI system and the ask is
+# its transparency obligations — that is an AI Act Article 50 question.
+#
+# The discriminator is the regulated OBJECT: the rescue requires the
+# question to (a) be about transparency, (b) ask for obligations/rules/
+# duties/requirements, and (c) name an AI system (standalone ``ai`` token)
+# as the subject. "DSA's VLOP transparency requirements" has no standalone
+# ``ai`` and stays NEAR_OOS; "content-moderation AI" has one and is
+# rescued. Measured over the 81 live rows: fires on exactly la_q60/63/91
+# (Article 50 gold on all three, 100% precision; the two R49-B DSA probes
+# and the R273 ``platforms`` shape carry no standalone ``ai`` and stay
+# refused). The R273 lesson is preserved: a rescued question goes to the
+# grounded RAG engine (Article 50 anchored), never the ungrounded general
+# assistant.
+
+_AI_ACT_TRANSPARENCY_RESCUE_RE = re.compile(
+    r"(?=.*\b(?:transparency|transparent)\b)"
+    r"(?=.*\b(?:obligation\w*|rule\w*|duty\w*|requirement\w*)\b)"
+    r"(?=.*\bai\b)",
+    re.IGNORECASE,
+)
+
+
+def _is_ai_act_transparency_question(text: str) -> bool:
+    """Does this question ask about an AI system's transparency
+    obligations (AI Act Art. 50), rather than a platform's DSA duties?
+
+    Pure, deterministic, never raises. Requires a transparency ask, an
+    obligations/rules/duties/requirements object, and a standalone ``ai``
+    token as the regulated subject.
+    """
+    low = str(text or "").lower()
+    return bool(low.strip() and _AI_ACT_TRANSPARENCY_RESCUE_RE.search(low))
+
+
 _OTHER_REGULATION_PATTERNS: tuple[re.Pattern, ...] = (
     re.compile(r"\bGDPR\b", re.IGNORECASE),
     re.compile(r"\bgeneral\s+data\s+protection\s+regulation\b", re.IGNORECASE),
@@ -3237,6 +3281,27 @@ def classify_scope(question: str) -> ScopeVerdict:
     # AI Act anchor and flow through to step 4b).
     near_oos_fw = _detect_near_oos_framework(cleaned_text)
     if near_oos_fw:
+        # R368 — DSA-transparency rescue: a question about an AI system's
+        # transparency obligations is an AI Act Article 50 question even
+        # when it names VLOP / content-moderation (DSA terminology). The
+        # expert gold for these shapes cites Article 50. Pure-DSA shapes
+        # (no standalone ``ai`` subject) stay NEAR_OOS below. The rescue
+        # routes to the grounded RAG engine — never the general assistant
+        # (the R273 hallucination guard stays intact).
+        if (
+            near_oos_fw == "Digital Services Act"
+            and _is_ai_act_transparency_question(cleaned_text)
+        ):
+            return ScopeVerdict(
+                in_scope=True,
+                reason=ScopeReason.IN_SCOPE,
+                evidence=(
+                    "DSA-transparency rescue: the question asks about the "
+                    "AI system's transparency obligations (AI Act Art. 50), "
+                    "not the platform's DSA duties."
+                ),
+                referenced_articles=known,
+            )
         return ScopeVerdict(
             in_scope=False,
             reason=ScopeReason.NEAR_OOS,

@@ -1509,6 +1509,15 @@ def _engine_cache_key(
             # entities on chatbot/interaction shapes, flipping
             # GraphRAGResponse.references. Same R263.2 doctrine.
             "REGENOLD_ART50_CHAT_ANCHOR",
+            # R368 — Annex III / Article 50 deterministic recall supplements
+            # (siblings of REGENOLD_RISK_CLASS_ANNEX): the medical / MSA /
+            # EU-database / operator shapes append Annex III (and Art. 79 /
+            # 80 for the MSA shape); the VLOP-transparency / fines /
+            # biometric shapes append Art. 50. Both flip
+            # GraphRAGResponse.references, so both are engine-level and must
+            # be keyed (R334 drift guard enforces their presence).
+            "REGENOLD_ANNEXIII_RECALL_SUPPLEMENTS",
+            "REGENOLD_ART50_RECALL_SUPPLEMENTS",
             # R327 gate — the open-domain half of the semantic layers, separable
             # so constrained-only can be measured. Engine-level (it changes the
             # Stage-2 grounding block), so it must be keyed like its master.
