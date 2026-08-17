@@ -1,0 +1,2916 @@
+{
+  "label": "r369-golden",
+  "sources": [
+    "graphrag",
+    "expert_review"
+  ],
+  "elapsed_s": 323.1,
+  "generated_at": "2026-08-17T18:03:37Z",
+  "deterministic": {
+    "ref_loose": {
+      "mean": 0.8216666666666667,
+      "n": 60
+    },
+    "ref_strict": {
+      "mean": 0.6988227513227513,
+      "n": 60
+    },
+    "ref_conc": {
+      "mean": 0.5757309145880574,
+      "n": 60
+    },
+    "kw_recall": {
+      "mean": 0.6931746031746031,
+      "n": 60
+    },
+    "gold_dropped_head_total": 20.0
+  },
+  "judge": {
+    "model": "qwen.qwen3-32b-v1:0",
+    "model_served": [
+      "qwen.qwen3-32b-v1:0"
+    ],
+    "provider": "bedrock",
+    "gold_coverage": 0.95,
+    "aggregate": {
+      "answer_correctness": {
+        "n": 60,
+        "pass": 38,
+        "fail": 22,
+        "error": 0,
+        "pass_rate": 0.6333,
+        "pass_rate_over_non_error": 0.6333,
+        "top_failure_modes": [
+          [
+            "incorrect assertion",
+            3
+          ],
+          [
+            "unsupported and missing legal points",
+            2
+          ],
+          [
+            "incorrect and unsupported claims",
+            2
+          ],
+          [
+            "incorrect reference to Article 50",
+            2
+          ],
+          [
+            "unsupported claims and missing obligations",
+            1
+          ],
+          [
+            "unsupported_and_missing",
+            1
+          ],
+          [
+            "unsupported and missing",
+            1
+          ],
+          [
+            "mischaracterization",
+            1
+          ]
+        ],
+        "mean_factual_score": 0.7791
+      },
+      "reference_correctness": {
+        "n": 60,
+        "pass": 16,
+        "fail": 44,
+        "error": 0,
+        "pass_rate": 0.2667,
+        "pass_rate_over_non_error": 0.2667,
+        "top_failure_modes": [
+          [
+            "over-citation and under-citation",
+            24
+          ],
+          [
+            "over-citation",
+            14
+          ],
+          [
+            "incomplete citation",
+            2
+          ],
+          [
+            "over-citation and missing load-bearing provision",
+            2
+          ],
+          [
+            "omission",
+            1
+          ],
+          [
+            "(unspecified)",
+            1
+          ]
+        ],
+        "mean_precision": 0.6041,
+        "mean_recall": 0.7941,
+        "recall_n": 57,
+        "mean_f1": 0.6862,
+        "top_wrong_refs": [
+          [
+            "Article 50",
+            8
+          ],
+          [
+            "Annex III",
+            6
+          ],
+          [
+            "Article 6.1",
+            5
+          ],
+          [
+            "Annex I",
+            5
+          ],
+          [
+            "Article 5",
+            5
+          ],
+          [
+            "Article 25",
+            4
+          ],
+          [
+            "Article 6.2",
+            3
+          ],
+          [
+            "Article 27",
+            3
+          ],
+          [
+            "Article 53",
+            3
+          ],
+          [
+            "Article 16",
+            3
+          ],
+          [
+            "Article 26",
+            3
+          ],
+          [
+            "Article 9",
+            2
+          ],
+          [
+            "Article 43.3",
+            2
+          ],
+          [
+            "Article 13",
+            2
+          ],
+          [
+            "Article 43.4",
+            2
+          ]
+        ],
+        "top_missing_refs": [
+          [
+            "Annex I",
+            3
+          ],
+          [
+            "Article 5.1.f",
+            3
+          ],
+          [
+            "Annex III",
+            3
+          ],
+          [
+            "Article 6",
+            3
+          ],
+          [
+            "Article 15",
+            2
+          ],
+          [
+            "Article 5.1.g",
+            2
+          ],
+          [
+            "Article 51",
+            2
+          ],
+          [
+            "Article 50",
+            2
+          ],
+          [
+            "Article 27",
+            1
+          ],
+          [
+            "Article 50.1",
+            1
+          ],
+          [
+            "Article 18",
+            1
+          ],
+          [
+            "Article 43.1",
+            1
+          ],
+          [
+            "Article 99",
+            1
+          ],
+          [
+            "Article 3",
+            1
+          ],
+          [
+            "Article 26",
+            1
+          ]
+        ]
+      },
+      "citation_faithfulness": {
+        "n": 60,
+        "pass": 55,
+        "fail": 5,
+        "error": 0,
+        "pass_rate": 0.9167,
+        "pass_rate_over_non_error": 0.9167,
+        "top_failure_modes": [
+          [
+            "cite-and-mismatch",
+            5
+          ]
+        ]
+      }
+    }
+  },
+  "rows": [
+    {
+      "id": "graphrag:med_1",
+      "category": "medtech_high_risk",
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "pass",
+          "correct": 4,
+          "incorrect": 0,
+          "unsupported": 0,
+          "missing": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "verdict_unsupported_strict": "pass",
+          "verdict_hard_only": "pass",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "fail",
+          "n_predicted": 2,
+          "correct": 1,
+          "wrong": 1,
+          "missing": 1,
+          "precision": 0.5,
+          "recall": 0.6666666666666666,
+          "wrong_refs": [
+            "Annex III"
+          ],
+          "missing_refs": [
+            "Annex I"
+          ],
+          "failure_mode": "over-citation and under-citation",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 1,
+          "mismatched": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0"
+        }
+      }
+    },
+    {
+      "id": "graphrag:med_2",
+      "category": "medtech_qms",
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "pass",
+          "correct": 14,
+          "incorrect": 0,
+          "unsupported": 0,
+          "missing": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "verdict_unsupported_strict": "pass",
+          "verdict_hard_only": "pass",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "fail",
+          "n_predicted": 7,
+          "correct": 3,
+          "wrong": 4,
+          "missing": 0,
+          "precision": 0.42857142857142855,
+          "recall": 1.0,
+          "wrong_refs": [
+            "Article 6.1",
+            "Annex I",
+            "Article 9",
+            "Article 43.3"
+          ],
+          "missing_refs": [],
+          "failure_mode": "over-citation",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 7,
+          "mismatched": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0"
+        }
+      }
+    },
+    {
+      "id": "graphrag:med_3",
+      "category": "medtech_deployer_obligations",
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "fail",
+          "correct": 3,
+          "incorrect": 0,
+          "unsupported": 1,
+          "missing": 1,
+          "failure_mode": "unsupported and missing legal points",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "verdict_unsupported_strict": "fail",
+          "verdict_hard_only": "fail",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "fail",
+          "n_predicted": 4,
+          "correct": 3,
+          "wrong": 1,
+          "missing": 1,
+          "precision": 0.75,
+          "recall": 0.75,
+          "wrong_refs": [
+            "Article 13"
+          ],
+          "missing_refs": [
+            "Article 27"
+          ],
+          "failure_mode": "over-citation and under-citation",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 5,
+          "mismatched": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0"
+        }
+      }
+    },
+    {
+      "id": "graphrag:med_4",
+      "category": "medtech_scope_research",
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "fail",
+          "correct": 2,
+          "incorrect": 1,
+          "unsupported": 1,
+          "missing": 0,
+          "failure_mode": "incorrect assertion",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "verdict_unsupported_strict": "fail",
+          "verdict_hard_only": "fail",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "fail",
+          "n_predicted": 2,
+          "correct": 1,
+          "wrong": 1,
+          "missing": 0,
+          "precision": 0.5,
+          "recall": 1.0,
+          "wrong_refs": [
+            "Article 5"
+          ],
+          "missing_refs": [],
+          "failure_mode": "over-citation",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 2,
+          "mismatched": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0"
+        }
+      }
+    },
+    {
+      "id": "graphrag:med_5",
+      "category": "medtech_transparency_chatbot",
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "fail",
+          "correct": 3,
+          "incorrect": 0,
+          "unsupported": 3,
+          "missing": 1,
+          "failure_mode": "unsupported claims and missing obligations",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "verdict_unsupported_strict": "fail",
+          "verdict_hard_only": "fail",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "fail",
+          "n_predicted": 5,
+          "correct": 2,
+          "wrong": 3,
+          "missing": 1,
+          "precision": 0.4,
+          "recall": 0.6666666666666666,
+          "wrong_refs": [
+            "Article 5.1.a",
+            "Article 5.1.b",
+            "Annex III"
+          ],
+          "missing_refs": [
+            "Article 50.1"
+          ],
+          "failure_mode": "over-citation and under-citation",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 5,
+          "mismatched": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0"
+        }
+      }
+    },
+    {
+      "id": "graphrag:med_6",
+      "category": "medtech_classification",
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "pass",
+          "correct": 2,
+          "incorrect": 0,
+          "unsupported": 0,
+          "missing": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "verdict_unsupported_strict": "pass",
+          "verdict_hard_only": "pass",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "fail",
+          "n_predicted": 4,
+          "correct": 2,
+          "wrong": 2,
+          "missing": 0,
+          "precision": 0.5,
+          "recall": 1.0,
+          "wrong_refs": [
+            "Article 50.1",
+            "Annex I"
+          ],
+          "missing_refs": [],
+          "failure_mode": "over-citation",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 2,
+          "mismatched": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0"
+        }
+      }
+    },
+    {
+      "id": "graphrag:med_7",
+      "category": "medtech_technical_documentation",
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "pass",
+          "correct": 10,
+          "incorrect": 0,
+          "unsupported": 0,
+          "missing": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "verdict_unsupported_strict": "pass",
+          "verdict_hard_only": "pass",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "fail",
+          "n_predicted": 2,
+          "correct": 2,
+          "wrong": 0,
+          "missing": 1,
+          "precision": 1.0,
+          "recall": 0.6666666666666666,
+          "wrong_refs": [],
+          "missing_refs": [
+            "Article 18"
+          ],
+          "failure_mode": "omission",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 1,
+          "mismatched": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0"
+        }
+      }
+    },
+    {
+      "id": "graphrag:med_8",
+      "category": "medtech_prohibited_emotion",
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "pass",
+          "correct": 4,
+          "incorrect": 0,
+          "unsupported": 0,
+          "missing": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "verdict_unsupported_strict": "pass",
+          "verdict_hard_only": "pass",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "fail",
+          "n_predicted": 5,
+          "correct": 2,
+          "wrong": 3,
+          "missing": 1,
+          "precision": 0.4,
+          "recall": 0.6666666666666666,
+          "wrong_refs": [
+            "Article 5.1.g",
+            "Annex III",
+            "Article 6.2"
+          ],
+          "missing_refs": [
+            "Article 5.1.f"
+          ],
+          "failure_mode": "over-citation and under-citation",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 3,
+          "mismatched": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0"
+        }
+      }
+    },
+    {
+      "id": "graphrag:med_9",
+      "category": "medtech_conformity_assessment",
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "pass",
+          "correct": 6,
+          "incorrect": 0,
+          "unsupported": 0,
+          "missing": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "verdict_unsupported_strict": "pass",
+          "verdict_hard_only": "pass",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "fail",
+          "n_predicted": 4,
+          "correct": 2,
+          "wrong": 2,
+          "missing": 1,
+          "precision": 0.5,
+          "recall": 0.6666666666666666,
+          "wrong_refs": [
+            "Article 43.4",
+            "Article 31.4"
+          ],
+          "missing_refs": [
+            "Article 43.1"
+          ],
+          "failure_mode": "over-citation and under-citation",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 3,
+          "mismatched": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0"
+        }
+      }
+    },
+    {
+      "id": "graphrag:med_10",
+      "category": "medtech_penalties",
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "fail",
+          "correct": 0,
+          "incorrect": 0,
+          "unsupported": 4,
+          "missing": 1,
+          "failure_mode": "unsupported_and_missing",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "verdict_unsupported_strict": "fail",
+          "verdict_hard_only": "fail",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "fail",
+          "n_predicted": 3,
+          "correct": 1,
+          "wrong": 2,
+          "missing": 1,
+          "precision": 0.333,
+          "recall": 0.5,
+          "wrong_refs": [
+            "Article 13",
+            "Article 27"
+          ],
+          "missing_refs": [
+            "Article 99"
+          ],
+          "failure_mode": "over-citation and under-citation",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 4,
+          "mismatched": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0"
+        }
+      }
+    },
+    {
+      "id": "graphrag:gt_01",
+      "category": "risk_taxonomy",
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "fail",
+          "correct": 1,
+          "incorrect": 0,
+          "unsupported": 1,
+          "missing": 1,
+          "failure_mode": "unsupported and missing",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "verdict_unsupported_strict": "fail",
+          "verdict_hard_only": "fail",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "fail",
+          "n_predicted": 5,
+          "correct": 2,
+          "wrong": 3,
+          "missing": 1,
+          "precision": 0.4,
+          "recall": 0.6666666666666666,
+          "wrong_refs": [
+            "Article 5",
+            "Article 50",
+            "Article 53"
+          ],
+          "missing_refs": [
+            "Article 3"
+          ],
+          "failure_mode": "over-citation and under-citation",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 5,
+          "mismatched": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0"
+        }
+      }
+    },
+    {
+      "id": "graphrag:gt_02",
+      "category": "prohibited",
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "fail",
+          "correct": 7,
+          "incorrect": 1,
+          "unsupported": 0,
+          "missing": 0,
+          "failure_mode": "mischaracterization",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "verdict_unsupported_strict": "fail",
+          "verdict_hard_only": "fail",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "pass",
+          "n_predicted": 1,
+          "correct": 1,
+          "wrong": 0,
+          "missing": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "wrong_refs": [],
+          "missing_refs": [],
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 8,
+          "mismatched": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0"
+        }
+      }
+    },
+    {
+      "id": "graphrag:gt_03",
+      "category": "high_risk_definition",
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "pass",
+          "correct": 10,
+          "incorrect": 0,
+          "unsupported": 0,
+          "missing": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "verdict_unsupported_strict": "pass",
+          "verdict_hard_only": "pass",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "fail",
+          "n_predicted": 3,
+          "correct": 1,
+          "wrong": 2,
+          "missing": 0,
+          "precision": 0.333,
+          "recall": 1.0,
+          "wrong_refs": [
+            "Annex I",
+            "Annex III"
+          ],
+          "missing_refs": [],
+          "failure_mode": "over-citation",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 3,
+          "mismatched": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0"
+        }
+      }
+    },
+    {
+      "id": "graphrag:gt_04",
+      "category": "high_risk_sectors",
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "fail",
+          "correct": 5,
+          "incorrect": 1,
+          "unsupported": 1,
+          "missing": 0,
+          "failure_mode": "incorrect assertion",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "verdict_unsupported_strict": "fail",
+          "verdict_hard_only": "fail",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "fail",
+          "n_predicted": 3,
+          "correct": 2,
+          "wrong": 1,
+          "missing": 1,
+          "precision": 0.6666666666666666,
+          "recall": 0.5,
+          "wrong_refs": [
+            "Annex I"
+          ],
+          "missing_refs": [
+            "Annex III"
+          ],
+          "failure_mode": "over-citation and under-citation",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 3,
+          "mismatched": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0"
+        }
+      }
+    },
+    {
+      "id": "graphrag:gt_05",
+      "category": "transparency",
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "pass",
+          "correct": 3,
+          "incorrect": 0,
+          "unsupported": 0,
+          "missing": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "verdict_unsupported_strict": "pass",
+          "verdict_hard_only": "pass",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "pass",
+          "n_predicted": 1,
+          "correct": 1,
+          "wrong": 0,
+          "missing": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "wrong_refs": [],
+          "missing_refs": [],
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 3,
+          "mismatched": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0"
+        }
+      }
+    },
+    {
+      "id": "graphrag:gt_06",
+      "category": "minimal_risk",
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "fail",
+          "correct": 2,
+          "incorrect": 1,
+          "unsupported": 2,
+          "missing": 0,
+          "failure_mode": "unsupported claims",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "verdict_unsupported_strict": "fail",
+          "verdict_hard_only": "fail",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "predicted_refs_fallback_circular"
+        },
+        "reference_correctness": {
+          "verdict": "fail",
+          "n_predicted": 3,
+          "correct": 0,
+          "wrong": 3,
+          "missing": 0,
+          "precision": 0.0,
+          "recall": null,
+          "wrong_refs": [
+            "Article 5",
+            "Article 6",
+            "Article 50"
+          ],
+          "missing_refs": [],
+          "failure_mode": "over-citation",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "recall_available": false,
+          "recall_provenance": "unavailable_no_independent_gold"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 4,
+          "mismatched": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0"
+        }
+      }
+    },
+    {
+      "id": "graphrag:gt_07",
+      "category": "guiding_principles",
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "fail",
+          "correct": 1,
+          "incorrect": 0,
+          "unsupported": 1,
+          "missing": 1,
+          "failure_mode": "unsupported_claim",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "verdict_unsupported_strict": "fail",
+          "verdict_hard_only": "fail",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "predicted_refs_fallback_circular"
+        },
+        "reference_correctness": {
+          "verdict": "fail",
+          "n_predicted": 2,
+          "correct": 0,
+          "wrong": 2,
+          "missing": 0,
+          "precision": 0.0,
+          "recall": null,
+          "wrong_refs": [
+            "Article 1",
+            "Article 4"
+          ],
+          "missing_refs": [],
+          "failure_mode": "over-citation and under-citation",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "recall_available": false,
+          "recall_provenance": "unavailable_no_independent_gold"
+        },
+        "citation_faithfulness": {
+          "verdict": "fail",
+          "faithful": 1,
+          "mismatched": 1,
+          "failure_mode": "cite-and-mismatch",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0"
+        }
+      }
+    },
+    {
+      "id": "graphrag:gt_08",
+      "category": "definition",
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "pass",
+          "correct": 1,
+          "incorrect": 0,
+          "unsupported": 0,
+          "missing": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "verdict_unsupported_strict": "pass",
+          "verdict_hard_only": "pass",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "pass",
+          "n_predicted": 1,
+          "correct": 1,
+          "wrong": 0,
+          "missing": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "wrong_refs": [],
+          "missing_refs": [],
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 1,
+          "mismatched": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0"
+        }
+      }
+    },
+    {
+      "id": "graphrag:gt_09",
+      "category": "penalties",
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "pass",
+          "correct": 5,
+          "incorrect": 0,
+          "unsupported": 0,
+          "missing": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "verdict_unsupported_strict": "pass",
+          "verdict_hard_only": "pass",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "pass",
+          "n_predicted": 1,
+          "correct": 1,
+          "wrong": 0,
+          "missing": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "wrong_refs": [],
+          "missing_refs": [],
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 2,
+          "mismatched": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0"
+        }
+      }
+    },
+    {
+      "id": "graphrag:gt_10",
+      "category": "roles",
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "fail",
+          "correct": 3,
+          "incorrect": 1,
+          "unsupported": 1,
+          "missing": 0,
+          "failure_mode": "incorrect assertion",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "verdict_unsupported_strict": "fail",
+          "verdict_hard_only": "fail",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "fail",
+          "n_predicted": 4,
+          "correct": 1,
+          "wrong": 3,
+          "missing": 0,
+          "precision": 0.25,
+          "recall": 1.0,
+          "wrong_refs": [
+            "Article 25",
+            "Article 16",
+            "Article 26"
+          ],
+          "failure_mode": "over-citation",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 4,
+          "mismatched": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0"
+        }
+      }
+    },
+    {
+      "id": "graphrag:ng_01",
+      "category": "risk_assessment",
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "pass",
+          "correct": 11,
+          "incorrect": 0,
+          "unsupported": 0,
+          "missing": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "verdict_unsupported_strict": "pass",
+          "verdict_hard_only": "pass",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "fail",
+          "n_predicted": 3,
+          "correct": 2,
+          "wrong": 1,
+          "missing": 0,
+          "precision": 0.6666666666666666,
+          "recall": 1.0,
+          "wrong_refs": [
+            "Annex III"
+          ],
+          "missing_refs": [],
+          "failure_mode": "over-citation",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "fail",
+          "faithful": 1,
+          "mismatched": 1,
+          "failure_mode": "cite-and-mismatch",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0"
+        }
+      }
+    },
+    {
+      "id": "graphrag:ng_02",
+      "category": "sanctions",
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "pass",
+          "correct": 4,
+          "incorrect": 0,
+          "unsupported": 0,
+          "missing": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "verdict_unsupported_strict": "pass",
+          "verdict_hard_only": "pass",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "fail",
+          "n_predicted": 3,
+          "correct": 2,
+          "wrong": 1,
+          "missing": 0,
+          "precision": 0.6666666666666666,
+          "recall": 1.0,
+          "wrong_refs": [
+            "Article 50"
+          ],
+          "missing_refs": [],
+          "failure_mode": "over-citation",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 2,
+          "mismatched": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0"
+        }
+      }
+    },
+    {
+      "id": "graphrag:ng_03",
+      "category": "deployer_obligations",
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "pass",
+          "correct": 10,
+          "incorrect": 0,
+          "unsupported": 0,
+          "missing": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "verdict_unsupported_strict": "pass",
+          "verdict_hard_only": "pass",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "fail",
+          "n_predicted": 5,
+          "correct": 2,
+          "wrong": 3,
+          "missing": 1,
+          "precision": 0.4,
+          "recall": 0.6666666666666666,
+          "wrong_refs": [
+            "Article 16",
+            "Article 25.1",
+            "Annex III"
+          ],
+          "missing_refs": [
+            "Article 26"
+          ],
+          "failure_mode": "over-citation and under-citation",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 7,
+          "mismatched": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0"
+        }
+      }
+    },
+    {
+      "id": "graphrag:ng_04",
+      "category": "high_risk_requirements",
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "fail",
+          "correct": 10,
+          "incorrect": 1,
+          "unsupported": 1,
+          "missing": 1,
+          "failure_mode": "unsupported claim",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "verdict_unsupported_strict": "fail",
+          "verdict_hard_only": "fail",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "fail",
+          "n_predicted": 3,
+          "correct": 2,
+          "wrong": 1,
+          "missing": 3,
+          "precision": 0.6666666666666666,
+          "recall": 0.3333333333333333,
+          "wrong_refs": [
+            "Annex IV"
+          ],
+          "missing_refs": [
+            "Article 11",
+            "Article 14",
+            "Article 15"
+          ],
+          "failure_mode": "over-citation and under-citation",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 7,
+          "mismatched": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0"
+        }
+      }
+    },
+    {
+      "id": "graphrag:ng_05",
+      "category": "provider_obligations",
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "pass",
+          "correct": 10,
+          "incorrect": 0,
+          "unsupported": 0,
+          "missing": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "verdict_unsupported_strict": "pass",
+          "verdict_hard_only": "pass",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "fail",
+          "n_predicted": 5,
+          "correct": 4,
+          "wrong": 1,
+          "missing": 0,
+          "precision": 0.8,
+          "recall": 1.0,
+          "wrong_refs": [
+            "Annex IV"
+          ],
+          "missing_refs": [],
+          "failure_mode": "over-citation",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 5,
+          "mismatched": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0"
+        }
+      }
+    },
+    {
+      "id": "graphrag:ng_06",
+      "category": "conformity_assessment",
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "pass",
+          "correct": 10,
+          "incorrect": 0,
+          "unsupported": 0,
+          "missing": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "verdict_unsupported_strict": "pass",
+          "verdict_hard_only": "pass",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "fail",
+          "n_predicted": 3,
+          "correct": 1,
+          "wrong": 2,
+          "missing": 2,
+          "precision": 0.333,
+          "recall": 0.333,
+          "wrong_refs": [
+            "Article 43.3",
+            "Article 43.4"
+          ],
+          "missing_refs": [
+            "Article 43",
+            "Annex VII"
+          ],
+          "failure_mode": "over-citation and under-citation",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 3,
+          "mismatched": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0"
+        }
+      }
+    },
+    {
+      "id": "graphrag:ng_07",
+      "category": "systemic_risk",
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "fail",
+          "correct": 0,
+          "incorrect": 0,
+          "unsupported": 1,
+          "missing": 1,
+          "failure_mode": "definition_missing",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "verdict_unsupported_strict": "fail",
+          "verdict_hard_only": "fail",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "fail",
+          "n_predicted": 2,
+          "correct": 1,
+          "wrong": 1,
+          "missing": 0,
+          "precision": 0.5,
+          "recall": 1.0,
+          "wrong_refs": [
+            "Article 55"
+          ],
+          "missing_refs": [],
+          "failure_mode": "over-citation",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 1,
+          "mismatched": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0"
+        }
+      }
+    },
+    {
+      "id": "graphrag:ng_08",
+      "category": "gpai_definition",
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "fail",
+          "correct": 0,
+          "incorrect": 0,
+          "unsupported": 1,
+          "missing": 1,
+          "failure_mode": "definition not provided",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "verdict_unsupported_strict": "fail",
+          "verdict_hard_only": "fail",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "fail",
+          "n_predicted": 3,
+          "correct": 1,
+          "wrong": 2,
+          "missing": 0,
+          "precision": 0.333,
+          "recall": 1.0,
+          "wrong_refs": [
+            "Article 53",
+            "Article 51"
+          ],
+          "missing_refs": [],
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 1,
+          "mismatched": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0"
+        }
+      }
+    },
+    {
+      "id": "graphrag:ng_09",
+      "category": "qms",
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "fail",
+          "correct": 12,
+          "incorrect": 1,
+          "unsupported": 1,
+          "missing": 3,
+          "failure_mode": "incorrect and unsupported claims",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "verdict_unsupported_strict": "fail",
+          "verdict_hard_only": "fail",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "fail",
+          "n_predicted": 3,
+          "correct": 1,
+          "wrong": 2,
+          "missing": 0,
+          "precision": 0.333,
+          "recall": 1.0,
+          "wrong_refs": [
+            "Article 63.1",
+            "Article 9"
+          ],
+          "missing_refs": [],
+          "failure_mode": "over-citation",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 3,
+          "mismatched": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0"
+        }
+      }
+    },
+    {
+      "id": "graphrag:ng_10",
+      "category": "bias_mitigation",
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "fail",
+          "correct": 3,
+          "incorrect": 0,
+          "unsupported": 2,
+          "missing": 1,
+          "failure_mode": "unsupported and missing legal points",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "verdict_unsupported_strict": "fail",
+          "verdict_hard_only": "fail",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "fail",
+          "n_predicted": 4,
+          "correct": 1,
+          "wrong": 3,
+          "missing": 1,
+          "precision": 0.25,
+          "recall": 0.5,
+          "wrong_refs": [
+            "Article 55.1.a",
+            "Article 9.1",
+            "Article 9.2.a"
+          ],
+          "missing_refs": [
+            "Article 15"
+          ],
+          "failure_mode": "over-citation and under-citation",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 5,
+          "mismatched": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0"
+        }
+      }
+    },
+    {
+      "id": "graphrag:gt_11",
+      "category": "hardware_specs",
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "pass",
+          "correct": 2,
+          "incorrect": 0,
+          "unsupported": 0,
+          "missing": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "verdict_unsupported_strict": "pass",
+          "verdict_hard_only": "pass",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "pass",
+          "n_predicted": 2,
+          "correct": 2,
+          "wrong": 0,
+          "missing": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "wrong_refs": [],
+          "missing_refs": [],
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 2,
+          "mismatched": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0"
+        }
+      }
+    },
+    {
+      "id": "graphrag:gt_12",
+      "category": "emotion_recognition",
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "pass",
+          "correct": 3,
+          "incorrect": 0,
+          "unsupported": 0,
+          "missing": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "verdict_unsupported_strict": "pass",
+          "verdict_hard_only": "pass",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "fail",
+          "n_predicted": 5,
+          "correct": 1,
+          "wrong": 4,
+          "missing": 0,
+          "precision": 0.2,
+          "recall": 1.0,
+          "wrong_refs": [
+            "Article 50.3",
+            "Article 5.1.f",
+            "Annex III.1.c",
+            "Article 50"
+          ],
+          "missing_refs": [],
+          "failure_mode": "over-citation",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 4,
+          "mismatched": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0"
+        }
+      }
+    },
+    {
+      "id": "graphrag:gt_13",
+      "category": "transcription_classification",
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "pass",
+          "correct": 5,
+          "incorrect": 0,
+          "unsupported": 0,
+          "missing": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "verdict_unsupported_strict": "pass",
+          "verdict_hard_only": "pass",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "fail",
+          "n_predicted": 6,
+          "correct": 3,
+          "wrong": 3,
+          "missing": 2,
+          "precision": 0.5,
+          "recall": 0.6,
+          "wrong_refs": [
+            "Article 6.1",
+            "Article 50",
+            "Annex I"
+          ],
+          "missing_refs": [
+            "Article 6",
+            "Annex III.5.a"
+          ],
+          "failure_mode": "over-citation and under-citation",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 4,
+          "mismatched": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0"
+        }
+      }
+    },
+    {
+      "id": "graphrag:med_01",
+      "category": "medtech_high_risk",
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "pass",
+          "correct": 5,
+          "incorrect": 0,
+          "unsupported": 0,
+          "missing": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "verdict_unsupported_strict": "pass",
+          "verdict_hard_only": "pass",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "pass",
+          "n_predicted": 3,
+          "correct": 3,
+          "wrong": 0,
+          "missing": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "wrong_refs": [],
+          "missing_refs": [],
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 2,
+          "mismatched": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0"
+        }
+      }
+    },
+    {
+      "id": "graphrag:med_02",
+      "category": "medtech_triage",
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "pass",
+          "correct": 6,
+          "incorrect": 0,
+          "unsupported": 0,
+          "missing": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "verdict_unsupported_strict": "pass",
+          "verdict_hard_only": "pass",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "fail",
+          "n_predicted": 4,
+          "correct": 2,
+          "wrong": 2,
+          "missing": 1,
+          "precision": 0.5,
+          "recall": 0.6666666666666666,
+          "wrong_refs": [
+            "Article 6.2",
+            "Annex III.1.b"
+          ],
+          "missing_refs": [
+            "Article 5.1.g"
+          ],
+          "failure_mode": "over-citation and under-citation",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 4,
+          "mismatched": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0"
+        }
+      }
+    },
+    {
+      "id": "graphrag:med_03",
+      "category": "lifesciences_gpai",
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "fail",
+          "correct": 10,
+          "incorrect": 1,
+          "unsupported": 1,
+          "missing": 0,
+          "failure_mode": "incorrect reference to Article 50",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "verdict_unsupported_strict": "fail",
+          "verdict_hard_only": "fail",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "fail",
+          "n_predicted": 3,
+          "correct": 2,
+          "wrong": 1,
+          "missing": 1,
+          "precision": 0.6666666666666666,
+          "recall": 0.75,
+          "wrong_refs": [
+            "Article 50.2"
+          ],
+          "missing_refs": [
+            "Article 51"
+          ],
+          "failure_mode": "over-citation and under-citation",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 4,
+          "mismatched": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0"
+        }
+      }
+    },
+    {
+      "id": "graphrag:med_04",
+      "category": "lifesciences_research",
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "pass",
+          "correct": 2,
+          "incorrect": 0,
+          "unsupported": 0,
+          "missing": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "verdict_unsupported_strict": "pass",
+          "verdict_hard_only": "pass",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "pass",
+          "n_predicted": 1,
+          "correct": 1,
+          "wrong": 0,
+          "missing": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "wrong_refs": [],
+          "missing_refs": [],
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 2,
+          "mismatched": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0"
+        }
+      }
+    },
+    {
+      "id": "graphrag:med_05",
+      "category": "medtech_chatbot",
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "fail",
+          "correct": 0,
+          "incorrect": 0,
+          "unsupported": 4,
+          "missing": 2,
+          "failure_mode": "omission of key transparency obligations",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "verdict_unsupported_strict": "fail",
+          "verdict_hard_only": "fail",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "fail",
+          "n_predicted": 6,
+          "correct": 2,
+          "wrong": 4,
+          "missing": 1,
+          "precision": 0.3333333333333333,
+          "recall": 0.6666666666666666,
+          "wrong_refs": [
+            "Article 26",
+            "Article 27",
+            "Article 86",
+            "Article 25"
+          ],
+          "missing_refs": [
+            "Article 50"
+          ],
+          "failure_mode": "over-citation and under-citation",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 6,
+          "mismatched": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0"
+        }
+      }
+    },
+    {
+      "id": "graphrag:med_06",
+      "category": "medtech_emotion_workplace",
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "pass",
+          "correct": 4,
+          "incorrect": 0,
+          "unsupported": 0,
+          "missing": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "verdict_unsupported_strict": "pass",
+          "verdict_hard_only": "pass",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "fail",
+          "n_predicted": 1,
+          "correct": 1,
+          "wrong": 0,
+          "missing": 1,
+          "precision": 1.0,
+          "recall": 0.5,
+          "wrong_refs": [],
+          "missing_refs": [
+            "Article 5.1.f"
+          ],
+          "failure_mode": "incomplete citation",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 1,
+          "mismatched": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0"
+        }
+      }
+    },
+    {
+      "id": "graphrag:med_07",
+      "category": "medtech_robotic_surgery",
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "pass",
+          "correct": 1,
+          "incorrect": 0,
+          "unsupported": 3,
+          "missing": 0,
+          "failure_mode": "unsupported_legal_claims",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "verdict_unsupported_strict": "fail",
+          "verdict_hard_only": "pass",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "fail",
+          "n_predicted": 6,
+          "correct": 2,
+          "wrong": 4,
+          "missing": 1,
+          "precision": 0.333,
+          "recall": 0.666,
+          "wrong_refs": [
+            "Article 6.1",
+            "Article 14",
+            "Article 72",
+            "Article 73"
+          ],
+          "missing_refs": [
+            "Annex I"
+          ],
+          "failure_mode": "over-citation and missing load-bearing provision",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "fail",
+          "faithful": 2,
+          "mismatched": 3,
+          "failure_mode": "cite-and-mismatch",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0"
+        }
+      }
+    },
+    {
+      "id": "expert_review:xr_01",
+      "category": "expert_review",
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "pass",
+          "correct": 12,
+          "incorrect": 0,
+          "unsupported": 0,
+          "missing": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "verdict_unsupported_strict": "pass",
+          "verdict_hard_only": "pass",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "fail",
+          "n_predicted": 5,
+          "correct": 2,
+          "wrong": 3,
+          "missing": 3,
+          "precision": 0.4,
+          "recall": 0.4,
+          "wrong_refs": [
+            "Article 5",
+            "Article 50",
+            "Article 53"
+          ],
+          "missing_refs": [
+            "Article 6",
+            "Annex III",
+            "Article 51"
+          ],
+          "failure_mode": "over-citation and under-citation",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 5,
+          "mismatched": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0"
+        }
+      }
+    },
+    {
+      "id": "expert_review:xr_02",
+      "category": "expert_review",
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "pass",
+          "correct": 8,
+          "incorrect": 0,
+          "unsupported": 0,
+          "missing": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "verdict_unsupported_strict": "pass",
+          "verdict_hard_only": "pass",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "pass",
+          "n_predicted": 1,
+          "correct": 1,
+          "wrong": 0,
+          "missing": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "wrong_refs": [],
+          "missing_refs": [],
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 8,
+          "mismatched": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0"
+        }
+      }
+    },
+    {
+      "id": "expert_review:xr_03",
+      "category": "expert_review",
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "pass",
+          "correct": 12,
+          "incorrect": 0,
+          "unsupported": 0,
+          "missing": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "verdict_unsupported_strict": "pass",
+          "verdict_hard_only": "pass",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "pass",
+          "n_predicted": 3,
+          "correct": 3,
+          "wrong": 0,
+          "missing": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "wrong_refs": [],
+          "missing_refs": [],
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 3,
+          "mismatched": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0"
+        }
+      }
+    },
+    {
+      "id": "expert_review:xr_04",
+      "category": "expert_review",
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "pass",
+          "correct": 10,
+          "incorrect": 0,
+          "unsupported": 0,
+          "missing": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "verdict_unsupported_strict": "pass",
+          "verdict_hard_only": "pass",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "pass",
+          "n_predicted": 3,
+          "correct": 3,
+          "wrong": 0,
+          "missing": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "wrong_refs": [],
+          "missing_refs": [],
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 3,
+          "mismatched": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0"
+        }
+      }
+    },
+    {
+      "id": "expert_review:xr_05",
+      "category": "expert_review",
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "pass",
+          "correct": 9,
+          "incorrect": 0,
+          "unsupported": 0,
+          "missing": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "verdict_unsupported_strict": "pass",
+          "verdict_hard_only": "pass",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "pass",
+          "n_predicted": 1,
+          "correct": 1,
+          "wrong": 0,
+          "missing": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "wrong_refs": [],
+          "missing_refs": [],
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 3,
+          "mismatched": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0"
+        }
+      }
+    },
+    {
+      "id": "expert_review:xr_06",
+      "category": "expert_review",
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "pass",
+          "correct": 6,
+          "incorrect": 0,
+          "unsupported": 0,
+          "missing": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "verdict_unsupported_strict": "pass",
+          "verdict_hard_only": "pass",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "fail",
+          "n_predicted": 3,
+          "correct": 0,
+          "wrong": 3,
+          "missing": 1,
+          "precision": 0.0,
+          "recall": 0.0,
+          "wrong_refs": [
+            "Article 5",
+            "Article 6",
+            "Article 50"
+          ],
+          "missing_refs": [
+            "Article 4"
+          ],
+          "failure_mode": "over-citation and under-citation",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 4,
+          "mismatched": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0"
+        }
+      }
+    },
+    {
+      "id": "expert_review:xr_07",
+      "category": "expert_review",
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "fail",
+          "correct": 0,
+          "incorrect": 0,
+          "unsupported": 2,
+          "missing": 1,
+          "failure_mode": "unsupported claims and missing operative holdings",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "verdict_unsupported_strict": "fail",
+          "verdict_hard_only": "fail",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_answer_only"
+        },
+        "reference_correctness": {
+          "verdict": "fail",
+          "n_predicted": 2,
+          "correct": 0,
+          "wrong": 2,
+          "missing": 0,
+          "precision": 0.0,
+          "recall": null,
+          "wrong_refs": [
+            "Article 1",
+            "Article 4"
+          ],
+          "missing_refs": [],
+          "failure_mode": "over-citation",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "recall_available": false,
+          "recall_provenance": "unavailable_no_independent_gold"
+        },
+        "citation_faithfulness": {
+          "verdict": "fail",
+          "faithful": 1,
+          "mismatched": 1,
+          "failure_mode": "cite-and-mismatch",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0"
+        }
+      }
+    },
+    {
+      "id": "expert_review:xr_08",
+      "category": "expert_review",
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "pass",
+          "correct": 1,
+          "incorrect": 0,
+          "unsupported": 0,
+          "missing": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "verdict_unsupported_strict": "pass",
+          "verdict_hard_only": "pass",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "pass",
+          "n_predicted": 1,
+          "correct": 1,
+          "wrong": 0,
+          "missing": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "wrong_refs": [],
+          "missing_refs": [],
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 1,
+          "mismatched": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0"
+        }
+      }
+    },
+    {
+      "id": "expert_review:xr_09",
+      "category": "expert_review",
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "pass",
+          "correct": 5,
+          "incorrect": 0,
+          "unsupported": 0,
+          "missing": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "verdict_unsupported_strict": "pass",
+          "verdict_hard_only": "pass",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "pass",
+          "n_predicted": 1,
+          "correct": 1,
+          "wrong": 0,
+          "missing": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "wrong_refs": [],
+          "missing_refs": [],
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 2,
+          "mismatched": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0"
+        }
+      }
+    },
+    {
+      "id": "expert_review:xr_10",
+      "category": "expert_review",
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "pass",
+          "correct": 6,
+          "incorrect": 0,
+          "unsupported": 0,
+          "missing": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "verdict_unsupported_strict": "pass",
+          "verdict_hard_only": "pass",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "fail",
+          "n_predicted": 4,
+          "correct": 2,
+          "wrong": 2,
+          "missing": 0,
+          "precision": 0.5,
+          "recall": 1.0,
+          "wrong_refs": [
+            "Article 25",
+            "Article 16"
+          ],
+          "missing_refs": [],
+          "failure_mode": "over-citation",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 3,
+          "mismatched": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0"
+        }
+      }
+    },
+    {
+      "id": "expert_review:xr_11",
+      "category": "expert_review",
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "pass",
+          "correct": 2,
+          "incorrect": 0,
+          "unsupported": 0,
+          "missing": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "verdict_unsupported_strict": "pass",
+          "verdict_hard_only": "pass",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "pass",
+          "n_predicted": 2,
+          "correct": 2,
+          "wrong": 0,
+          "missing": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "wrong_refs": [],
+          "missing_refs": [],
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 2,
+          "mismatched": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0"
+        }
+      }
+    },
+    {
+      "id": "expert_review:xr_12",
+      "category": "expert_review",
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "pass",
+          "correct": 4,
+          "incorrect": 0,
+          "unsupported": 0,
+          "missing": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "verdict_unsupported_strict": "pass",
+          "verdict_hard_only": "pass",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "fail",
+          "n_predicted": 5,
+          "correct": 2,
+          "wrong": 3,
+          "missing": 1,
+          "precision": 0.4,
+          "recall": 0.6666666666666666,
+          "wrong_refs": [
+            "Article 50.3",
+            "Article 5.1.f",
+            "Article 50"
+          ],
+          "missing_refs": [
+            "Annex III.1.c"
+          ],
+          "failure_mode": "over-citation and under-citation",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 4,
+          "mismatched": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0"
+        }
+      }
+    },
+    {
+      "id": "expert_review:xr_13",
+      "category": "expert_review",
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "pass",
+          "correct": 5,
+          "incorrect": 0,
+          "unsupported": 0,
+          "missing": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "verdict_unsupported_strict": "pass",
+          "verdict_hard_only": "pass",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "fail",
+          "n_predicted": 6,
+          "correct": 3,
+          "wrong": 3,
+          "missing": 2,
+          "precision": 0.5,
+          "recall": 0.6,
+          "wrong_refs": [
+            "Article 6.1",
+            "Annex III.5.a",
+            "Annex III.5.d"
+          ],
+          "missing_refs": [
+            "Article 6",
+            "Annex III"
+          ],
+          "failure_mode": "over-citation and under-citation",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 4,
+          "mismatched": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0"
+        }
+      }
+    },
+    {
+      "id": "expert_review:xr_14",
+      "category": "expert_review",
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "pass",
+          "correct": 6,
+          "incorrect": 0,
+          "unsupported": 0,
+          "missing": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "verdict_unsupported_strict": "pass",
+          "verdict_hard_only": "pass",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "pass",
+          "n_predicted": 3,
+          "correct": 3,
+          "wrong": 0,
+          "missing": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "wrong_refs": [],
+          "missing_refs": [],
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 2,
+          "mismatched": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0"
+        }
+      }
+    },
+    {
+      "id": "expert_review:xr_15",
+      "category": "expert_review",
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "fail",
+          "correct": 4,
+          "incorrect": 1,
+          "unsupported": 1,
+          "missing": 1,
+          "failure_mode": "incorrect application of Article 5(1)(g)",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "verdict_unsupported_strict": "fail",
+          "verdict_hard_only": "fail",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "fail",
+          "n_predicted": 4,
+          "correct": 2,
+          "wrong": 2,
+          "missing": 1,
+          "precision": 0.5,
+          "recall": 0.6666666666666666,
+          "wrong_refs": [
+            "Article 6.2",
+            "Article 6.3"
+          ],
+          "missing_refs": [
+            "Article 5.1.g"
+          ],
+          "failure_mode": "over-citation and under-citation",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 4,
+          "mismatched": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0"
+        }
+      }
+    },
+    {
+      "id": "expert_review:xr_16",
+      "category": "expert_review",
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "fail",
+          "correct": 10,
+          "incorrect": 1,
+          "unsupported": 1,
+          "missing": 0,
+          "failure_mode": "incorrect reference to Article 50",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "verdict_unsupported_strict": "fail",
+          "verdict_hard_only": "fail",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "fail",
+          "n_predicted": 3,
+          "correct": 2,
+          "wrong": 1,
+          "missing": 1,
+          "precision": 0.6666666666666666,
+          "recall": 0.75,
+          "wrong_refs": [
+            "Article 50.2"
+          ],
+          "missing_refs": [
+            "Article 53.3"
+          ],
+          "failure_mode": "over-citation and under-citation",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 4,
+          "mismatched": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0"
+        }
+      }
+    },
+    {
+      "id": "expert_review:xr_17",
+      "category": "expert_review",
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "pass",
+          "correct": 4,
+          "incorrect": 0,
+          "unsupported": 0,
+          "missing": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "verdict_unsupported_strict": "pass",
+          "verdict_hard_only": "pass",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "pass",
+          "n_predicted": 1,
+          "correct": 1,
+          "wrong": 0,
+          "missing": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "wrong_refs": [],
+          "missing_refs": [],
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 2,
+          "mismatched": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0"
+        }
+      }
+    },
+    {
+      "id": "expert_review:xr_18",
+      "category": "expert_review",
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "fail",
+          "correct": 0,
+          "incorrect": 3,
+          "unsupported": 2,
+          "missing": 2,
+          "failure_mode": "incorrect and unsupported claims",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "verdict_unsupported_strict": "fail",
+          "verdict_hard_only": "fail",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "fail",
+          "n_predicted": 6,
+          "correct": 2,
+          "wrong": 4,
+          "missing": 2,
+          "precision": 0.3333333333333333,
+          "recall": 0.5,
+          "wrong_refs": [
+            "Article 26",
+            "Article 27",
+            "Article 86",
+            "Article 25"
+          ],
+          "missing_refs": [
+            "Article 50",
+            "Article 13"
+          ],
+          "failure_mode": "over-citation and under-citation",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 6,
+          "mismatched": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0"
+        }
+      }
+    },
+    {
+      "id": "expert_review:xr_19",
+      "category": "expert_review",
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "pass",
+          "correct": 4,
+          "incorrect": 0,
+          "unsupported": 0,
+          "missing": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "verdict_unsupported_strict": "pass",
+          "verdict_hard_only": "pass",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "fail",
+          "n_predicted": 1,
+          "correct": 1,
+          "wrong": 0,
+          "missing": 1,
+          "precision": 1.0,
+          "recall": 0.5,
+          "wrong_refs": [],
+          "missing_refs": [
+            "Article 5.1.f"
+          ],
+          "failure_mode": "incomplete citation",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "pass",
+          "faithful": 1,
+          "mismatched": 0,
+          "failure_mode": "none",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0"
+        }
+      }
+    },
+    {
+      "id": "expert_review:xr_20",
+      "category": "expert_review",
+      "verdicts": {
+        "answer_correctness": {
+          "verdict": "fail",
+          "correct": 3,
+          "incorrect": 1,
+          "unsupported": 1,
+          "missing": 1,
+          "failure_mode": "incorrect reference to Article 43",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "verdict_unsupported_strict": "fail",
+          "verdict_hard_only": "fail",
+          "unsupported_enforced": false,
+          "answer_grounding_source": "gold_refs"
+        },
+        "reference_correctness": {
+          "verdict": "fail",
+          "n_predicted": 6,
+          "correct": 3,
+          "wrong": 3,
+          "missing": 1,
+          "precision": 0.5,
+          "recall": 0.75,
+          "wrong_refs": [
+            "Article 6.1",
+            "Article 14",
+            "Article 73"
+          ],
+          "missing_refs": [
+            "Annex I"
+          ],
+          "failure_mode": "over-citation and missing load-bearing provision",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0",
+          "recall_available": true,
+          "recall_provenance": "independent_gold_context"
+        },
+        "citation_faithfulness": {
+          "verdict": "fail",
+          "faithful": 2,
+          "mismatched": 3,
+          "failure_mode": "cite-and-mismatch",
+          "_judge_model_served": "qwen.qwen3-32b-v1:0"
+        }
+      }
+    }
+  ]
+}
