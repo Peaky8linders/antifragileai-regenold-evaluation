@@ -398,16 +398,51 @@ a `git worktree` — a worktree carries no `.env`, and the denoiser / topic-filt
 / safety-gate cluster changes behaviour on `GROQ_API_KEY` (measured 63 vs 92
 failures on the same commit).
 
-## The graph — live, and read-only from here
+## The graph — live, and ADDITIVELY writable from here (R371)
 
-Aura **`0644b854`**, seed `2026-08-08-r323-annex-sections`, kb `2024.1689.v18`,
-**1758 nodes / 1979 edges** across 18 labels. Measured 2026-08-09.
+⚠ **RE-MEASURED 2026-08-17 at R371. The old census and the "read-only" framing
+were BOTH wrong.** This section used to read *"read-only from here … 1758 nodes
+/ 1979 edges across 18 labels … this repo has never written to it"*. Measured
+against the live instance: **1786 / 2076 across 24 labels**, and the delta is
+exactly the six AIRO families from `938933a` (+28 nodes), `seeded_at
+2026-08-14`. So a write from this lineage had ALREADY happened before R371. The
+annex/SubPoint layer survived it (SubPoint 37, Annex 13), so no downgrade
+occurred — but do not rely on "never written" when judging blast radius.
+
+Aura **`0644b854`**, seed `2026-08-08-r323-annex-sections`, kb `2024.1689.v18`.
+Census after R371's additive extension: **1789 nodes / 2166 edges, 24 labels**.
 
 ```
 Article 113   Annex 13    Paragraph 658   Point 421   SubPoint 37
 Recital 180   Definition 68   Obligation 113   Practice 8
-AnnexIIICategory 8   OperatorRole 5   LifecyclePhase 4   RiskLevel 4
+AnnexIIICategory 8   OperatorRole 8   LifecyclePhase 4   RiskLevel 4
+RiskScenario 8   RiskControl 9   GPAIModelProfile 4   ConformityRoute 3
+FRIAWorkflow 1   SeriousIncidentSLA 3   Dimension 26   Question 94
+Guideline 4   LegalInstrument 1   KBMetadata 1
 ```
+
+⚠ **Hard rule #12 is about the DESTRUCTIVE re-seed, not about all writes.** The
+hazard is the boot auto-seed re-seeding on any `SEED_VERSION` mismatch *without
+checking which side is newer*. An **additive MERGE** is a different operation.
+`scripts/extend_aura_role_obligations.py` (R371) is the worked example and the
+pattern to copy: one NEW relationship type, never matches existing edges for
+write, never touches `KBMetadata` / `SEED_VERSION` / the seeder, censuses
+before and after and **FAILS if any pre-existing count moves**, dry-run by
+default, with an exact `--rollback` (verified: 1789/2166 → 1786/2076) and an
+idempotent re-apply. `NEO4J_AUTO_SEED=0` stays pinned regardless.
+
+⚠ **The role→obligation layer is served by TWO rival definitions.**
+`app/data/role_obligations.py` (9 prose records) feeds the SEEDER;
+`app/data/ontology.py::ROLE_OBLIGATIONS` (8 roles × 7 risk classes → 90
+bindings) feeds the ANSWER path. Before R371 the graph carried only the prose
+side: 5 roles, 36 `HAS_OBLIGATION_ARTICLE` edges, `risk_class` **NULL on all
+36**, and **zero Annex targets** — the seeder's `_existing_article_id` returns
+`None` for any ref not starting with `"Art. "`, so Annex IV / VII / XI / XII
+were silently dropped. R371 added `HAS_RISK_CLASS_OBLIGATION` (90 edges, 8
+roles, 7 classes, annexes included) alongside, and a lint that fails the build
+if the two definitions drift further apart. It already caught three
+statute-verified divergences — see
+[`docs/R371-role-obligation-fidelity.md`](docs/R371-role-obligation-fidelity.md) §2.4.
 
 7 VECTOR indexes, all ONLINE and fully populated (**1,490 embeddings**), plus a
 `ft_provision_prose` FULLTEXT index. Dimensions **128** (TF-IDF → SVD), cosine.
@@ -476,9 +511,14 @@ the re-seed still triggers. What changed is the blast radius — this repo's
 seeder now also writes `RiskScenario` / `RiskControl` / `GPAIModelProfile` /
 `ConformityRoute` / `FRIAWorkflow` / `SeriousIncidentSLA`, so a stray boot would
 not only delete the annex/SubPoint work but inject six unreviewed label families
-into the shared instance. The **18-label / 1758-node census above is still
-correct for the LIVE graph** — this repo has never written to it — and stays
-correct only for exactly as long as that remains true.
+into the shared instance. ⚠ **The last two sentences here used to claim the
+18-label / 1758-node census was still correct because "this repo has never
+written to it". Both halves are FALSE as of 2026-08-17** — the live graph
+carries 24 labels and the six AIRO families are already in it (`seeded_at
+2026-08-14`), and R371 then added `HAS_RISK_CLASS_OBLIGATION` additively. See
+the graph section above for the measured census. The re-seed hazard described
+in this paragraph is unchanged and still real; what is retired is the claim
+that the instance is pristine.
 
 ## Where we stand
 
@@ -1014,6 +1054,7 @@ Keep the curated subset here; do not inline the index.
 | `REGENOLD_CROSS_REF_SNIPPET_CHARS` | **20000** | R339 — per-node ceiling, clamped `[240, 60000]`. Was a hard-coded 240 that cut MID-WORD, and clipped Article 41 to 158 of 3,873 chars (96% loss) with **no marker at all**. Set above the largest reachable node (`art_3`, 17,079) so nothing truncates by default; `_clip_clause` now cuts on a clause/word boundary and always marks ` [...]`. Measured: Stage-2 user payload 122,828 → **135,778** chars, ellipses 2 → **0**, and **Annex IV now arrives complete at 5,720 chars** — where Annex IV(1)(e) lives |
 | `REGENOLD_ANSWER_NO_CAP` | **ON** | removes sentence + char caps live (hard rule #2) |
 | `REGENOLD_KG_CONTEXT` | **ON** | graph context into Stage-2 |
+| `REGENOLD_ROLE_OBLIGATION_CONTEXT` | **OFF** | R371 — renders the role × RISK-CLASS obligation layer as a NON-CITABLE Stage-2 block. The existing `REGULATORY CLASSIFICATION` block says *which* role bears a provision (from `HAS_OBLIGATION_ARTICLE`, whose `risk_class` is **NULL on all 36 edges**); this one says *under which risk class*, from the 90 `HAS_RISK_CLASS_OBLIGATION` edges R371 wrote additively to the live graph — and unlike the older edge it resolves **Annex** targets (the seeder drops every one). Cypher matches only on `$ids`, so it can only describe provisions ALREADY cited and can never introduce one (hard rule #10); pinned by a test that flipping it leaves the wire `references` byte-identical. Marker is in `_R326_RESERVED_MARKERS` or, as the last-rendered block, it would delete itself under budget pressure. Engine-level, in `_engine_cache_key`, fresh read per call. Live fire check: 0 rows → 5 rows, +677 chars, incl. `Annex VII → Notified Body`. ⚠ **UNMEASURED on answer quality** — it is prompt budget on Answer-Conciseness, the one axis we lead. Owed gate: `dynamic_ab --flag REGENOLD_ROLE_OBLIGATION_CONTEXT` with the `gold_dropped` veto. Do not flip the default until that run exists |
 | `REGENOLD_KG_MAX_CHARS` | **48000** | total graph-context ceiling. R328.4 — was 16000 |
 | `REGENOLD_KG_MAX_UNITS` | **70** | units per provision. R328.4 — was 24, which rendered Article 3 as 24 of its 68 definitions with 3(4)-3(8) (the five OPERATOR ROLE definitions) absent and unmarked |
 | `REGENOLD_KG_UNIT_CHARS` | **2000** | per-unit budget; `_UNIT_HARD_CEILING` **9000** for enumerations. R328.4 — were 900 / 2600 |
