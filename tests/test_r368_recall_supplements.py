@@ -28,6 +28,28 @@ from app.engines.risk_classification import (
 )
 from app.integrations.regenold.scope import ScopeReason, classify_scope
 
+from fastapi.testclient import TestClient
+from pydantic import SecretStr
+
+from app.config import settings
+from app.main import app
+
+
+# ── route-level helpers (wire-level regression tests) ────────────────────
+def _client() -> TestClient:
+    settings.regenold.api_key = SecretStr("regenold-test-key")
+    return TestClient(app)
+
+
+def _ask(c: TestClient, content: str) -> dict:
+    r = c.post(
+        "/api/v1/regenold/eu-ai-act/ask",
+        headers={"X-Regenold-Api-Key": "regenold-test-key"},
+        json=[{"role": "user", "content": content}],
+    )
+    assert r.status_code == 200, r.json()
+    return r.json()
+
 
 # ── Annex III family: FIRE (gold-verified rows) ──────────────────────────
 FIRE_ANNEXIII = [
@@ -179,10 +201,21 @@ def test_art50_triggers_do_not_fire(q: str, fn) -> None:
     assert not fn(q), f"Article 50 trigger must NOT fire on {q!r}"
 
 
-# ── gates: default OFF, fresh env read ────────────────────────────────────
-def test_gates_default_off(monkeypatch: pytest.MonkeyPatch) -> None:
+# ── gates: DEFAULT ON (R369), fresh env read, env off-switchable ──────────
+def test_gates_default_on(monkeypatch: pytest.MonkeyPatch) -> None:
+    """R369 — the supplements are default ON: the R365 checkpoint sim
+    (scratch/r369_sim_r368.py) measured 11/81 fires, 12 gold heads recovered,
+    0 false positives (ref_loose 0.764 -> 0.833)."""
     monkeypatch.delenv("REGENOLD_ANNEXIII_RECALL_SUPPLEMENTS", raising=False)
     monkeypatch.delenv("REGENOLD_ART50_RECALL_SUPPLEMENTS", raising=False)
+    assert annexiii_recall_supplements_enabled()
+    assert art50_recall_supplements_enabled()
+
+
+def test_gates_respect_env_off(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The A/B arm: ``0`` restores the pre-R369 wire."""
+    monkeypatch.setenv("REGENOLD_ANNEXIII_RECALL_SUPPLEMENTS", "0")
+    monkeypatch.setenv("REGENOLD_ART50_RECALL_SUPPLEMENTS", "0")
     assert not annexiii_recall_supplements_enabled()
     assert not art50_recall_supplements_enabled()
 
@@ -269,12 +302,66 @@ def test_art50_fines_anchor_appends(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "Art. 50" in entities, f"Art. 50 anchor missing: {entities}"
 
 
-def test_anchors_off_by_default_do_not_append() -> None:
+def test_anchors_on_by_default_append() -> None:
+    """R369 — the medical trigger appends Annex III with the default env."""
     entities = _parse_entities(
         "Is AI software that detects melanoma from dermoscopy images a "
         "high-risk AI system under the EU AI Act?"
     )
-    assert "Annex III" not in entities
+    assert "Annex III" in entities, f"Annex III anchor missing: {entities}"
+
+
+# ── R369 fines-filter complement (la_q16 vs pure-fines shapes) ────────────
+def test_fines_filter_keeps_prohibition_complement() -> None:
+    """The R112 fines filter keeps Art 99 + Art 5 + Art 50 when the R368
+    fines trigger fires (it requires a prohibition token, which pure-fines
+    questions like paper Q9 lack)."""
+    from app.engines.risk_classification import is_fines_prohibited_question
+
+    assert is_fines_prohibited_question(
+        "What are the administrative fines for non-compliance with the "
+        "prohibition of the AI practices?"
+    )
+    assert not is_fines_prohibited_question(
+        "What are the penalties for violating the provisions of the "
+        "regulation for high-risk AI systems?"
+    )
+
+
+# ── R369 wire guard (route-level recovery of trigger-canonical heads) ─────
+def test_fines_wire_recovers_article_50() -> None:
+    """la_q16 end-to-end: the fines filter + wire guard ship the full gold
+    set [Article 5, Article 50, Article 99] (the R369 live-audit fix)."""
+    body = _ask(
+        _client(),
+        "What are the administrative fines for non-compliance with the "
+        "prohibition of the AI practices?",
+    )
+    refs = set(body["references"])
+    assert {"Article 5", "Article 50", "Article 99"} <= refs, refs
+
+
+def test_medical_wire_recovers_annex_iii() -> None:
+    """la_q64 end-to-end: the medical trigger's Annex III survives the budget
+    cut via the wire guard."""
+    body = _ask(
+        _client(),
+        "Is AI software that detects melanoma from dermoscopy images a "
+        "high-risk AI system under the EU AI Act?",
+    )
+    assert "Annex III" in body["references"], body["references"]
+
+
+def test_wire_guard_off_switch_restores_baseline(monkeypatch) -> None:
+    """REGENOLD_R368_WIRE_GUARD=0 must NOT re-append a dropped head — the
+    A/B arm."""
+    monkeypatch.setenv("REGENOLD_R368_WIRE_GUARD", "0")
+    body = _ask(
+        _client(),
+        "Is AI software that detects melanoma from dermoscopy images a "
+        "high-risk AI system under the EU AI Act?",
+    )
+    assert "Annex III" not in body["references"], body["references"]
 
 
 # ── cache-key registration (R334 drift guard) ─────────────────────────────

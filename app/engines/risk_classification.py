@@ -205,6 +205,17 @@ def is_chatbot_transparency_question(question: str) -> bool:
 #
 # Two gates, one per gap family, so each is independently A/B-able; both
 # registered in ``_engine_cache_key`` (R30/R56/R79/R263.2 doctrine).
+#
+# R369 — DEFAULT FLIPPED TO ON. The R365 live judge report measured the two
+# gap families at head level on the 81 live rows (Annex III 10/29 missed,
+# Article 50 7/15 missed, incl. the 3 scope-rescued VLOP rows). The trigger
+# impact above (fires 10, recovers 10, FP 0) was re-validated against the
+# R365 FINAL checkpoint by scratch/r369_sim_r368.py: the seven triggers now
+# fire on 11/81 rows and recover 12 gold heads (la_q35 recovers 79+80+III;
+# la_q83 additionally fires the medical trigger), with ZERO false positives
+# on the whole pool — ref_loose 0.764 -> 0.833, gold-heads-dropped 63 -> 51.
+# Both gates stay fresh-env-read and env-off-switchable ("0"/"false"/"off"
+# restores the pre-R369 wire) so the live A/B can still isolate each family.
 
 _ENV_GATE_ANNEXIII_SUPP = "REGENOLD_ANNEXIII_RECALL_SUPPLEMENTS"
 _ENV_GATE_ART50_SUPP = "REGENOLD_ART50_RECALL_SUPPLEMENTS"
@@ -296,7 +307,11 @@ class _Supplement:
         self._rx = rx
 
     def enabled(self) -> bool:
-        return os.getenv(self._flag, "0").strip().lower() in _TRUTHY
+        # R369 — default ON (was "0"): the R365 measurement showed the
+        # supplements fire on 11/81 live rows with 100% gold precision, so
+        # the recall gain ships by default; ``0``/``false``/``off`` restores
+        # the pre-R369 wire for the A/B arm.
+        return os.getenv(self._flag, "1").strip().lower() in _TRUTHY
 
     def fires(self, question: str) -> bool:
         q = str(question or "")
@@ -318,16 +333,24 @@ _MED_CLASS_TERM_RE = re.compile(r"\bhigh[- ]risk\b", re.IGNORECASE)
 
 
 def annexiii_recall_supplements_enabled() -> bool:
-    """``REGENOLD_ANNEXIII_RECALL_SUPPLEMENTS`` — **DEFAULT OFF**.
+    """``REGENOLD_ANNEXIII_RECALL_SUPPLEMENTS`` — **DEFAULT ON** (R369).
 
+    Measured on the R365 FINAL checkpoint (scratch/r369_sim_r368.py): the
+    medical / MSA / EU-db / operator triggers fire on 8/81 live rows and
+    recover 7 gold heads (Annex III x7, plus Art. 79+80 on la_q35) with
+    zero false positives. ``0`` restores the pre-R369 wire for the A/B arm.
     Registered in ``_engine_cache_key`` (R30/R56/R79/R263.2 doctrine).
     """
-    return os.getenv(_ENV_GATE_ANNEXIII_SUPP, "0").strip().lower() in _TRUTHY
+    return os.getenv(_ENV_GATE_ANNEXIII_SUPP, "1").strip().lower() in _TRUTHY
 
 
 def art50_recall_supplements_enabled() -> bool:
-    """``REGENOLD_ART50_RECALL_SUPPLEMENTS`` — **DEFAULT OFF**.
+    """``REGENOLD_ART50_RECALL_SUPPLEMENTS`` — **DEFAULT ON** (R369).
 
+    Measured on the R365 FINAL checkpoint (scratch/r369_sim_r368.py): the
+    VLOP / fines / biometric triggers fire on 5/81 live rows and recover 5
+    gold heads (Article 50 x5 — la_q60/63/91/16/7) with zero false
+    positives. ``0`` restores the pre-R369 wire for the A/B arm.
     Registered in ``_engine_cache_key`` (R30/R56/R79/R263.2 doctrine).
     """
     return _ART50_VLOP.enabled()

@@ -196,8 +196,12 @@ class TestRouteEndToEnd:
         assert ans.count("Under Annex III") == 0
         # The clean Article 25 verdict survives.
         assert "Article 25(1)" in ans
-        # Tangential refs (Annex III / Article 11) are reconciled away.
-        assert "Annex III" not in " ".join(d["references"])
+        # R369 — Annex III is NO LONGER tangential: the operator-becomes-
+        # provider question is la_q25, whose R365 gold is [Annex III, Article
+        # 25, Article 26, Article 6] — the R368 operator-provider supplement
+        # appends it at 100% gold precision (scratch/r369_sim_r368.py).
+        assert "Annex III" in " ".join(d["references"])
+        # Article 11 (the R267 tangent) stays reconciled away.
         assert "Article 11" not in d["references"]
 
     def test_q042_workplace_worker_notification(self, client):
