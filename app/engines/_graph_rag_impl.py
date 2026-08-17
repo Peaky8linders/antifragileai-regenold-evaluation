@@ -2651,6 +2651,47 @@ def _deterministic_parse(question: str) -> GraphQuery:
     except Exception as exc:  # noqa: BLE001 — vector recall must never block parse
         logger.debug("vector_recall_failed: %s", exc)
 
+    # R365 — the Article 50 chatbot-transparency anchor
+    # (``REGENOLD_ART50_CHAT_ANCHOR``, default OFF): on a chatbot /
+    # chat-assistant / conversational question OUTSIDE the care-triage and
+    # build/obligation shapes, append ``Art. 50`` (limited-risk transparency
+    # duties — interaction disclosure 50(1), synthetic-content marking 50(2),
+    # deepfake disclosure 50(4)) as a RECALL SUPPLEMENT. Exact gold impact
+    # computed over the whole 297-row pool before this line existed (see
+    # ``app/engines/risk_classification.py``): fires on 4 rows, Article 50
+    # gold-but-missing on all 4, zero non-gold additions.
+    #
+    # Placement is load-bearing: this MUST run AFTER the BM25 fallback and
+    # the vector-recall lane (and after the ``if not entities:`` gates that
+    # guard them), so the append can only fill slots the earlier lanes did
+    # not take and can never suppress them. R365.1 measured the cost of the
+    # original pre-BM25 placement: on the wellness-chatbot row the early
+    # ``Art. 50`` append flipped the BM25 gate to non-empty, silently
+    # dropping the BM25 gold refs (Annex I + Article 6) for a net 2-for-1
+    # gold loss. Appended in canonical short form (``Art. 50``) so the KB
+    # lookup and the dedup guard resolve it; the parse-level cross-encoder
+    # rerank (R340, below) then decides its final position — the reranker is
+    # the precision guard.
+    try:
+        from app.engines.risk_classification import (  # noqa: PLC0415
+            art50_chatbot_anchor_enabled,
+            is_chatbot_transparency_question,
+        )
+        _r365_q = question
+        if "Latest question:\n" in question:
+            # Multi-turn flattening puts the live turn last; the trigger is
+            # a chatbot shape that the "Conversation so far:" preamble would
+            # otherwise mask.
+            _r365_q = question.rsplit("Latest question:\n", 1)[-1]
+        if (
+            art50_chatbot_anchor_enabled()
+            and "Art. 50" not in entities
+            and is_chatbot_transparency_question(_r365_q)
+        ):
+            entities.append("Art. 50")
+    except Exception as exc:  # noqa: BLE001 — the anchor must never break parse
+        logger.debug("art50_chat_anchor_failed: %s", exc)
+
     # R340 — cross-encoder rerank of the FINAL assembled entity list. This is
     # the placement that actually fires on the COMMON path: the keyword map
     # extracts an entity for nearly every question, so
