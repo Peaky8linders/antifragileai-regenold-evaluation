@@ -660,24 +660,72 @@ def _bedrock_complete_for_graph_rag(
 
     model_id = resolve_bedrock_model(model)
 
+    # R366.1 — cross-model Bedrock fallback chain. The operator's eval runs
+    # hit hard 429 throttles on the Claude tiers mid-batch (measured: 256
+    # throttles on a 63-row run → 32 rows 503). The verified-invocable
+    # non-Claude Bedrock models (probed live: qwen3-235b, nemotron-super,
+    # devstral, qwen3-32b) are wired as a rollover chain so a throttled
+    # primary serves from the next healthy model instead of 503ing the row.
+    # Ordered: keep Claude-quality first, then the best non-Claude tiers.
+    # Overridable via REGENOLD_BEDROCK_FALLBACK_CHAIN (comma list). Fresh
+    # env read per call (R263.2).
+    try:
+        _chain_env = os.getenv("REGENOLD_BEDROCK_FALLBACK_CHAIN", "").strip()
+        if _chain_env:
+            _chain = [resolve_bedrock_model(m.strip()) for m in _chain_env.split(",") if m.strip()]
+        else:
+            _chain = [
+                resolve_bedrock_model(m)
+                for m in (
+                    "claude-opus-4-6",
+                    "qwen.qwen3-235b-a22b-2507-v1:0",
+                    "nvidia.nemotron-super-3-120b",
+                    "mistral.devstral-2-123b",
+                    "qwen.qwen3-32b-v1:0",
+                )
+            ]
+    except Exception:  # noqa: BLE001 — a broken chain must not break the call
+        _chain = []
+    ordered: list[str] = []
+    for _cand in (model_id, *_chain):
+        if _cand and _cand not in ordered:
+            ordered.append(_cand)
+
     try:
         provider = get_bedrock_provider()
-        resp = provider.complete(
-            BedrockRequest(
-                system=system,
-                user=user,
-                model=model_id,
-                max_tokens=max_tokens or 1024,
-                temperature=temperature,
+        last_error = ""
+        for _idx, _mid in enumerate(ordered):
+            resp = provider.complete(
+                BedrockRequest(
+                    system=system,
+                    user=user,
+                    model=_mid,
+                    max_tokens=max_tokens or 1024,
+                    temperature=temperature,
+                )
             )
-        )
-        if resp.error or not resp.text:
-            logger.warning("graph_rag.bedrock_call_failed: %s", resp.error)
-            return None
-        if _looks_structurally_truncated(resp.text):
-            logger.warning("graph_rag.bedrock_truncated_structural: falling back")
-            return None
-        return resp.text
+            if resp.error or not resp.text:
+                last_error = str(resp.error or "empty")
+                if _idx < len(ordered) - 1:
+                    logger.warning(
+                        "graph_rag.bedrock_model_rolled primary=%s tried=%s error=%s — rolling to next",
+                        model_id, _mid, last_error[:120],
+                    )
+                continue
+            if _looks_structurally_truncated(resp.text):
+                last_error = "structural_truncation"
+                logger.warning(
+                    "graph_rag.bedrock_truncated_structural tried=%s — rolling to next", _mid,
+                )
+                continue
+            if _mid != model_id:
+                logger.warning(
+                    "graph_rag.bedrock_fallback_chain_served primary=%s served_by=%s",
+                    model_id, _mid,
+                )
+            return resp.text
+        logger.warning("graph_rag.bedrock_call_failed (chain exhausted): %s", last_error)
+        return None
     except Exception as exc:
         logger.warning("graph_rag.bedrock_exception: %s", exc)
         return None
@@ -2313,37 +2361,6 @@ def _deterministic_parse(question: str) -> GraphQuery:
         except Exception as exc:  # noqa: BLE001 — expansion must never break parse
             logger.debug("query_expansion_parse_failed: %s", exc)
 
-    # R353 — the R352 surviving hypothesis (``REGENOLD_RISK_CLASS_ANNEX``,
-    # default OFF): on the yes/no "is X high-risk / regulated under the AI
-    # Act?" shape, append ``Annex III`` (the list of high-risk use cases) as
-    # a RECALL SUPPLEMENT. Exact gold impact computed over the whole 297-row
-    # probe pool before this line existed (see
-    # ``app/engines/risk_classification.py`` module docstring): fires on 13
-    # rows, Annex III gold-but-missing on 7, zero non-gold additions after
-    # the prohibition exclusion. Appended AFTER the keyword anchors so it can
-    # only fill slots they did not take; the parse-level cross-encoder rerank
-    # (R340, below) then decides its final position — the reranker is the
-    # precision guard against a trigger misfire on an unseen question.
-    try:
-        from app.engines.risk_classification import (  # noqa: PLC0415
-            annex_iii_risk_class_anchor_enabled,
-            is_yes_no_risk_classification,
-        )
-        _r353_q = question
-        if "Latest question:\n" in question:
-            # Multi-turn flattening puts the live turn last; the trigger is
-            # a yes/no shape that the "Conversation so far:" preamble would
-            # otherwise mask.
-            _r353_q = question.rsplit("Latest question:\n", 1)[-1]
-        if (
-            annex_iii_risk_class_anchor_enabled()
-            and "Annex III" not in entities
-            and is_yes_no_risk_classification(_r353_q)
-        ):
-            entities.append("Annex III")
-    except Exception as exc:  # noqa: BLE001 — the anchor must never break parse
-        logger.debug("risk_class_annex_failed: %s", exc)
-
     # R137 — role-contrast obligational anchor (see module-level
     # ``_is_role_contrast_obligation``). Scans the LIVE turn only (post the
     # flatten marker) so a prior multi-turn turn mentioning one role can't
@@ -2650,6 +2667,49 @@ def _deterministic_parse(question: str) -> GraphQuery:
                         pass
     except Exception as exc:  # noqa: BLE001 — vector recall must never block parse
         logger.debug("vector_recall_failed: %s", exc)
+
+    # R353 — the R352 surviving hypothesis (``REGENOLD_RISK_CLASS_ANNEX``,
+    # default OFF): on the yes/no "is X high-risk / regulated under the AI
+    # Act?" shape, append ``Annex III`` (the list of high-risk use cases) as
+    # a RECALL SUPPLEMENT. Exact gold impact computed over the whole 297-row
+    # probe pool before this line existed (see
+    # ``app/engines/risk_classification.py`` module docstring): fires on 13
+    # rows, Annex III gold-but-missing on 7, zero non-gold additions after
+    # the prohibition exclusion.
+    #
+    # R353.1 — placement is load-bearing and is now IDENTICAL to R365.1: this
+    # MUST run AFTER the BM25 fallback and the vector-recall lane (and after
+    # the ``if not entities:`` gates that guard them), so the append can only
+    # fill slots the earlier lanes did not take and can never suppress them.
+    # Measured before the move: the original pre-BM25 placement fired on 11
+    # rows, and on 7 of them the early ``Annex III`` append flipped the BM25
+    # gate to non-empty, silently dropping the BM25 ``Article 6`` gold ref
+    # (gold = Article 6 + Annex III + Article 50 on the lower_risk family;
+    # the old placement SWAPPED Article 6 for Annex III instead of adding it
+    # — net-zero on 6 rows, net-negative on lr_inventory_tool). Appended in
+    # canonical form (``Annex III``) so the KB lookup and the dedup guard
+    # resolve it; the parse-level cross-encoder rerank (R340, below) then
+    # decides its final position — the reranker is the precision guard
+    # against a trigger misfire on an unseen question.
+    try:
+        from app.engines.risk_classification import (  # noqa: PLC0415
+            annex_iii_risk_class_anchor_enabled,
+            is_yes_no_risk_classification,
+        )
+        _r353_q = question
+        if "Latest question:\n" in question:
+            # Multi-turn flattening puts the live turn last; the trigger is
+            # a yes/no shape that the "Conversation so far:" preamble would
+            # otherwise mask.
+            _r353_q = question.rsplit("Latest question:\n", 1)[-1]
+        if (
+            annex_iii_risk_class_anchor_enabled()
+            and "Annex III" not in entities
+            and is_yes_no_risk_classification(_r353_q)
+        ):
+            entities.append("Annex III")
+    except Exception as exc:  # noqa: BLE001 — the anchor must never break parse
+        logger.debug("risk_class_annex_failed: %s", exc)
 
     # R365 — the Article 50 chatbot-transparency anchor
     # (``REGENOLD_ART50_CHAT_ANCHOR``, default OFF): on a chatbot /
@@ -8706,45 +8766,53 @@ def _claude_max_enhance_answer(
             )
 
 
+        # R366 — user directive: Gemini is REMOVED from the Stage-2 fallback
+        # chain entirely (the operator's Bedrock eval runs must never leave
+        # AWS Bedrock; the Gemini fallback previously fired on Bedrock 429
+        # throttles and served gemini-2.5-flash answers into Bedrock-only
+        # checkpoints). The only fallback is the Bedrock client itself at the
+        # operator-specified opus-4-6 tier: when the primary Bedrock call
+        # failed (throttle/entitlement/truncation) we retry the SAME prompt
+        # once via ``claude-opus-4-6``. No Gemini, no Mistral, no wrapper.
         if text_raw is None and not _use_gemini and not _fusion_used:
             try:
-                from app.llm.openai_wrapper_provider import is_gemini_provider_enabled, get_gemini_provider, OpenAIWrapperRequest
-                if is_gemini_provider_enabled():
-                    try:
-                        from app.integrations.regenold.reasoning_trace import record_note
-                        record_note("stage2_primary_failed_fallback_gemini")
-                    except Exception:
-                        pass
-                    
-                    resp = get_gemini_provider().complete(
-                        OpenAIWrapperRequest(
-                            system=system_prompt,
-                            user=user_message,
-                            model=os.getenv("REGENOLD_STAGE2_MODEL_GEMINI", "gemini-2.5-flash"),
-                            max_tokens=max_tokens,
-                            temperature=0.0,
-                        )
-                    )
-                    if resp.error:
-                        logger.warning("graph_rag.gemini_fallback_stage2_call_failed: %s", resp.error[:200])
-                    elif getattr(resp, "finish_reason", None) == "length":
-                        logger.warning(
-                            "graph_rag.gemini_fallback_stage2_truncated — finish_reason=length "
-                            "(completion_tokens=%d) — falling back to deterministic.",
-                            resp.completion_tokens,
-                        )
-                    elif _looks_structurally_truncated(resp.text):
-                        logger.warning(
-                            "graph_rag.gemini_fallback_stage2_truncated_structural — "
-                            "finish_reason=%r but text ends mid-clause "
-                            "(completion_tokens=%d) — falling back to deterministic.",
-                            getattr(resp, "finish_reason", None),
-                            resp.completion_tokens,
-                        )
+                from app.integrations.regenold.reasoning_trace import record_note
+                record_note("stage2_primary_failed_fallback_bedrock_opus46")
+            except Exception:
+                pass
+            # Force the opus-4-6 tier for the retry regardless of the primary
+            # env pin (sonnet-4-6 on simple lanes): the fallback is defined as
+            # Bedrock + claude-opus-4-6. Fresh env read per call (R263.2) — a
+            # scoped pin here cannot leak into other lanes.
+            _saved_bedrock_model = os.environ.get("REGENOLD_BEDROCK_MODEL")
+            _saved_stage2_model = os.environ.get("REGENOLD_BEDROCK_STAGE2_MODEL")
+            _saved_complex_model = os.environ.get("REGENOLD_BEDROCK_COMPLEX_MODEL")
+            os.environ["REGENOLD_BEDROCK_MODEL"] = "claude-opus-4-6"
+            os.environ["REGENOLD_BEDROCK_STAGE2_MODEL"] = "claude-opus-4-6"
+            os.environ["REGENOLD_BEDROCK_COMPLEX_MODEL"] = "claude-opus-4-6"
+            try:
+                text_raw = _bedrock_complete_for_graph_rag(
+                    system=system_prompt,
+                    user=user_message,
+                    max_tokens=max_tokens,
+                    temperature=0.0,
+                    complex_question=complex_q,
+                    stage_name="Stage 2 (Polishing) fallback",
+                )
+            finally:
+                for _k, _v in (
+                    ("REGENOLD_BEDROCK_MODEL", _saved_bedrock_model),
+                    ("REGENOLD_BEDROCK_STAGE2_MODEL", _saved_stage2_model),
+                    ("REGENOLD_BEDROCK_COMPLEX_MODEL", _saved_complex_model),
+                ):
+                    if _v is None:
+                        os.environ.pop(_k, None)
                     else:
-                        text_raw = resp.text
-            except Exception as e:
-                logger.warning("graph_rag.gemini_fallback_error: %s", str(e))
+                        os.environ[_k] = _v
+            if text_raw is None:
+                logger.warning("graph_rag.stage2_fallback_bedrock_failed — deterministic")
+            else:
+                logger.warning("graph_rag.stage2_fallback_bedrock_served")
 
         if text_raw is None:
             return None
