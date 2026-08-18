@@ -1426,15 +1426,29 @@ def _stage2_complete(
                 stage_name=stage_name,
             )
         if env_provider == "openrouter":
-            # R370 — the tunnel-free Stage-2 path. Falls back to None (→
-            # deterministic) when OpenRouter is unkeyed/unhealthy; no
-            # cross-provider hop (same doctrine as the R366 live-model-test
-            # arms staying on their own transport).
-            return _openrouter_complete_for_graph_rag(
+            # R370 — the tunnel-free Stage-2 path. OpenRouter has its own
+            # internal rollover chain; when that exhausts, fall through to
+            # Bedrock opus-4-6 as the cross-provider safety net.
+            result = _openrouter_complete_for_graph_rag(
                 system=system, user=user, max_tokens=max_tokens,
                 temperature=temperature, complex_question=complex_question,
                 stage_name=stage_name,
             )
+            if result is not None:
+                return result
+            # OpenRouter exhausted — Bedrock fallback
+            try:
+                from app.llm.bedrock_client import is_bedrock_provider_enabled
+                if is_bedrock_provider_enabled():
+                    return _bedrock_complete_for_graph_rag(
+                        system=system, user=user, max_tokens=max_tokens,
+                        temperature=temperature,
+                        complex_question=complex_question,
+                        stage_name=stage_name + " (bedrock-fallback)",
+                    )
+            except Exception:
+                pass
+            return None
         return _openai_wrapper_complete_for_graph_rag(
             system=system, user=user, max_tokens=max_tokens,
             temperature=temperature, complex_question=complex_question,
@@ -9382,17 +9396,15 @@ def _claude_max_enhance_answer(
         # R366 — user directive: Gemini is REMOVED from the Stage-2 fallback
         # chain entirely (the operator's Bedrock eval runs must never leave
         # AWS Bedrock; the Gemini fallback previously fired on Bedrock 429
-        # throttles and served gemini-2.5-flash answers into Bedrock-only
-        # checkpoints). The only fallback is the Bedrock client itself at the
-        # operator-specified opus-4-6 tier: when the primary Bedrock call
-        # failed (throttle/entitlement/truncation) we retry the SAME prompt
-        # once via ``claude-opus-4-6``. No Gemini, no Mistral, no wrapper.
-        # R370 — the Bedrock opus-4-6 retry is the R366 operator directive for
-        # BEDROCK runs only. The OpenRouter path has its own internal rollover
-        # chain and must NOT cross-provider hop to Bedrock (an explicit
-        # provider choice stays on its own transport, per the live-model-test
-        # integrity rule); its failure falls straight to deterministic.
-        if text_raw is None and not _use_gemini and not _fusion_used and not _use_openrouter:
+        # R366 — Gemini removed from the Stage-2 fallback chain entirely.
+        # R370 — OpenRouter has its own internal rollover chain (primary →
+        # qwen3-235b → deepseek-chat). When that exhausts, fall through to
+        # Bedrock opus-4-6 as the cross-provider safety net (the operator's
+        # standing instruction: no row goes to deterministic while Bedrock
+        # is alive). The integrity rule is preserved: OpenRouter's internal
+        # chain stays on OpenRouter transport; only the FINAL fallback hops
+        # to Bedrock.
+        if text_raw is None and not _use_gemini and not _use_openrouter:
             try:
                 from app.integrations.regenold.reasoning_trace import record_note
                 record_note("stage2_primary_failed_fallback_bedrock_opus46")
@@ -9428,7 +9440,9 @@ def _claude_max_enhance_answer(
                     else:
                         os.environ[_k] = _v
             if text_raw is None:
-                logger.warning("graph_rag.stage2_fallback_bedrock_failed — deterministic")
+                logger.warning("graph_rag.stage2_fallback_bedrock_failed -- deterministic")
+            elif _use_openrouter:
+                logger.warning("graph_rag.stage2_openrouter_failed_fallback_bedrock_served")
             else:
                 logger.warning("graph_rag.stage2_fallback_bedrock_served")
 
