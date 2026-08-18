@@ -167,7 +167,7 @@ class GraphRAGSettings(BaseSettings):
     axis). Set ``claude-fable-5`` to restore R279; set empty to disable the
     swap (every Stage-2 polish call uses the base ``model``)."""
 
-    complex_thinking_tokens: int = 4000
+    complex_thinking_tokens: int = 1024
     """``max_thinking_tokens`` — the **EXTENDED** thinking budget for the
     ~20% of questions :func:`app.engines.question_complexity.is_complex_question`
     flags (conflict / borderline-prohibition / GPAI thresholds / role-ambiguity

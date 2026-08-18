@@ -110,8 +110,8 @@ class TestDefaultRouting:
         # Pin the R280 default so a future re-flip is loud, not silent.
         assert settings.graph_rag.complex_model == "claude-opus-5"
         # R139 — EXTENDED thinking budget on the complex tier (was 1024 in R131.2).
-        assert settings.graph_rag.complex_thinking_tokens == 4000
-        assert req.extra_headers.get("X-Claude-Max-Thinking-Tokens") == "4000"
+        assert settings.graph_rag.complex_thinking_tokens == 1024
+        assert req.extra_headers.get("X-Claude-Max-Thinking-Tokens") == "1024"
 
     def test_complex_question_swap_path_when_opus_configured(
         self, _mock_wrapper
