@@ -141,25 +141,53 @@ total_nodes              1786 -> 1789
 total_rels               2076 -> 2166
 ```
 
-### 2.4 The reconciliation lint caught three real divergences
+### 2.4 The reconciliation lint caught three real divergences — then measurement settled them
 
-A 20-line cross-check between the two definitions found three, each then
-verified against the pinned statute with `get_provision_text` rather than
-reasoned from memory:
+A 20-line cross-check between the two definitions found three. Each was first
+verified against the pinned statute with `get_provision_text`, then **measured
+for wire impact over the whole 297-row probe pool** (R371.1).
 
-| divergence | statute | verdict |
+| divergence | statute | outcome |
 | --- | --- | --- |
-| prose binds `deployer → Art. 72` | Art. 72(1): "**Providers** shall establish and document a post-market monitoring system" | **the prose file is legally wrong** |
-| matrix lacks `provider → Art. 73` | Art. 73(1): "**Providers** … shall report any serious incident" | **matrix gap** |
-| matrix lacks `provider → Art. 25(4)` | Art. 25(4): "The **provider** … shall, by written agreement, specify …" | **matrix gap** |
+| prose binds `deployer → Art. 72` as primary | Art. 72(1): "**Providers** shall establish and document a post-market monitoring system" | **FIXED** — moved to `secondary_articles` |
+| matrix lacks `provider → Art. 73` | Art. 73(1): "**Providers** … shall report any serious incident" | **MEASURED & REJECTED** |
+| matrix lacks `provider → Art. 25(4)` | Art. 25(4): "The **provider** … shall, by written agreement, specify …" | **MEASURED & REJECTED** |
 
-**Deliberately not auto-fixed.** Editing the matrix changes `obligations_for`,
-which feeds `_build_role_obligation_answer` — a deterministic *answer* path —
-so it is a reference-affecting change that owes hard rule #8 a `gold_dropped`
-reading first. They are pinned as `KNOWN_DIVERGENCES`; a **fourth** fails the
-build, and healing one of the three also fails until the constant is updated.
+**The deployer/Art. 72 fix.** The first pass called this "legally wrong". That
+was too strong, and the statute says why: Art. 26(5) reads *"Deployers shall
+monitor the operation of the high-risk AI system … and, where relevant, inform
+providers **in accordance with Article 72**."* So Art. 72 is a genuine
+cross-reference from the deployer's duty — the error is the TIER, not the
+existence. Art. 72's obligation-bearer is the provider, so it belongs in
+`secondary_articles`, the tier the provider row already uses for
+related-but-not-borne provisions (Arts. 4/5/95).
 
----
+Measured through the real HTTP route over all 297 rows: **0 rows changed their
+wire references.** That is a genuine null and not an inert instrument — Art. 72
+*does* reach the wire (6 rows cite it) and there are 13 deployer-shaped rows;
+they simply do not overlap. It still matters, because `clara_logic` and
+`scenario_classifier` both branch on the primary/secondary tier.
+
+**The two matrix "gaps" are legally real and gold-wrong — rejected.** Both were
+added to `ROLE_OBLIGATIONS` and measured exactly over the pool. The
+role-obligation path fires on **11 of 297** rows; the change touched **4**:
+
+```
+paper_tricky_v4:tp_v4_016   provider/high_risk_annex_iii   junk + [Art. 25, Art. 73]
+multiarticle_r268:ma_02     provider/high_risk_annex_iii   junk + [Art. 25, Art. 73]
+medtech:grb_08              provider/high_risk_annex_iii   junk + [Art. 25, Art. 73]
+live_answers:la_q72         provider/high_risk_annex_iii   junk + [Art. 25, Art. 73]
+
+GOLD GAINED 0    NON-GOLD ADDED 8    PRECISION 0%
+```
+
+This is the R352 result again — *"`Art. 6` is 0% precise … the graded gold
+cites the LIST, never the rule that points at the list"*. **Legally correct is
+not gold-correct.** Art. 25 and Art. 73 genuinely bind the provider, and the
+graded gold still never cites them on these questions, so adding them is pure
+over-citation on the one axis this system leads. The change was reverted and
+both stay pinned in `KNOWN_DIVERGENCES` with this measurement attached. A
+fourth divergence still fails the build.
 
 ## 3. The lever
 
