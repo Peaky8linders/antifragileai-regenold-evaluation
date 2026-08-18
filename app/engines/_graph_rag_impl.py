@@ -1313,6 +1313,45 @@ def _openrouter_complete_for_graph_rag(
         os.getenv("REGENOLD_STAGE2_VERDICT_GUARD", "1").strip().lower()
         in ("1", "true", "yes", "on")
     )
+
+    # R373 — OpenRouter extended thinking for complex questions only.
+    # Complex questions (role ambiguity, GPAI fine-tune, borderline
+    # prohibition, multi-article conflict) benefit from Opus's chain-of-
+    # thought reasoning. Standard questions stay fast (no thinking budget).
+    # The thinking budget counts INSIDE max_tokens on the Anthropic API,
+    # so we give the answer headroom above the budget.
+    _reasoning_budget = 0
+    if complex_question:
+        try:
+            from app.config import settings  # noqa: PLC0415
+            _reasoning_budget = int(
+                getattr(settings.graph_rag, "complex_thinking_tokens", 0) or 0
+            )
+        except Exception:  # noqa: BLE001
+            _reasoning_budget = 0
+        _reasoning_budget = max(1024, min(_reasoning_budget, 16000))
+
+    _answer_headroom = _stage2_answer_headroom()
+    _effective_max_tokens = (
+        max(max_tokens or 1024, _reasoning_budget + _answer_headroom)
+        if _reasoning_budget > 0
+        else (max_tokens or 1024)
+    )
+
+    if _reasoning_budget > 0:
+        try:
+            from app.integrations.regenold.reasoning_trace import record_note as _rn  # noqa: PLC0415
+            _rn(
+                f"openrouter_thinking_budget={_reasoning_budget}"
+                f" complex={complex_question}"
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        logger.info(
+            "graph_rag.openrouter_extended_thinking model=%s budget=%d",
+            model, _reasoning_budget,
+        )
+
     try:
         provider = get_openrouter_provider()
     except Exception as exc:  # noqa: BLE001 — provider init must never break Stage-2
@@ -1326,8 +1365,9 @@ def _openrouter_complete_for_graph_rag(
                     system=system,
                     user=user,
                     model=_mid,
-                    max_tokens=max_tokens or 1024,
+                    max_tokens=_effective_max_tokens,
                     temperature=temperature,
+                    reasoning_max_tokens=_reasoning_budget,
                 )
             )
         except Exception as exc:  # noqa: BLE001 — fail-soft contract

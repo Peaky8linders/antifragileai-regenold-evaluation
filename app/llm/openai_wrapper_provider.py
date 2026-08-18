@@ -161,6 +161,12 @@ class OpenAIWrapperRequest(BaseModel):
     model: str = "claude-opus-4-8"
     max_tokens: int = 1024
     temperature: float = 0.0
+    reasoning_max_tokens: int = 0
+    """R373 - OpenRouter extended-thinking budget. When > 0, adds
+    reasoning={"max_tokens": N} to the request body (Anthropic-style
+    thinking budget via OpenRouter's unified reasoning interface). Only sent
+    for non-claude-* models via the wrapper (the wrapper path uses
+    X-Claude-Max-Thinking-Tokens header instead."""
     timeout_seconds: float | None = None
     """Per-call timeout override. When ``None``, uses the provider
     singleton's default (``OPENAI_TIMEOUT_SECONDS`` env, 60 s fallback).
@@ -497,12 +503,18 @@ class _OpenAIWrapperProvider:
         }
         body["messages"] = [m for m in body["messages"] if m is not None]
 
-        # R264 — reasoning_effort for Groq open reasoning models. Explicit
-        # request value wins; else auto-inject per model family. NEVER attach
-        # to a ``claude-*`` request (not an Anthropic parameter) so the Claude
-        # Max wrapper path stays byte-identical.
+        # R264/R373 — reasoning for non-Claude models via OpenRouter.
+        # ``reasoning_max_tokens`` (Anthropic/Gemini thinking budget) takes
+        # priority; ``reasoning_effort`` (Groq/OpenAI) is the fallback.
         _model_lc = (req.model or "").lower()
-        if not _model_lc.startswith("claude") and "claude-" not in _model_lc:
+        _is_claude = _model_lc.startswith("claude") or "claude-" in _model_lc
+
+        if req.reasoning_max_tokens > 0 and not _is_claude:
+            body["reasoning"] = {
+                "max_tokens": req.reasoning_max_tokens,
+                "exclude": False,
+            }
+        elif not _is_claude:
             effort = (req.reasoning_effort or "").strip().lower()
             if not effort:
                 if "qwen" in _model_lc:
@@ -618,7 +630,9 @@ class _OpenAIWrapperProvider:
             choice = payload["choices"][0]
             msg = choice["message"]
             text = msg.get("content") or ""
-            thinking = msg.get("reasoning_content") or ""
+            # R373 — OpenRouter returns reasoning in ``reasoning``;
+            # the Claude wrapper returns it in ``reasoning_content``.
+            thinking = msg.get("reasoning_content") or msg.get("reasoning") or ""
             finish_reason = choice.get("finish_reason")
         except (KeyError, IndexError, TypeError, ValueError) as exc:
             return OpenAIWrapperResponse(
