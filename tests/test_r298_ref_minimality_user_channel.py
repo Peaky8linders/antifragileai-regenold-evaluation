@@ -178,45 +178,6 @@ class TestClauseContent:
 
 # ── cache key ────────────────────────────────────────────────────────────────
 
-class TestStratifiedFractionSampler:
-    """R298 — `--frac` rescales the R297 stratified design."""
-
-    @pytest.mark.parametrize("frac,lo,hi", [(0.10, 9.0, 11.5), (0.15, 14.0, 16.5),
-                                            (0.25, 24.0, 27.0), (0.50, 49.0, 52.0)])
-    def test_hits_the_requested_share(self, frac, lo, hi):
-        from evals.regenold.run_hard_sample_r297 import (
-            TOTAL_HARD_REQUESTS,
-            quotas_for_fraction,
-        )
-
-        n_mt, quota = quotas_for_fraction(frac)
-        pct = 100.0 * (n_mt * 2 + sum(quota.values())) / TOTAL_HARD_REQUESTS
-        assert lo <= pct <= hi, f"frac={frac} produced {pct:.1f}%"
-
-    def test_every_rare_category_keeps_its_floor_of_one(self):
-        """Without the floor, a proportional draw reports NOTHING about three of
-        the five single-turn categories (they have 1, 2 and 5 members)."""
-        from evals.regenold.run_hard_sample_r297 import quotas_for_fraction
-
-        for frac in (0.05, 0.10, 0.15, 0.30):
-            _, quota = quotas_for_fraction(frac)
-            assert len(quota) == 5
-            assert all(v >= 1 for v in quota.values()), (frac, quota)
-
-    def test_is_deterministic_and_covers_all_hard_categories(self):
-        from evals.regenold.run_hard_sample_r297 import select_sample
-
-        a_mt, a_st = select_sample(0.15)
-        b_mt, b_st = select_sample(0.15)
-        assert [r.id for r in a_mt] == [r.id for r in b_mt]
-        assert [r.id for r in a_st] == [r.id for r in b_st]
-        assert len({r.difficulty_category for r in a_st}) == 5
-
-    def test_default_is_the_original_r297_design(self):
-        from evals.regenold.run_hard_sample_r297 import select_sample
-
-        mt, st = select_sample(None)
-        assert len(mt) == 11 and len(st) == 8  # 30 requests = 10.7%
 
 
 class TestCacheKey:

@@ -43,14 +43,6 @@ from typing import Any
 
 from app.llm import resolve_provider
 
-# ONE CONCEPT, ONE DEFINITION — the canonical Stage-2 provenance scraper is
-# ``run_official_batch._provenance`` (R292). It already knows the trace shape
-# (``stage2_polish`` / ``retrieval_path`` / the ``stage2_model=`` note) that
-# ``_bedrock_complete_for_graph_rag`` and the wrapper path both emit. Do not
-# write a second copy here; a duplicated scraper that drifts is this repo's
-# most expensive recurring bug.
-from evals.regenold.run_official_batch import _provenance
-
 from evals.bench.metrics import (
     answer_correctness_loose,
     answer_correctness_strict,
@@ -63,6 +55,44 @@ from evals.bench.metrics import (
     regulatory_tone,
     score_threshold_retention_curve,
 )
+
+
+def _provenance(body: dict[str, Any] | None) -> dict[str, Any]:
+    """Pull Stage-2 provenance out of the ``reasoning`` trace.
+
+    R292: without this the sidecar records only ``answer`` + ``references``, so a
+    run in which the Stage-2 provider silently degraded (wrapper down, credit
+    exhausted, rate-limited) is INDISTINGUISHABLE from a healthy run — the
+    deterministic fallback still returns a plausible answer. That makes the
+    headline scorecard unfalsifiable. Recording ``stage2_polish`` / the resolved
+    model / ``retrieval_path`` per row makes a degraded run detectable after the
+    fact, and the aggregate ``stage2_landed_rate`` makes it obvious at a glance.
+
+    Fail-soft: a missing / non-JSON ``reasoning`` field yields an empty dict, so
+    this can never break a run. Inlined from the archived July-7 batch runner
+    (``evals.regenold.run_official_batch``, kept local in
+    ``scratch/archive_july7_batch/``).
+    """
+    try:
+        raw = (body or {}).get("reasoning")
+        if not isinstance(raw, str) or not raw.strip():
+            return {}
+        trace = json.loads(raw)
+        if not isinstance(trace, dict):
+            return {}
+        model = ""
+        for note in trace.get("notes") or []:
+            if isinstance(note, str) and "stage2_model=" in note:
+                model = note.split("stage2_model=", 1)[1].split()[0]
+                break
+        return {
+            "stage2_polish": trace.get("stage2_polish"),
+            "retrieval_path": trace.get("retrieval_path"),
+            "engine_confidence": trace.get("engine_confidence"),
+            "stage2_model": model,
+        }
+    except Exception:  # noqa: BLE001 — provenance is best-effort telemetry
+        return {}
 
 
 def load_dataset() -> list[dict[str, Any]]:
@@ -220,7 +250,7 @@ def run_benchmark(provider: str | None = None, output_path: str | None = None) -
         pred_ans = body.get("answer", "") or ""
         pred_refs = body.get("references", []) or []
 
-        # Canonical Stage-2 provenance (see the import note).
+        # Canonical Stage-2 provenance (inlined, see _provenance above).
         prov = _provenance(body)
         stage2_landed = bool(prov.get("stage2_polish"))
 
