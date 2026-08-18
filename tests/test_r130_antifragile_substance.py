@@ -101,10 +101,10 @@ class TestSeedersCarrySubstance:
     def test_role_seeder_no_placeholder(self):
         ctx = GraphContext()
         _seed_role_obligation_obligations(
-            ctx, "deployer", "high_risk", ("Art. 26", "Art. 27", "Art. 13"),
+            ctx, "deployer", "high_risk", ("Art. 26", "Art. 27", "Art. 86"),
             "What does a deployer of a high-risk system owe?",
         )
-        assert [o["article"] for o in ctx.obligations] == ["Art. 26", "Art. 27", "Art. 13"]
+        assert [o["article"] for o in ctx.obligations] == ["Art. 26", "Art. 27", "Art. 86"]
         for o in ctx.obligations:
             assert all(p not in o["text"] for p in _OLD_PLACEHOLDERS), o["text"]
 

@@ -5,9 +5,18 @@ never been cross-checked:
 
 * ``app/data/role_obligations.py`` — 9 prose records, ``primary_articles`` /
   ``secondary_articles``. **This is what the Aura seeder writes.**
-* ``app/data/ontology.py::ROLE_OBLIGATIONS`` — 8 roles x 7 risk classes -> 90
+* ``app/data/ontology.py::ROLE_OBLIGATIONS`` — 8 roles x 7 risk classes -> 74
   article/annex bindings. **This is what the answer path reads** via
   :func:`obligations_for` and what ``validate_legal_triple`` lints.
+
+R371.6 trimmed 16 direction-inverted bindings (90 -> 74): Art. 13 off the
+DEPLOYER sets (it binds the provider; the deployer mirror is Art. 26(1)),
+Art. 23/24 off IMPORTER/DISTRIBUTOR x limited risk (high-risk-only duties),
+Art. 56 off PROVIDER x GPAI systemic (AI Office codes of practice), Art.
+53/55/89/Annex XII off DOWNSTREAM_PROVIDER (GPAI-model-provider duties +
+AI Office monitoring; downstream providers hold rights, not Chapter V
+duties), and Art. 85/86 off AFFECTED_PERSON (rights, not obligations — the
+Art. 86 explanation duty sits on the deployer).
 
 Measured on the live Aura instance 2026-08-17: 5 ``OperatorRole`` nodes, 36
 ``HAS_OBLIGATION_ARTICLE`` edges, ``risk_class`` NULL on all 36. So the graph
@@ -67,7 +76,7 @@ def test_edges_cover_every_binding_in_the_matrix() -> None:
     expected = sum(
         len(refs) for m in ROLE_OBLIGATIONS.values() for refs in m.values()
     )
-    assert expected == 90, "matrix changed; update the pinned count deliberately"
+    assert expected == 74, "matrix changed; update the pinned count deliberately"
     assert len(role_obligation_edges()) == expected
 
 

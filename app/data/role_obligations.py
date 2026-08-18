@@ -287,7 +287,7 @@ ROLE_OBLIGATIONS: list[RoleObligation] = [
         ),
         "source": "Chapter V (Art. 51-56)",
         "paper_lines": "433-462, 2091-2094",
-        "primary_articles": ["Art. 53", "Art. 56"],
+        "primary_articles": ["Art. 53"],
         "secondary_articles": ["Art. 51", "Art. 52", "Art. 95"],
         "kb_dimensions": ["gpai", "tech_docs", "transparency"],
         "flips_provider_under": [
@@ -307,9 +307,9 @@ ROLE_OBLIGATIONS: list[RoleObligation] = [
             "cybersecurity measures. Autonomy and tool use are decisive factors "
             "in this designation per AI Office (Art. 51(1)(b), Annex XIII)."
         ),
-        "source": "Art. 51(2) + Art. 55 + Art. 56",
+        "source": "Art. 51(2) + Art. 55",
         "paper_lines": "439-443, 2091-2094",
-        "primary_articles": ["Art. 51", "Art. 55", "Art. 56"],
+        "primary_articles": ["Art. 51", "Art. 55"],
         "secondary_articles": ["Art. 53"],
         "kb_dimensions": ["gpai", "gpai_systemic_risk", "security"],
         "flips_provider_under": [],
