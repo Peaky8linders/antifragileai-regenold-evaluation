@@ -1,0 +1,320 @@
+{
+  "label": "r371.3-live81",
+  "rows": [
+    {
+      "id": "live_answers:la_q1",
+      "source": "live_answers",
+      "pred_answer": "Yes. Under Article 11, a provider must draw up technical documentation containing the information set out in Annex IV, which expressly requires a description of the hardware on which the AI system is intended to run (Annex IV point 1(e)) and, as part of the system's development description, the computational resources used to develop, train, test and validate it (Annex IV point 2(c)).",
+      "pred_refs": [
+        "Article 11",
+        "Annex IV"
+      ],
+      "gold_refs": [
+        "Annex IV",
+        "Article 11"
+      ],
+      "latency_ms": 3579.6140000020387,
+      "http_status": 200,
+      "error": null,
+      "scores": {
+        "ref_loose": 1.0,
+        "ref_strict": 1.0,
+        "ref_conc": 1.0,
+        "kw_recall": 0.6666666666666666,
+        "gold_dropped_head": 0.0,
+        "gold_dropped_exact": 0.0,
+        "answer_chars": 387.0,
+        "n_refs": 2.0
+      },
+      "question": "Does the technical documentation of a high-risk AI system require to provide specifications regarding the required hardware?",
+      "gold_answer": "The technical documentation of a high-risk AI system must include the system's design specifications, which under Annex IV expressly cover the computational and hardware resources used to develop, train, test, and run the system. Article 11(1) requires that this documentation be drawn up before the system is placed on the market or put into service and kept up to date, and Article 11(2) requires that it contain, at a minimum, the information set out in Annex IV.",
+      "category": "live_answers"
+    },
+    {
+      "id": "live_answers:la_q2",
+      "source": "live_answers",
+      "pred_answer": "No. Under Article 50(4), the deployer's duty to disclose that image, audio, or video content constituting a deep fake has been artificially generated or manipulated does not apply where the use is authorised by law to detect, prevent, investigate, or prosecute criminal offences. Absent that law-enforcement authorisation, the deployer must disclose that the content is a deep fake.",
+      "pred_refs": [
+        "Article 50"
+      ],
+      "gold_refs": [
+        "Article 50"
+      ],
+      "latency_ms": 1189.8445999977412,
+      "http_status": 200,
+      "error": null,
+      "scores": {
+        "ref_loose": 1.0,
+        "ref_strict": 1.0,
+        "ref_conc": 1.0,
+        "kw_recall": 0.0,
+        "gold_dropped_head": 0.0,
+        "gold_dropped_exact": 0.0,
+        "answer_chars": 382.0,
+        "n_refs": 1.0
+      },
+      "question": "Does the obligation to indicate that deep-fakes are artificially generated apply when prosecuting a criminal offence?",
+      "gold_answer": "No, the deepfake labelling duty is lifted in that context. Article 50(4) normally requires deployers to disclose that deepfake image, audio or video content has been artificially generated or manipulated, but it expressly carves out uses authorised by law to detect, prevent, investigate or prosecute criminal offences.",
+      "category": "live_answers"
+    },
+    {
+      "id": "live_answers:la_q3",
+      "source": "live_answers",
+      "pred_answer": "Not automatically. Article 6(2) classifies an Annex III system as high-risk, but Article 6(3) provides a derogation: an Annex III system is not high-risk where it does not pose a significant risk of harm to health, safety or fundamental rights, including by not materially influencing the outcome of decision making, and where it is intended to perform a narrow procedural task, to improve the result of a previously completed human activity, to detect decision-making patterns or deviations from prior decision-making patterns without replacing or influencing the previously completed human assessment, or to perform a preparatory task. That derogation is unavailable where the system performs profiling of natural persons, in which case the system is always high-risk regardless of the other conditions. A provider relying on the Article 6(3) derogation must document its assessment before placing the system on the market and must still register the system in the EU database under Article 49(2).",
+      "pred_refs": [
+        "Annex III",
+        "Article 6.2",
+        "Article 6",
+        "Article 6.3",
+        "Article 49.2",
+        "Article 49"
+      ],
+      "gold_refs": [
+        "Annex III",
+        "Article 49",
+        "Article 6"
+      ],
+      "latency_ms": 9969.881700002588,
+      "http_status": 200,
+      "error": null,
+      "scores": {
+        "ref_loose": 1.0,
+        "ref_strict": 1.0,
+        "ref_conc": 1.0,
+        "kw_recall": 0.6666666666666666,
+        "gold_dropped_head": 0.0,
+        "gold_dropped_exact": 0.0,
+        "answer_chars": 999.0,
+        "n_refs": 6.0
+      },
+      "question": "When the intended use of an AI system is listed in Annex III of the EU AI Act, the AI system is automatically high-risk, isn't it? If not, can you explain when that is not the case?",
+      "gold_answer": "Not automatically. Falling within one of the eight Annex III use cases (biometrics, critical infrastructure, education and vocational training, employment and worker management, essential private and public services, law enforcement, migration, asylum and border control, and administration of justice and democratic processes) triggers the Annex III route to high-risk classification under Article 6(2), but Article 6(3) lets a provider rebut that presumption where the system poses no significant risk of harm to health, safety or fundamental rights and meets one of four conditions: it performs a narrow procedural task, it merely improves the result of a previously completed human activity, it detects decision-making patterns or deviations without replacing or influencing the human assessment, or it performs a preparatory task to an assessment. This derogation does not apply where the system profiles natural persons, in which case it is always high-risk. A provider relying on Article 6(3) must document that self-assessment before placing the system on the market and must still register it under Article 49(2).",
+      "category": "live_answers"
+    },
+    {
+      "id": "live_answers:la_q4",
+      "source": "live_answers",
+      "pred_answer": "The AI system is high-risk under the EU AI Act, not \"medium-risk\": the Act recognises only the high-risk classification, not the sectoral risk tiers used by medical device legislation. Both conditions of Article 6(1) are satisfied: the AI system is a safety component of a product covered by the Union harmonisation legislation listed in Annex I, which includes the Medical Device Regulation, and that product is required to undergo a third-party conformity assessment under that legislation. For the conformity assessment procedure, Article 43(3) integrates the EU AI Act requirements into the sectoral assessment already required under the applicable Annex I legislation, so the notified body conducting the medical device conformity assessment also controls conformity with the Chapter III Section 2 requirements, yielding a single procedure covering both regimes.",
+      "pred_refs": [
+        "Article 6.1",
+        "Article 6",
+        "Article 43.3",
+        "Article 43",
+        "Annex I"
+      ],
+      "gold_refs": [
+        "Annex I",
+        "Article 43",
+        "Article 6"
+      ],
+      "latency_ms": 11357.243499995093,
+      "http_status": 200,
+      "error": null,
+      "scores": {
+        "ref_loose": 1.0,
+        "ref_strict": 1.0,
+        "ref_conc": 1.0,
+        "kw_recall": 1.0,
+        "gold_dropped_head": 0.0,
+        "gold_dropped_exact": 0.0,
+        "answer_chars": 867.0,
+        "n_refs": 5.0
+      },
+      "question": "I have a medical device that has an AI system as a safety component. The medical device is classified \"medium-risk\" and undergoes a 3rd party conformity assessment. Is the AI system \"medium risk\" too? If yes, why? If not, why not?",
+      "gold_answer": "Not \"medium risk.\" The EU AI Act does not have a medium-risk tier, and the medical device's own risk class does not carry over to the AI system. Under the Annex I route in Article 6(1), an AI system is high-risk where it is a safety component of a product covered by the Union harmonisation legislation listed in Annex I and that product must undergo a third-party conformity assessment under that sectoral legislation. Medical devices are Annex I harmonisation legislation, and the operator's device undergoes a third-party (notified-body) conformity assessment, so both conditions are met and the AI system is high-risk regardless of whether the device itself is labelled low, medium, or high risk. This classification triggers a conformity assessment for the AI system. Under Article 43(3), that assessment is integrated into the existing sectoral third-party procedure rather than run separately, so the AI Act requirements are checked within the single MDR notified-body assessment the operator's device already undergoes.",
+      "category": "live_answers"
+    },
+    {
+      "id": "live_answers:la_q5",
+      "source": "live_answers",
+      "pred_answer": "No, the EU AI Act mandates no specific explainable-AI technique such as LIME or SHAP, and Article 13 instead requires only that high-risk AI systems be sufficiently transparent for deployers to interpret their output. Article 14 requires effective human oversight, and Article 15 requires appropriate accuracy, robustness and cybersecurity. The Act is technique-agnostic, so the choice of any interpretability method is left to the provider.",
+      "pred_refs": [
+        "Article 13",
+        "Article 14",
+        "Article 15"
+      ],
+      "gold_refs": [
+        "Article 13"
+      ],
+      "latency_ms": 2170.5473999973037,
+      "http_status": 200,
+      "error": null,
+      "scores": {
+        "ref_loose": 1.0,
+        "ref_strict": 0.5,
+        "ref_conc": 0.1111111111111111,
+        "kw_recall": 0.3333333333333333,
+        "gold_dropped_head": 0.0,
+        "gold_dropped_exact": 0.0,
+        "answer_chars": 441.0,
+        "n_refs": 3.0
+      },
+      "question": "Does the EU AI Act explicitly requires to use explainable AI techniques such as LIME or SHAP to increase the trustworthiness of high-risk AI systems?",
+      "gold_answer": "The Regulation is technology-neutral and sets outcome-based duties rather than prescribing methods. The closest requirement is the transparency obligation to deployers (Article 13), under which a high-risk system must be designed so its operation is sufficiently transparent and its output interpretable for deployers to use it appropriately, but this can be met by any adequate means.",
+      "category": "live_answers"
+    },
+    {
+      "id": "live_answers:la_q6",
+      "source": "live_answers",
+      "pred_answer": "The EU AI Act's core regime governs AI systems, defined in Article 3(1) and brought within scope by Article 2, through the risk-based tiers (prohibited practices under Article 5, high-risk systems under Article 6, and limited-risk transparency duties under Article 50). General-purpose AI models are regulated separately under Chapter V (Articles 51 to 56), are defined in Article 3(63), and carry their own provider obligations with additional duties for models posing systemic risk. The Regulation therefore applies to both AI systems and general-purpose AI models under two parallel regimes.",
+      "pred_refs": [
+        "Article 2",
+        "Article 3.1",
+        "Article 3",
+        "Article 51"
+      ],
+      "gold_refs": [
+        "Article 2",
+        "Article 3",
+        "Article 51"
+      ],
+      "latency_ms": 239.77729999751318,
+      "http_status": 200,
+      "error": null,
+      "scores": {
+        "ref_loose": 1.0,
+        "ref_strict": 1.0,
+        "ref_conc": 1.0,
+        "kw_recall": 1.0,
+        "gold_dropped_head": 0.0,
+        "gold_dropped_exact": 0.0,
+        "answer_chars": 594.0,
+        "n_refs": 4.0
+      },
+      "question": "Does the EU AI Act apply to AI systems or AI models or both?",
+      "gold_answer": "Both. The EU AI Act applies to AI systems and, through Chapter V, to general-purpose AI (GPAI) models. Article 2(1) sets the scope over AI systems placed on the market, put into service or used in the Union, and Article 2(12) extends that scope to GPAI models, so a model is regulated in its own right even before it is integrated into a system. \"AI system\" is defined in Article 3(1) and \"general-purpose AI model\" in Article 3(63); the two tracks differ in their obligations \u2014 high-risk AI systems carry the Chapter III Section 2 duties (Articles 9-15), while GPAI model providers carry the Chapter V duties (Article 53 documentation, copyright and training-data summary), with the Article 55 systemic-risk obligations where the Article 51 threshold (cumulative training compute above 10^25 FLOPs) is met.",
+      "category": "live_answers"
+    },
+    {
+      "id": "live_answers:la_q7",
+      "source": "live_answers",
+      "pred_answer": "Not prohibited, and not high-risk. Annex III(1)(a) expressly excludes from the biometric identification use case any AI system intended to be used for biometric verification the sole purpose of which is to confirm that a specific natural person is the person he or she claims to be, so the system falls outside the Annex III route to high-risk classification under Article 6. None of the Article 5 prohibited practices covers biometric verification of this kind.",
+      "pred_refs": [
+        "Article 5",
+        "Article 6",
+        "Annex III.1.a",
+        "Annex III",
+        "Article 50"
+      ],
+      "gold_refs": [
+        "Annex I",
+        "Annex III",
+        "Article 5",
+        "Article 50",
+        "Article 6"
+      ],
+      "latency_ms": 7755.868599997484,
+      "http_status": 200,
+      "error": null,
+      "scores": {
+        "ref_loose": 0.8,
+        "ref_strict": 0.888888888888889,
+        "ref_conc": 0.6400000000000001,
+        "kw_recall": 0.3333333333333333,
+        "gold_dropped_head": 1.0,
+        "gold_dropped_exact": 1.0,
+        "answer_chars": 462.0,
+        "n_refs": 5.0
+      },
+      "question": "We want to deploy an AI system that performs biometric verification solely to confirm that a specific natural person is the person he or she claims to be. Is this system prohibited? Is it high-risk?",
+      "gold_answer": "Not high-risk and not prohibited. Biometric verification used solely to confirm that a natural person is who he or she claims to be is expressly carved out of the high-risk biometrics category in Annex III, which limits that category to remote biometric identification, biometric categorisation, and emotion recognition, not one-to-one authentication of a claimed identity. It is likewise not among the exhaustively-listed practices banned under Article 5, none of which (subliminal or manipulative techniques, exploitation of vulnerabilities, social scoring, untargeted facial-image scraping, and the other enumerated bans) captures identity verification. Absent the Annex III route, the system would be high-risk under Article 6 only where it functions as a safety component of a product covered by the Union harmonisation legislation in Annex I and that product must undergo third-party conformity assessment; failing that condition it falls outside the high-risk tier and is subject principally to the Article 50 transparency duties where it interacts directly with natural persons.",
+      "category": "live_answers"
+    },
+    {
+      "id": "live_answers:la_q8",
+      "source": "live_answers",
+      "pred_answer": "An AI system that is a safety component of a medical device of MDR class IIa, IIb, or III is high-risk under Article 6(1), because both conditions that provision requires are satisfied: the system is a safety component of a product covered by Regulation (EU) 2017/745 on medical devices, which is listed in Annex I, and devices of those classes are required to undergo third-party conformity assessment under that regulation before being placed on the market. The conformity assessment procedure for such a system follows the sectoral legislation's own procedure, with the Chapter III Section 2 requirements forming part of that assessment, as Article 43(3) provides.",
+      "pred_refs": [
+        "Article 6.1",
+        "Article 6",
+        "Annex I",
+        "Annex III"
+      ],
+      "gold_refs": [
+        "Annex I",
+        "Annex III",
+        "Article 43",
+        "Article 6"
+      ],
+      "latency_ms": 4575.809299996763,
+      "http_status": 200,
+      "error": null,
+      "scores": {
+        "ref_loose": 0.75,
+        "ref_strict": 0.8571428571428571,
+        "ref_conc": 0.5625,
+        "kw_recall": 0.3333333333333333,
+        "gold_dropped_head": 1.0,
+        "gold_dropped_exact": 1.0,
+        "answer_chars": 667.0,
+        "n_refs": 4.0
+      },
+      "question": "Are AI safety components within medical devices of MDR class IIa, IIb, or III considered to be high-risk according to the EU AI Act? Why?",
+      "gold_answer": "High-risk, because an AI system that is a safety component of an MDR-regulated medical device in class IIa, IIb, or III necessarily falls within Article 6(1): the device is covered by the Union harmonisation legislation listed in Annex I, and devices in those classes must by definition undergo third-party conformity assessment with notified-body involvement, which is the deciding condition that Article 6(1) attaches the high-risk classification to. The classification does not depend on Annex III here, since it arises through the Annex I product-safety route rather than the standalone use-case list. For such a system the conformity assessment under Article 43 is carried out through the procedure set out in the applicable medical-device legislation, with the EU AI Act's high-risk requirements integrated into that sectoral assessment rather than run as a separate exercise. The reason these device classes engage the rule, whereas class I generally does not, is precisely the mandatory third-party assessment: it is the notified-body conformity-assessment requirement under the MDR that satisfies the Article 6(1) trigger and renders the AI safety component high-risk.",
+      "category": "live_answers"
+    },
+    {
+      "id": "live_answers:la_q9",
+      "source": "live_answers",
+      "pred_answer": "Under Article 18, for ten years after the high-risk AI system is placed on the market or put into service, the provider must keep at the disposal of the national competent authorities the technical documentation (Article 11), the quality-management-system documentation (Article 17), the documentation of any changes approved by notified bodies, the decisions and other documents issued by notified bodies, and the EU declaration of conformity (Article 47). Separately, under Article 19 the automatically generated logs must be kept for a period appropriate to the intended purpose, of at least six months.",
+      "pred_refs": [
+        "Article 18",
+        "Article 11",
+        "Article 17",
+        "Article 47",
+        "Article 19"
+      ],
+      "gold_refs": [
+        "Annex IV",
+        "Article 11",
+        "Article 17",
+        "Article 18",
+        "Article 47"
+      ],
+      "latency_ms": 35.79379999428056,
+      "http_status": 200,
+      "error": null,
+      "scores": {
+        "ref_loose": 0.8,
+        "ref_strict": 0.8000000000000002,
+        "ref_conc": 1.0,
+        "kw_recall": 1.0,
+        "gold_dropped_head": 1.0,
+        "gold_dropped_exact": 1.0,
+        "answer_chars": 606.0,
+        "n_refs": 5.0
+      },
+      "question": "What documentation does a provider of a high-risk AI system needs to keep available for the national competent authorities, and for how long?",
+      "gold_answer": "A provider of a high-risk AI system must keep, for 10 years after the system is placed on the market or put into service, the documentation set out in Article 18 and make it available to national competent authorities on request. That set comprises the technical documentation required under Article 11 (drawn up before placement and kept current, demonstrating conformity with the Section 2 requirements, with content per Annex IV), the documentation of the quality management system operated under Article 17, any documentation issued by a notified body where applicable, and the EU declaration of conformity drawn up under Article 47. The declaration of conformity itself must likewise be kept at the disposal of national competent authorities for 10 years under Article 47.",
+      "category": "live_answers"
+    },
+    {
+      "id": "live_answers:la_q10",
+      "source": "live_answers",
+      "pred_answer": "Article 14 governs human oversight measures for high-risk AI systems, requiring that such systems be designed and developed in a way that allows assigned natural persons to understand the system's capacities and limitations, stay aware of automation bias, correctly interpret the output, decide not to use the system or to disregard, override or reverse its output, and intervene or stop the system.",
+      "pred_refs": [
+        "Article 14"
+      ],
+      "gold_refs": [
+        "Article 14"
+      ],
+      "latency_ms": 3207.532899999933,
+      "http_status": 200,
+      "error": null,
+      "scores": {
+        "ref_loose": 1.0,
+        "ref_strict": 1.0,
+        "ref_conc": 1.0,
+        "kw_recall": 1.0,
+        "gold_dropped_head": 0.0,
+        "gold_dropped_exact": 0.0,
+        "answer_chars": 399.0,
+        "n_refs": 1.0
+      },
+      "question": "Which article of the EU AI Act governs human oversight measures?",
+      "gold_answer": "Article 14 governs human oversight. It requires that high-risk AI systems be designed and developed so they can be effectively overseen by natural persons during the period in which they are in use, through appropriate human-machine interface tools.",
+      "category": "live_answers"
+    }
+  ],
+  "partial": true
+}

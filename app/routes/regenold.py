@@ -1757,6 +1757,7 @@ def _engine_cache_key(
             # AND its citations — same doctrine as REGENOLD_USER_REF_MINIMALITY
             # above.
             "REGENOLD_CITABLE_UNIVERSE_BLOCK",
+            "REGENOLD_CITABLE_CONCEPT_ANCHORS",
             "REGENOLD_REF_UNCERTAINTY",
             "REGENOLD_GRAPH_VECTOR_RECALL",
             "REGENOLD_VECTOR_MIN_SIM",

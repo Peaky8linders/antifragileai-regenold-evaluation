@@ -1495,6 +1495,49 @@ def validate_legal_triple(
     return article in ROLE_OBLIGATIONS.get(role, {}).get(risk_class, ())
 
 
+# ── R371.3 — requirement-name → article anchors (retrieval-facing) ───────
+
+
+#: Narrow, unambiguous Chapter-III requirement-name anchors for the R329
+#: citable-universe seed. Values are WIRE form ("Article N" / "Annex X",
+#: hard rule #1).
+#:
+#: These are DELIBERATELY narrow — the general ``KEYWORD_TO_ARTICLE`` map
+#: (app/integrations/regenold/scope.py) measures only 7% gold precision as a
+#: citable-universe seed over the 297-row probe pool (Art. 6 / 50 / 5 / 53 /
+#: 43 fire on questions whose gold cites the answer list, not the rule), so
+#: blindly unioning it would re-open the over-citation hole R329 closed.
+#: This set is the measured exception: requirement NAMES that map 1:1 to the
+#: article that imposes them. Measured R352-doctrine (offline, before any
+#: engine change): 41 anchors fired over 36/297 rows, **38 gold, 3 contextual
+#: misses, 93% precision** — the three misses are conformity-route
+#: classification questions where the gold cites Art. 6/Annex I (the route)
+#: rather than Art. 43 (the general procedure); as a PERMISSION SET the model
+#: still only cites what its prose discusses.
+REQUIREMENT_ARTICLE_ANCHORS: dict[str, str] = {
+    "quality management system": "Article 17",
+    "quality management": "Article 17",
+    "technical documentation": "Article 11",
+    "record-keeping": "Article 12",
+    "record keeping": "Article 12",
+    "human oversight": "Article 14",
+    "risk management system": "Article 9",
+    "risk management": "Article 9",
+    "data governance": "Article 10",
+    "conformity assessment": "Article 43",
+    "post-market monitoring": "Article 72",
+    "post market monitoring": "Article 72",
+    "serious incident": "Article 73",
+    "fundamental rights impact assessment": "Article 27",
+    "fria": "Article 27",
+    "eu declaration of conformity": "Article 47",
+    "transparency to deployers": "Article 13",
+    "accuracy robustness": "Article 15",
+    "robustness accuracy": "Article 15",
+    "cybersecurity": "Article 15",
+}
+
+
 # ── Public API ───────────────────────────────────────────────────────────
 
 
@@ -1518,6 +1561,7 @@ __all__ = [
     "ANNEX_III_REGISTRY",
     "PHASE_REGISTRY",
     "ROLE_OBLIGATIONS",
+    "REQUIREMENT_ARTICLE_ANCHORS",
     "RISK_SCENARIO_REGISTRY",
     "RISK_CONTROL_REGISTRY",
     "GPAI_REGISTRY",
