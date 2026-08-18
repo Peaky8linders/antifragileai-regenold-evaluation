@@ -734,6 +734,25 @@ that the instance is pristine.
   * **R370 — OpenRouter Stage-2 is in-tree but INERT until you flip it on:**
     `P2P_GRAPH_RAG_PROVIDER=openrouter` + `OPENROUTER_API_KEY` set. Models /
     routing in the flag table below; all four knobs keyed in `_engine_cache_key`.
+  * **R371 — the AIRO/DPV-EU-AIAct proposal was evaluated against the official
+    sources and largely refuted; the one genuine gap was closed.** AIRO defines
+    no `HighRiskAISystem`/`ProhibitedPractice` and no Annex III enumeration
+    (high-risk is 5 competency questions); DPV-EU-AIAct defines only three
+    properties and says it does not define compliance requirements — the
+    role→obligation edges it is bought for do not exist, and this repo's
+    `ROLE_OBLIGATIONS` matrix (8 roles × 7 risk classes → 90 bindings) is
+    strictly richer. What was real: the live Aura graph carried 40% of the
+    matrix (`risk_class` NULL on all 36 edges, Annex targets dropped by the
+    seeder's `_existing_article_id`). Closed by `app/data/role_obligation_graph.py`
+    + `scripts/extend_aura_role_obligations.py` (additive
+    `HAS_RISK_CLASS_OBLIGATION` edges; rollback verified exact), with
+    `REGENOLD_ROLE_OBLIGATION_CONTEXT` (default **OFF**, unmeasured — owed
+    gate: `dynamic_ab --flag ...` with the `gold_dropped` veto). The three
+    reconciliation divergences were each statute-verified, then MEASURED over
+    the 297-row pool: deployer→Art. 72 was a tier error (fixed: secondary, 0
+    rows changed); provider→Art. 73 / Art. 25(4) matrix gaps are legally real
+    but gold-wrong (**0 gold gained, 8 non-gold added, 0% precision — rejected**).
+    Full record: `docs/R371-role-obligation-fidelity.md`.
 
 ## Do not re-propose — measured and dead
 
