@@ -160,6 +160,23 @@ def _provenance_in_prompt_enabled() -> bool:
     )
 
 
+def role_obligation_context_enabled() -> bool:
+    """``REGENOLD_ROLE_OBLIGATION_CONTEXT`` — **DEFAULT OFF** (R371).
+
+    Renders the role x RISK-CLASS obligation layer
+    (``HAS_RISK_CLASS_OBLIGATION``, 90 bindings written additively to the live
+    graph at R371) as non-citable Stage-2 context.
+
+    Default OFF because it is unmeasured prompt budget on Answer-Conciseness,
+    the one rubric axis this system leads. It is engine-level and registered in
+    ``_engine_cache_key`` — without that the A/B would be served one arm's
+    cached output and read INERT. Fresh env read per call (R263.2 / R334).
+    """
+    return os.getenv("REGENOLD_ROLE_OBLIGATION_CONTEXT", "0").strip().lower() in (
+        "1", "true", "yes", "on",
+    )
+
+
 def _int_env(name: str, default: int, lo: int, hi: int) -> int:
     try:
         return max(lo, min(hi, int(os.getenv(name, ""))))
@@ -332,6 +349,32 @@ CALL () {
            [] AS phases
 }
 RETURN cite, practices, annex_iii, roles, phases
+LIMIT $limit
+"""
+
+
+# R371 — the role x RISK-CLASS obligation layer.
+#
+# ``_DEONTIC_CYPHER`` above already reports operator roles, but it reads
+# ``HAS_OBLIGATION_ARTICLE``, whose ``risk_class`` is NULL on all 36 edges: the
+# graph collapsed the dimension. So it can say "Article 43 binds the provider"
+# but not "the provider OF AN ANNEX-III HIGH-RISK SYSTEM, as opposed to a GPAI
+# model" — which is exactly the role-confusion the answer path gets wrong.
+# ``HAS_RISK_CLASS_OBLIGATION`` carries that dimension (8 roles x 7 risk
+# classes -> 90 bindings) and, unlike the older edge, resolves ANNEX targets
+# too (the seeder's ``_existing_article_id`` drops every one).
+#
+# Non-citable, like every other block in this module (hard rule #10): it
+# reports which role bears a provision that is ALREADY cited. It matches only
+# on ``$ids`` and can never introduce a provision that was not already there.
+_ROLE_RISK_CLASS_CYPHER = """
+MATCH (t) WHERE t.id IN $ids AND (t:Article OR t:Annex)
+MATCH (r:OperatorRole)-[e:HAS_RISK_CLASS_OBLIGATION]->(t)
+WITH coalesce(t.strict_citation, t.id) AS cite,
+     coalesce(r.label, r.id) AS role,
+     collect(DISTINCT e.risk_class) AS risk_classes
+RETURN cite, role, risk_classes
+ORDER BY cite, role
 LIMIT $limit
 """
 
@@ -700,6 +743,33 @@ def fetch_subpoint_detail(refs: list[str]) -> list[dict]:
     return result
 
 
+def fetch_role_risk_class_context(refs: list[str]) -> list[dict]:
+    """R371 — which operator role bears each cited provision, AT WHICH RISK CLASS.
+
+    Returns ``[]`` unless BOTH ``REGENOLD_KG_CONTEXT`` and
+    ``REGENOLD_ROLE_OBLIGATION_CONTEXT`` are on, so the master graph gate still
+    disables it. Fails soft on any transport error, like every fetcher here.
+    """
+    if not (kg_context_enabled() and role_obligation_context_enabled()):
+        return []
+    ids = _node_ids(refs or [], _int_env("REGENOLD_KG_MAX_REFS", _DEFAULT_MAX_REFS, 1, 24))
+    if not ids:
+        return []
+    cached = _memo_get("role_risk_class", ids, 24)
+    if cached is not None:
+        return cached
+    rows: list[dict] = _ReadRows(failed=True)
+    try:
+        rows = _bounded_execute_read(_ROLE_RISK_CLASS_CYPHER, {"ids": ids, "limit": 24})
+        result = list(rows or [])
+    except Exception:  # noqa: BLE001
+        logger.debug("kg_context: role/risk-class fetch failed", exc_info=True)
+        result = []
+    if not getattr(rows, "failed", False):
+        _memo_put("role_risk_class", ids, 24, result)
+    return result
+
+
 def fetch_deontic_context(refs: list[str]) -> list[dict]:
     """Prohibited practices / Annex III categories / role duties / phases."""
     if not kg_context_enabled():
@@ -733,6 +803,11 @@ _R326_RESERVED_MARKERS = (
     "KNOWLEDGE-GRAPH QUESTION-FOCUSED SUB-PROVISIONS",
     "KNOWLEDGE-GRAPH DEFINITIONS",
     "KNOWLEDGE-GRAPH RECITAL CONTEXT",
+    # R371 — same reason: this block renders LAST, so without reserved capacity
+    # a large hierarchy would consume the ceiling and delete it. "Budget the
+    # thing you just added" — otherwise the feature silently removes itself and
+    # the A/B measures nothing.
+    "KNOWLEDGE-GRAPH ROLE x RISK-CLASS DUTIES",
 )
 
 
@@ -1032,6 +1107,30 @@ def render_kg_context(refs: list[str], question: str = "") -> list[str]:
             "(role duties, risk categories and lifecycle phases attached to the "
             "provisions above — non-citable structural context):\n"
             + "\n".join(deontic_lines)
+        )
+
+    # R371 — role x RISK CLASS. The block above reports WHICH role; this one
+    # reports UNDER WHICH RISK CLASS, the dimension the older edge collapsed.
+    try:
+        role_rows = fetch_role_risk_class_context(refs)
+    except Exception:  # noqa: BLE001
+        role_rows = []
+    role_lines = []
+    for row in role_rows:
+        cite = str(row.get("cite") or "").strip()
+        role = str(row.get("role") or "").strip()
+        classes = [str(c) for c in (row.get("risk_classes") or []) if c]
+        if not (cite and role and classes):
+            continue
+        pretty = ", ".join(sorted(c.replace("_", " ") for c in classes))
+        role_lines.append(f"- {cite}: binds the {role} when the system is {pretty}")
+    if role_lines:
+        parts.append(
+            "\nKNOWLEDGE-GRAPH ROLE x RISK-CLASS DUTIES "
+            "(which operator role bears each provision above, and under which "
+            "risk classification — non-citable structural context; do NOT cite "
+            "a provision solely because it appears here):\n"
+            + "\n".join(role_lines)
         )
 
     # R327 — the five previously-dark vector indexes. Placed before the

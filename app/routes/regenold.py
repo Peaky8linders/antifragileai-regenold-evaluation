@@ -1730,6 +1730,15 @@ def _engine_cache_key(
             # be keyed (R334 drift guard enforces their presence).
             "REGENOLD_ANNEXIII_RECALL_SUPPLEMENTS",
             "REGENOLD_ART50_RECALL_SUPPLEMENTS",
+            # R371 — the role x RISK-CLASS obligation block (90 bindings
+            # written additively to the live graph as HAS_RISK_CLASS_OBLIGATION).
+            # It is non-citable Stage-2 CONTEXT, not a citation source, but
+            # Stage-2 input is engine-level for exactly the reason the flags
+            # below are: unkeyed, arm B is served arm A's cached answer and the
+            # A/B reads INERT for a feature that ran. Fresh read per call
+            # (`kg_context.role_obligation_context_enabled`); the R334 drift
+            # guard enforces its presence here.
+            "REGENOLD_ROLE_OBLIGATION_CONTEXT",
             # R327 gate — the open-domain half of the semantic layers, separable
             # so constrained-only can be measured. Engine-level (it changes the
             # Stage-2 grounding block), so it must be keyed like its master.
