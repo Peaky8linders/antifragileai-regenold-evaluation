@@ -91,11 +91,20 @@ class TestR274DeviationRefs:
         assert any("Annex III" in r for r in refs), refs
 
     def test_off_switch_restores_prune(self, monkeypatch):
-        # With protection OFF the prune drops Art 6 / 6.3 (the pre-R274 bug),
-        # keeping only the question-named Annex III anchor — proves the gate.
+        # With protection OFF the prune drops the load-bearing Article 6.3
+        # sub-point (the pre-R274 bug was dropping Art 6 / 6.3; the R369
+        # prose→refs direction re-instates the bare Article 6 head because
+        # the curated answer prose describes it — so the gate's residual
+        # observable is exactly the 6.3 LEAF: present with protection ON
+        # (test_article_6_and_6_3_cited), pruned with it OFF). Proves the
+        # gate without asserting the pre-R369 wire.
         monkeypatch.setenv("REGENOLD_CURATED_REF_PROTECT", "0")
         refs = _wire_refs(_Q032)
-        assert "6" not in _art_nums(refs), refs
+        assert not any(
+            r.replace("Art.", "Article").startswith("Article 6.3") for r in refs
+        ), refs
+        # The question-named Annex III anchor survives either way.
+        assert any("Annex III" in r for r in refs), refs
 
 
 # ── q001 hardware tech-doc: Article 11 survives the Annex-IV-named variant ──

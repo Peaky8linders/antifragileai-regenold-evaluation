@@ -152,8 +152,13 @@ ROLE_OBLIGATIONS: list[RoleObligation] = [
         ),
         "source": "Art. 3(4) + Art. 26 + Art. 27",
         "paper_lines": "1010-1014, 1738-1744",
-        "primary_articles": ["Art. 26", "Art. 27", "Art. 50", "Art. 72"],
-        "secondary_articles": ["Art. 4", "Art. 14", "Art. 13"],
+        "primary_articles": ["Art. 26", "Art. 27", "Art. 50"],
+        # Art. 72's obligation-bearer is the PROVIDER (Art. 72(1) "Providers
+        # shall establish and document a post-market monitoring system"). The
+        # deployer reaches it only through the Art. 26(5) cross-reference
+        # ("inform providers in accordance with Article 72"), so it is a
+        # related provision, not a deployer duty — secondary, not primary.
+        "secondary_articles": ["Art. 4", "Art. 14", "Art. 13", "Art. 72"],
         "kb_dimensions": [
             "ai_literacy",
             "deployer_obligations",

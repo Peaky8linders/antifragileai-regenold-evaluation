@@ -68,9 +68,18 @@ def test_penalty_inquiry_narrows_to_art_99(client) -> None:
 
     refs = body["references"]
     assert "Article 99" in refs
-    # Round-19 left 3 refs here; round-20 narrows to 1.
-    assert "Article 5" not in refs, f"Art. 5 should be pruned by intent; got {refs}"
+    # Intent pruning still drops the pre-intent spurious anchors (Annex II
+    # was on the round-19 wire; it is gone now).
     assert "Annex II" not in refs, f"Annex II should be pruned by intent; got {refs}"
+    # R368 — the fines-prohibited shape is a documented recall supplement
+    # (Art. 99(4) tier enumerates the Art. 50 transparency duties): the wire
+    # guard re-instates Article 50 as the last pass (gold-validated at 100%
+    # trigger precision on the R365 checkpoint). Article 5 stays because the
+    # R31 prohibited-practice gatekeeper force-cites it on a "prohibited
+    # AI" question. Both are deliberate post-intent additions, so the
+    # intent's precision job is "narrow to the anchor + let the documented
+    # supplements re-add" — assert the anchor lead, not a bare single ref.
+    assert "Article 50" in refs, f"Art. 50 (R368 fines supplement) expected; got {refs}"
 
 
 def test_fria_intent_narrows_to_art_27(client) -> None:
@@ -90,7 +99,13 @@ def test_fria_intent_narrows_to_art_27(client) -> None:
     # FRIA-anchored ref survived, not the exact granularity).
     assert any(r == "Article 27" or r.startswith("Article 27.") for r in refs), \
         f"Article 27 (or leaf) missing; got {refs}"
-    assert "Annex III" not in refs, f"Annex III should be pruned; got {refs}"
+    # R369 — the FRIA answer prose explicitly names Annex III ("Deployers
+    # of certain high-risk AI systems (Annex III + public-sector deployers)
+    # must perform a FRIA"), and the R369 prose→refs direction re-instates
+    # prose-named provisions after intent pruning (measured ref_corr lift
+    # on the golden read). The intent's job is narrowing to the anchor;
+    # a prose-described Annex III is a deliberate, described addition.
+    assert "Annex III" in refs, f"Annex III (prose-described) expected; got {refs}"
 
 
 def test_incident_reporting_narrows_to_art_73(client) -> None:

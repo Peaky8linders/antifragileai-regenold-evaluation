@@ -700,6 +700,60 @@ that the instance is pristine.
   champion (k,Q+reranker 0.9098) and remains the next measurement:
   `REGENOLD_COHERE_RERANK=1` graded with these axes.
 
+* **R361→R370 — the review-window fixes (all live, all tested).** The 2026-08-17
+  review found the R349→R364.5 window had silently regressed shipped features;
+  all are restored and the full suite is green (0 failed, was 51):
+  * **R329 CITABLE PROVISIONS restored (F1).** `b07afa4` (R364.5) deleted the
+    three `_citable_universe_*` functions + P3b clauses as an undisclosed rider
+    on a query-expansion commit; the flags stayed keyed-but-dead. Byte-faithful
+    restore from `82916f9`; 131 R329 tests green. The block is the citation
+    whitelist that constrains over-citation — the repo's stated gap. Decision
+    record: `docs/R329-restore-decision.md`.
+  * **R328/R342/R344 regression fixes (F2).** The same window stripped the
+    truncation-guard markdown fixes, the annex/recital idempotency, and the
+    dangling-ref rules; restored and test-pinned (R328 30/30, R342, R344
+    4/4). The remaining pre-R361 failures were triaged as stale tests of
+    deliberate R368/R69 changes and updated to the new wires — not reverted.
+  * **F4 — Stage-2 model provenance.** `_bedrock_complete_for_graph_rag` now
+    records `stage2_model=<served>` like the wrapper/OpenRouter paths, so a
+    cross-model rollover (R366.1 chain) is visible in the artifact, not just
+    logs. **Read the trace note before quoting any Bedrock-graded number.**
+  * **R369 — wire-level collapse + promote (ref_corr 0.35 → 0.4333 on the
+    60-row golden read, same qwen judge as baseline).** `REGENOLD_REF_COLLAPSE_
+    LEAF_TO_HEAD` (default ON) drops a leaf whose head is on the wire (judge
+    reads the raw list and flags `Article 5.1.f` + `Article 5` as redundant);
+    `REGENOLD_REF_PROMOTE_LEAF_TO_HEAD` (default ON) adds the bare head for
+    leaf-only refs (judge does NOT head-project gold). Both are gold-safe by
+    construction (`article_heads` projection) and skip in
+    `REGENOLD_REF_GRANULARITY=both` mode (the documented pre-R276 rollback).
+    R274's load-bearing `Article 6 + Article 6.3` pair is exempt.
+  * **F3 — the R365/R369 headline numbers are QWEN-judged**
+    (`qwen.qwen3-32b-v1:0`, Bedrock), not a Claude tier — comparable to each
+    other, not to any Claude-judged baseline. R370's Bedrock golden re-read
+    keeps the same qwen judge for an apples-to-apples ref_corr comparison.
+  * **R370 — OpenRouter Stage-2 is in-tree but INERT until you flip it on:**
+    `P2P_GRAPH_RAG_PROVIDER=openrouter` + `OPENROUTER_API_KEY` set. Models /
+    routing in the flag table below; all four knobs keyed in `_engine_cache_key`.
+  * **R371 — the AIRO/DPV-EU-AIAct proposal was evaluated against the official
+    sources and largely refuted; the one genuine gap was closed.** AIRO defines
+    no `HighRiskAISystem`/`ProhibitedPractice` and no Annex III enumeration
+    (high-risk is 5 competency questions); DPV-EU-AIAct defines only three
+    properties and says it does not define compliance requirements — the
+    role→obligation edges it is bought for do not exist, and this repo's
+    `ROLE_OBLIGATIONS` matrix (8 roles × 7 risk classes → 90 bindings) is
+    strictly richer. What was real: the live Aura graph carried 40% of the
+    matrix (`risk_class` NULL on all 36 edges, Annex targets dropped by the
+    seeder's `_existing_article_id`). Closed by `app/data/role_obligation_graph.py`
+    + `scripts/extend_aura_role_obligations.py` (additive
+    `HAS_RISK_CLASS_OBLIGATION` edges; rollback verified exact), with
+    `REGENOLD_ROLE_OBLIGATION_CONTEXT` (default **OFF**, unmeasured — owed
+    gate: `dynamic_ab --flag ...` with the `gold_dropped` veto). The three
+    reconciliation divergences were each statute-verified, then MEASURED over
+    the 297-row pool: deployer→Art. 72 was a tier error (fixed: secondary, 0
+    rows changed); provider→Art. 73 / Art. 25(4) matrix gaps are legally real
+    but gold-wrong (**0 gold gained, 8 non-gold added, 0% precision — rejected**).
+    Full record: `docs/R371-role-obligation-fidelity.md`.
+
 ## Do not re-propose — measured and dead
 
 **Over-citation trimming (five families):**

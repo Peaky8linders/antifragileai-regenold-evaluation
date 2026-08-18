@@ -240,12 +240,24 @@ def _looks_structurally_truncated(text: str | None) -> bool:
     stripped = text.rstrip()
     if not stripped:
         return False
+    # R328.3 — a MARKDOWN TABLE ROW is a structurally complete ending. Long
+    # enumerative answers (role × obligation matrices) legitimately end on one,
+    # and its terminal ``|`` is a row close, not a mid-clause stop.
+    last_line = stripped.splitlines()[-1].strip()
+    if last_line.startswith("|") and last_line.endswith("|") and len(last_line) > 2:
+        return False
     # Peel trailing closing wrappers a complete sentence may carry after
     # its terminator: e.g. ``(see Annex IV).`` ends ``).`` → peel ``)``
     # is unnecessary because the terminator is already last; but ``…IV.)``
     # ends ``)`` → peel to reach the ``.``. Quotes/brackets likewise.
+    # R328.3 (restored — the R349→R361 window clobbered it): markdown
+    # emphasis/code markers (``*`` ``_`` backtick ``~``) belong in the peel
+    # set for exactly the same reason — they WRAP text rather than end it.
+    # Measured live on Bedrock: a COMPLETE answer ending
+    # ``*Sources: … Recitals 46-59.*`` was judged truncated on its closing
+    # ``*`` and discarded. A formatting character is not a truncation.
     tail = stripped
-    while tail and tail[-1] in ")]}\"”’'":
+    while tail and tail[-1] in ")]}\"”’'*_`~":
         tail = tail[:-1].rstrip()
     if not tail:
         return False
@@ -610,11 +622,16 @@ def _opus_for_all_enabled() -> bool:
     }
 
 
-BEDROCK_RAG_MODEL = "eu.anthropic.claude-sonnet-4-6"
-"""Main RAG tier (Stage-1 + Stage-2) when ``P2P_GRAPH_RAG_PROVIDER=bedrock``."""
+BEDROCK_RAG_MODEL = "eu.anthropic.claude-opus-4-8"
+"""Main RAG tier (Stage-1 + Stage-2) when ``P2P_GRAPH_RAG_PROVIDER=bedrock``.
 
-BEDROCK_COMPLEX_MODEL = "eu.anthropic.claude-opus-4-6-v1"
-"""Complex tier — the ~20% of questions ``complex_question`` flags."""
+Restored to the CLAUDE.md-pinned default — the R349→R361 window downgraded
+it to sonnet-4-6, silently flipping the Stage-2 model on every Bedrock
+deploy that did not set ``REGENOLD_BEDROCK_MODEL``."""
+
+BEDROCK_COMPLEX_MODEL = "eu.anthropic.claude-opus-5"
+"""Complex tier — the ~20% of questions ``complex_question`` flags. Same
+restoration as :data:`BEDROCK_RAG_MODEL` (was opus-4-6-v1 in the window)."""
 
 
 
@@ -626,6 +643,7 @@ def _bedrock_complete_for_graph_rag(
     try:
         from app.llm.bedrock_client import (
             BedrockRequest,
+            complete_with_fallback,
             get_bedrock_provider,
             is_bedrock_provider_enabled,
             resolve_bedrock_model,
@@ -691,18 +709,40 @@ def _bedrock_complete_for_graph_rag(
         if _cand and _cand not in ordered:
             ordered.append(_cand)
 
+    # R328.3 (restored — the R349→R361 refactor dropped it): 1536 is advisory
+    # on the wrapper but a HARD mid-word cut on Bedrock, so the Stage-2 answer
+    # ceiling is raised here (env REGENOLD_BEDROCK_MAX_TOKENS, default 4096),
+    # and the read budget is raised to match (REGENOLD_BEDROCK_STAGE2_TIMEOUT_S,
+    # default 180 — the worst measured 4096-token answer took ~70 s). Fresh env
+    # reads per call (R263.2).
+    try:
+        _stage2_ceiling = int(os.getenv("REGENOLD_BEDROCK_MAX_TOKENS", "4096"))
+        _stage2_timeout = float(os.getenv("REGENOLD_BEDROCK_STAGE2_TIMEOUT_S", "180"))
+    except (TypeError, ValueError):  # noqa: BLE001 — a broken knob must not break the call
+        _stage2_ceiling = 4096
+        _stage2_timeout = 180.0
+    if "stage 2" in (stage_name or "").lower() and (max_tokens or 0) < _stage2_ceiling:
+        max_tokens = _stage2_ceiling
     try:
         provider = get_bedrock_provider()
         last_error = ""
         for _idx, _mid in enumerate(ordered):
-            resp = provider.complete(
+            # Each tier attempt routes through ``complete_with_fallback`` with
+            # an EMPTY family chain: the R366.1 model rollover lives in the
+            # outer loop here, so the inner call must not re-roll across the
+            # same family — but it keeps the R330 cross-provider last resort
+            # (wrapper) and the R328.3 stop-reason/ceiling contract, and it is
+            # the single routing point the harness tests pin.
+            resp = complete_with_fallback(
                 BedrockRequest(
                     system=system,
                     user=user,
                     model=_mid,
                     max_tokens=max_tokens or 1024,
                     temperature=temperature,
-                )
+                    timeout_seconds=_stage2_timeout,
+                ),
+                fallbacks=(),
             )
             if resp.error or not resp.text:
                 last_error = str(resp.error or "empty")
@@ -711,6 +751,24 @@ def _bedrock_complete_for_graph_rag(
                         "graph_rag.bedrock_model_rolled primary=%s tried=%s error=%s — rolling to next",
                         model_id, _mid, last_error[:120],
                     )
+                continue
+            # R328.3 — stop_reason is the authoritative cut signal on Bedrock
+            # (it honours the ceiling and reports ``max_tokens``; the prose
+            # heuristics below cannot catch a cut that happens to end on a
+            # full stop). Reject + record + roll to the next tier.
+            if (getattr(resp, "finish_reason", None) or "") == "max_tokens":
+                last_error = "max_tokens_cut"
+                logger.warning(
+                    "graph_rag.bedrock_truncated_max_tokens tried=%s — rolling to next",
+                    _mid,
+                )
+                try:
+                    from app.integrations.regenold.reasoning_trace import (  # noqa: PLC0415
+                        record_note as _rn,
+                    )
+                    _rn(f"stage2_truncated_max_tokens tried={_mid}")
+                except Exception:  # noqa: BLE001 — trace is best-effort
+                    pass
                 continue
             if _looks_structurally_truncated(resp.text):
                 last_error = "structural_truncation"
@@ -6928,7 +6986,17 @@ def _populate_semantic_statements(context: GraphContext, question: str) -> None:
 
 
 def _expand_referenced_annexes_and_recitals(context: GraphContext) -> None:
-    """Parse primary retrieved context for referenced Annexes and Recitals and append them to context."""
+    """Parse primary retrieved context for referenced Annexes and Recitals and append them to context.
+
+    Idempotent: annexes/recitals already present in
+    ``context.referenced_annexes_and_recitals`` are never appended again.
+    Every entry here is rendered VERBATIM into the Stage-2 prompt, so a
+    duplicate doubles the prompt block and can make the model double-count
+    the provision — the pre-fix bug shipped every referenced annex/recital
+    twice on the KB-primary default path (``_retrieve_from_kb`` expands
+    internally AND ``_retrieve_from_graph`` expanded the returned context
+    again). R342 logic restored (the R349→R361 window stripped it).
+    """
     import re
 
     from app.data.eu_ai_act_corpus import RECITALS
@@ -6936,6 +7004,14 @@ def _expand_referenced_annexes_and_recitals(context: GraphContext) -> None:
 
     annex_pat = re.compile(r"\bAnnex\s+([IVXLCDM]+)\b", re.IGNORECASE)
     recital_pat = re.compile(r"\bRecital\s+(\d+)\b", re.IGNORECASE)
+
+    # The call-local dedup that prevents duplicate grounding: the annex /
+    # recital resolution loops below only guard against other extracted
+    # refs and against ``context.obligations`` — never against refs already
+    # in the queue itself. Idempotency requires checking the queue.
+    already_queued = {
+        r.get("ref") for r in context.referenced_annexes_and_recitals
+    }
 
     extracted_annexes = []
     extracted_recitals = []
@@ -6962,14 +7038,22 @@ def _expand_referenced_annexes_and_recitals(context: GraphContext) -> None:
         if rec_num not in extracted_recitals:
             extracted_recitals.append(rec_num)
 
-    # Resolve Annexes (capped at 2)
-    resolved_count_annex = 0
+    # Resolve Annexes (capped at 2 total in the queue, so a re-expansion of
+    # an already-expanded context adds NOTHING — full idempotency, not just
+    # duplicate-skipping: the cap is a QUEUE budget, not a per-call budget).
+    annex_queued = sum(
+        1 for r in context.referenced_annexes_and_recitals if r.get("type") == "Annex"
+    )
+    recital_queued = sum(
+        1 for r in context.referenced_annexes_and_recitals if r.get("type") == "Recital"
+    )
+    resolved_count_annex = annex_queued
     for annex in extracted_annexes:
         if resolved_count_annex >= 2:
             break
         # Check if already retrieved as a primary obligation to avoid duplication
         already_present = any(o.get("article") == annex for o in context.obligations)
-        if already_present:
+        if already_present or annex in already_queued:
             continue
         mapping = EC_CHECKER_OBLIGATION_MAP.get(annex)
         if mapping:
@@ -6979,21 +7063,24 @@ def _expand_referenced_annexes_and_recitals(context: GraphContext) -> None:
                 "ref": annex,
                 "text": mapping.get("summary", ""),
             })
+            already_queued.add(annex)
             resolved_count_annex += 1
 
-    # Resolve Recitals (capped at 3)
-    resolved_count_recital = 0
+    # Resolve Recitals (capped at 3 total in the queue — see the annex cap
+    # comment above).
+    resolved_count_recital = recital_queued
     for rec_num in extracted_recitals:
         if resolved_count_recital >= 3:
             break
         rec_text = RECITALS.get(rec_num)
-        if rec_text:
+        if rec_text and f"Recital {rec_num}" not in already_queued:
             context.referenced_annexes_and_recitals.append({
                 "id": f"ref-recital-{rec_num}",
                 "type": "Recital",
                 "ref": f"Recital {rec_num}",
                 "text": rec_text,
             })
+            already_queued.add(f"Recital {rec_num}")
             resolved_count_recital += 1
 
 
@@ -8718,7 +8805,7 @@ def _claude_max_enhance_answer(
                 f"BACKGROUND RISK FRAMEWORK:\n{kg_answer}\n\n"
                 "The user is asking a classification question about a specific AI system use-case or category. "
                 "Provide a professional, objective regulatory verdict based strictly on the EU AI Act. "
-                "CRITICAL INSTRUCTION: Adhere to the BOTTOM-LINE UP FRONT (BLUF) DIRECT-ANSWER-FIRST format from your system prompt. "
+                "CRITICAL INSTRUCTION: Adhere to the BOTTOM-LINE UP FRONT (BLUF) DIRECT-ANSWER-FIRST format defined here. "
                 "Lead with the concise classification VERDICT in the FIRST clause (e.g. 'Likely high-risk', 'Not high-risk', 'Prohibited', 'Limited-risk only', 'Out of scope', or a conditional verdict in formal regulatory terms such as 'High-risk only where [the deciding condition]' / 'Not high-risk unless [the deciding condition]'), THEN name the operative provision(s) and explain. "
                 "Do NOT open with a provision-naming meta-statement in ANY word order — neither 'Article N is the operative provision' NOR the reversed 'The operative provision is Article N' / 'The applicable provision is Article N' / 'Under Article N' — and do NOT bury the verdict in a later sentence. The FIRST WORDS must be the subject entity or the classification itself (e.g. 'A weight-tracking medtech system is high-risk only where it is a safety component of a regulated medical device requiring third-party conformity assessment'), NOT 'The operative provision is Article 6'. "
                 "NEVER open with the colloquial 'It depends' or any conversational hedge; lead with the classification itself, stated conditionally where the facts require it. "
@@ -8807,8 +8894,9 @@ def _claude_max_enhance_answer(
                 "concise sentences when that fully answers. Use additional "
                 "sentences only for distinct substantive points (another risk "
                 "tier, a carve-out, or a cross-reference) directly responsive to "
-                "the latest question, or when rule 12b closed-set completeness "
-                "requires naming every member of a set."
+                "the latest question, or when the question asks for an "
+                "exhaustively enumerated statutory set (closed-set completeness), "
+                "which requires naming every member of that set."
             )
         # R298 / R299 / R304 — Prompt additions on the channel that reaches the model.
         try:

@@ -111,6 +111,12 @@ class TestR115SubpointBudgetRescue:
         that would silently retire the R115 rescue with no coverage at all.
         """
         monkeypatch.setenv("REGENOLD_INTERCEPT_LEAF_COLLAPSE", "0")
+        # R369 — the wire-level leaf→head collapse pass (default ON) is a
+        # SIBLING of the R287 intercept collapse: it also removes the leaf
+        # when the head is present (Annex IV.1.e + Annex IV → Annex IV),
+        # so it must be disabled too for this isolation test to observe
+        # the R115 budget rescue and nothing else.
+        monkeypatch.setenv("REGENOLD_REF_COLLAPSE_LEAF_TO_HEAD", "0")
         body = _wire(
             "Does the technical documentation of a high-risk AI system "
             "require to provide specifications regarding the required "

@@ -41,7 +41,12 @@ def _contain_dotenv_leak():
 class _Recorder:
     """Stands in for ``complete_with_fallback`` and records that it was hit."""
 
-    def __init__(self, text: str = "an answer", model: str = "eu.anthropic.claude-opus-4-6-v1"):
+    def __init__(self, text: str = "an answer.", model: str = "eu.anthropic.claude-opus-4-6-v1"):
+        # ``an answer.`` (period-terminated): the R366.1 model chain advances
+        # on a truncation-shaped response, and this fixture stands in for a
+        # COMPLETE tier response. A bare "an answer" (no terminal punctuation)
+        # reads as a structural cut and the chain legitimately rolls past the
+        # pinned first tier, defeating the "the pin is what we ASK for" intent.
         self.hits = 0
         self.last_req = None
         self._text = text

@@ -124,6 +124,11 @@ class TestBoard65_4Wire:
         was actually protecting against the soft cap.
         """
         monkeypatch.setenv("REGENOLD_INTERCEPT_LEAF_COLLAPSE", "0")
+        # R369 — the wire-level leaf→head collapse pass (default ON) is a
+        # sibling of the R287 intercept collapse: it also drops the leaf
+        # (Article 65.4 → Article 65) when the head is present. Disable it
+        # too so this test isolates R268's sub-point emission.
+        monkeypatch.setenv("REGENOLD_REF_COLLAPSE_LEAF_TO_HEAD", "0")
         r = client.post(
             "/api/v1/regenold/eu-ai-act/ask",
             json=[{"role": "user", "content": Q_BOARD}],
