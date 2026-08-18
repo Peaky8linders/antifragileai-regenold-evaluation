@@ -1273,6 +1273,15 @@ def _openrouter_complete_for_graph_rag(
         return None
 
     model = _openrouter_model(complex_question)
+    # R372 — raise the token budget to the Stage-2 ceiling (same as Bedrock
+    # path) so sonnet-4.6 does not truncate on substantive legal answers.
+    # Fresh env read per call (R263.2).
+    try:
+        _or_ceiling = int(os.getenv("REGENOLD_BEDROCK_MAX_TOKENS", "4096"))
+    except (TypeError, ValueError):
+        _or_ceiling = 4096
+    if "stage 2" in (stage_name or "").lower() and (max_tokens or 0) < _or_ceiling:
+        max_tokens = _or_ceiling
     try:
         chain_env = os.getenv("REGENOLD_OPENROUTER_FALLBACK_CHAIN", "").strip()
         if chain_env:
