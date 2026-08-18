@@ -1195,10 +1195,10 @@ def _openai_wrapper_complete_for_graph_rag(
 # suffix. All knobs are fresh env reads (R263.2) and keyed in
 # ``_engine_cache_key``.
 
-_OPENROUTER_STAGE2_MODEL_DEFAULT = "anthropic/claude-sonnet-4.6"
-_OPENROUTER_COMPLEX_MODEL_DEFAULT = "anthropic/claude-opus-4.6"
+_OPENROUTER_STAGE2_MODEL_DEFAULT = "anthropic/claude-sonnet-5"
+_OPENROUTER_COMPLEX_MODEL_DEFAULT = "anthropic/claude-opus-5"
 _OPENROUTER_FALLBACK_CHAIN_DEFAULT = (
-    "qwen/qwen3-235b-a22b-2507,deepseek/deepseek-chat-v3.1"
+    "deepseek/deepseek-v4-flash,google/gemini-2.5-flash"
 )
 
 
@@ -1223,10 +1223,10 @@ def _openrouter_routing_suffix() -> str:
 def _openrouter_model(complex_question: bool) -> str:
     """Resolve the Stage-2 OpenRouter model (fresh env read per call).
 
-    Standard Stage-2 → ``REGENOLD_STAGE2_MODEL_OPENROUTER`` (default
-    ``anthropic/claude-sonnet-4.6``); complex →
+    Standard Stage-2 →    ``REGENOLD_STAGE2_MODEL_OPENROUTER`` (default
+    ``anthropic/claude-sonnet-5``); complex →
     ``REGENOLD_STAGE2_COMPLEX_MODEL_OPENROUTER`` (default
-    ``anthropic/claude-opus-4.6``), falling back to the standard model when
+    ``anthropic/claude-opus-5``), falling back to the standard model when
     the complex knob is unset. The routing suffix is appended per
     ``REGENOLD_OPENROUTER_ROUTING``.
     """

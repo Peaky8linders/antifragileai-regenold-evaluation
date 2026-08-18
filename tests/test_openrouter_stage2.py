@@ -58,8 +58,8 @@ class TestProviderResolution:
 
 class TestModelResolution:
     def test_defaults(self):
-        assert impl._openrouter_model(False) == "anthropic/claude-sonnet-4.6"
-        assert impl._openrouter_model(True) == "anthropic/claude-opus-4.6"
+        assert impl._openrouter_model(False) == "anthropic/claude-sonnet-5"
+        assert impl._openrouter_model(True) == "anthropic/claude-opus-5"
 
     def test_env_overrides(self, monkeypatch):
         monkeypatch.setenv("REGENOLD_STAGE2_MODEL_OPENROUTER", "google/gemini-2.5-pro")
@@ -73,19 +73,19 @@ class TestModelResolution:
 class TestRoutingSuffix:
     def test_balanced_is_no_suffix(self, monkeypatch):
         monkeypatch.setenv("REGENOLD_OPENROUTER_ROUTING", "balanced")
-        assert impl._openrouter_model(False) == "anthropic/claude-sonnet-4.6"
+        assert impl._openrouter_model(False) == "anthropic/claude-sonnet-5"
 
     def test_nitro_suffix(self, monkeypatch):
         monkeypatch.setenv("REGENOLD_OPENROUTER_ROUTING", "nitro")
-        assert impl._openrouter_model(False) == "anthropic/claude-sonnet-4.6:nitro"
+        assert impl._openrouter_model(False) == "anthropic/claude-sonnet-5:nitro"
 
     def test_exacto_suffix(self, monkeypatch):
         monkeypatch.setenv("REGENOLD_OPENROUTER_ROUTING", "exacto")
-        assert impl._openrouter_model(True) == "anthropic/claude-opus-4.6:exacto"
+        assert impl._openrouter_model(True) == "anthropic/claude-opus-5:exacto"
 
     def test_unknown_mode_is_balanced(self, monkeypatch):
         monkeypatch.setenv("REGENOLD_OPENROUTER_ROUTING", "turbo")
-        assert impl._openrouter_model(False) == "anthropic/claude-sonnet-4.6"
+        assert impl._openrouter_model(False) == "anthropic/claude-sonnet-5"
 
 
 class TestCompleteFunction:
@@ -103,7 +103,7 @@ class TestCompleteFunction:
             error = ""
             text = "A complete answer."
             finish_reason = "stop"
-            model = "anthropic/claude-sonnet-4.6"
+            model = "anthropic/claude-sonnet-5"
             completion_tokens = 12
 
         class _FakeProvider:
@@ -123,7 +123,7 @@ class TestCompleteFunction:
             system="s", user="u", max_tokens=128, temperature=0.0
         )
         assert out == "A complete answer."
-        assert fake.seen == ["anthropic/claude-sonnet-4.6"]
+        assert fake.seen == ["anthropic/claude-sonnet-5"]
 
     def test_rolls_to_fallback_on_error(self, monkeypatch):
         class _FakeResp:
@@ -153,7 +153,7 @@ class TestCompleteFunction:
             system="s", user="u", max_tokens=128, temperature=0.0
         )
         assert out == "Served by the fallback tier."
-        assert fake.seen[1] == "qwen/qwen3-235b-a22b-2507"
+        assert fake.seen[1] == "deepseek/deepseek-v4-flash"
 
     def test_rolls_on_finish_reason_length(self, monkeypatch):
         class _FakeResp:
@@ -185,7 +185,7 @@ class TestCompleteFunction:
             system="s", user="u", max_tokens=128, temperature=0.0
         )
         assert out == "Complete."
-        assert fake.seen[1] == "qwen/qwen3-235b-a22b-2507"
+        assert fake.seen[1] == "deepseek/deepseek-v4-flash"
 
     def test_chain_exhausted_returns_none(self, monkeypatch):
         class _FakeResp:
