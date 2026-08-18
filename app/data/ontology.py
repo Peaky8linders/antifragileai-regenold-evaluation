@@ -1363,20 +1363,27 @@ ROLE_OBLIGATIONS: dict[ActorRole, dict[RiskClass, tuple[str, ...]]] = {
         # accuracy/robustness/cybersecurity). Art. 12 (record-keeping)
         # was previously missing from this list — fixed in the May 2026
         # ontology review per the senior-engineer audit.
+        # Art. 4 (AI literacy) binds providers and deployers of ALL AI
+        # systems — Art. 4's text is unqualified by risk tier (R371.8).
+        # It sits on every SYSTEM tier (Annex I / Annex III high-risk,
+        # limited, minimal) but NOT on the GPAI model tiers (Art. 4 names
+        # "AI systems", and the GPAI rows here are model-level duties)
+        # and NOT on PROHIBITED (no lawful provider/deployer relation).
         RiskClass.HIGH_RISK_ANNEX_I: (
             "Art. 6", "Art. 8", "Art. 9", "Art. 10", "Art. 11", "Art. 12",
             "Art. 13", "Art. 14", "Art. 15", "Art. 16", "Art. 17",
             "Art. 43", "Art. 47", "Art. 48", "Art. 49", "Art. 72",
-            "Annex I", "Annex IV", "Annex VI",
+            "Annex I", "Annex IV", "Annex VI", "Art. 4",
         ),
         RiskClass.HIGH_RISK_ANNEX_III: (
             "Art. 6", "Art. 8", "Art. 9", "Art. 10", "Art. 11", "Art. 12",
             "Art. 13", "Art. 14", "Art. 15", "Art. 16", "Art. 17",
             "Art. 43", "Art. 47", "Art. 48", "Art. 49", "Art. 72",
-            "Annex III", "Annex IV", "Annex VI",
+            "Annex III", "Annex IV", "Annex VI", "Art. 4",
         ),
         RiskClass.LIMITED_RISK: (
-            "Art. 50",  # Transparency obligations only
+            "Art. 50",  # Transparency obligations
+            "Art. 4",  # AI literacy — binds at all tiers (R371.8)
         ),
         RiskClass.MINIMAL_RISK: (
             "Art. 4",  # AI literacy
@@ -1418,12 +1425,14 @@ ROLE_OBLIGATIONS: dict[ActorRole, dict[RiskClass, tuple[str, ...]]] = {
         # point 2).
         RiskClass.HIGH_RISK_ANNEX_I: (
             "Art. 26",  # General deployer obligations
+            "Art. 4",  # AI literacy — binds at all tiers (R371.8)
         ),
         RiskClass.HIGH_RISK_ANNEX_III: (
             "Art. 26", "Art. 27", "Art. 86",  # right to explanation (deployer duty)
+            "Art. 4",  # AI literacy — binds at all tiers (R371.8)
         ),
-        RiskClass.LIMITED_RISK: ("Art. 50",),
-        RiskClass.MINIMAL_RISK: ("Art. 4",),
+        RiskClass.LIMITED_RISK: ("Art. 50", "Art. 4",),
+        RiskClass.MINIMAL_RISK: ("Art. 4",),  # AI literacy
         RiskClass.GPAI: (),  # Deployer obligations attach to the AI SYSTEM, not the model
         RiskClass.GPAI_SYSTEMIC: (),
     },

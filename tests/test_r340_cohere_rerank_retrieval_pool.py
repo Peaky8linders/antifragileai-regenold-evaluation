@@ -139,10 +139,13 @@ def test_rerank_fires_and_decides_the_cut(monkeypatch):
     # API scored highest), not the BM25 winner.
     assert out != _BASELINE
     pool_docs = captured["json"]["documents"]
-    # Provision text is truncated to 4000 chars by rerank_references.
+    # Provision text is truncated to the model-aware per-doc cap by
+    # rerank_references (4,000 chars on rerank-v3.x, 24,000 on
+    # rerank-v4.0-pro/-fast — R371.8).
     from app.data.provision_text import get_provision_text  # noqa: PLC0415
 
-    assert get_provision_text(out[0]).strip()[:4000] == pool_docs[-1]
+    cap = CR._max_doc_chars()
+    assert get_provision_text(out[0]).strip()[:cap] == pool_docs[-1]
 
 
 def test_rerank_pool_is_wider_than_k(monkeypatch):

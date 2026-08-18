@@ -44,9 +44,10 @@ See ``.planning/R329-PLAN-RANKER-AND-OVERCITATION.md`` §2.3.
 * **the rerank QUERY** — the user's live question, bounded at
   ``_MAX_RERANK_QUERY_CHARS`` (600), plus short repo-static context labels
   (intent / risk tier / dimension); and
-* **the DOCUMENTS** — verbatim EU AI Act provision text, ≤4,000 chars each,
-  ≤50 docs, optionally annotated with a curated cross-reference reason
-  (≤240 chars, also repo-static).
+* **the DOCUMENTS** — verbatim EU AI Act provision text, ≤4,000 chars each on
+  the rerank-v3.x family / ≤24,000 chars (a full provision, one 32,768-token
+  v4.0 context) on rerank-v4.0-pro / -fast, ≤50 docs, optionally annotated
+  with a curated cross-reference reason (≤240 chars, also repo-static).
 
 The Act text is public law; the question is partner input. For an EU AI Act
 compliance product that is a residency decision the operator must make
@@ -154,8 +155,31 @@ COHERE_RERANK_URL = "https://api.cohere.com/v2/rerank"
 
 _ENV_GATE = "REGENOLD_COHERE_RERANK"
 _ENV_MODEL = "REGENOLD_COHERE_RERANK_MODEL"
-_DEFAULT_MODEL = "rerank-v3.5"
+# R371.8 — default flipped to ``rerank-v4.0-pro`` after a live probe on the
+# Trial key (2026-08-18): v4.0 (32,768-token context, Cohere's current
+# flagship — see docs.cohere.com best-practices) answered in 0.32 s vs
+# v3.5's 0.50 s and separated relevance scores more sharply (0.98-0.86 vs
+# 0.90-0.63 on the same 6-doc pool). Overridable per env.
+_DEFAULT_MODEL = "rerank-v4.0-pro"
+#: R362 — the per-request Cohere call budget (see :func:`reset_request_budget`
+#: and the acquire in :func:`rerank_documents`). The R350 audit counted FIVE
+#: serial rerank calls inside one request (BM25-fallback rerank per expanded
+#: query + parse-level pool rerank + kg-context rerank); the Trial key allows
+#: 10 calls/min, so an unguarded request burst 429s into a false INERT A/B.
+_ENV_REQUEST_BUDGET = "REGENOLD_RERANK_REQUEST_BUDGET"
+_DEFAULT_REQUEST_BUDGET = 2
 _TRUTHY = frozenset({"1", "true", "yes", "on"})
+
+# R371.8 — model-aware document sizing (Cohere best-practices). v3.x has a
+# 4,096-token context (docs chunk at 4,093 tokens), so a 4,000-char local cap
+# (~1k tokens) is right. rerank-v4.0-pro / rerank-v4.0-fast have a 32,768-token
+# context (chunk at 32,764): a full EU AI Act provision (~5-12k chars ≈
+# 1.5-3k tokens) fits in ONE chunk, so the local cap only bounds the payload.
+_MAX_RERANK_DOC_CHARS_V3 = 4000
+_MAX_RERANK_DOC_CHARS_V4 = 24000
+#: Half of v4.0's 32,768-token context — best-practices: the query may take up
+#: to half the context, leaving the rest for the document(s).
+_MAX_TOKENS_PER_DOC_V4 = 16384
 
 #: Latency is a SCORED axis (Speed, 61.7% — our second-worst) and live p50 is
 #: already ~57 s, so this call must be tightly bounded and must fail open.
@@ -178,7 +202,65 @@ _CLIENT: httpx.Client | None = None
 # an unproven placement measures nothing, so every placement must assert
 # ``rerank_stats()["attempts"] > 0`` before any A/B result is believed.
 _STATS_LOCK = threading.Lock()
-_STATS: dict[str, int] = {"attempts": 0, "reordered": 0, "failed": 0, "noop": 0}
+_STATS: dict[str, int] = {
+    "attempts": 0, "reordered": 0, "failed": 0, "noop": 0,
+    "budget_blocked": 0,
+}
+
+# R362 — per-request budget state. ``_budget_remaining`` is ``None`` until the
+# first :func:`reset_request_budget` call of a request; the acquire in
+# :func:`rerank_documents` treats ``None`` as "no budget armed — allow" so a
+# caller that never resets (a code path without a request boundary) degrades
+# to the pre-R362 behaviour instead of silently refusing every call.
+_BUDGET_LOCK = threading.Lock()
+_budget_remaining: int | None = None
+
+
+def reset_request_budget() -> None:
+    """Start a fresh per-request Cohere rerank budget (R362).
+
+    Reads ``REGENOLD_RERANK_REQUEST_BUDGET`` fresh at reset time (default 2
+    calls/request). Called from the ``ask_compliance_question`` entry point
+    so every request starts with a full budget. Fail-soft: an unparseable
+    env value falls back to the default; the reset itself never raises.
+    """
+    global _budget_remaining
+    # Gate-off requests never rerank — leave the budget UNARMED (``None``)
+    # instead of arming state that would leak into the next caller (tests
+    # that call ``ask_compliance_question`` with the gate off were silently
+    # arming a stale budget that starved later gate-on rerank tests).
+    if not rerank_enabled():
+        with _BUDGET_LOCK:
+            _budget_remaining = None
+        return
+    try:
+        raw = os.getenv(_ENV_REQUEST_BUDGET, "").strip()
+        budget = int(raw) if raw else _DEFAULT_REQUEST_BUDGET
+        budget = max(1, budget)
+    except (TypeError, ValueError):  # noqa: BLE001
+        budget = _DEFAULT_REQUEST_BUDGET
+    with _BUDGET_LOCK:
+        _budget_remaining = budget
+
+
+def _request_budget_remaining() -> int | None:
+    with _BUDGET_LOCK:
+        return _budget_remaining
+
+
+def _effective_model() -> str:
+    """The rerank model in force — env override, else the shipped default."""
+    return os.getenv(_ENV_MODEL, "").strip() or _DEFAULT_MODEL
+
+
+def _is_v4(model: str) -> bool:
+    """True for the 32,768-token rerank-v4.x family (pro / fast)."""
+    return str(model or "").startswith("rerank-v4")
+
+
+def _max_doc_chars() -> int:
+    """Local per-document cap, model-aware (R371.8)."""
+    return _MAX_RERANK_DOC_CHARS_V4 if _is_v4(_effective_model()) else _MAX_RERANK_DOC_CHARS_V3
 
 
 def rerank_stats() -> dict[str, int]:
@@ -261,14 +343,32 @@ def rerank_documents(
         # Nothing to reorder — do not pay a network round-trip.
         return None
 
+    # R362 — per-request call budget. The R350 cascade can attempt up to 5
+    # serial reranks inside one request; the budget caps the network calls so
+    # a Trial key (10 calls/min, 1,000/month) cannot 429 into a false INERT
+    # A/B. ``None`` (no reset armed) means "allow" — a caller without a
+    # request boundary keeps the historical behaviour.
+    global _budget_remaining  # noqa: PLW0603 — module-level request state
+    with _BUDGET_LOCK:
+        if _budget_remaining is not None:
+            if _budget_remaining <= 0:
+                _bump("budget_blocked")
+                return None
+            _budget_remaining -= 1
+
     key = os.getenv("COHERE_API_KEY", "").strip()
-    model = os.getenv(_ENV_MODEL, "").strip() or _DEFAULT_MODEL
+    model = _effective_model()
     payload: dict[str, Any] = {
         "model": model,
         "query": str(query),
         "documents": list(docs),
         "top_n": int(top_n) if top_n else len(docs),
     }
+    # v2 API truncates long docs to ``max_tokens_per_doc`` (default 4096) —
+    # for the 32,768-token v4.0 family, raise it so a full provision is not
+    # silently cut by the API after we sized it locally for the larger context.
+    if _is_v4(model):
+        payload["max_tokens_per_doc"] = _MAX_TOKENS_PER_DOC_V4
     _bump("attempts")
     try:
         resp = _get_client().post(
@@ -277,6 +377,9 @@ def rerank_documents(
             headers={
                 "Authorization": f"Bearer {key}",
                 "Content-Type": "application/json",
+                # Docs (reference/rerank): optional; names the calling
+                # project so Cohere can surface usage in the dashboard.
+                "X-Client-Name": "regenold-rag",
             },
         )
         if resp.status_code != 200:
@@ -655,10 +758,10 @@ def rerank_pool(
             txt = None
         if txt and str(txt).strip():
             scorable.append(i)
-            doc = str(txt).strip()[:4000]
+            doc = str(txt).strip()[:_max_doc_chars()]
             reason = reasons.get(str(ref))
             if reason:
-                doc = f"{doc}\nRelation: {reason}"[:4100]
+                doc = f"{doc}\nRelation: {reason}"[: _max_doc_chars() + 300]
             docs.append(doc)
 
     if len(scorable) < 2:

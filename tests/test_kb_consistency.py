@@ -610,6 +610,62 @@ class TestR3716ObligationDirectionLint:
                     assert risk is RiskClass.HIGH_RISK_ANNEX_III
 
 
+class TestR3718Art4ScopeLint:
+    """R371.8 — Article 4 (AI literacy) binds providers and deployers of ALL
+    AI systems.
+
+    Art. 4's text is unqualified by risk tier ("Providers and deployers of
+    AI systems shall take measures to ensure ... a sufficient level of AI
+    literacy ..."). The pre-R371.8 matrix bound it only at MINIMAL_RISK — a
+    legal under-scope. These rules pin the corrected scope so a future edit
+    cannot silently re-narrow it:
+
+    * PROVIDER and DEPLOYER owe Art. 4 at every SYSTEM tier (Annex I
+      high-risk, Annex III high-risk, limited, minimal).
+    * No other role (importer, distributor, authorised rep, downstream
+      provider, notified body, affected person) owes it — Art. 4 names
+      exactly two roles.
+    * GPAI model tiers exclude it — Art. 4 names "AI systems", and the
+      GPAI rows carry model-level duties (Art. 53/55 + Annexes).
+    * PROHIBITED excludes it — banned practices have no lawful
+      provider/deployer relation.
+    """
+
+    _SYSTEM_TIERS = (
+        RiskClass.HIGH_RISK_ANNEX_I,
+        RiskClass.HIGH_RISK_ANNEX_III,
+        RiskClass.LIMITED_RISK,
+        RiskClass.MINIMAL_RISK,
+    )
+    _MODEL_TIERS = (RiskClass.GPAI, RiskClass.GPAI_SYSTEMIC)
+
+    def test_provider_and_deployer_owe_art4_at_every_system_tier(self) -> None:
+        for role in (ActorRole.PROVIDER, ActorRole.DEPLOYER):
+            for tier in self._SYSTEM_TIERS:
+                assert "Art. 4" in obligations_for(role, tier), (
+                    f"Art. 4 missing for {role.value} x {tier.value} — "
+                    "AI literacy binds at every risk tier"
+                )
+
+    def test_no_other_role_owes_art4(self) -> None:
+        for role in ActorRole:
+            if role in (ActorRole.PROVIDER, ActorRole.DEPLOYER):
+                continue
+            for tier in RiskClass:
+                assert "Art. 4" not in obligations_for(role, tier), (
+                    f"Art. 4 (AI literacy) wired onto {role.value} — "
+                    "Art. 4 names only providers and deployers"
+                )
+
+    def test_gpai_model_tiers_and_prohibited_exclude_art4(self) -> None:
+        for role in (ActorRole.PROVIDER, ActorRole.DEPLOYER):
+            for tier in self._MODEL_TIERS + (RiskClass.PROHIBITED,):
+                assert "Art. 4" not in obligations_for(role, tier), (
+                    f"Art. 4 on {role.value} x {tier.value} — GPAI rows are "
+                    "model-level duties; PROHIBITED has no lawful relation"
+                )
+
+
 # ---------------------------------------------------------------------------
 # R315 — role_obligations Art. 3 / Art. 25 / Art. 51 citation lint
 # ---------------------------------------------------------------------------
