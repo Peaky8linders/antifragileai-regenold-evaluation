@@ -210,12 +210,17 @@ def test_route_surfaces_article_6_1_when_stage2_lands(monkeypatch) -> None:
     refs = _wire_refs(monkeypatch)
     # The reported defect: prose says "Article 6(1)" — wire must surface it.
     assert "Article 6.1" in refs, refs
-    # Pin the R276-D1 ``auto`` contract explicitly rather than leaving the
-    # head's absence as an unasserted side effect: one level per cluster,
+    # Pin the R276-D1 ``auto`` contract explicitly: one level per cluster,
     # and here the leaves are the level that survives.
     assert "Article 6.2" in refs, refs
-    assert "Article 6" not in refs, refs
-    # Head-level recall is invariant — the leaf carries the head.
+    # R369 — the head-promotion pass (default ON) re-adds the bare head for
+    # leaf-only refs, because the legal_v2 judge does NOT head-project gold
+    # (measured on the R369 golden read: gold ``Annex III`` counted MISSING
+    # while the wire carried ``Annex III.1.c``). The composed default wire is
+    # therefore leaves + promoted head — that is the ref_corr 0.35 → 0.4333
+    # measured arm, so the head's PRESENCE is now the contract.
+    assert "Article 6" in refs, refs
+    # Head-level recall is invariant either way — the leaf carries the head.
     from evals.bench.metrics import article_heads
 
     assert "Article 6" in article_heads(refs), refs

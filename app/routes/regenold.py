@@ -1848,6 +1848,14 @@ def _engine_cache_key(
             # R56 / R79 / R263.2 doctrine — otherwise an A/B arm that changes
             # the chain serves the other arm's cached engine output).
             "REGENOLD_BEDROCK_FALLBACK_CHAIN",
+            # R328.3 (restored) — the Bedrock Stage-2 max-tokens ceiling and
+            # request timeout are read fresh inside
+            # _bedrock_complete_for_graph_rag; a mid-process flip changes how
+            # long the model is allowed to generate (and thus whether a long
+            # answer survives the truncation guard) ⇒ engine-level, must be
+            # keyed (R30/R56/R79/R263.2 doctrine).
+            "REGENOLD_BEDROCK_MAX_TOKENS",
+            "REGENOLD_BEDROCK_STAGE2_TIMEOUT_S",
             "BEDROCK_DEFAULT_MODEL",
             "BEDROCK_REGION",
             # R370 — the OpenRouter Stage-2 knobs: which model serves (standard
@@ -2468,11 +2476,12 @@ def _client_addr(request: Request) -> str:
     """Resolve the caller's client address for rate-limit + audit purposes.
 
     Default: ``request.client.host`` (the direct socket address). When
-    ``REGENOLD_TRUST_PROXY=true``, read the leftmost hop of
-    ``X-Forwarded-For`` instead — required when the bundle is deployed
-    behind a reverse proxy / CDN that overwrites XFF. The deploy operator
-    is on the hook for ensuring the proxy actually overwrites (not
-    appends), otherwise an attacker can spoof their address.
+    ``REGENOLD_TRUST_PROXY=true``, read the RIGHTMOST hop of
+    ``X-Forwarded-For`` (the immediate client of the trusted proxy)
+    instead — required when the bundle is deployed behind a reverse
+    proxy / CDN that overwrites XFF. The deploy operator is on the hook
+    for ensuring the proxy actually overwrites (not appends), otherwise
+    an attacker can spoof their address.
     """
     if _TRUST_PROXY:
         xff = request.headers.get("x-forwarded-for", "").strip()
@@ -2495,7 +2504,8 @@ def _regenold_rate_key(request: Request) -> str:
     bucket prefix ``regenold-anon:`` with a 16-hex IP hash so the
     30/min budget is per-source-IP rather than global. The raw IP is
     never stored. When ``REGENOLD_TRUST_PROXY=true``, the IP is read
-    from ``X-Forwarded-For`` (leftmost) instead of the direct socket.
+    from ``X-Forwarded-For`` (rightmost hop — the immediate client of
+    the trusted proxy) instead of the direct socket.
 
     The two tiers are stored under DIFFERENT keys, so a flood of anon
     traffic cannot exhaust a partner's privileged 60/min budget.
@@ -10651,7 +10661,9 @@ def regenold_eu_ai_act_ask(
     # veto cannot move; only the judge's raw-list reading does. The R274
     # load-bearing Article 6 + 6.3 pair is exempt. Env off-switch
     # REGENOLD_REF_COLLAPSE_LEAF_TO_HEAD=0.
-    if _ref_collapse_leaf_to_head_enabled():
+    if _ref_collapse_leaf_to_head_enabled() and _ref_granularity_mode() != "both":
+        # ``both`` is the documented pre-R276 rollback ("parent AND both
+        # leaves ship together"); collapsing leaf+head pairs would defeat it.
         try:
             _collapsed = _collapse_leaf_to_head(references)
             if _collapsed != references:
@@ -10675,7 +10687,9 @@ def regenold_eu_ai_act_ask(
     # by construction (``article_heads`` projects the leaf to the head
     # anyway); only the judge's raw-list reading moves. Env off-switch
     # REGENOLD_REF_PROMOTE_LEAF_TO_HEAD=0.
-    if _ref_promote_leaf_to_head_enabled():
+    if _ref_promote_leaf_to_head_enabled() and _ref_granularity_mode() != "both":
+        # Same ``both`` rollback contract: promotion re-adds the bare head,
+        # which would also change the pre-R276 wire the rollback restores.
         try:
             _promoted = _promote_leaf_to_head(references)
             if _promoted != references:
