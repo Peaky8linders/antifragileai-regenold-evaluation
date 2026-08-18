@@ -58,15 +58,10 @@ any live measurement to a commit.** Treat a merge here as **shipping**, not as a
 bench artefact — which is exactly why `railway.toml [deploy.envs]` being inert
 matters (see the gotchas): config must be a CODE default or it never arrives.
 
-* The July-7 machinery exists **only here** —
-  `evals/regenold/_official_batch_20260707.json` (110 questions),
-  `evaluator_batch_july7.py`, `run_official_batch.py`, `july7_difficulty.py`
-  and their tests. **The RAG repo deleted all of it.** That is the concrete
-  reason the repos are separate.
-* **A `git merge parent/main` silently DELETES 29 files**, including every one
-  of those. They existed at the merge base `c0799df` and the RAG repo deleted
-  them afterwards, so the merge is a clean delete — no conflict, no marker, no
-  warning. Verified by materialising the merge tree. Sync by **cherry-pick**.
+* **A `git merge parent/main` silently DELETES 29 files.** They existed at the
+  merge base `c0799df` and the RAG repo deleted them afterwards, so the merge
+  is a clean delete — no conflict, no marker, no warning. Verified by
+  materialising the merge tree. Sync by **cherry-pick**.
 * **Round numbers collide.** Both repos have an "R318"/"R319" and they are
   different work. Prefix a shared reference with the repo name.
 * The RAG repo runs the **production** deployment; this repo runs its **own**
@@ -144,8 +139,8 @@ as `373 (risk-docs ON)` or `345 (risk-docs OFF)`, never bare.
 ⚠ **The six AIRO registries are NOT an additive corpus extension.** Their 28
 virtual documents land in the MIDDLE of the corpus, so `n_docs` 345→373 and
 `avg_doc_len` 94.5→91.7 move IDF and length normalisation for **every**
-pre-existing document — the whole corpus re-ranks. Measured over the 110
-official-batch rows, `_deterministic_parse` changes its entity set on **9 rows
+pre-existing document — the whole corpus re-ranks. Measured over the 110-row
+probe set, `_deterministic_parse` changes its entity set on **9 rows
 and all 9 LOSE a provision** (the toy question loses Annex III; "which systems
 are high-risk" loses Art. 6 and Art. 7; the QMS question loses Art. 11 and the
 Annex IV xref), while `Art. 27` is GAINED on 5 because the FRIA document dumps
@@ -533,11 +528,20 @@ that the instance is pristine.
 * **Over-citation is the whole remaining gap.** An oracle dropping every
   non-gold ref gains Ref Strict **+0.215** / Ref Conciseness **+0.229** at
   unchanged recall. Nothing has captured any of it.
-* **The July-7 re-evaluation** (100 of 110 graded questions, grounded Sonnet-5
-  judge): answer correctness 0.500 → **0.780** (**~0.86 corrected**), factual
-  0.806 → **0.950**, citation faithfulness 0.764 → **0.900**, ref precision
-  0.615 → **0.673**, recall 0.893. Refs/row **3.94 → 2.73 (−31%)**, answer
-  length **868 → 1223 chars (+41%)**.
+* **R371.6 — ontology mis-fact audit (2026-08-18).** Adversarial audit of the
+  R371 role × risk-class layer against the pinned statute, the live Aura graph
+  and the wire: **wiring correct**; the golden-run env (`REGENOLD_GRAPH_BACKEND=
+  embedded`) renders ZERO graph context blocks (Aura disabled → `execute_read`
+  → `[]`), while prod-default Aura's live `REGULATORY CLASSIFICATION` block is
+  clean (tier labels make direction visible). **16 direction-inverted matrix
+  bindings removed** (Art. 13 off deployers, Art. 23/24 off limited risk,
+  Art. 56/89 off operator roles, Art. 85/86 off affected persons, Art.
+  53/55/XII off downstream providers) — matrix 90 → 74, prose Art. 56
+  cleaned, `TestR3716ObligationDirectionLint` added. Gold-refutation
+  double-check (la_q45/la_q71 cite Art. 13 for deployers) run LIVE: la_q71
+  still cites Art. 13 via retrieval with correct attribution; la_q45 unchanged
+  (pre-existing generation-side gap). 140-row leak probe: 0 wrong-direction
+  claims. Record: `docs/R371.6-ontology-misfact-audit.md`.
 * **The judge cannot read the tail of long answers.** 8 of 22 answer failures
   are labelled "truncated" and **all 8 are false positives** — the content
   called missing is the answer's last sentence. Zero of 100 answers lack
@@ -1062,9 +1066,9 @@ that the instance is pristine.
 * **`provision_exists` is head-level LAX.** `provision_exists("Article 3.999")`
   is **True**. It cannot be used to validate a leaf coordinate; only
   `get_provision_text` returning non-None can. (Measured: 0 of 60 real leaf
-  coordinates in the July-7 gold lack verbatim text, so a "real coordinate with no
-  text" fallback is dead code that only ever dresses a FABRICATED coordinate in
-  its parent's words.)
+  coordinates across the gold sets lack verbatim text, so a "real coordinate with
+  no text" fallback is dead code that only ever dresses a FABRICATED coordinate
+  in its parent's words.)
 * **`grep` silently stops printing when it decides the stream is binary.** The
   cp1252 curly quotes in provision text make `grep -v` emit
   `Binary file (standard input) matches` and drop every remaining line. It cost a
@@ -1109,12 +1113,12 @@ Keep the curated subset here; do not inline the index.
 | `REGENOLD_CROSS_REF_SNIPPET_CHARS` | **20000** | R339 — per-node ceiling, clamped `[240, 60000]`. Was a hard-coded 240 that cut MID-WORD, and clipped Article 41 to 158 of 3,873 chars (96% loss) with **no marker at all**. Set above the largest reachable node (`art_3`, 17,079) so nothing truncates by default; `_clip_clause` now cuts on a clause/word boundary and always marks ` [...]`. Measured: Stage-2 user payload 122,828 → **135,778** chars, ellipses 2 → **0**, and **Annex IV now arrives complete at 5,720 chars** — where Annex IV(1)(e) lives |
 | `REGENOLD_ANSWER_NO_CAP` | **ON** | removes sentence + char caps live (hard rule #2) |
 | `REGENOLD_KG_CONTEXT` | **ON** | graph context into Stage-2 |
-| `REGENOLD_ROLE_OBLIGATION_CONTEXT` | **OFF** | R371 — renders the role × RISK-CLASS obligation layer as a NON-CITABLE Stage-2 block. The existing `REGULATORY CLASSIFICATION` block says *which* role bears a provision (from `HAS_OBLIGATION_ARTICLE`, whose `risk_class` is **NULL on all 36 edges**); this one says *under which risk class*, from the `HAS_RISK_CLASS_OBLIGATION` edges R371 wrote additively to the live graph — and unlike the older edge it resolves **Annex** targets (the seeder drops every one). Cypher matches only on `$ids`, so it can only describe provisions ALREADY cited and can never introduce one (hard rule #10). Marker is in `_R326_RESERVED_MARKERS` or, as the last-rendered block, it would delete itself under budget pressure. Engine-level, in `_engine_cache_key`, fresh read per call. **R371.5 gate (n=140, live Bedrock, qwen3-32b judge): fire 111/140, gold_dropped_head 30 → 34 (+4) — HARD-RULE-#8 VETO. Rejected; stays OFF permanently.** **R371.6 audit (statute + live-graph + wire evidence): the 90-edge matrix carried 16 direction-inverted bindings (Art. 13 as a deployer obligation, Art. 23/24 at limited risk, Art. 56/89 as operator duties, Art. 85/86 as affected-person obligations, Art. 53/55/XII on downstream providers) — all removed, matrix 90 → 74, prose file Art. 56 cleaned, direction-lint tests added. Live double-check on the gold rows that cite Art. 13 (la_q45/la_q71) confirmed verdict-neutral (la_q71 still cites Art. 13 via retrieval with correct attribution). The 16 mis-fact `HAS_RISK_CLASS_OBLIGATION` edges remain on Aura (inert while OFF) — cleanup Cypher in the record; do NOT re-gate until reseeded. Records: docs/R371.5-role-obligation-gate-resolved.md, docs/R371.6-ontology-misfact-audit.md.** |
+| `REGENOLD_ROLE_OBLIGATION_CONTEXT` | **OFF** | R371 — renders the role × RISK-CLASS obligation layer as a NON-CITABLE Stage-2 block (risk-class dimension the `REGULATORY CLASSIFICATION` block collapsed). Cypher matches only on `$ids` — can never introduce a provision (hard rule #10); budget-reserved, cache-keyed. **R371.5 gate (n=140, Bedrock, qwen3-32b): fire 111/140, gold_dropped_head 30 → 34 — VETO; stays OFF.** **R371.6 audit: 16 direction-inverted matrix bindings removed (90 → 74) + direction-lint tests; the 16 stale `HAS_RISK_CLASS_OBLIGATION` Aura edges are inert while OFF — do NOT re-gate until reseeded. Records: docs/R371.5-role-obligation-gate-resolved.md, docs/R371.6-ontology-misfact-audit.md.** |
 | `REGENOLD_KG_MAX_CHARS` | **48000** | total graph-context ceiling. R328.4 — was 16000 |
 | `REGENOLD_KG_MAX_UNITS` | **70** | units per provision. R328.4 — was 24, which rendered Article 3 as 24 of its 68 definitions with 3(4)-3(8) (the five OPERATOR ROLE definitions) absent and unmarked |
 | `REGENOLD_KG_UNIT_CHARS` | **2000** | per-unit budget; `_UNIT_HARD_CEILING` **9000** for enumerations. R328.4 — were 900 / 2600 |
 | `REGENOLD_ANSWER_COVERAGE` | **ON** | delivers `user_answer_coverage_clause()` (**2,466** chars — R344 made it self-contained, which grew it from 2,241; it is a FUNCTION now, not a module constant) on the Stage-2 USER channel — delivered on every provider. ⚠ **`=0` is NOT a targeted rollback of anything inside it**: it also deletes the R318 `LEGAL VERSION` sentence, which is the ONLY place the no-Digital-Omnibus rule reaches the model. If you need to remove one sentence, remove that sentence |
-| `REGENOLD_ONTOLOGY_RISK_DOCS` | **ON** | `938933a` — emits 28 virtual BM25 documents from the six AIRO registries (345 → **373** docs). Shipped default-ON with **no `dynamic_ab` verdict and no `gold_dropped` reading**; 9 of 110 official-batch rows lose a provision from their entity set. `=0` restores the pre-`938933a` corpus. In `_engine_cache_key` (`regenold.py:1434`) since R331/R332 |
+| `REGENOLD_ONTOLOGY_RISK_DOCS` | **ON** | `938933a` — emits 28 virtual BM25 documents from the six AIRO registries (345 → **373** docs). Shipped default-ON with **no `dynamic_ab` verdict and no `gold_dropped` reading**; 9 of 110 probe rows lose a provision from their entity set. `=0` restores the pre-`938933a` corpus. In `_engine_cache_key` (`regenold.py:1434`) since R331/R332 |
 | `REGENOLD_COHERE_RERANK` | **OFF** | R331/R340.1 — cross-encoder rerank via Cohere at the parse-level entity list (the placement that reaches live traffic; the pool-level placement only fires on the rare no-entity BM25 fallback) and the retrieval candidate pool. Needs `COHERE_API_KEY`; fresh env read per call. **Live A/B (R346, n=60, Bedrock): FIRED 49/60 rows, all axes UNDERPOWERED (wash inside noise), gold 17→17 (+0), latency +1.0 s.** ⚠ Trial key = 10 calls/min: unpaced every call 429s and the lever reads INERT — pass `--min-call-gap 6.5` |
 | `REGENOLD_RERANK_KG_CANDIDATES` | **OFF** | R347/R348 — hybrid-RAG KG supplementation: the parse-level rerank ranks the keyword entities TOGETHER with their CROSS_REFERENCES neighbours from the KG taxonomy (embedded-graph `neighbors()` when the embedded backend is selected, canonical `kb_xrefs.cross_refs` adjacency otherwise), so the cross-encoder can use a genuinely cross-referenced provision as EVIDENCE when ordering the keyword-picked set. ⚠ **R350 — it used to PROMOTE, and that was wrong on both backends, though for different reasons.** `entities = reranked` adopted the whole expanded pool, so every neighbour became a wire citation (`entities` → obligation → `CitationNode` → `references`). On the DEFAULT `neo4j` backend the pool comes from `kb_xrefs.cross_refs_with_reason` — a static in-repo module that already feeds retrieval — so there it is an **over-citation amplifier, not a rule #10 violation**. On `REGENOLD_GRAPH_BACKEND=embedded` it IS a rule #10 violation: verified, `Art. 98` yields zero xref pairs, so the builder falls through to `get_embedded_graph().neighbors()` and puts six graph-sourced refs into the adoptable pool. Keep the distinction — overstating it invites the fix being reverted as alarmist. Measured with an IDENTITY rerank stub — the cross-encoder expressing no preference, which still returns `ok=True`, because `ok` means "the API answered" and a successful noop is ok too: *"transparency obligations for chatbots"* went `Art. 50` → `Art. 50, Art. 56, **Art. 98**` (Art. 98 is *Committee procedure* — comitology), and the FRIA row went **3 refs → 11**. On the one axis this repo has left to win. The reranked ORDER is now projected back onto the original membership; genuine KG recall is still a live idea but it is a reference-affecting change that owes hard rule #8 a `gold_dropped` reading, not a side effect of a rerank placement. R348 annotates each KG-supplemented neighbour's rerank DOCUMENT with its curated semantic edge REASON (`cross_refs_with_reason` — e.g. "Art. 13: Art. 26(1) requires deployers to use the Art. 13 information from the provider"), so the cross-encoder scores WHY the provision is relevant. Pool is a superset (permutation-safe), capped at 8 extras, adopted only on cross-encoder success (the `rerank_pool` ok-bit — an outage never leaks neighbours). Also feeds the classifier's own labels (intent / risk tier / dimension) into the rerank QUERY via `rerank_query_context`. No-op unless `REGENOLD_COHERE_RERANK=1`; in `_engine_cache_key` (R334 drift-guarded). The A/B decides |
 | ~~`REGENOLD_RERANK_KG_NONCITABLE`~~ | — | **DELETED (R352 fork decided).** The R350 projection arm (neighbours never citable) lost the head-to-head A/B on hard rule #8: 100 live rows, nets +1 gold HEAD drop and +2 exact drops vs R351 anchor-tiering. Regressions: mt_v2_008 (loses Article 51 entirely), st_v4_017 (loses Article 6), mt_v2_020 (loses Article 113), la_q13 (loses both Annex XI and XII). R351 anchor-tiering is the only path (`stabilize_anchor_tier`). See `docs/R352-kg-fork-decision.md` |
@@ -1154,7 +1158,7 @@ Keep the curated subset here; do not inline the index.
 | `REGENOLD_CITABLE_UNIVERSE_BLOCK` | **ON** | R329 P3a — emits an explicit `CITABLE PROVISIONS:` list and repoints the citation instruction at it. Fixes a scope statement that named a block also containing GDPR/MDR bridging, multi-hop synthesis, legal-AST output, three KG sections, verbatim text and recitals, each with its own "do NOT cite" clause. Sub-points of a listed provision stay permitted. Off-switch `=0` |
 | `REGENOLD_CITABLE_CONCEPT_ANCHORS` | **ON** | R371.3 — seeds the `CITABLE PROVISIONS` list with the narrow `REQUIREMENT_ARTICLE_ANCHORS` map (requirement-name → imposing article: QMS→Art. 17, technical documentation→Art. 11, conformity assessment→Art. 43, …). Fixes the R329 refusal class ("the provision does not appear in the citable provisions supplied" — med_2's Article 17 gap). Measured R352-doctrine over the 297-row pool before shipping: **93% gold precision** (38/41 anchors; 3 contextual misses are conformity-route classification rows whose gold cites Art. 6/Annex I). The general `KEYWORD_TO_ARTICLE` map was **rejected** as the seed at 7% precision — only the narrow requirement-name set is safe. Existence-gated, wire-form, keyed in `_engine_cache_key`. Off-switch `=0` |
 | `REGENOLD_REF_UNCERTAINTY` | **ON** | R329 P3b — one user-channel sentence on the UNCERTAINTY axis, which `USER_REF_MINIMALITY_CLAUSE` (ON since R298) does not state; it argues relevance. Pulls against system rule 10 ("Unmentioned citations are severely penalized") — read the reconcile drop rate in any arm that moves it. Off-switch `=0` |
-| `GROUNDED_JUDGE_STRICT_GROUNDING` | **OFF** | R327 — ON makes answer-correctness unscorable on the July-7 batch (it has no gold at all). ⚠ **It governs `evals/judge/grounded.py` ONLY.** Since `d7be457` it is SILENTLY INERT on `evals/judge/legal_v2.py` — grep for the flag there returns **0 hits** — whose `_prepare` builds the evidence block from `gold_refs + pred_refs`, i.e. from `pred_refs` alone on a gold-free row, with no `[NOTE]`, no `answer_grounding_source` stamp and no off-switch. All 110 July-7 rows take that branch, so a `legal_v2` answer-correctness number there grades the answer against the answer's own citations. Open item #7 nominates `legal_v2` as the replacement judge — fix `_prepare` AND the `_judge_row` guard together, or the axis keeps running |
+| `GROUNDED_JUDGE_STRICT_GROUNDING` | **OFF** | R327 — ON makes answer-correctness unscorable on gold-free rows (they have no gold at all). ⚠ **It governs `evals/judge/grounded.py` ONLY.** Since `d7be457` it is SILENTLY INERT on `evals/judge/legal_v2.py` — grep for the flag there returns **0 hits** — whose `_prepare` builds the evidence block from `gold_refs + pred_refs`, i.e. from `pred_refs` alone on a gold-free row, with no `[NOTE]`, no `answer_grounding_source` stamp and no off-switch. A `legal_v2` answer-correctness number there grades the answer against the answer's own citations. Open item #7 nominates `legal_v2` as the replacement judge — fix `_prepare` AND the `_judge_row` guard together, or the axis keeps running |
 | `NEO4J_AUTO_SEED` | **OFF unless `1`** | R327 — now opt-IN, and even then only seeds a graph proven to have 0 nodes. Hard rule #12 |
 | `BEDROCK_REGION` | **`eu-central-1`** | R328 — Bedrock source Region. Also reads `AWS_DEFAULT_REGION` / `AWS_REGION`. NOT `us-east-1`: an `eu.` profile is unresolvable there |
 | `REGENOLD_BEDROCK_MODEL` | `eu.anthropic.claude-opus-4-8` | R328 — Stage-1 + Stage-2 main RAG tier. 403 on the 08-13 key vintage; the 08-15 re-mint invokes `opus-4-6-v1` (the live A/Bs pinned `claude-opus-4-6`). R328.2 degrades within the family. ABSK entitlement is fixed at key creation — see the expiry gotcha |
@@ -1305,9 +1309,8 @@ SUFFIX for each pin (opus-4-8 → opus-5 → opus-4-6-v1; opus-5 → opus-4-6-v1
 sonnet-5 → sonnet-4-6 → sonnet-4-5). A full `scripts/e2e_bedrock_rag_judge_test.py
 --fallback` run passed **4/4 judge axes** with `_judge_model_served =
 eu.anthropic.claude-sonnet-4-6`. So the degraded tier is healthy and the R328.2
-failover is doing exactly what it was built to do — but note the judge served is
-`sonnet-4-6`, i.e. `judge_model_comparable` is FALSE against the sonnet-5-graded
-July-7 baseline.
+failover is doing exactly what it was built to do — but note the judge served is  `sonnet-4-6`, i.e. `judge_model_comparable` is FALSE against the
+  sonnet-5-graded historical baseline.
 
 Per the key-vintage note above this is a **credential** boundary, not an account
 block, so the pins stay put and `complete_with_fallback`
@@ -1366,9 +1369,9 @@ nothing in the eval pipeline reads logs.
 
 * **Stage-2 / RAG.** `_bedrock_complete_for_graph_rag` records
   `stage2_model=<served>` into the reasoning trace, the same note the wrapper
-  and Anthropic paths emit, because `run_official_batch._provenance` scrapes
-  exactly that string and aggregates `stage2_models` *specifically* to catch a
-  silently degraded Stage-2 provider. It also records
+  and Anthropic paths emit, because the provenance reader scrapes exactly that
+  string and aggregates `stage2_models` *specifically* to catch a silently
+  degraded Stage-2 provider. It also records
   `bedrock_fallback requested=… served_by=…` when the chain moved. Without
   this the sidecar asserted the PINNED model for every row.
 * **Judge.** `_call_judge_bedrock` returns `_judge_model_served`;
@@ -1377,7 +1380,7 @@ nothing in the eval pipeline reads logs.
   `judge_model` alone records what was REQUESTED — on a degraded run that is an
   *active false attribution*, which is worse than no record.
 
-⚠ **The July-7 baseline is graded by `sonnet-5` via the wrapper.** A Bedrock
+⚠ **The historical wrapper-graded baseline is `sonnet-5`.** A Bedrock
 re-run degrades the grader to `sonnet-4-6` — which is also `_DEFAULT_JUDGE_MODEL`,
 so the two configurations are trivially confusable. **Check
 `judge_model_comparable` before grading anything against the baseline block.**
@@ -1492,22 +1495,7 @@ and both ran inert (14.5-440 ms/row, 91.8 ms/row) while printing full
 scorecards. They now default to `openai_wrapper` and record
 `stage2_landed_rate` + `stage2_models` in their artefacts. **Read those two
 fields first; a scorecard without them is unattributable.** Neither is a merge
-gate. `run_live_deep_eval` is also **not** the hard turn: its
-`HARD_JULY7_SCENARIOS` is ten hand-authored SINGLE-turn rows with self-written
-gold, not the adversarial pushback of `run_official_batch --mode hard` (open
-item #2, still never run).
-
-The July-7 re-evaluation (this repo's reason to exist):
-
-```bash
-py -3.12 -m evals.regenold.run_official_batch --label <L> --mode easy   # and --mode hard
-py -3.12 -m evals.judge.grounded --sidecar evals/bench/results/official-<L>-easy.ckpt.jsonl \
-    --label <L> --model claude-sonnet-5 --provider wrapper --timeout 120 --concurrency 3
-```
-
-`--mode hard` is **the graded turn** (the adversarial pushback) and has never
-been run. Score the Omnibus probe with `classify_hit()` (IMPORT vs REJECTION) —
-a bare substring match counts a correct rejection as a leak.
+gate.
 
 ## Legal-version constraint (operator, 2026-08-07)
 
@@ -1591,13 +1579,12 @@ Full handoff: [`.planning/NEXT-SESSION.md`](.planning/NEXT-SESSION.md).
    guard together — fixing one leaves the axis running), the head-lax
    `provision_exists` ghost-citation gate at `:660`, and the ungated conciseness
    prompt loosening at `:488-514`. **Fix these before nominating it.**
-11. **Watch conciseness** — answers are **+41% longer** than the graded July-7
-    ones, on the one axis the official scorecard says we lead. Any bound must be
-    SENTENCE-only (hard rule #2).
+11. **Watch conciseness** — answers have grown on the one axis the official
+    scorecard says we lead. Any bound must be SENTENCE-only (hard rule #2).
 12. **Run the owed gate on `REGENOLD_ONTOLOGY_RISK_DOCS`** — *ranks with #3*.
     `py -3.12 -m evals.harness.dynamic_ab --branch-env REGENOLD_ONTOLOGY_RISK_DOCS=0`
-    against a **gold-carrying** set (July-7 has `gold_coverage=0.0`, so hard rule
-    #8 cannot be read off it). This is a default-ON, live-shipping retrieval
+    against a **gold-carrying** set (a gold-free set has `gold_coverage=0.0`, so
+    hard rule #8 cannot be read off it). This is a default-ON, live-shipping retrieval
     change with 9/110 measured context regressions and no verdict at all. R338
     fixed the dense-index singleton that would otherwise have corrupted this
     exact A/B, so the instrument is ready. **Do not just flip the default OFF** —
