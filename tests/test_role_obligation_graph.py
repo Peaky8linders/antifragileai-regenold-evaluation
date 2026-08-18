@@ -76,7 +76,12 @@ def test_edges_cover_every_binding_in_the_matrix() -> None:
     expected = sum(
         len(refs) for m in ROLE_OBLIGATIONS.values() for refs in m.values()
     )
-    assert expected == 74, "matrix changed; update the pinned count deliberately"
+    # 74 → 80: R371.8 bound Article 4 (AI literacy) to providers and deployers
+    # at every SYSTEM tier (Annex I / Annex III / limited / minimal) — the
+    # statute binds it unqualified, so the previous minimal-risk-only scope
+    # was an under-scope mis-fact. +6 edges: provider x {annex_i, annex_iii,
+    # limited} + deployer x {annex_i, annex_iii, limited}.
+    assert expected == 80, "matrix changed; update the pinned count deliberately"
     assert len(role_obligation_edges()) == expected
 
 
