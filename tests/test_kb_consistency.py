@@ -546,6 +546,70 @@ class TestR138LegalTripleLint:
                     assert risk is RiskClass.HIGH_RISK_ANNEX_III
 
 
+class TestR3716ObligationDirectionLint:
+    """R371.6 — direction / scope lint for the role-obligation matrix.
+
+    The R371.6 audit found 16 bindings where the matrix rendered a claim the
+    statute contradicts ("binds the deployer" for a provider duty, rights
+    modeled as obligations, AI-Office duties modeled as provider duties).
+    Each removal was statute-verified against the pinned corpus. These rules
+    pin the corrected directions so a future edit cannot silently re-add the
+    inverted class:
+
+    * Art. 13 (transparency + instructions) binds the PROVIDER; the deployer
+      mirror is Art. 26(1) — never bind it to a deployer.
+    * Art. 23 / 24 (importer / distributor duties) are high-risk-only — never
+      bind them at limited risk.
+    * Art. 56 (codes of practice) and Art. 89 (monitoring) are AI-Office
+      duties — never bind them to any operator role.
+    * Art. 85 (complaint right) is a right of any natural/legal person —
+      never an obligation on any role.
+    * Art. 86 (explanation) is a deployer duty, Annex III systems only.
+    """
+
+    @staticmethod
+    def _owed(role: ActorRole) -> set[str]:
+        return {a for risk in RiskClass for a in obligations_for(role, risk)}
+
+    def test_article_13_is_provider_only(self) -> None:
+        for role in ActorRole:
+            owed = self._owed(role)
+            if role is ActorRole.PROVIDER:
+                assert "Art. 13" in owed
+            else:
+                assert "Art. 13" not in owed, (
+                    f"Art. 13 (provider transparency duty) wired onto {role.value}"
+                )
+
+    def test_importer_distributor_duties_never_at_limited_risk(self) -> None:
+        imp = obligations_for(ActorRole.IMPORTER, RiskClass.LIMITED_RISK)
+        assert imp == ()
+        dis = obligations_for(ActorRole.DISTRIBUTOR, RiskClass.LIMITED_RISK)
+        assert dis == ()
+        # ...and they ARE bound at high risk.
+        assert "Art. 23" in obligations_for(ActorRole.IMPORTER, RiskClass.HIGH_RISK_ANNEX_III)
+        assert "Art. 24" in obligations_for(ActorRole.DISTRIBUTOR, RiskClass.HIGH_RISK_ANNEX_III)
+
+    def test_ai_office_duties_never_bind_an_operator_role(self) -> None:
+        """Art. 56 (codes of practice) and Art. 89 (monitoring actions) are
+        AI Office duties under the statute — no operator role owes them."""
+        for role in ActorRole:
+            owed = self._owed(role)
+            assert "Art. 56" not in owed, f"Art. 56 (AI Office) wired onto {role.value}"
+            assert "Art. 89" not in owed, f"Art. 89 (AI Office) wired onto {role.value}"
+
+    def test_affected_person_holds_no_obligations(self) -> None:
+        for risk in RiskClass:
+            assert obligations_for(ActorRole.AFFECTED_PERSON, risk) == ()
+
+    def test_article_86_binds_only_the_annex_iii_deployer(self) -> None:
+        for role in ActorRole:
+            for risk in RiskClass:
+                if "Art. 86" in obligations_for(role, risk):
+                    assert role is ActorRole.DEPLOYER
+                    assert risk is RiskClass.HIGH_RISK_ANNEX_III
+
+
 # ---------------------------------------------------------------------------
 # R315 — role_obligations Art. 3 / Art. 25 / Art. 51 citation lint
 # ---------------------------------------------------------------------------

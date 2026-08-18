@@ -138,10 +138,13 @@ class TestRoleObligationMatrix:
         for expected in ("Art. 9", "Art. 10", "Art. 11", "Art. 13", "Art. 14", "Art. 15"):
             assert expected in refs, f"Expected {expected} in provider Annex III refs"
 
-    def test_provider_gpai_systemic_includes_art_55(self) -> None:
+    def test_provider_gpai_systemic_includes_art_55_not_56(self) -> None:
+        """Art. 55 is the systemic-risk provider obligation; Art. 56 is the
+        AI Office's codes-of-practice duty and must NOT bind providers."""
         from app.data.ontology import ActorRole, RiskClass, obligations_for
         refs = obligations_for(ActorRole.PROVIDER, RiskClass.GPAI_SYSTEMIC)
         assert "Art. 55" in refs
+        assert "Art. 56" not in refs
 
     def test_importer_high_risk_returns_art_23(self) -> None:
         from app.data.ontology import ActorRole, RiskClass, obligations_for
@@ -161,12 +164,23 @@ class TestRoleObligationMatrix:
         refs = obligations_for(ActorRole.AUTHORISED_REPRESENTATIVE, RiskClass.GPAI)
         assert "Art. 54" in refs
 
-    def test_affected_person_high_risk_returns_remedies(self) -> None:
+    def test_affected_person_holds_rights_not_obligations(self) -> None:
+        """R371.6 — Art. 85 (complaint) / Art. 86 (explanation) are RIGHTS of
+        the affected person, not obligations ON them. The matrix renders
+        "binds the affected person" — direction-inverted — so both bindings
+        were removed. The Art. 86 explanation DUTY sits on the deployer of
+        an Annex III system (Art. 86(1), excluding point 2)."""
         from app.data.ontology import ActorRole, RiskClass, obligations_for
         refs = obligations_for(ActorRole.AFFECTED_PERSON, RiskClass.HIGH_RISK_ANNEX_III)
-        # Right to lodge a complaint + right to explanation
-        assert "Art. 85" in refs
-        assert "Art. 86" in refs
+        assert refs == ()
+        refs_i = obligations_for(ActorRole.AFFECTED_PERSON, RiskClass.HIGH_RISK_ANNEX_I)
+        assert refs_i == ()
+        # The deployer owes the explanation for Annex III systems...
+        deployer = obligations_for(ActorRole.DEPLOYER, RiskClass.HIGH_RISK_ANNEX_III)
+        assert "Art. 86" in deployer
+        # ...but not for Annex I safety-component systems (Art. 86(1) scope).
+        deployer_i = obligations_for(ActorRole.DEPLOYER, RiskClass.HIGH_RISK_ANNEX_I)
+        assert "Art. 86" not in deployer_i
 
 
 # ── Ontology keyword helpers ───────────────────────────────────────────
