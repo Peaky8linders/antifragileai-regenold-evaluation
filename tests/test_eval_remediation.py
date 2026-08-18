@@ -1,47 +1,15 @@
-"""Focused regression tests for exact-ref, judge, and replay remediation."""
-from __future__ import annotations
+"""Focused regression tests for exact-ref, judge, and replay remediation.
 
-import io
+The July-7 batch replay tests (BatchRow/Conversation/OfficialRow/_run_hard)
+lived here until the July-7 batch surface was archived to
+``scratch/archive_july7_batch/`` (keep-local cleanup) — they now travel with
+the archived modules as ``scratch/archive_july7_batch/test_eval_remediation_july7_replay.py``.
+This file keeps the judge/grounding remediation tests, which are generic.
+"""
+from __future__ import annotations
 
 from evals.harness.easyhard_ab import _score_row
 from evals.judge import grounded, legal_v2
-from evals.regenold.evaluator_batch_july7 import BatchRow, Conversation
-from evals.regenold.official_batch import OfficialRow
-from evals.regenold.run_official_batch import _run_hard as run_official_hard
-
-
-def _batch_row(seq: int, question: str) -> BatchRow:
-    return BatchRow(
-        seq=seq,
-        request_id=f"req-{seq}",
-        question=question,
-        difficulty="HARD",
-        category="Multi-Turn Context & Coreference",
-        history_turns=18 if seq == 1 else 20,
-        question_hash=f"hash-{seq}",
-        timestamp="2026-07-07T00:00:00Z",
-        july7_answer="old",
-        july7_refs=("Article 9",),
-        july7_confidence=1.0,
-        july7_retrieval_path="kb",
-        july7_scope_reason="in_scope",
-    )
-
-
-def test_ordinary_followup_replays_actual_second_user_turn() -> None:
-    convo = Conversation(
-        turn1=_batch_row(1, "What risk tier applies?"),
-        turn2=_batch_row(2, "Which records must the deployer keep?"),
-        pairing_method="positional",
-        has_pushback_marker=False,
-    )
-    messages = convo.turn2_messages("It is high-risk.")
-    assert convo.turn2_kind == "ordinary_followup"
-    assert convo.graded_question_text == "Which records must the deployer keep?"
-    assert messages[-1] == {
-        "role": "user", "content": "Which records must the deployer keep?"
-    }
-    assert "I don't think this is correct" not in messages[-1]["content"]
 
 
 def test_grounded_answer_prompt_uses_gold_not_prediction_selected_refs() -> None:
@@ -100,36 +68,6 @@ def test_easyhard_strict_axis_observes_subpoint_mismatch() -> None:
     assert scores["ref_strict"] == 0.0
     assert scores["ref_strict_head_f1_proxy"] == 1.0
     assert scores["invalid_ref_count"] == 1.0
-
-
-def test_official_replay_selects_turn2_answer_and_empty_refs_atomically() -> None:
-    row = OfficialRow(
-        id="official-1",
-        question="What applies?",
-        question_hash="h",
-        jul07_answer="old",
-        jul07_refs=("Article 9",),
-        jul07_confidence=1.0,
-        jul07_retrieval_path="kb",
-        jul07_scope_reason="in_scope",
-    )
-    calls = 0
-
-    def poster(url, api_key, messages, timeout):
-        nonlocal calls
-        calls += 1
-        if calls == 1:
-            body = {"answer": "turn one", "references": ["Article 9"]}
-        else:
-            body = {"answer": "turn two", "references": []}
-        return body, 1.0, 200, None, 1, False
-
-    rec = run_official_hard(
-        [row], poster, "local", None, 1.0, io.StringIO()
-    )[0]
-    assert rec["selected_turn"] == "pushback"
-    assert rec["pred_answer"] == "turn two"
-    assert rec["pred_refs"] == []
 
 
 # ── R327.1 — the answer-correctness verdict rule must stay comparable ────────
