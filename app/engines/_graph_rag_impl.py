@@ -8045,7 +8045,74 @@ def _citable_universe_enabled() -> bool:
     )
 
 
-def _citable_universe_refs(context: GraphContext | None) -> list[str]:
+def _citable_concept_anchors_enabled() -> bool:
+    """R371.3 — seed the citable universe with requirement-name anchors? Default **ON**.
+
+    Off-switch: ``REGENOLD_CITABLE_CONCEPT_ANCHORS=0``.
+
+    Same negative form as the sibling flag (only an explicit off-value
+    disables). The seed is the measured narrow map
+    :data:`app.data.ontology.REQUIREMENT_ARTICLE_ANCHORS` — 93% gold
+    precision over the 297-row probe pool (R352 doctrine, measured before
+    this code existed). It fixes the R329 refusal class: a question naming
+    a Chapter-III requirement (e.g. "quality management system") gets its
+    imposing article (Article 17) into the CITABLE PROVISIONS list even
+    when retrieval ranks it below the render cap, so Stage-2 stops refusing
+    "the provision does not appear in the citable provisions supplied".
+    """
+    return os.getenv("REGENOLD_CITABLE_CONCEPT_ANCHORS", "1").strip().lower() not in (
+        "0",
+        "false",
+        "no",
+        "off",
+    )
+
+
+def _citable_concept_anchors(question: str | None) -> list[str]:
+    """Requirement-name anchors from ``question``, existence-gated, wire form.
+
+    Returns ``["Article N", ...]`` sorted ascending, matching the
+    retrieved-universe ordering. Empty when the flag is OFF, the question
+    is missing, or nothing matches. Only anchors whose head exists in
+    ``ARTICLE_EXISTENCE`` may be emitted — the same gate every citation
+    passes (R361 head-lax fix).
+    """
+    if not _citable_concept_anchors_enabled() or not question:
+        return []
+    try:
+        from app.data.article_existence import ARTICLE_EXISTENCE  # noqa: PLC0415
+        from app.data.ontology import (  # noqa: PLC0415
+            REQUIREMENT_ARTICLE_ANCHORS,
+        )
+    except Exception:  # noqa: BLE001 — fail-soft: the citable universe must never break a prompt
+        return []
+    norm_q = question.lower().replace("-", " ")
+    found: set[str] = set()
+    for keyword, ref in REQUIREMENT_ARTICLE_ANCHORS.items():
+        if keyword not in norm_q:
+            continue
+        # Map values are WIRE form ("Article N"); ARTICLE_EXISTENCE is keyed
+        # on the KB short form ("Art. N") — the same gate every citation
+        # passes (R361 head-lax fix).
+        existence_key = (
+            "Art. " + ref[len("Article "):]
+            if ref.startswith("Article ")
+            else ref
+        )
+        if existence_key in ARTICLE_EXISTENCE:
+            found.add(ref)
+    return sorted(
+        found,
+        key=lambda ref: (
+            0,
+            int(ref.split()[1]),
+        )
+        if ref.startswith("Article ")
+        else (1, 0),
+    )
+
+
+def _citable_universe_refs(context: GraphContext | None, question: str | None = None) -> list[str]:
     """The provisions the engine actually retrieved, in wire-citation form.
 
     Returns head-level strings — ``Article N`` (Arabic) / ``Annex R`` (Roman,
@@ -8087,17 +8154,20 @@ def _citable_universe_refs(context: GraphContext | None) -> list[str]:
     except Exception:  # noqa: BLE001 — ordering must never break a prompt
         annex_order = sorted(annexes)
     out.extend(f"Annex {r}" for r in annex_order)
+    for anchor in _citable_concept_anchors(question):
+        if anchor not in out:
+            out.append(anchor)
     return out
 
 
-def _citable_universe_block(context: GraphContext | None) -> str:
+def _citable_universe_block(context: GraphContext | None, question: str | None = None) -> str:
     """Render the CITABLE PROVISIONS block, or ``""`` when nothing is citable.
 
     Empty is the correct degradation: with no list to point at, the citation
     instruction keeps its pre-R329 wording ("the EU AI ACT REFERENCES block"),
     so a context that retrieved nothing behaves exactly as it does today.
     """
-    refs = _citable_universe_refs(context)
+    refs = _citable_universe_refs(context, question=question)
     if not refs:
         return ""
     return (
@@ -8790,7 +8860,9 @@ def _claude_max_enhance_answer(
         # byte-identity is the regression guard, pinned in
         # tests/test_r329_citable_universe.py.
         _citable_block = (
-            _citable_universe_block(context) if _citable_universe_enabled() else ""
+            _citable_universe_block(context, question=question)
+            if _citable_universe_enabled()
+            else ""
         )
         if _citable_block:
             user_message += _citable_block

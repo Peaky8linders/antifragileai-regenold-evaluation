@@ -348,6 +348,84 @@ class TestCitableUniverseDerivation:
         assert _LEGACY_SCOPE_REFINE in user
 
 
+class TestCitableConceptAnchors:
+    """R371.3 — requirement-name anchors seed the citable universe.
+
+    Default ON, measured 93% gold precision over the 297-row probe pool
+    (R352 doctrine). Fixes the R329 refusal class: a question naming a
+    Chapter-III requirement gets its imposing article into the list even
+    when retrieval ranked it below the render cap.
+    """
+
+    _QMS_Q = (
+        "What are the quality management system requirements for a provider "
+        "of a high-risk AI medical device?"
+    )
+
+    def test_quality_management_question_gains_article_17(self):
+        os.environ["REGENOLD_CITABLE_UNIVERSE_BLOCK"] = "1"
+        os.environ["REGENOLD_CITABLE_CONCEPT_ANCHORS"] = "1"
+        refs = impl._citable_universe_refs(_context(), question=self._QMS_Q)
+        assert "Article 17" in refs
+
+    def test_anchors_are_appended_not_interspersed(self):
+        """The anchor joins the sorted retrieved set without disturbing it."""
+        os.environ["REGENOLD_CITABLE_UNIVERSE_BLOCK"] = "1"
+        os.environ["REGENOLD_CITABLE_CONCEPT_ANCHORS"] = "1"
+        refs = impl._citable_universe_refs(_context(), question=self._QMS_Q)
+        # the retrieved universe is unchanged and still sorted
+        assert refs[:5] == [
+            "Article 5", "Article 6", "Article 26", "Article 50", "Annex III",
+        ]
+        assert refs[-1] == "Article 17"
+
+    def test_flag_off_keeps_byte_identity(self):
+        """OFF = the pre-R371.3 list exactly; the R329 byte-identity contract
+        must not silently shift with the new default."""
+        os.environ["REGENOLD_CITABLE_UNIVERSE_BLOCK"] = "1"
+        os.environ["REGENOLD_CITABLE_CONCEPT_ANCHORS"] = "0"
+        assert impl._citable_universe_refs(_context(), question=self._QMS_Q) == [
+            "Article 5",
+            "Article 6",
+            "Article 26",
+            "Article 50",
+            "Annex III",
+        ]
+        assert impl._citable_universe_block(_context(), question=self._QMS_Q) == (
+            impl._citable_universe_block(_context())
+        )
+
+    def test_question_without_requirement_names_adds_nothing(self):
+        os.environ["REGENOLD_CITABLE_UNIVERSE_BLOCK"] = "1"
+        os.environ["REGENOLD_CITABLE_CONCEPT_ANCHORS"] = "1"
+        refs = impl._citable_universe_refs(_context(), question="What is an AI system?")
+        assert "Article 17" not in refs
+        assert refs == impl._citable_universe_refs(_context())
+
+    def test_no_question_is_a_no_op(self):
+        os.environ["REGENOLD_CITABLE_UNIVERSE_BLOCK"] = "1"
+        os.environ["REGENOLD_CITABLE_CONCEPT_ANCHORS"] = "1"
+        assert impl._citable_universe_refs(_context()) == [
+            "Article 5",
+            "Article 6",
+            "Article 26",
+            "Article 50",
+            "Annex III",
+        ]
+
+    def test_anchor_refs_are_existence_gated_wire_form(self):
+        """Every emitted anchor must be ``Article N`` and exist in the KB."""
+        os.environ["REGENOLD_CITABLE_UNIVERSE_BLOCK"] = "1"
+        os.environ["REGENOLD_CITABLE_CONCEPT_ANCHORS"] = "1"
+        pattern = re.compile(r"^Article \d{1,3}$")
+        for ref in impl._citable_concept_anchors(self._QMS_Q):
+            assert pattern.match(ref), ref
+        assert impl._citable_concept_anchors(self._QMS_Q) == ["Article 17"]
+
+    def test_default_is_on(self):
+        assert impl._citable_concept_anchors_enabled()
+
+
 class TestCitableUniverseInThePrompt:
     def test_block_appears_once_and_lists_the_retrieved_refs(self):
         os.environ["REGENOLD_CITABLE_UNIVERSE_BLOCK"] = "1"
