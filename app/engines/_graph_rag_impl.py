@@ -205,16 +205,17 @@ def _extract_json_object(text: str) -> dict | None:
 def _graph_rag_provider() -> str:
     """Resolve the graph-RAG LLM provider per call.
 
-    Honours an explicit ``P2P_GRAPH_RAG_PROVIDER=anthropic`` /
-    ``=openai_wrapper`` / ``=cli``. When the toggle is unset or set to
-    ``auto``, falls back to the default openai_wrapper. Read on every
-    call so a Railway env-var rebind takes effect on the next request.
+    Honours an explicit ``P2P_GRAPH_RAG_PROVIDER=openrouter`` /
+    ``=bedrock`` / ``=anthropic`` / ``=openai_wrapper`` / ``=cli``. When
+    the toggle is unset or set to ``auto``, falls back to the default
+    openrouter. Read on every call so a Railway env-var rebind takes
+    effect on the next request.
     """
     from app.llm import resolve_provider
 
     return resolve_provider(
         os.getenv("P2P_GRAPH_RAG_PROVIDER"),
-        default_when_auto="openai_wrapper",
+        default_when_auto="openrouter",
     )
 
 
@@ -1774,7 +1775,25 @@ def _stage2_provider_enabled() -> bool:
         except Exception:  # noqa: BLE001
             logger.exception("Error checking anthropic provider for Stage2")
             return False
-    # auto / openai_wrapper / unset — historical default, gate via wrapper.
+    # auto / unset — primary is OpenRouter, then Bedrock, then Anthropic / wrapper.
+    try:
+        from app.llm.openai_wrapper_provider import is_openrouter_provider_enabled
+        if is_openrouter_provider_enabled():
+            return True
+    except Exception:
+        pass
+    try:
+        from app.llm.bedrock_client import is_bedrock_provider_enabled
+        if is_bedrock_provider_enabled():
+            return True
+    except Exception:
+        pass
+    try:
+        from app.config import settings
+        if settings.graph_rag.api_key is not None:
+            return True
+    except Exception:
+        pass
     result = is_openai_wrapper_enabled()
     logger.debug("Stage2 default wrapper enabled: %s", result)
     return result
@@ -9274,7 +9293,7 @@ def _claude_max_enhance_answer(
         _use_gemini = False
         _use_bedrock = False
         _use_openrouter = False
-        if _env_provider == "openrouter":
+        if _env_provider in ("openrouter", "auto", ""):
             try:
                 from app.llm.openai_wrapper_provider import (  # noqa: PLC0415
                     is_openrouter_provider_enabled,
@@ -9282,9 +9301,16 @@ def _claude_max_enhance_answer(
                 _use_openrouter = is_openrouter_provider_enabled()
             except Exception:  # noqa: BLE001
                 _use_openrouter = False
-        if _env_provider == "bedrock":
+            # If openrouter is not enabled (e.g. key unset) and provider was auto/unset, try bedrock
+            if not _use_openrouter and _env_provider in ("auto", ""):
+                try:
+                    from app.llm.bedrock_client import is_bedrock_provider_enabled  # noqa: PLC0415
+                    _use_bedrock = is_bedrock_provider_enabled()
+                except Exception:  # noqa: BLE001
+                    _use_bedrock = False
+        elif _env_provider == "bedrock":
             try:
-                from app.llm.bedrock_client import is_bedrock_provider_enabled
+                from app.llm.bedrock_client import is_bedrock_provider_enabled  # noqa: PLC0415
                 _use_bedrock = is_bedrock_provider_enabled()
             except Exception:  # noqa: BLE001
                 _use_bedrock = False
@@ -9295,7 +9321,7 @@ def _claude_max_enhance_answer(
             except Exception:  # noqa: BLE001
                 _use_anthropic_sdk = False
         elif _env_provider == "gemini":
-            from app.llm.openai_wrapper_provider import is_gemini_provider_enabled
+            from app.llm.openai_wrapper_provider import is_gemini_provider_enabled  # noqa: PLC0415
             _use_gemini = is_gemini_provider_enabled()
 
 

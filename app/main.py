@@ -31,12 +31,12 @@ logger = logging.getLogger(__name__)
 try:
     resolve_provider(
         os.getenv("P2P_GRAPH_RAG_PROVIDER"),
-        default_when_auto="openai_wrapper",
+        default_when_auto="openrouter",
     )
 except ValueError as _exc:
     raise RuntimeError(
         f"P2P_GRAPH_RAG_PROVIDER is misconfigured: {_exc}. "
-        "Valid values: anthropic / cli / openai_wrapper / auto / "
+        "Valid values: openrouter / bedrock / anthropic / cli / openai_wrapper / auto / "
         "(unset = auto). See app/llm/__init__.py::resolve_provider."
     ) from _exc
 

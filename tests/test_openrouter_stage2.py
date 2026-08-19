@@ -9,6 +9,7 @@ path. No live calls — the OpenRouter provider is monkeypatched/faked.
 from __future__ import annotations
 
 import os
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -438,3 +439,82 @@ class TestOpenRouterExtendedThinking:
         monkeypatch.setenv("REGENOLD_OPUS_FOR_ALL", "1")
         assert impl._openrouter_model(complex_question=False) == "anthropic/claude-opus-5"
         assert impl._openrouter_model(complex_question=True) == "anthropic/claude-opus-5"
+
+
+class TestPrimaryOpenRouterWithBedrockFallback:
+    def test_auto_provider_selects_openrouter_as_primary(self, monkeypatch):
+        monkeypatch.delenv("P2P_GRAPH_RAG_PROVIDER", raising=False)
+        monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test")
+
+        assert impl._stage2_provider_enabled() is True
+        assert impl._graph_rag_provider() == "openrouter"
+
+        called = {"openrouter": False, "bedrock": False}
+
+        def _mock_openrouter(**kwargs):
+            called["openrouter"] = True
+            return "Answer via OpenRouter"
+
+        def _mock_bedrock(**kwargs):
+            called["bedrock"] = True
+            return "Answer via Bedrock"
+
+        monkeypatch.setattr(impl, "_openrouter_complete_for_graph_rag", _mock_openrouter)
+        monkeypatch.setattr(impl, "_bedrock_complete_for_graph_rag", _mock_bedrock)
+
+        res = impl._claude_max_enhance_answer(
+            question="What is Article 5?",
+            kg_answer="KG Answer",
+        )
+        assert res == "Answer via OpenRouter"
+        assert called["openrouter"] is True
+        assert called["bedrock"] is False
+
+    def test_openrouter_failure_falls_back_to_bedrock(self, monkeypatch):
+        monkeypatch.delenv("P2P_GRAPH_RAG_PROVIDER", raising=False)
+        monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test")
+
+        called = {"openrouter": False, "bedrock": False}
+
+        def _mock_openrouter_fail(**kwargs):
+            called["openrouter"] = True
+            return None  # OpenRouter failure / unavailable
+
+        def _mock_bedrock_fallback(**kwargs):
+            called["bedrock"] = True
+            return "Answer via Bedrock fallback"
+
+        monkeypatch.setattr(impl, "_openrouter_complete_for_graph_rag", _mock_openrouter_fail)
+        monkeypatch.setattr(impl, "_bedrock_complete_for_graph_rag", _mock_bedrock_fallback)
+
+        res = impl._claude_max_enhance_answer(
+            question="What is Article 5?",
+            kg_answer="KG Answer",
+        )
+        assert res == "Answer via Bedrock fallback"
+        assert called["openrouter"] is True
+        assert called["bedrock"] is True
+
+
+class TestJudgeOpenRouterCaller:
+    def test_resolve_caller_openrouter(self, monkeypatch):
+        from evals.judge.runner import _resolve_caller
+        from app.llm.openai_wrapper_provider import OpenAIWrapperResponse
+
+        monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-judge-test")
+
+        mock_provider = MagicMock()
+        mock_provider.complete.return_value = OpenAIWrapperResponse(
+            text='{"factual_score": 1.0, "verdict": "pass", "reasoning": "Accurate."}',
+            status_code=200,
+        )
+        monkeypatch.setattr(
+            "app.llm.openai_wrapper_provider.get_openrouter_provider",
+            lambda: mock_provider,
+        )
+
+        caller = _resolve_caller("openrouter", timeout_s=15.0)
+        res = caller("Test prompt")
+        assert res.get("verdict") == "pass"
+        assert res.get("factual_score") == 1.0
+

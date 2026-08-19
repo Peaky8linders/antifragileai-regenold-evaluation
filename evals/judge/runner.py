@@ -464,10 +464,47 @@ def _call_judge_gemini(prompt: str, timeout_s: float = 30.0) -> dict[str, Any]:
         resp = provider.complete(req)
     except Exception as exc:  # noqa: BLE001
         return {"judge_error": f"call_failed: {exc}"}
-    if resp is None:
-        return {"judge_error": "gemini_returned_none"}
     if resp.error:
         return {"judge_error": f"gemini_error: {resp.error[:160]}"}
+    return _parse_judge_json(resp.text or "")
+
+
+def _call_judge_openrouter(prompt: str, timeout_s: float = 30.0) -> dict[str, Any]:
+    """Send the judge prompt through OpenRouter."""
+    try:
+        from app.llm.openai_wrapper_provider import (  # noqa: PLC0415
+            OpenAIWrapperRequest,
+            get_openrouter_provider,
+            is_openrouter_provider_enabled,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return {"judge_error": f"wrapper_unavailable: {exc}"}
+
+    if not is_openrouter_provider_enabled():
+        return {"judge_error": "no_api_key: OPENROUTER_API_KEY environment variable is not set."}
+
+    try:
+        provider = get_openrouter_provider()
+    except Exception as exc:  # noqa: BLE001
+        return {"judge_error": f"openrouter_init_failed: {exc}"}
+
+    model = os.environ.get("OPENROUTER_JUDGE_MODEL", _JUDGE_MODEL or "anthropic/claude-3.5-sonnet")
+    req = OpenAIWrapperRequest(
+        system=_JUDGE_SYSTEM,
+        user=prompt,
+        model=model,
+        max_tokens=_judge_max_tokens(),
+        temperature=0.0,
+        timeout_seconds=timeout_s,
+    )
+    try:
+        resp = provider.complete(req)
+    except Exception as exc:  # noqa: BLE001
+        return {"judge_error": f"call_failed: {exc}"}
+    if resp is None:
+        return {"judge_error": "openrouter_returned_none"}
+    if resp.error:
+        return {"judge_error": f"openrouter_error: {resp.error[:160]}"}
     return _parse_judge_json(resp.text or "")
 
 
@@ -786,6 +823,8 @@ def _resolve_caller(provider: str, timeout_s: float = 30.0) -> Callable[[str], d
     run 20-60s+ per call over the live wrapper/tunnel — pass a larger
     value via ``--timeout`` for those.
     """
+    if provider == "openrouter":
+        return lambda p: _call_judge_openrouter(p, timeout_s=timeout_s)
     if provider == "anthropic":
         return lambda p: _call_judge_anthropic(p, timeout_s=timeout_s)
     if provider == "groq":
