@@ -1616,15 +1616,18 @@ def _assert_claude_max_transport(provider: str) -> None:
     """
     import os
 
+    if provider in ("bedrock", "openrouter"):
+        print(f"[legal_v2] provider={provider} active", flush=True)
+        return
+
     if provider != "wrapper":
         if os.environ.get("REGENOLD_JUDGE_ALLOW_BILLED", "").strip().lower() not in (
             "1", "true", "yes", "on",
         ):
             raise SystemExit(
                 f"[legal_v2] REFUSING to run on provider={provider!r}: this judge must "
-                "use the Claude Max subscription via the Cloudflare tunnel "
-                "(--provider wrapper), not per-token billing. Set "
-                "REGENOLD_JUDGE_ALLOW_BILLED=1 to override deliberately."
+                "use Bedrock, OpenRouter, or the Claude Max subscription via the Cloudflare tunnel "
+                "(--provider wrapper). Set REGENOLD_JUDGE_ALLOW_BILLED=1 to override deliberately."
             )
         print(f"[legal_v2] !! BILLED provider={provider} (override active)", flush=True)
         return

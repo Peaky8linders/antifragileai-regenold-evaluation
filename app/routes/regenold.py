@@ -7705,11 +7705,19 @@ def regenold_eu_ai_act_ask(
         # widens this from the salvage-only path (R131) to the de-noiser-success
         # path, which leaves the engine query clean but still ran scope on the
         # full conversation.
-        _salvage_user = next(
-            (m for m in reversed(req.messages) if m.role == "user"), None
+        # R372 — on pushback turns, resolved_question is the recovered Turn-1 substantive
+        # inquiry, so classify that inquiry rather than evaluating critique pushback in isolation.
+        _target_text = (
+            resolved_question
+            if resolved_question
+            else (
+                getattr(next((m for m in reversed(req.messages) if getattr(m, "role", None) == "user"), None), "content", "")
+                if req.messages
+                else ""
+            )
         )
         scope = classify_conversation(
-            [_salvage_user] if _salvage_user is not None else req.messages
+            [{"role": "user", "content": _target_text}] if _target_text else req.messages
         )
     else:
         scope = classify_conversation(req.messages)

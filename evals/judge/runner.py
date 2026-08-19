@@ -210,10 +210,15 @@ def _call_judge_sonnet(prompt: str, timeout_s: float = 30.0) -> dict[str, Any]:
     if not is_openai_wrapper_enabled():
         return {"judge_error": "wrapper_not_configured"}
     provider = get_openai_wrapper_provider()
+    model = (
+        _JUDGE_MODEL
+        if _JUDGE_MODEL and _JUDGE_MODEL != _DEFAULT_JUDGE_MODEL
+        else "claude-sonnet-5"
+    )
     req = OpenAIWrapperRequest(
         system=_JUDGE_SYSTEM,
         user=prompt,
-        model=_JUDGE_MODEL,
+        model=model,
         max_tokens=_judge_max_tokens(),
         temperature=0.0,
         timeout_seconds=timeout_s,

@@ -1450,8 +1450,9 @@ def _stage2_complete(
     Returns ``None`` on ANY failure so the caller keeps whatever it already had.
     """
     try:
-        env_provider = os.getenv("P2P_GRAPH_RAG_PROVIDER", "").strip().lower()
-        if env_provider == "anthropic":
+        from app.llm import resolve_provider  # noqa: PLC0415
+        resolved_p = resolve_provider(os.getenv("P2P_GRAPH_RAG_PROVIDER"), default_when_auto="openrouter")
+        if resolved_p == "anthropic":
             try:
                 from app.config import settings as _s  # noqa: PLC0415
                 if _s.graph_rag.api_key is not None:
@@ -1463,7 +1464,7 @@ def _stage2_complete(
                     )
             except Exception:  # noqa: BLE001
                 return None
-        if env_provider == "gemini":
+        if resolved_p == "gemini":
             from app.llm.openai_wrapper_provider import (  # noqa: PLC0415
                 OpenAIWrapperRequest,
                 get_gemini_provider,
@@ -1483,13 +1484,13 @@ def _stage2_complete(
                     return None
                 return resp.text
             return None
-        if env_provider == "bedrock":
+        if resolved_p == "bedrock":
             return _bedrock_complete_for_graph_rag(
                 system=system, user=user, max_tokens=max_tokens,
                 temperature=temperature, complex_question=complex_question,
                 stage_name=stage_name,
             )
-        if env_provider == "openrouter":
+        if resolved_p == "openrouter":
             # R370 — the tunnel-free Stage-2 path. OpenRouter has its own
             # internal rollover chain; when that exhausts, fall through to
             # Bedrock opus-4-6 as the cross-provider safety net.
@@ -1509,6 +1510,7 @@ def _stage2_complete(
                         temperature=temperature,
                         complex_question=complex_question,
                         stage_name=stage_name + " (bedrock-fallback)",
+                        model_override="claude-opus-4-6",
                     )
             except Exception:
                 pass

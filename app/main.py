@@ -109,7 +109,7 @@ def _log_llm_provider_status() -> None:
 
     provider_label = resolve_provider(
         os.getenv("P2P_GRAPH_RAG_PROVIDER"),
-        default_when_auto="openai_wrapper",
+        default_when_auto="openrouter",
     )
     if provider_label == "openai_wrapper":
         base = (
@@ -1044,7 +1044,7 @@ def healthz_llm() -> dict[str, object]:
 
     provider_label = resolve_provider(
         os.getenv("P2P_GRAPH_RAG_PROVIDER"),
-        default_when_auto="openai_wrapper",
+        default_when_auto="openrouter",
     )
 
     base: dict[str, object] = {
@@ -1209,6 +1209,24 @@ def healthz_llm() -> dict[str, object]:
         base["detail"] = "ok"
         base["elapsed_ms"] = int((_time.perf_counter() - start) * 1000)
         base["model"] = settings.graph_rag.model
+        return base
+
+    if provider_label == "openrouter":
+        from app.llm.openrouter_provider import is_openrouter_provider_enabled
+        if not is_openrouter_provider_enabled():
+            base["detail"] = "OPENROUTER_API_KEY is not set"
+            return base
+        base["llm_ok"] = True
+        base["detail"] = "openrouter_configured"
+        return base
+
+    if provider_label == "bedrock":
+        from app.llm.bedrock_client import is_bedrock_provider_enabled
+        if not is_bedrock_provider_enabled():
+            base["detail"] = "AWS Bedrock credentials or region not configured"
+            return base
+        base["llm_ok"] = True
+        base["detail"] = "bedrock_configured"
         return base
 
     # cli / deterministic path
