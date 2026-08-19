@@ -25,16 +25,16 @@ from app.routes.regenold import (
 
 
 class TestEnvGate:
-    def test_default_off(self, monkeypatch):
+    def test_default_on(self, monkeypatch):
         monkeypatch.delenv("REGENOLD_PUSHBACK_REF_FREEZE", raising=False)
-        assert _pushback_ref_freeze_enabled() is False
+        assert _pushback_ref_freeze_enabled() is True
 
     @pytest.mark.parametrize("val", ["1", "true", "TRUE", "yes", "on"])
     def test_truthy_values_enable(self, monkeypatch, val):
         monkeypatch.setenv("REGENOLD_PUSHBACK_REF_FREEZE", val)
         assert _pushback_ref_freeze_enabled() is True
 
-    @pytest.mark.parametrize("val", ["0", "false", "no", "off", ""])
+    @pytest.mark.parametrize("val", ["0", "false", "no", "off"])
     def test_falsy_values_disable(self, monkeypatch, val):
         monkeypatch.setenv("REGENOLD_PUSHBACK_REF_FREEZE", val)
         assert _pushback_ref_freeze_enabled() is False

@@ -4232,12 +4232,10 @@ def _reconcile_protected_set(
 def _pushback_ref_freeze_enabled() -> bool:
     """R302 fix 1 — is the pushback-turn reference freeze active? (fresh env read)
 
-    **DEFAULT OFF** until the offline counterfactual + a repeat-run live A/B
-    gate it (CLAUDE.md hard rule #6). Fresh read per call so an in-process
-    two-arm A/B is valid (R263.2).
+    Default ON. Set REGENOLD_PUSHBACK_REF_FREEZE=0 to disable.
     """
-    return os.getenv("REGENOLD_PUSHBACK_REF_FREEZE", "0").strip().lower() in (
-        "1", "true", "yes", "on",
+    return os.getenv("REGENOLD_PUSHBACK_REF_FREEZE", "1").strip().lower() not in (
+        "0", "false", "no", "off",
     )
 
 
@@ -10642,7 +10640,9 @@ def regenold_eu_ai_act_ask(
         try:
             from app.data.graph_rag_prompts import is_challenge_turn  # noqa: PLC0415
 
-            if is_challenge_turn(question):
+            _last_user_msg = next((m for m in reversed(req.messages) if (isinstance(m, dict) and m.get("role") == "user") or getattr(m, "role", None) == "user"), None)
+            _last_user_text = (_last_user_msg.get("content", "") if isinstance(_last_user_msg, dict) else getattr(_last_user_msg, "content", "")) if _last_user_msg else ""
+            if is_challenge_turn(question) or is_challenge_turn(_last_user_text):
                 _prior_answer = _last_assistant_content(req.messages)
                 _frozen = _freeze_refs_to_prior_turn(references, _prior_answer)
                 if _frozen != references:

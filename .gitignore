@@ -75,3 +75,5 @@ regenold-eu-ai-act-rag-main/
 probe_out.json
 .coverage
 .envlocal
+.freebuff/
+.agent-test-tmp*/
