@@ -8853,10 +8853,16 @@ def _claude_max_enhance_answer(
         sanitized_q = sanitize_for_llm(question, context_type="query")
         sanitized_orig_q = sanitize_for_llm(orig_q, context_type="query")
 
-        user_message = f"ORIGINAL QUESTION: {sanitized_orig_q}\n"
-        if sanitized_q != sanitized_orig_q:
-            user_message += f"REWRITTEN / SEARCH QUESTION: {sanitized_q}\n"
-        user_message += "\n"
+        from app.data.graph_rag_prompts import is_challenge_turn  # noqa: PLC0415
+        _is_challenge = is_challenge_turn(orig_q) or is_challenge_turn(question)
+
+        if _is_challenge:
+            user_message = f"QUESTION: {sanitized_q}\n\n"
+        else:
+            user_message = f"ORIGINAL QUESTION: {sanitized_orig_q}\n"
+            if sanitized_q != sanitized_orig_q:
+                user_message += f"REWRITTEN / SEARCH QUESTION: {sanitized_q}\n"
+            user_message += "\n"
 
         # R69 — structured query profile (proposed architecture, Section
         # 3A). A one-line deterministic intent payload {actor, actor
@@ -9110,7 +9116,7 @@ def _claude_max_enhance_answer(
                     "cite them and do NOT describe them in your prose unless the "
                     "latest question explicitly asks for them.\n"
                 )
-            if challenge_brevity_enabled() and is_challenge_turn(question):
+            if challenge_brevity_enabled() and _is_challenge:
                 user_message += user_challenge_brevity_clause()
         except Exception:  # noqa: BLE001 — a prompt add-on must never break Stage-2
             pass
