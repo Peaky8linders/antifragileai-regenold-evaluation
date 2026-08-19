@@ -1135,6 +1135,23 @@ def healthz_llm() -> dict[str, object]:
             base["detail"] = f"probe_exception: {exc!s}"[:200]
             return base
         if response.error:
+            # Check if an active fallback provider is enabled before declaring total failure
+            from app.llm.openai_wrapper_provider import is_openrouter_provider_enabled  # noqa: PLC0415
+            from app.llm.bedrock_client import is_bedrock_provider_enabled  # noqa: PLC0415
+
+            if is_openrouter_provider_enabled():
+                base["llm_ok"] = True
+                base["provider"] = "openrouter (fallback)"
+                base["detail"] = f"primary (openai_wrapper) offline ({response.error[:60]}); openrouter fallback active"
+                base["elapsed_ms"] = response.elapsed_ms
+                return base
+            if is_bedrock_provider_enabled():
+                base["llm_ok"] = True
+                base["provider"] = "bedrock (fallback)"
+                base["detail"] = f"primary (openai_wrapper) offline ({response.error[:60]}); bedrock fallback active"
+                base["elapsed_ms"] = response.elapsed_ms
+                return base
+
             base["detail"] = response.error[:200]
             base["elapsed_ms"] = response.elapsed_ms
             return base
@@ -1212,7 +1229,7 @@ def healthz_llm() -> dict[str, object]:
         return base
 
     if provider_label == "openrouter":
-        from app.llm.openrouter_provider import is_openrouter_provider_enabled
+        from app.llm.openai_wrapper_provider import is_openrouter_provider_enabled
         if not is_openrouter_provider_enabled():
             base["detail"] = "OPENROUTER_API_KEY is not set"
             return base

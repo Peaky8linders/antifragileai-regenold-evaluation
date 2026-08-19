@@ -7,8 +7,36 @@ this file small so partners auditing the bundle can read it in one pass.
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def _load_dotenv_once() -> None:
+    """Put the repo's ``.env`` into ``os.environ`` at import time.
+
+    Two deliberate properties:
+    * ``override=False`` — a variable already in the environment ALWAYS wins.
+    * The path is resolved from this file, not the process CWD.
+    """
+    import sys  # noqa: PLC0415
+
+    if "pytest" in sys.modules:
+        return
+
+    env_path = Path(__file__).resolve().parent.parent / ".env"
+    if not env_path.is_file():
+        return
+    try:
+        from dotenv import load_dotenv  # noqa: PLC0415
+
+        load_dotenv(dotenv_path=env_path, override=False)
+    except Exception:  # noqa: BLE001 — never block boot on config sugar
+        pass
+
+
+_load_dotenv_once()
 
 
 class GraphRAGSettings(BaseSettings):
