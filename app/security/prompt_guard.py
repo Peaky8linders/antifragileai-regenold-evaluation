@@ -30,6 +30,44 @@ _USER_QUERY_TAGS = re.compile(r"</?user_query>", re.IGNORECASE)
 # every call-site that goes through validate_llm_output() is protected.
 _THINK_BLOCK_RE = re.compile(r"<think>.*?</think>\s*", re.DOTALL | re.IGNORECASE)
 
+_REASONING_BLOCK_RE = re.compile(
+    r"<(?:reasoning|reasoning_scratchpad|scratchpad)>(.*?)</(?:reasoning|reasoning_scratchpad|scratchpad)>\s*",
+    re.DOTALL | re.IGNORECASE,
+)
+_ANSWER_BLOCK_RE = re.compile(
+    r"<answer>(.*?)</answer>",
+    re.DOTALL | re.IGNORECASE,
+)
+
+
+def extract_xml_channels(text: str | None) -> tuple[str, str]:
+    """Extract (clean_answer, extracted_reasoning) from model output.
+
+    Supports <reasoning> / <reasoning_scratchpad> / <scratchpad> and <answer>.
+    If <answer> tags are present, extracts their inner content as the answer.
+    If omitted, strips any reasoning / think blocks to isolate the clean answer.
+    """
+    if text is None or not text:
+        return "", ""
+
+    reasoning_parts: list[str] = []
+    for m in _REASONING_BLOCK_RE.finditer(text):
+        content = m.group(1).strip()
+        if content:
+            reasoning_parts.append(content)
+    extracted_reasoning = "\n\n".join(reasoning_parts)
+
+    answer_match = _ANSWER_BLOCK_RE.search(text)
+    if answer_match:
+        clean_answer = answer_match.group(1).strip()
+    else:
+        # Fallback when model omitted <answer> tags: strip reasoning and think blocks
+        cleaned = _REASONING_BLOCK_RE.sub("", text)
+        cleaned = _THINK_BLOCK_RE.sub("", cleaned).strip()
+        clean_answer = cleaned or text.strip()
+
+    return clean_answer, extracted_reasoning
+
 
 def sanitize_for_llm(user_input: str, *, context_type: str = "query") -> str:
     """Strip control chars, model-delimiter sequences, and prompt-tag spans.
@@ -68,3 +106,4 @@ def validate_llm_output(text: str | None) -> str:
         return ""
     stripped = _THINK_BLOCK_RE.sub("", text).strip()
     return stripped or text  # fall back to original if stripping emptied it
+

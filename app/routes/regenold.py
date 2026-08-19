@@ -4736,6 +4736,16 @@ _CONTRAST_BEHIND_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Postpositive negation cues: "Article 50 does not apply", "Annex III is not applicable"
+_NEGATION_AHEAD_RE = re.compile(
+    r"^\s*(?:\([^)]*\)\s*)*(?:,\s*)?"
+    r"(?:does\s+not\s+apply|is\s+not\s+applicable|is\s+inapplicable|"
+    r"do\s+not\s+apply|are\s+not\s+applicable|are\s+inapplicable|"
+    r"is\s+excluded|is\s+not\s+triggered|is\s+not\s+in\s+scope|"
+    r"is\s+outside\s+the\s+scope|is\s+not\s+required|falls\s+outside)\b",
+    re.IGNORECASE,
+)
+
 
 def _prose_mention_is_real_citation(prose: str, start: int, end: int) -> bool:
     """False when a prose ``Article N`` / ``Annex N`` mention is a
@@ -4762,6 +4772,8 @@ def _prose_mention_is_real_citation(prose: str, start: int, end: int) -> bool:
     m_reg = _NUMBERED_REG_RE.search(ahead)
     if m_reg and m_reg.group(1) != "2024/1689":
         return False  # a different numbered EU Regulation
+    if _NEGATION_AHEAD_RE.search(ahead):
+        return False  # postpositive negation ("Article 50 does not apply")
     # R311 — widened 24 -> 60 chars so the cue + up to four intervening words
     # fit in the window (see ``_CONTRAST_BEHIND_RE``).
     before = prose[max(0, start - 60) : start]
@@ -7278,6 +7290,63 @@ def _build_question_from_history(messages: list[Any]) -> QuestionHistoryResult:
                 False,
                 True,  # self_contained_focus — drop prior-turn scope + R88-A bleed
             )
+
+    if history_turns:
+        try:
+            from app.data.graph_rag_prompts import is_challenge_turn  # noqa: PLC0415
+
+            if (
+                is_challenge_turn(live_question)
+                and not _REASK_MARKER_RE.search(live_question)
+                and not _live_turn_is_self_contained(live_question)
+            ):
+                # R372 — Adversarial challenge / pushback turn recovery.
+                # The evaluator disputes the previous answer without restating the full question
+                # ("I don't think this is correct. Maybe your answer contains hallucinations...").
+                # Recover the root user question from Turn 1 as resolved_turn so retrieval
+                # (BM25, vector recall, NER) operates on the substantive legal inquiry rather than
+                # critique noise.
+                _root_q = next(
+                    (
+                        getattr(m, "content", "").strip()
+                        for m in reversed(dialogue[:last_user_idx])
+                        if getattr(m, "role", None) == "user"
+                        and getattr(m, "content", None)
+                        and _live_turn_is_self_contained(getattr(m, "content", ""))
+                    ),
+                    None,
+                )
+                if not _root_q and dialogue and dialogue[0].role == "user" and getattr(dialogue[0], "content", None):
+                    _root_q = dialogue[0].content.strip()
+
+                if _root_q:
+                    try:
+                        _trace_note(
+                            f"challenge_focus: resolved root question from turn 1 ({len(_root_q)} chars)"
+                        )
+                    except Exception:  # noqa: BLE001
+                        pass
+                    history_block = "\n".join(
+                        f"{m.role.capitalize()}: {m.content.strip()}"
+                        for m in history_turns
+                    )
+                    q_combined = (
+                        "Conversation so far:\n"
+                        f"{history_block}\n\n"
+                        "Latest question:\n"
+                        f"{live_question}\n\n"
+                        f"Target inquiry to answer:\n"
+                        f"{_root_q}"
+                    )
+                    return QuestionHistoryResult(
+                        q_combined,
+                        system_context,
+                        _root_q,  # resolved live turn IS the root question
+                        False,
+                        True,  # self_contained_focus — drop prior assistant anchor bleed
+                    )
+        except Exception:  # noqa: BLE001 — fail-safe to normal denoiser / concatenation
+            pass
 
     if history_turns:
         # R86 — Query De-Noiser: attempt an LLM rewrite of the follow-up

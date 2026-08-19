@@ -9053,12 +9053,12 @@ def _claude_max_enhance_answer(
         # R298 / R299 / R304 — Prompt additions on the channel that reaches the model.
         try:
             from app.data.graph_rag_prompts import (  # noqa: PLC0415
-                USER_CHALLENGE_BREVITY_CLAUSE,
                 USER_REF_UNCERTAINTY_CLAUSE,
                 USER_SUBPARAGRAPH_ATTRIBUTION_CLAUSE,
                 challenge_brevity_enabled,
                 is_challenge_turn,
                 subparagraph_attribution_enabled,
+                user_challenge_brevity_clause,
                 user_ref_minimality_clause,
                 user_ref_minimality_enabled,
                 user_ref_partition_enabled,
@@ -9087,7 +9087,7 @@ def _claude_max_enhance_answer(
                     "latest question explicitly asks for them.\n"
                 )
             if challenge_brevity_enabled() and is_challenge_turn(question):
-                user_message += USER_CHALLENGE_BREVITY_CLAUSE
+                user_message += user_challenge_brevity_clause()
         except Exception:  # noqa: BLE001 — a prompt add-on must never break Stage-2
             pass
         if _answer_v2_enabled():
@@ -9514,7 +9514,17 @@ def _claude_max_enhance_answer(
 
         if text_raw is None:
             return None
-        validated = validate_llm_output(text_raw.strip())
+        from app.security.prompt_guard import extract_xml_channels
+        clean_answer, extracted_reasoning = extract_xml_channels(text_raw.strip())
+        if extracted_reasoning:
+            try:
+                from app.integrations.regenold.reasoning_trace import (  # noqa: PLC0415
+                    record_llm_thinking,
+                )
+                record_llm_thinking(extracted_reasoning, stage="Stage 2 Reasoning")
+            except Exception:  # noqa: BLE001
+                pass
+        validated = validate_llm_output(clean_answer)
         # Issue #42 — empty / whitespace-only polish is a failure, not a
         # success. ``validate_llm_output`` is null-safe (returns "" on
         # both None and ""), so an empty Stage-2 response would
