@@ -1190,10 +1190,10 @@ Keep the curated subset here; do not inline the index.
 | `REGENOLD_RISK_FRAMEWORK_REFS` | **ON** | R369 — trims the risk-framework tier map to the canonical six (`Art. 5 / 6 / Annex I / Annex III / Art. 50 / Art. 51`); the untrimmed 11-ref wire fails ref_corr while the trimmed one keeps every tier definition. Off-switch `=0` |
 | `REGENOLD_BEDROCK_FALLBACK_CHAIN` | `claude-opus-4-6,qwen3-235b,nemotron-super,devstral,qwen3-32b` | R366.1 — cross-model Bedrock rollover when the primary throttles/truncates (measured: 256 throttles on a 63-row run). ⚠ A silent model-family swap is a measurement bug — pin this to the arm's own model in any Bedrock A/B, and read the served model from the `stage2_model=` trace note (recorded since the F4 fix). Override with a comma list |
 | `REGENOLD_BEDROCK_JUDGE_THINKING_TOKENS` | *(0)* | R355 — thinking budget for the Bedrock judge path. `0` = no extended thinking |
-| `REGENOLD_STAGE2_MODEL_OPENROUTER` | `anthropic/claude-sonnet-4.6` | R370 — the tunnel-free OpenRouter Stage-2 model (standard tier). Provider active when `P2P_GRAPH_RAG_PROVIDER=openrouter` + `OPENROUTER_API_KEY` set. Keyed in `_engine_cache_key` |
-| `REGENOLD_STAGE2_COMPLEX_MODEL_OPENROUTER` | `anthropic/claude-opus-4.6` | R370 — the complex-tier OpenRouter model; falls back to the standard model when unset |
+| `REGENOLD_STAGE2_MODEL_OPENROUTER` | `anthropic/claude-sonnet-5` | R373 — the tunnel-free OpenRouter Stage-2 model (standard tier). Provider active when `P2P_GRAPH_RAG_PROVIDER=openrouter` + `OPENROUTER_API_KEY` set. Keyed in `_engine_cache_key` |
+| `REGENOLD_STAGE2_COMPLEX_MODEL_OPENROUTER` | `anthropic/claude-opus-5` | R373 — the complex-tier OpenRouter model; falls back to the standard model when unset |
 | `REGENOLD_OPENROUTER_ROUTING` | `balanced` | R370 — OpenRouter provider-sorting mode: `balanced` (price+speed), `nitro` (throughput-first latency lever), `exacto` (quality/tool-calling-first — irrelevant, Stage-2 calls no tools). Applies a `:nitro` / `:exacto` model suffix |
-| `REGENOLD_OPENROUTER_FALLBACK_CHAIN` | `qwen/qwen3-235b-a22b-2507,deepseek/deepseek-chat-v3.1` | R370 — OpenRouter rollover chain when the primary errors/throttles/truncates (mirror of the R366.1 Bedrock chain) |
+| `REGENOLD_OPENROUTER_FALLBACK_CHAIN` | `deepseek/deepseek-v4-flash,google/gemini-2.5-flash` | R373 — OpenRouter rollover chain when the primary errors/throttles/truncates (mirror of the R366.1 Bedrock chain) |
 
 ⚠ **This table was BROKEN in the middle until 2026-08-15** — the R329 paragraph
 below sat between two rows, so everything from `GROUNDED_JUDGE_STRICT_GROUNDING`
@@ -1210,7 +1210,7 @@ before grading anything against it. This is the R327 shape (an ungated change
 shipped ON) entered deliberately and with the risk recorded, not by accident.
 
 Stage-2 models (`app/config.py`): parse `claude-sonnet-5`, Stage-2
-`claude-opus-5`, complex `claude-opus-5`, complex thinking 4000, max_tokens
+`claude-sonnet-5`, complex `claude-opus-5`, complex thinking 2048, max_tokens
 1536. ⚠ `_model_alias_enabled()` in `openai_wrapper_provider.py` can silently
 rewrite an Opus model name on the way to the wire — check it before trusting a
 model A/B, and note the trace reports the model actually sent.

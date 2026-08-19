@@ -388,10 +388,10 @@ class TestAnthropicCompleteFailSoft:
         # complex_model swaps to claude-opus-4-7 because we set it
         # explicitly above (mirroring an operator override).
         assert captured["model"] == "claude-opus-4-7"
-        # Thinking kwarg present, budget clamped to [1024, 16000].
+        # Thinking kwarg present, budget clamped to [2048, 4096].
         thinking = captured["thinking"]
         assert thinking["type"] == "enabled"
-        assert 1024 <= thinking["budget_tokens"] <= 16000
+        assert 2048 <= thinking["budget_tokens"] <= 4096
 
 
 # ─── 3. _claude_max_enhance_answer routes via provider ───────────────────────

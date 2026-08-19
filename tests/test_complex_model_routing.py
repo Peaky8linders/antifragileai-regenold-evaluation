@@ -107,11 +107,11 @@ class TestDefaultRouting:
         # ran 18.7-51.1s vs 12.8-17.7s standard, taxing Speed, a scored axis
         # where we are WEAK (75.1/61.7). See .planning/R280-CHECKPOINT.md.
         assert req.model == "claude-opus-5"
-        # Pin the R280 default so a future re-flip is loud, not silent.
+        # Pin the default so a future re-flip is loud, not silent.
         assert settings.graph_rag.complex_model == "claude-opus-5"
-        # R139 — EXTENDED thinking budget on the complex tier (was 1024 in R131.2).
-        assert settings.graph_rag.complex_thinking_tokens == 1024
-        assert req.extra_headers.get("X-Claude-Max-Thinking-Tokens") == "1024"
+        # EXTENDED thinking budget on the complex tier (2048).
+        assert settings.graph_rag.complex_thinking_tokens == 2048
+        assert req.extra_headers.get("X-Claude-Max-Thinking-Tokens") == "2048"
 
     def test_complex_question_swap_path_when_opus_configured(
         self, _mock_wrapper
@@ -173,7 +173,7 @@ class TestComplexRouting:
 
     def test_complex_question_adds_thinking_header(self, _mock_wrapper) -> None:
         original_tokens = settings.graph_rag.complex_thinking_tokens
-        settings.graph_rag.complex_thinking_tokens = 8000
+        settings.graph_rag.complex_thinking_tokens = 3000
         try:
             _openai_wrapper_complete_for_graph_rag(
                 system="x", user="y", max_tokens=400, temperature=0.0,
@@ -182,10 +182,10 @@ class TestComplexRouting:
         finally:
             settings.graph_rag.complex_thinking_tokens = original_tokens
         req: OpenAIWrapperRequest = _mock_wrapper.complete.call_args.args[0]
-        assert req.extra_headers.get("X-Claude-Max-Thinking-Tokens") == "8000"
+        assert req.extra_headers.get("X-Claude-Max-Thinking-Tokens") == "3000"
 
     def test_thinking_budget_capped(self, _mock_wrapper) -> None:
-        """Out-of-range thinking budgets are clamped to [1024, 16000]."""
+        """Out-of-range thinking budgets are clamped to [2048, 4096]."""
         original_tokens = settings.graph_rag.complex_thinking_tokens
         settings.graph_rag.complex_thinking_tokens = 50000  # too high
         try:
@@ -196,7 +196,7 @@ class TestComplexRouting:
         finally:
             settings.graph_rag.complex_thinking_tokens = original_tokens
         req: OpenAIWrapperRequest = _mock_wrapper.complete.call_args.args[0]
-        assert req.extra_headers.get("X-Claude-Max-Thinking-Tokens") == "16000"
+        assert req.extra_headers.get("X-Claude-Max-Thinking-Tokens") == "4096"
 
     def test_thinking_budget_minimum_enforced(self, _mock_wrapper) -> None:
         original_tokens = settings.graph_rag.complex_thinking_tokens
@@ -209,7 +209,7 @@ class TestComplexRouting:
         finally:
             settings.graph_rag.complex_thinking_tokens = original_tokens
         req: OpenAIWrapperRequest = _mock_wrapper.complete.call_args.args[0]
-        assert req.extra_headers.get("X-Claude-Max-Thinking-Tokens") == "1024"
+        assert req.extra_headers.get("X-Claude-Max-Thinking-Tokens") == "2048"
 
     def test_simple_question_never_gets_thinking_header(
         self, _mock_wrapper
@@ -240,13 +240,11 @@ class TestStage2AlwaysOpus:
     tests in this module omit it (is_stage2=False → base-model path).
     """
 
-    def test_stage2_simple_uses_opus5_no_thinking(
+    def test_stage2_simple_uses_sonnet5_no_thinking(
         self, _mock_wrapper
     ) -> None:
-        """Simple Stage-2 question → ``stage2_model`` (Opus 4.8) with NO thinking
-        header — the 2026-07-04 directive: Opus answers the simple tier in a
-        single fast pass (``thinking_tokens`` default 0). Pins the default
-        loudly so a revert to Sonnet 5 / a thinking budget is not silent."""
+        """Simple Stage-2 question → ``stage2_model`` (Sonnet 5) with NO thinking
+        header (``thinking_tokens`` default 0)."""
         _openai_wrapper_complete_for_graph_rag(
             system="x", user="Is a medtech system that tracks patient weight high risk?",
             max_tokens=400, temperature=0.0,
@@ -254,7 +252,7 @@ class TestStage2AlwaysOpus:
             stage_name="Stage 2 (Polishing)",
         )
         req: OpenAIWrapperRequest = _mock_wrapper.complete.call_args.args[0]
-        assert req.model == settings.graph_rag.stage2_model == "claude-opus-5"
+        assert req.model == settings.graph_rag.stage2_model == "claude-sonnet-5"
         # Thinking-free simple tier (thinking_tokens 0 → no header).
         if settings.graph_rag.thinking_tokens > 0:
             assert req.extra_headers.get("X-Claude-Max-Thinking-Tokens") == str(
@@ -266,9 +264,8 @@ class TestStage2AlwaysOpus:
     def test_stage2_complex_uses_opus_with_extended_thinking(
         self, _mock_wrapper
     ) -> None:
-        """Complex Stage-2 question → ``complex_model`` (Opus 4.8; R280 reverted
-        the R279 Fable-5 flip) + the EXTENDED ``complex_thinking_tokens`` budget
-        (4000 by default)."""
+        """Complex Stage-2 question → ``complex_model`` (Opus 5) + the EXTENDED
+        ``complex_thinking_tokens`` budget (2048 by default)."""
         _openai_wrapper_complete_for_graph_rag(
             system="x", user="y", max_tokens=400, temperature=0.0,
             complex_question=True,
@@ -279,6 +276,7 @@ class TestStage2AlwaysOpus:
         assert req.extra_headers.get("X-Claude-Max-Thinking-Tokens") == str(
             settings.graph_rag.complex_thinking_tokens
         )
+        assert req.extra_headers.get("X-Claude-Max-Thinking-Tokens") == "2048"
 
     def test_stage1_parse_stays_on_base_model_no_thinking(
         self, _mock_wrapper

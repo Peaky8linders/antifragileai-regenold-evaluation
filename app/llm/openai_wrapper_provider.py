@@ -503,18 +503,23 @@ class _OpenAIWrapperProvider:
         }
         body["messages"] = [m for m in body["messages"] if m is not None]
 
-        # R264/R373 — reasoning for non-Claude models via OpenRouter.
+        # R264/R373 — reasoning for OpenRouter and non-Claude wrapper models.
         # ``reasoning_max_tokens`` (Anthropic/Gemini thinking budget) takes
         # priority; ``reasoning_effort`` (Groq/OpenAI) is the fallback.
+        # On OpenRouter, Anthropic models use the unified ``reasoning`` object.
+        # On the local Claude CLI wrapper, thinking tokens use HTTP headers instead.
         _model_lc = (req.model or "").lower()
-        _is_claude = _model_lc.startswith("claude") or "claude-" in _model_lc
+        _is_openrouter = "openrouter.ai" in (self._base_url or "").lower()
+        _is_claude_cli_wrapper = not _is_openrouter and (
+            _model_lc.startswith("claude") or "claude-" in _model_lc
+        )
 
-        if req.reasoning_max_tokens > 0 and not _is_claude:
+        if req.reasoning_max_tokens > 0 and not _is_claude_cli_wrapper:
             body["reasoning"] = {
                 "max_tokens": req.reasoning_max_tokens,
                 "exclude": False,
             }
-        elif not _is_claude:
+        elif not _is_claude_cli_wrapper:
             effort = (req.reasoning_effort or "").strip().lower()
             if not effort:
                 if "qwen" in _model_lc:
@@ -675,8 +680,8 @@ class _OpenAIWrapperProvider:
             text=text,
             thinking=thinking,
             model=payload.get("model", req.model),
-            prompt_tokens=int(usage.get("prompt_tokens", 0)),
-            completion_tokens=int(usage.get("completion_tokens", 0)),
+            prompt_tokens=int(usage.get("prompt_tokens") or 0),
+            completion_tokens=int(usage.get("completion_tokens") or 0),
             elapsed_ms=int((time.perf_counter() - start) * 1000),
             finish_reason=finish_reason,
         )

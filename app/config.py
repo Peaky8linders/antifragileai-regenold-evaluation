@@ -30,31 +30,12 @@ class GraphRAGSettings(BaseSettings):
     The Stage-2 ANSWER is governed by :attr:`stage2_model`, not this field.
     Override per-deploy with ``P2P_GRAPH_RAG_MODEL``."""
 
-    stage2_model: str = "claude-opus-5"
+    stage2_model: str = "claude-sonnet-5"
     """Model for the Stage-2 ANSWER (the user-facing legal prose) on the
     STANDARD (simple / low-complexity) path — the ~80% of questions the
     complexity gate does NOT flag. Complex questions use :attr:`complex_model`
-    (also Opus 4.8) instead.
-
-    **2026-07-04 operator directive — Opus 4.8 answers BOTH tiers (fast mode).**
-    Default ``claude-opus-4-8``: the simple tier now runs on Opus 4.8 with NO
-    thinking budget (:attr:`thinking_tokens` = 0 — verdict-first, fast), while
-    the complex tier runs on Opus 4.8 WITH the extended reasoning budget
-    (:attr:`complex_thinking_tokens`). "Fast mode" (Claude Code's Opus
-    faster-output path) is enabled wrapper-side (the bundled ``claude.exe`` is
-    ≥ 2.1.185, which fast-gates ``claude-opus-4-8``); it is not an app-side
-    header. Since both :attr:`stage2_model` and :attr:`complex_model` are now
-    Opus 4.8, the R270 ``REGENOLD_OPUS_FOR_ALL`` flag is moot (both routes land
-    on Opus regardless of it).
-
-    This supersedes the 2026-06-30 "Sonnet 5 simple / Opus 4.8 complex" split
-    (the operator now wants Opus on every answer). Empty → fall back to
-    :attr:`model` for Stage-2. Restore the Sonnet-5 simple tier per-deploy with
-    ``P2P_GRAPH_RAG_STAGE2_MODEL=claude-sonnet-5`` (+ ``THINKING_TOKENS=2048``).
-
-    Cost is flat on the production Claude Max subscription (the wrapper bills
-    the Max plan, not per token). Override per-deploy with
-    ``P2P_GRAPH_RAG_STAGE2_MODEL``."""
+    (Opus 5) instead.
+    Override per-deploy with ``P2P_GRAPH_RAG_STAGE2_MODEL``."""
 
     max_tokens: int = 1536
     """Stage-1/2 polish output token cap.
@@ -162,63 +143,17 @@ class GraphRAGSettings(BaseSettings):
     # Stage-2 call on the standard tier.
     complex_model: str = "claude-opus-5"
     """Model name for the complex-question path. Default:
-    ``claude-opus-4-8`` (R280 revert of R279 — Fable 5's only win was on a
-    zero-headroom axis and it cost 20-30 s of latency on a scored weak
-    axis). Set ``claude-fable-5`` to restore R279; set empty to disable the
+    ``claude-opus-5``. Set ``=`` (empty) to disable the
     swap (every Stage-2 polish call uses the base ``model``)."""
 
-    complex_thinking_tokens: int = 1024
+    complex_thinking_tokens: int = 2048
     """``max_thinking_tokens`` — the **EXTENDED** thinking budget for the
     ~20% of questions :func:`app.engines.question_complexity.is_complex_question`
     flags (conflict / borderline-prohibition / GPAI thresholds / role-ambiguity
     / multi-turn coreference, plus the R118 widened difficulty set).
-
-    **R139 — default 4000 (extended thinking on COMPLEX questions).** Per the
-    operator directive, the complex tier gets a genuinely extended budget so
-    Opus 4.8 deliberates before committing on the hard legal-reasoning cases;
-    the latency cost lands ONLY on the complex ~20% (the user accepts latency
-    there). 4000 is a deliberate middle ground: clearly extended vs the 1024
-    MODERATE budget on simple questions, yet well below the 8000-token budget
-    that drove the R51 / r80.2-live 103 s latency outlier. Clamped at the
-    engine to [1024, 16000]; ``0`` disables. The answer gets ``budget + 512``
-    output-token headroom above the thinking allocation. Override per-deploy
-    with ``P2P_GRAPH_RAG_COMPLEX_THINKING_TOKENS``.
-
-    **R131.2 — default 1024 (extended thinking ON, modest).** Operator
-    directive: surface REAL model reasoning in the ``?include_reasoning=true``
-    trace's ``llm_thinking`` field + the UI 🧠 panel (it otherwise shows the
-    ``"Single-pass synthesis (no extended thinking)"`` placeholder). 1024 is
-    the engine clamp floor — the smallest budget that produces visible
-    reasoning, and the proven R80.2 production value — fired ONLY on the
-    ~20% complex/Opus path (the standard Sonnet path stays thinking-free /
-    fast). Latency trade: ~+5-15 s on complex questions only (a scored axis);
-    fully reversible per-deploy with ``P2P_GRAPH_RAG_COMPLEX_THINKING_TOKENS=0``
-    to restore the R103 fast placeholder. The R81-A1 / r80.2-live latency
-    disaster (16 s p50, 51 s outlier) was the **8000**-token budget, not a
-    modest one.
-
-    **R103 (superseded by R131.2) — default 0 (extended thinking OFF).** The
-    complex path swaps to Opus 4.8 as a plain (stronger) model; 0 means no
-    ``X-Claude-Max-Thinking-Tokens`` header is sent, so Opus 4.8 answers at
-    ~Sonnet latency.
-
-    R80.2 — reduced 2500 → 1024 (the engine clamp floor). The
-    r80-stage2-tunnel run still showed an 87 s max-latency outlier
-    driven by the Opus complex extended-thinking path. Trimming to
-    the floor preserves the structured-reasoning win on conflict /
-    borderline-prohibition rows (r69-live conflict refS 0.95,
-    borderline refL 1.0) while cutting worst-case thinking time
-    further (~2.5× since R69's 2500). Clamped at the engine to
-    [1024, 16000]; 0 disables thinking. Override per-deploy via
-    ``P2P_GRAPH_RAG_COMPLEX_THINKING_TOKENS``.
-
-    Prior values:
-      * R51 original: 8000 (Anthropic's then-default extended-think
-        budget). Measured a 103 s worst-case tr_v2_007 outlier on
-        r69-live + p95 35 s.
-      * R69 round-2: reduced 8000 → 2500.
-      * R80.2: reduced 2500 → 1024 (current).
-    """
+    Default 2048: provides extended chain-of-thought deliberation on complex
+    questions while bounding worst-case latency. Clamped at the engine to
+    [2048, 4096]; ``0`` disables."""
 
     thinking_tokens: int = 0
     """``max_thinking_tokens`` — thinking budget for the STANDARD Stage-2
@@ -238,7 +173,7 @@ class GraphRAGSettings(BaseSettings):
     the higher budget helps the simple tier — so 0 costs nothing measurable and
     matches the directive. Restore a moderate budget per-deploy with
     ``P2P_GRAPH_RAG_THINKING_TOKENS=2048``. Clamped at the engine to
-    [1024, 16000] when > 0; ``0`` is the fast thinking-free path.
+    [2048, 4096] when > 0; ``0`` is the fast thinking-free path.
 
     **2026-07-03 — was 2048 (revert un-validated 4000 drift).** Commit
     ``433727a`` (bundled with an unrelated AI-Board regex fix) had bumped this

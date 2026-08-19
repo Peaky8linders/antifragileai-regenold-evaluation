@@ -704,7 +704,7 @@ class TestR131_3FusionThinking:
         # and the thinking-record fires before the judge branch regardless.
         monkeypatch.setenv("REGENOLD_FUSION_JUDGE", "deterministic")
         orig = settings.graph_rag.complex_thinking_tokens
-        settings.graph_rag.complex_thinking_tokens = 1024
+        settings.graph_rag.complex_thinking_tokens = 2048
         seen_headers: dict[str, str] = {}
 
         def _opus_panel(req):
@@ -745,7 +745,7 @@ class TestR131_3FusionThinking:
 
         assert out is not None
         # The wrapper (Opus) member was asked for extended thinking.
-        assert seen_headers.get("X-Claude-Max-Thinking-Tokens") == "1024"
+        assert seen_headers.get("X-Claude-Max-Thinking-Tokens") == "2048"
         # The REAL Opus chain-of-thought is recorded under a Fusion-panel stage.
         assert any("Fusion panel" in stage for stage in thinking_blob), thinking_blob
         assert any("Reasoning:" in txt for txt in thinking_blob.values()), thinking_blob

@@ -270,3 +270,171 @@ class TestCacheKey:
         monkeypatch.setenv("REGENOLD_OPENROUTER_ROUTING", "nitro")
         k2 = _engine_cache_key("q", None)
         assert k1 != k2
+
+
+class TestOpenRouterExtendedThinking:
+    def test_complex_question_uses_opus5_with_2048_thinking(self, monkeypatch):
+        class _FakeResp:
+            error = ""
+            text = "Complex Opus 5 answer."
+            finish_reason = "stop"
+            model = "anthropic/claude-opus-5"
+            completion_tokens = 20
+
+        captured = {}
+
+        class _FakeProvider:
+            def complete(self, req):
+                captured["req"] = req
+                return _FakeResp()
+
+        monkeypatch.setattr(
+            "app.llm.openai_wrapper_provider.get_openrouter_provider",
+            lambda: _FakeProvider(),
+        )
+
+        out = impl._openrouter_complete_for_graph_rag(
+            system="system prompt",
+            user="user query",
+            max_tokens=1024,
+            temperature=0.0,
+            complex_question=True,
+            stage_name="Stage 2 (Synthesis)",
+        )
+        assert out == "Complex Opus 5 answer."
+        req = captured["req"]
+        assert req.model == "anthropic/claude-opus-5"
+        assert req.reasoning_max_tokens == 2048
+
+    def test_simple_question_uses_sonnet5_without_thinking(self, monkeypatch):
+        class _FakeResp:
+            error = ""
+            text = "Simple Sonnet 5 answer."
+            finish_reason = "stop"
+            model = "anthropic/claude-sonnet-5"
+            completion_tokens = 15
+
+        captured = {}
+
+        class _FakeProvider:
+            def complete(self, req):
+                captured["req"] = req
+                return _FakeResp()
+
+        monkeypatch.setattr(
+            "app.llm.openai_wrapper_provider.get_openrouter_provider",
+            lambda: _FakeProvider(),
+        )
+
+        out = impl._openrouter_complete_for_graph_rag(
+            system="system prompt",
+            user="user query",
+            max_tokens=1024,
+            temperature=0.0,
+            complex_question=False,
+            stage_name="Stage 2 (Synthesis)",
+        )
+        assert out == "Simple Sonnet 5 answer."
+        req = captured["req"]
+        assert req.model == "anthropic/claude-sonnet-5"
+        assert req.reasoning_max_tokens == 0
+
+    def test_complex_question_zero_thinking_budget(self, monkeypatch):
+        from app.config import settings
+        captured = {}
+
+        class _FakeProvider:
+            def complete(self, req):
+                captured["req"] = req
+                class _R:
+                    error = ""
+                    text = "Answer without thinking."
+                    finish_reason = "stop"
+                    completion_tokens = 10
+                return _R()
+
+        monkeypatch.setattr(
+            "app.llm.openai_wrapper_provider.get_openrouter_provider",
+            lambda: _FakeProvider(),
+        )
+        orig = settings.graph_rag.complex_thinking_tokens
+        settings.graph_rag.complex_thinking_tokens = 0
+        try:
+            impl._openrouter_complete_for_graph_rag(
+                system="system",
+                user="user",
+                max_tokens=1024,
+                temperature=0.0,
+                complex_question=True,
+            )
+            req = captured["req"]
+            assert req.reasoning_max_tokens == 0
+        finally:
+            settings.graph_rag.complex_thinking_tokens = orig
+
+    def test_openrouter_provider_complete_serializes_claude_reasoning(self, monkeypatch):
+        from app.llm.openai_wrapper_provider import (
+            _OpenAIWrapperProvider,
+            OpenAIWrapperRequest,
+        )
+
+        provider = _OpenAIWrapperProvider(
+            base_url="https://openrouter.ai/api/v1",
+            api_key="sk-or-test-key",
+        )
+
+        sent_body = {}
+
+        def _mock_post(url, json=None, headers=None, timeout=None):
+            nonlocal sent_body
+            sent_body = json
+            import httpx
+            return httpx.Response(
+                200,
+                json={
+                    "id": "gen-123",
+                    "model": "anthropic/claude-opus-5",
+                    "choices": [{
+                        "message": {
+                            "role": "assistant",
+                            "content": "Verified thinking answer.",
+                            "reasoning": "Detailed CoT reasoning steps...",
+                        },
+                        "finish_reason": "stop",
+                    }],
+                    "usage": {"prompt_tokens": 50, "completion_tokens": 30},
+                },
+                request=httpx.Request("POST", url),
+            )
+
+        monkeypatch.setattr(provider._client, "post", _mock_post)
+
+        resp = provider.complete(
+            OpenAIWrapperRequest(
+                model="anthropic/claude-opus-5",
+                user="Complex legal question",
+                reasoning_max_tokens=2048,
+            )
+        )
+
+        assert resp.text == "Verified thinking answer."
+        assert resp.thinking == "Detailed CoT reasoning steps..."
+        assert sent_body.get("reasoning") == {"max_tokens": 2048, "exclude": False}
+        provider._close()
+
+    def test_stage2_provider_enabled_openrouter(self, monkeypatch):
+        monkeypatch.setenv("P2P_GRAPH_RAG_PROVIDER", "openrouter")
+        monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+        assert impl._stage2_provider_enabled() is False
+
+        monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-dummy")
+        assert impl._stage2_provider_enabled() is True
+
+    def test_openrouter_model_opus_for_all(self, monkeypatch):
+        monkeypatch.delenv("REGENOLD_STAGE2_MODEL_OPENROUTER", raising=False)
+        monkeypatch.delenv("REGENOLD_STAGE2_COMPLEX_MODEL_OPENROUTER", raising=False)
+        monkeypatch.delenv("REGENOLD_OPENROUTER_ROUTING", raising=False)
+
+        monkeypatch.setenv("REGENOLD_OPUS_FOR_ALL", "1")
+        assert impl._openrouter_model(complex_question=False) == "anthropic/claude-opus-5"
+        assert impl._openrouter_model(complex_question=True) == "anthropic/claude-opus-5"

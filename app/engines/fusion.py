@@ -342,11 +342,11 @@ def _one_candidate(
             return label, None, ""
         # R131.3 — request extended thinking on the wrapper-bound member when a
         # budget is configured. Only the wrapper transport honours the header;
-        # Groq / Mistral ignore it. Clamp mirrors graph_rag's [1024, 16000].
+        # Groq / Mistral ignore it. Clamp mirrors graph_rag's [2048, 4096].
         extra_headers: dict[str, str] = {}
         if transport == "wrapper" and thinking_budget > 0:
             extra_headers["X-Claude-Max-Thinking-Tokens"] = str(
-                max(1024, min(thinking_budget, 16000))
+                max(2048, min(thinking_budget, 4096))
             )
         resp = provider.complete(
             OpenAIWrapperRequest(

@@ -862,12 +862,13 @@ def _openai_wrapper_complete_for_graph_rag(
     #   * Stage-1 / other  → ``base_model``    (Sonnet 4.6)
     # R116 removed the Fable 5 ultra tier.
     is_stage2 = "stage 2" in (stage_name or "").lower()
+    _std_model = (
+        complex_model if (_opus_for_all_enabled() and complex_model) else stage2_model
+    )
     if complex_question and complex_model:
         model = complex_model
-    elif is_stage2:
-        model = complex_model or stage2_model or "claude-opus-4-8"
-        if not model or "opus" not in model.lower():
-            model = "claude-opus-4-8"
+    elif is_stage2 and _std_model:
+        model = _std_model
     else:
         model = base_model
 
@@ -912,7 +913,7 @@ def _openai_wrapper_complete_for_graph_rag(
     if eff_thinking > 0:
         # Cap at wrapper's recommended ceiling. The wrapper itself
         # enforces 0-50000; we stay well inside that range.
-        capped = max(1024, min(eff_thinking, 16000))
+        capped = max(2048, min(eff_thinking, 4096))
         extra_headers["X-Claude-Max-Thinking-Tokens"] = str(capped)
         logger.info(
             "graph_rag.stage2_extended_thinking model=%s budget=%d complex=%s",
@@ -1212,7 +1213,7 @@ def _openrouter_routing_suffix() -> str:
     the default and ``REGENOLD_OPENROUTER_ROUTING=nitro`` is the documented
     latency lever. Fresh env read per call (R263.2).
     """
-    mode = os.getenv("REGENOLD_OPENROUTER_ROUTING", "").strip().lower()
+    mode = os.getenv("REGENOLD_OPENROUTER_ROUTING", "").strip().lstrip(":").lower()
     if mode == "nitro":
         return ":nitro"
     if mode == "exacto":
@@ -1237,11 +1238,14 @@ def _openrouter_model(complex_question: bool) -> str:
     # Mirrors the wrapper path's tier fallback: complex → complex_env or
     # standard_env or the complex default; standard → standard_env or the
     # standard default.
-    if complex_question:
+    if complex_question or _opus_for_all_enabled():
         model = complex_model or standard or _OPENROUTER_COMPLEX_MODEL_DEFAULT
     else:
         model = standard or _OPENROUTER_STAGE2_MODEL_DEFAULT
-    return model + _openrouter_routing_suffix()
+    suffix = _openrouter_routing_suffix()
+    if suffix and not model.endswith(suffix):
+        model += suffix
+    return model
 
 
 def _openrouter_complete_for_graph_rag(
@@ -1329,7 +1333,8 @@ def _openrouter_complete_for_graph_rag(
             )
         except Exception:  # noqa: BLE001
             _reasoning_budget = 0
-        _reasoning_budget = max(1024, min(_reasoning_budget, 16000))
+        if _reasoning_budget > 0:
+            _reasoning_budget = max(2048, min(_reasoning_budget, 4096))
 
     _answer_headroom = _stage2_answer_headroom()
     _effective_max_tokens = (
@@ -1411,6 +1416,12 @@ def _openrouter_complete_for_graph_rag(
                 "graph_rag.openrouter_fallback_chain_served primary=%s served_by=%s",
                 model, _mid,
             )
+        if getattr(resp, "thinking", None):
+            try:
+                from app.integrations.regenold.reasoning_trace import record_llm_thinking  # noqa: PLC0415
+                record_llm_thinking(resp.thinking, stage=stage_name)
+            except Exception:  # noqa: BLE001
+                pass
         return resp.text
     logger.warning("graph_rag.openrouter_call_failed (chain exhausted): %s", last_error)
     return None
@@ -1559,12 +1570,13 @@ def _anthropic_complete_for_graph_rag(
     # ``stage2_model`` (Opus); Stage-1 parse / other → ``base_model`` (Sonnet).
     # R116 removed the Fable 5 ultra tier.
     is_stage2 = "stage 2" in (stage_name or "").lower()
+    _std_model = (
+        complex_model if (_opus_for_all_enabled() and complex_model) else stage2_model
+    )
     if complex_question and complex_model:
         model = complex_model
-    elif is_stage2:
-        model = complex_model or stage2_model or "claude-opus-4-8"
-        if not model or "opus" not in model.lower():
-            model = "claude-opus-4-8"
+    elif is_stage2 and _std_model:
+        model = _std_model
     else:
         model = base_model
 
@@ -1580,7 +1592,7 @@ def _anthropic_complete_for_graph_rag(
 
     extra: dict[str, object] = {}
     if eff_thinking > 0:
-        capped = max(1024, min(eff_thinking, 16000))
+        capped = max(2048, min(eff_thinking, 4096))
         extra["thinking"] = {"type": "enabled", "budget_tokens": capped}
         logger.info(
             "graph_rag.stage2_extended_thinking_anthropic model=%s budget=%d complex=%s",
@@ -1725,6 +1737,11 @@ def _stage2_provider_enabled() -> bool:
     if env_value == "cli":
         logger.debug("Stage2 disabled: provider=cli")
         return False
+    if env_value == "openrouter":
+        from app.llm.openai_wrapper_provider import is_openrouter_provider_enabled
+        result = is_openrouter_provider_enabled()
+        logger.debug("Stage2 openrouter provider enabled: %s", result)
+        return result
     if env_value == "groq":
         from app.llm.openai_wrapper_provider import is_groq_provider_enabled
         result = is_groq_provider_enabled()
@@ -9453,7 +9470,7 @@ def _claude_max_enhance_answer(
         # is alive). The integrity rule is preserved: OpenRouter's internal
         # chain stays on OpenRouter transport; only the FINAL fallback hops
         # to Bedrock.
-        if text_raw is None and not _use_gemini and not _use_openrouter:
+        if text_raw is None and not _use_gemini and not _use_bedrock:
             try:
                 from app.integrations.regenold.reasoning_trace import record_note
                 record_note("stage2_primary_failed_fallback_bedrock_opus46")

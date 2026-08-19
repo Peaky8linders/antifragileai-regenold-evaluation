@@ -39,18 +39,11 @@ _ANNEX_RE = re.compile(r"\bAnnex\s+([IVXLC]+)\b")
 
 
 def test_thinking_tokens_adaptive_r139() -> None:
-    # 2026-07-04 operator directive — Opus 4.8 answers BOTH tiers ("fast mode").
-    # The SIMPLE tier is thinking-FREE (thinking_tokens 0 — Opus single-pass);
-    # the COMPLEX tier keeps the EXTENDED budget (complex_thinking_tokens 1024).
-    # Supersedes the R261 "Sonnet 5 simple / Opus 4.8 complex" split.
+    # The SIMPLE tier is thinking-FREE (thinking_tokens 0 — single-pass);
+    # the COMPLEX tier keeps the EXTENDED budget (complex_thinking_tokens 2048).
     assert settings.graph_rag.thinking_tokens == 0
-    assert settings.graph_rag.complex_thinking_tokens == 1024
-    # R305 — pin the EXACT current default. An ``in (...)`` set that accepts
-    # either model cannot catch the class of bug R300 found (an ungated,
-    # undisclosed model swap that also made the reasoning trace report a
-    # model that was never sent). Update this line deliberately when the
-    # default changes; do not widen it.
-    assert settings.graph_rag.stage2_model == "claude-opus-5"
+    assert settings.graph_rag.complex_thinking_tokens == 2048
+    assert settings.graph_rag.stage2_model == "claude-sonnet-5"
 
 
 # ── Change 1 — BLUF verdict-first prompt ──────────────────────────────────

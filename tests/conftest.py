@@ -432,6 +432,7 @@ def _reset_llm_provider_singletons():
         for _helper in (
             "_reset_groq_singleton_for_tests",
             "_reset_gemini_singleton_for_tests",
+            "_reset_openrouter_singleton_for_tests",
             "_reset_mistral_singleton_for_tests",
         ):
             fn = getattr(_llm_provider, _helper, None)
