@@ -4736,13 +4736,21 @@ _CONTRAST_BEHIND_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Postpositive negation cues: "Article 50 does not apply", "Annex III is not applicable"
+# Postpositive negation cues: "Article 50 does not apply", "Annex III is not applicable", "Article 50 obligations do not apply", "Article 6 is therefore excluded"
 _NEGATION_AHEAD_RE = re.compile(
     r"^\s*(?:\([^)]*\)\s*)*(?:,\s*)?"
-    r"(?:does\s+not\s+apply|is\s+not\s+applicable|is\s+inapplicable|"
-    r"do\s+not\s+apply|are\s+not\s+applicable|are\s+inapplicable|"
-    r"is\s+excluded|is\s+not\s+triggered|is\s+not\s+in\s+scope|"
-    r"is\s+outside\s+the\s+scope|is\s+not\s+required|falls\s+outside)\b",
+    r"(?:(?:obligations?|requirements?|duties|rules?|provisions?)\s+)?"
+    r"(?:(?:is|are|would\s+be|was|were)\s+)?"
+    r"(?:therefore\s+|currently\s+|automatically\s+)?"
+    r"(?:does\s+not\s+apply|do\s+not\s+apply|"
+    r"is\s+not\s+applicable|are\s+not\s+applicable|not\s+applicable|"
+    r"is\s+inapplicable|are\s+inapplicable|inapplicable|"
+    r"is\s+excluded|are\s+excluded|excluded|"
+    r"is\s+not\s+triggered|are\s+not\s+triggered|not\s+triggered|"
+    r"is\s+not\s+in\s+scope|are\s+not\s+in\s+scope|not\s+in\s+scope|"
+    r"is\s+outside\s+the\s+scope|are\s+outside\s+the\s+scope|outside\s+the\s+scope|"
+    r"is\s+not\s+required|are\s+not\s+required|not\s+required|"
+    r"falls\s+outside|fall\s+outside)\b",
     re.IGNORECASE,
 )
 
@@ -7224,33 +7232,43 @@ def _build_question_from_history(messages: list[Any]) -> QuestionHistoryResult:
     # question is still answered; only the adversarial conditioning is
     # dropped. ``text_has_injection`` uses the same curated patterns the
     # scope gate applies to user / assistant turns.
+    def _msg_role(m: Any) -> str:
+        if isinstance(m, dict):
+            return str(m.get("role") or "").strip().lower()
+        return str(getattr(m, "role", "") or "").strip().lower()
+
+    def _msg_content(m: Any) -> str:
+        if isinstance(m, dict):
+            return str(m.get("content") or "").strip()
+        return str(getattr(m, "content", "") or "").strip()
+
     system_parts = [
-        m.content
+        _msg_content(m)
         for m in messages
-        if m.role == "system"
-        and m.content
-        and not text_has_injection(m.content)
+        if _msg_role(m) == "system"
+        and _msg_content(m)
+        and not text_has_injection(_msg_content(m))
     ]
     system_context = "\n".join(p for p in system_parts if p.strip()) or None
 
     # Conversation = everything except system messages, in order.
-    dialogue = [m for m in messages if m.role in ("user", "assistant")]
+    dialogue = [m for m in messages if _msg_role(m) in ("user", "assistant")]
 
     # Find the last user message — that's the live question.
     last_user_idx = -1
     for i in range(len(dialogue) - 1, -1, -1):
-        if dialogue[i].role == "user":
+        if _msg_role(dialogue[i]) == "user":
             last_user_idx = i
             break
 
     if last_user_idx < 0:
         # No user message in the dialogue. Fall back to the last
         # message regardless of role — better than blank.
-        live_question = dialogue[-1].content.strip() if dialogue else ""
+        live_question = _msg_content(dialogue[-1]) if dialogue else ""
         history_turns: list[Any] = []
         all_prior_turns: list[Any] = []
     else:
-        live_question = dialogue[last_user_idx].content.strip()
+        live_question = _msg_content(dialogue[last_user_idx])
         # History = the last N turns BEFORE the live user message.
         history_start = max(0, last_user_idx - _HISTORY_TURNS_TO_INCLUDE)
         history_turns = dialogue[history_start:last_user_idx]
@@ -7306,18 +7324,28 @@ def _build_question_from_history(messages: list[Any]) -> QuestionHistoryResult:
                 # Recover the root user question from Turn 1 as resolved_turn so retrieval
                 # (BM25, vector recall, NER) operates on the substantive legal inquiry rather than
                 # critique noise.
+                def _get_msg_role(msg: Any) -> str:
+                    if isinstance(msg, dict):
+                        return str(msg.get("role") or "").strip().lower()
+                    return str(getattr(msg, "role", "") or "").strip().lower()
+
+                def _get_msg_content(msg: Any) -> str:
+                    if isinstance(msg, dict):
+                        return str(msg.get("content") or "").strip()
+                    return str(getattr(msg, "content", "") or "").strip()
+
                 _root_q = next(
                     (
-                        getattr(m, "content", "").strip()
+                        _get_msg_content(m)
                         for m in reversed(dialogue[:last_user_idx])
-                        if getattr(m, "role", None) == "user"
-                        and getattr(m, "content", None)
-                        and _live_turn_is_self_contained(getattr(m, "content", ""))
+                        if _get_msg_role(m) == "user"
+                        and _get_msg_content(m)
+                        and _live_turn_is_self_contained(_get_msg_content(m))
                     ),
                     None,
                 )
-                if not _root_q and dialogue and dialogue[0].role == "user" and getattr(dialogue[0], "content", None):
-                    _root_q = dialogue[0].content.strip()
+                if not _root_q and dialogue and _get_msg_role(dialogue[0]) == "user" and _get_msg_content(dialogue[0]):
+                    _root_q = _get_msg_content(dialogue[0])
 
                 if _root_q:
                     try:
@@ -7327,8 +7355,9 @@ def _build_question_from_history(messages: list[Any]) -> QuestionHistoryResult:
                     except Exception:  # noqa: BLE001
                         pass
                     history_block = "\n".join(
-                        f"{m.role.capitalize()}: {m.content.strip()}"
+                        f"{_get_msg_role(m).capitalize()}: {_get_msg_content(m)}"
                         for m in history_turns
+                        if m and _get_msg_role(m) and _get_msg_content(m)
                     )
                     q_combined = (
                         "Conversation so far:\n"
@@ -7419,8 +7448,9 @@ def _build_question_from_history(messages: list[Any]) -> QuestionHistoryResult:
         else:
             # Fallback: existing concatenation path
             history_block = "\n".join(
-                f"{m.role.capitalize()}: {m.content.strip()}"
+                f"{_msg_role(m).capitalize()}: {_msg_content(m)}"
                 for m in history_turns
+                if m and _msg_role(m) and _msg_content(m)
             )
             anchor_prefix = (anchor_line + "\n\n") if anchor_line else ""
             question = (

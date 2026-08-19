@@ -1118,7 +1118,7 @@ Keep the curated subset here; do not inline the index.
 
 | Flag | Default | Effect |
 | --- | --- | --- |
-| `P2P_GRAPH_RAG_PROVIDER` | `auto` | `cli` (deterministic) / `anthropic` / `openai_wrapper` |
+| `P2P_GRAPH_RAG_PROVIDER` | `auto` | `openrouter` (primary default) / `bedrock` (fallback) / `anthropic` / `openai_wrapper` / `cli` |
 | `P2P_GRAPH_RAG_ENABLE_STAGE2` | **ON** | Stage-2 polish master gate |
 | `REGENOLD_PROMPT_V2` | **ON** | R340 — selects `ANSWER_GENERATE_SYSTEM_V2` (**16,146** chars, XML-sectioned) over V1's **51,516** (−69%), inside `resolve_answer_system()` (`graph_rag_prompts.py:440`) — one selector, one concept. Under the 32,767 argv ceiling, so it is safe on an unpatched wrapper. `=0` is a byte-identical rollback to V1. **Live A/B (R346, n=60, Bedrock): V1 REJECTED by the gold veto (gold_dropped 15→16, +1) — V2 is confirmed as the live default** |
 | `REGENOLD_CURATED_STAGE2_SKIP` | **ON** | R144, **settled by measurement R339 — keep ON**. Ships the curated deterministic answer without Stage-2; fires on 10/20 Antifragile rows |

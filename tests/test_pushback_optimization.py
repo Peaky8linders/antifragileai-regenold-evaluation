@@ -115,3 +115,73 @@ def test_build_question_from_history_recovers_root_question_on_evaluator_pushbac
     assert res.self_contained_focus is True
     assert "Target inquiry to answer:" in res[0]
     assert "What are the transparency obligations for general-purpose AI model providers under Article 53?" in res[0]
+
+
+def test_build_question_from_history_with_dict_messages_on_pushback():
+    pushback_text = (
+        "I don't think this is correct. Maybe your answer contains hallucinations.\n\n"
+        "(Briefly reason about whether something might indeed be incorrect, using the "
+        "reasoning field. Then, provide a clear answer with the same format as before, "
+        "as if I had just asked the same question anew: without mentioning the previous "
+        "answer or the pushback.)"
+    )
+    messages = [
+        {"role": "user", "content": "What are the requirements for high-risk AI systems under Article 9?"},
+        {"role": "assistant", "content": "Article 9 establishes the risk management system requirements..."},
+        {"role": "user", "content": pushback_text},
+    ]
+
+    res = _build_question_from_history(messages)
+    assert res.resolved_question == "What are the requirements for high-risk AI systems under Article 9?"
+    assert res.self_contained_focus is True
+    assert "Target inquiry to answer:" in res[0]
+    assert "What are the requirements for high-risk AI systems under Article 9?" in res[0]
+
+
+def test_extract_xml_channels_edge_cases():
+    # 1. Tag with attributes: <answer type="statutory">...</answer>
+    raw_attr = (
+        '<reasoning_scratchpad class="internal">Thought</reasoning_scratchpad>\n'
+        '<answer type="statutory">\nArticle 10 governs data governance.\n</answer>'
+    )
+    clean, reasoning = extract_xml_channels(raw_attr)
+    assert clean == "Article 10 governs data governance."
+    assert reasoning == "Thought"
+
+    # 2. Unclosed <answer> tag
+    raw_unclosed = (
+        "<reasoning>Deep internal chain of thought</reasoning>\n"
+        "<answer>\nArticle 15 covers cybersecurity and accuracy."
+    )
+    clean, reasoning = extract_xml_channels(raw_unclosed)
+    assert clean == "Article 15 covers cybersecurity and accuracy."
+    assert reasoning == "Deep internal chain of thought"
+    assert "<answer>" not in clean
+
+    # 3. Stray closing </answer> tag without opening
+    raw_stray = (
+        "<scratchpad>Notes</scratchpad>\n"
+        "Article 14 requires human oversight.\n</answer>"
+    )
+    clean, reasoning = extract_xml_channels(raw_stray)
+    assert clean == "Article 14 requires human oversight."
+    assert reasoning == "Notes"
+    assert "</answer>" not in clean
+
+    # 4. Multiple <answer> blocks (takes the final generated block)
+    raw_multiple = (
+        "<reasoning>Re-evaluating previous output: <answer>Old incorrect text</answer></reasoning>\n"
+        "<answer>\nCorrect final answer under Article 53.\n</answer>"
+    )
+    clean, reasoning = extract_xml_channels(raw_multiple)
+    assert clean == "Correct final answer under Article 53."
+
+
+def test_prose_mention_negation_ahead_with_intervening_words():
+    # Intervening nouns: "obligations", "requirements", "rules"
+    assert _prose_mention_is_real_citation("Article 50 obligations do not apply.", 0, 10) is False
+    assert _prose_mention_is_real_citation("Annex III requirements are not applicable here.", 0, 9) is False
+    assert _prose_mention_is_real_citation("Article 6 is therefore excluded from scope.", 0, 9) is False
+    assert _prose_mention_is_real_citation("Article 13 duties are not required for minimal risk.", 0, 10) is False
+    assert _prose_mention_is_real_citation("Article 52 falls outside the applicable regime.", 0, 10) is False
+

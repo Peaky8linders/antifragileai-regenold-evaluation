@@ -124,12 +124,15 @@ def set_judge_model(model: str) -> None:
 # prompt mismatch — retrying would burn token budget for no recovery.
 _RETRYABLE_ERROR_SUBSTRINGS: tuple[str, ...] = (
     "wrapper_returned_none",          # provider returned None — usually transient
+    "openrouter_returned_none",
+    "bedrock_returned_none",
     "timeout",                         # any "timeout" mention (call_failed, network_error)
     "timed out",
     "connect",                         # "connection refused", "connection reset", etc.
     "transport",                       # httpx transport errors
     "throttled",                       # api_throttled_429 — rate-limit windows pass; backoff rides them out
     "_429",                            # belt-and-braces for any 429-shaped error string
+    "429",
     "remote disconnected",
     "remotedisconnected",
     "connectionreseterror",
@@ -138,6 +141,7 @@ _RETRYABLE_ERROR_SUBSTRINGS: tuple[str, ...] = (
     "badstatusline",
     "network_error",
     "rate_limit",                      # 429 — wrapper handles inline but SDK path bubbles up
+    "rate limit",
     "ratelimit",
     "api_status_5",                    # api_status_5XX
     "api_status_429",                  # 429 from wrapper after its own retry exhausted
@@ -486,7 +490,12 @@ def _call_judge_openrouter(prompt: str, timeout_s: float = 30.0) -> dict[str, An
     except Exception as exc:  # noqa: BLE001
         return {"judge_error": f"openrouter_init_failed: {exc}"}
 
-    model = os.environ.get("OPENROUTER_JUDGE_MODEL", _JUDGE_MODEL or "anthropic/claude-3.5-sonnet")
+    model = os.environ.get("OPENROUTER_JUDGE_MODEL", "").strip()
+    if not model:
+        if _JUDGE_MODEL and _JUDGE_MODEL != _DEFAULT_JUDGE_MODEL:
+            model = _JUDGE_MODEL
+        else:
+            model = "anthropic/claude-sonnet-5"
     req = OpenAIWrapperRequest(
         system=_JUDGE_SYSTEM,
         user=prompt,
@@ -1179,7 +1188,7 @@ def main(argv: list[str] | None = None) -> int:
     # local openai_wrapper bridge. Requires ``P2P_GRAPH_RAG_API_KEY``
     # or ``ANTHROPIC_API_KEY`` to be set.
     parser.add_argument(
-        "--provider", choices=("wrapper", "anthropic", "groq", "gemini", "bedrock"), default="wrapper",
+        "--provider", choices=("wrapper", "anthropic", "groq", "gemini", "bedrock", "openrouter"), default="wrapper",
         help=(
             "Provider for the judge LLM. "
             "'wrapper' (default) routes through the local openai_wrapper bridge. "

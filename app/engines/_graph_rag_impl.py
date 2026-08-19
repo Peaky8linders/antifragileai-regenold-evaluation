@@ -638,7 +638,8 @@ restoration as :data:`BEDROCK_RAG_MODEL` (was opus-4-6-v1 in the window)."""
 
 def _bedrock_complete_for_graph_rag(
     *, system: str, user: str, max_tokens: int, temperature: float,
-    complex_question: bool = False, stage_name: str = "Stage"
+    complex_question: bool = False, stage_name: str = "Stage",
+    model_override: str | None = None,
 ) -> str | None:
     """Execute GraphRAG Stage-1/2 completions via AWS Bedrock."""
     try:
@@ -660,7 +661,9 @@ def _bedrock_complete_for_graph_rag(
         "REGENOLD_BEDROCK_MODEL", BEDROCK_RAG_MODEL
     ).strip() or BEDROCK_RAG_MODEL
 
-    if complex_question:
+    if model_override:
+        model = model_override
+    elif complex_question:
         model = (
             os.getenv("REGENOLD_BEDROCK_COMPLEX_MODEL", "").strip()
             or BEDROCK_COMPLEX_MODEL
@@ -9504,33 +9507,16 @@ def _claude_max_enhance_answer(
                 pass
             # Force the opus-4-6 tier for the retry regardless of the primary
             # env pin (sonnet-4-6 on simple lanes): the fallback is defined as
-            # Bedrock + claude-opus-4-6. Fresh env read per call (R263.2) — a
-            # scoped pin here cannot leak into other lanes.
-            _saved_bedrock_model = os.environ.get("REGENOLD_BEDROCK_MODEL")
-            _saved_stage2_model = os.environ.get("REGENOLD_BEDROCK_STAGE2_MODEL")
-            _saved_complex_model = os.environ.get("REGENOLD_BEDROCK_COMPLEX_MODEL")
-            os.environ["REGENOLD_BEDROCK_MODEL"] = "claude-opus-4-6"
-            os.environ["REGENOLD_BEDROCK_STAGE2_MODEL"] = "claude-opus-4-6"
-            os.environ["REGENOLD_BEDROCK_COMPLEX_MODEL"] = "claude-opus-4-6"
-            try:
-                text_raw = _bedrock_complete_for_graph_rag(
-                    system=system_prompt,
-                    user=user_message,
-                    max_tokens=max_tokens,
-                    temperature=0.0,
-                    complex_question=complex_q,
-                    stage_name="Stage 2 (Polishing) fallback",
-                )
-            finally:
-                for _k, _v in (
-                    ("REGENOLD_BEDROCK_MODEL", _saved_bedrock_model),
-                    ("REGENOLD_BEDROCK_STAGE2_MODEL", _saved_stage2_model),
-                    ("REGENOLD_BEDROCK_COMPLEX_MODEL", _saved_complex_model),
-                ):
-                    if _v is None:
-                        os.environ.pop(_k, None)
-                    else:
-                        os.environ[_k] = _v
+            # Bedrock + claude-opus-4-6 via thread-safe model_override.
+            text_raw = _bedrock_complete_for_graph_rag(
+                system=system_prompt,
+                user=user_message,
+                max_tokens=max_tokens,
+                temperature=0.0,
+                complex_question=complex_q,
+                stage_name="Stage 2 (Polishing) fallback",
+                model_override="claude-opus-4-6",
+            )
             if text_raw is None:
                 logger.warning("graph_rag.stage2_fallback_bedrock_failed -- deterministic")
             elif _use_openrouter:

@@ -31,12 +31,16 @@ _USER_QUERY_TAGS = re.compile(r"</?user_query>", re.IGNORECASE)
 _THINK_BLOCK_RE = re.compile(r"<think>.*?</think>\s*", re.DOTALL | re.IGNORECASE)
 
 _REASONING_BLOCK_RE = re.compile(
-    r"<(?:reasoning|reasoning_scratchpad|scratchpad)>(.*?)</(?:reasoning|reasoning_scratchpad|scratchpad)>\s*",
+    r"<\s*(?:reasoning|reasoning_scratchpad|scratchpad)(?:\s+[^>]*)?>(.*?)<\s*/\s*(?:reasoning|reasoning_scratchpad|scratchpad)\s*>",
     re.DOTALL | re.IGNORECASE,
 )
 _ANSWER_BLOCK_RE = re.compile(
-    r"<answer>(.*?)</answer>",
+    r"<\s*answer(?:\s+[^>]*)?>(.*?)<\s*/\s*answer\s*>",
     re.DOTALL | re.IGNORECASE,
+)
+_XML_CHANNELS_STRIP_RE = re.compile(
+    r"<\s*/?\s*(?:answer|reasoning|reasoning_scratchpad|scratchpad|think)(?:\s+[^>]*)?>",
+    re.IGNORECASE,
 )
 
 
@@ -45,7 +49,7 @@ def extract_xml_channels(text: str | None) -> tuple[str, str]:
 
     Supports <reasoning> / <reasoning_scratchpad> / <scratchpad> and <answer>.
     If <answer> tags are present, extracts their inner content as the answer.
-    If omitted, strips any reasoning / think blocks to isolate the clean answer.
+    If omitted or unclosed, strips any reasoning / think blocks to isolate the clean answer.
     """
     if text is None or not text:
         return "", ""
@@ -57,13 +61,17 @@ def extract_xml_channels(text: str | None) -> tuple[str, str]:
             reasoning_parts.append(content)
     extracted_reasoning = "\n\n".join(reasoning_parts)
 
-    answer_match = _ANSWER_BLOCK_RE.search(text)
-    if answer_match:
-        clean_answer = answer_match.group(1).strip()
+    answer_matches = list(_ANSWER_BLOCK_RE.finditer(text))
+    if answer_matches:
+        # If multiple answer tags appear (e.g. quote echoes or prompt-injection attempts), pick the final one
+        clean_answer = answer_matches[-1].group(1).strip()
     else:
-        # Fallback when model omitted <answer> tags: strip reasoning and think blocks
+        # Fallback when model omitted full <answer>...</answer> tags:
+        # 1. Strip reasoning and think blocks
         cleaned = _REASONING_BLOCK_RE.sub("", text)
         cleaned = _THINK_BLOCK_RE.sub("", cleaned).strip()
+        # 2. Defensively strip unclosed or stray XML channel tags
+        cleaned = _XML_CHANNELS_STRIP_RE.sub("", cleaned).strip()
         clean_answer = cleaned or text.strip()
 
     return clean_answer, extracted_reasoning
@@ -105,5 +113,7 @@ def validate_llm_output(text: str | None) -> str:
     if not text:
         return ""
     stripped = _THINK_BLOCK_RE.sub("", text).strip()
-    return stripped or text  # fall back to original if stripping emptied it
+    if not stripped and "<think" in text.lower():
+        return ""
+    return stripped or text
 
