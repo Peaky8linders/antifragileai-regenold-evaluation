@@ -804,6 +804,14 @@ def _bedrock_complete_for_graph_rag(
                 )
             except Exception:  # noqa: BLE001 — trace is best-effort
                 pass
+            if getattr(resp, "thinking", None):
+                try:
+                    from app.integrations.regenold.reasoning_trace import (  # noqa: PLC0415
+                        record_llm_thinking,
+                    )
+                    record_llm_thinking(resp.thinking, stage=stage_name)
+                except Exception:  # noqa: BLE001 — trace is best-effort
+                    pass
             return resp.text
         logger.warning("graph_rag.bedrock_call_failed (chain exhausted): %s", last_error)
         return None
@@ -1285,7 +1293,10 @@ def _openrouter_complete_for_graph_rag(
     # path) so sonnet-4.6 does not truncate on substantive legal answers.
     # Fresh env read per call (R263.2).
     try:
-        _or_ceiling = int(os.getenv("REGENOLD_BEDROCK_MAX_TOKENS", "4096"))
+        _or_ceiling = int(
+            os.getenv("REGENOLD_OPENROUTER_MAX_TOKENS")
+            or os.getenv("REGENOLD_BEDROCK_MAX_TOKENS", "4096")
+        )
     except (TypeError, ValueError):
         _or_ceiling = 4096
     if "stage 2" in (stage_name or "").lower() and (max_tokens or 0) < _or_ceiling:
@@ -1452,6 +1463,8 @@ def _stage2_complete(
     try:
         from app.llm import resolve_provider  # noqa: PLC0415
         resolved_p = resolve_provider(os.getenv("P2P_GRAPH_RAG_PROVIDER"), default_when_auto="openrouter")
+        if resolved_p == "cli":
+            return None
         if resolved_p == "anthropic":
             try:
                 from app.config import settings as _s  # noqa: PLC0415
@@ -1780,6 +1793,12 @@ def _stage2_provider_enabled() -> bool:
         except Exception:  # noqa: BLE001
             logger.exception("Error checking anthropic provider for Stage2")
             return False
+
+    if env_value == "openai_wrapper":
+        result = is_openai_wrapper_enabled()
+        logger.debug("Stage2 openai_wrapper provider enabled: %s", result)
+        return result
+
     # auto / unset — primary is OpenRouter, then Bedrock, then Anthropic / wrapper.
     try:
         from app.llm.openai_wrapper_provider import is_openrouter_provider_enabled
@@ -9695,6 +9714,8 @@ def _guard_stage2_truncation(
     logger.warning(
         "stage2_truncation_guard: tail repair failed — shipping deterministic Stage-1 answer"
     )
+    if context is not None:
+        context.stage2_call_failed = True
     return kg_answer, False
 
 

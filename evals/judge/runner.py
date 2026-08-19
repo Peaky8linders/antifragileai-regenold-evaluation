@@ -143,6 +143,15 @@ _RETRYABLE_ERROR_SUBSTRINGS: tuple[str, ...] = (
     "rate_limit",                      # 429 — wrapper handles inline but SDK path bubbles up
     "rate limit",
     "ratelimit",
+    "overloaded",
+    "529",
+    "internalservererror",
+    "500",
+    "502",
+    "503",
+    "504",
+    "408",
+    "api_status_408",
     "api_status_5",                    # api_status_5XX
     "api_status_429",                  # 429 from wrapper after its own retry exhausted
 )
@@ -561,8 +570,13 @@ def _call_judge_anthropic(prompt: str, timeout_s: float = 30.0) -> dict[str, Any
         return {"judge_error": f"sdk_init_failed: {exc}"[:200]}
 
     try:
+        model = (
+            _JUDGE_MODEL
+            if _JUDGE_MODEL and _JUDGE_MODEL != _DEFAULT_JUDGE_MODEL
+            else "claude-sonnet-5"
+        )
         response = client.messages.create(
-            model=_JUDGE_MODEL,
+            model=model,
             system=_JUDGE_SYSTEM,
             messages=[{"role": "user", "content": prompt}],
             max_tokens=_judge_max_tokens(),
@@ -843,7 +857,7 @@ def _resolve_caller(provider: str, timeout_s: float = 30.0) -> Callable[[str], d
         return lambda p: _call_judge_groq(p, timeout_s=timeout_s)
     if provider == "gemini":
         return lambda p: _call_judge_gemini(p, timeout_s=timeout_s)
-    if provider == "bedrock" or os.getenv("P2P_GRAPH_RAG_PROVIDER", "").strip().lower() == "bedrock":
+    if provider == "bedrock" or (provider in ("", "auto") and os.getenv("P2P_GRAPH_RAG_PROVIDER", "").strip().lower() == "bedrock"):
         return lambda p: _call_judge_bedrock(p, timeout_s=timeout_s)
     # "wrapper" or anything else falls back to the wrapper (historical
     # default) — runner_v2 / bench-runner sidecars produced pre-R66-C
@@ -961,7 +975,11 @@ def _aggregate_judge(rows: list[dict[str, Any]]) -> dict[str, Any]:
             if v.get("judge_error"):
                 errors += 1
                 continue
-            verdict = (v.get("verdict") or "").lower()
+            raw_v = v.get("verdict")
+            if isinstance(raw_v, bool):
+                verdict = "pass" if raw_v else "fail"
+            else:
+                verdict = str(raw_v or "").strip().rstrip(".").lower()
             if verdict == "pass":
                 passes += 1
             elif verdict == "fail":

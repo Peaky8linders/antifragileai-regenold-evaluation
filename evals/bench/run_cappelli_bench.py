@@ -103,7 +103,7 @@ def load_dataset() -> list[dict[str, Any]]:
 
 # The live path is where the product is. ``cli`` is a deterministic probe, not a
 # grading instrument — see the module docstring.
-_DEFAULT_PROVIDER = "openai_wrapper"
+_DEFAULT_PROVIDER = "openrouter"
 
 # R338/[I7] — the route only serialises the reasoning trace when asked, and the
 # trace is the ONLY place ``stage2_polish`` / ``stage2_model=`` live. Same query

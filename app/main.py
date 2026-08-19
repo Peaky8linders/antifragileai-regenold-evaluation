@@ -131,6 +131,33 @@ def _log_llm_provider_status() -> None:
             configured,
             settings.graph_rag.model,
         )
+    elif provider_label == "openrouter":
+        from app.llm.openai_wrapper_provider import is_openrouter_provider_enabled
+        configured = is_openrouter_provider_enabled()
+        logger.info(
+            "regenold.startup provider=openrouter api_key_configured=%s model=%s "
+            "intent_model=%s graph_rag_model=%s",
+            configured,
+            settings.graph_rag.model,
+            _intent_model_for_log(),
+            settings.graph_rag.model,
+        )
+    elif provider_label == "bedrock":
+        try:
+            from app.llm.bedrock_client import is_bedrock_provider_enabled, _resolve_region, _resolve_default_model
+            configured = is_bedrock_provider_enabled()
+            region = _resolve_region()
+            default_m = _resolve_default_model()
+        except Exception:
+            configured = False
+            region = "unknown"
+            default_m = "unknown"
+        logger.info(
+            "regenold.startup provider=bedrock configured=%s region=%s model=%s",
+            configured,
+            region,
+            default_m,
+        )
     else:
         logger.info(
             "regenold.startup provider=%s (deterministic path; no LLM calls)",

@@ -1217,24 +1217,19 @@ model A/B, and note the trace reports the model actually sent.
 
 ## LLM provider story
 
-`P2P_GRAPH_RAG_PROVIDER` selects one of four mutually exclusive paths:
+`P2P_GRAPH_RAG_PROVIDER` selects one of the following paths:
 
 | Value | Behaviour | Setup |
 | --- | --- | --- |
-| `cli` | Pure deterministic, no LLM, sub-10 ms. **This is what davidath runs.** | none |
-| `anthropic` | Stage-1 + Stage-2 via Anthropic SDK (per-token billing) | `P2P_GRAPH_RAG_API_KEY=sk-ant-…` |
-| `openai_wrapper` / `auto`* | Stage-1 + Stage-2 + Stage-0 intent via the Claude Code Max wrapper | wrapper on `127.0.0.1:8000` or the tunnel + `OPENAI_API_BASE` |
+| `openrouter` / `auto`* | Stage-1 + Stage-2 via OpenRouter (Opus 4.6 / Sonnet 4.6 / Qwen 3) with Bedrock fallback | `OPENROUTER_API_KEY=sk-or-…` |
+| `openai_wrapper` | Stage-1 + Stage-2 + Stage-0 intent via the Claude Code Max wrapper | wrapper on `127.0.0.1:8000` or the tunnel + `OPENAI_API_BASE` |
 | `bedrock` | Stage-1 + Stage-2 + judge via AWS Bedrock **EU cross-region inference** (R328). | `AWS_BEARER_TOKEN_BEDROCK` (or `AWS_ACCESS_KEY_ID`/`_SECRET_ACCESS_KEY`) |
+| `anthropic` | Stage-1 + Stage-2 via Anthropic SDK (per-token billing) | `P2P_GRAPH_RAG_API_KEY=sk-ant-…` |
+| `cli` | Pure deterministic, no LLM, sub-10 ms. **This is what davidath runs.** | none |
 
-⚠ **CORRECTED 2026-08-14.** `* auto` (and unset, and empty) resolves to
-**`openai_wrapper`**, NOT to "`anthropic` when a key is set, else `cli`" as this
-table claimed for months. `resolve_provider` defaults `default_when_auto="openai_wrapper"`
-(`app/llm/__init__.py:16,32`) and **every** call site passes that value explicitly
-(`_graph_rag_impl.py:217`, `main.py:34,90,1025`). An AWS credential alone never
-selects Bedrock: every dispatch site is an equality test on the literal string
-`"bedrock"`, and `is_bedrock_provider_enabled()` is consulted only *inside* that
-branch. Every sub-pipeline falls back to a deterministic equivalent on error, so
-the route never 500s on a downed LLM.
+⚠ **Provider Hierarchy:** `* auto` (and unset, and empty) resolves via `default_when_auto="openrouter"`
+(`app/llm/__init__.py`, `app/main.py`). The provider cascade tries OpenRouter first, then Bedrock, then Anthropic/wrapper.
+Every sub-pipeline falls back to a deterministic equivalent on error, so the route never 500s on a downed LLM.
 
 ⚠ **The deployed provider is NOT derivable from the repo, and it is NOT
 STABLE.** Nothing checked in establishes it — the code default with no env var

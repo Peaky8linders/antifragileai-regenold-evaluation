@@ -357,7 +357,7 @@ def _resolve_run_provider(provider: str | None) -> str:
         os.environ["P2P_GRAPH_RAG_PROVIDER"] = provider
     return resolve_provider(
         os.environ.get("P2P_GRAPH_RAG_PROVIDER"),
-        default_when_auto="openai_wrapper",
+        default_when_auto="openrouter",
     )
 
 

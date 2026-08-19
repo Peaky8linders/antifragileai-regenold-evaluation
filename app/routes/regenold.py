@@ -1879,6 +1879,7 @@ def _engine_cache_key(
             "REGENOLD_STAGE2_COMPLEX_MODEL_OPENROUTER",
             "REGENOLD_OPENROUTER_ROUTING",
             "REGENOLD_OPENROUTER_FALLBACK_CHAIN",
+            "REGENOLD_OPENROUTER_MAX_TOKENS",
             # R328.2 — this gates whether Stage-2 LANDS AT ALL (a rejected
             # verdict falls back to deterministic Stage-1), so it changes both
             # the answer and the references. It was missing from this list while
@@ -4308,8 +4309,10 @@ def _last_assistant_content(messages: object) -> str:
     """Text of the most recent assistant turn, or ``""``."""
     try:
         for msg in reversed(list(messages or [])):
-            if getattr(msg, "role", None) == "assistant":
-                return str(getattr(msg, "content", "") or "")
+            role = msg.get("role") if isinstance(msg, dict) else getattr(msg, "role", None)
+            if role == "assistant":
+                content = msg.get("content") if isinstance(msg, dict) else getattr(msg, "content", "")
+                return str(content or "")
     except Exception:  # noqa: BLE001
         return ""
     return ""
@@ -4737,10 +4740,10 @@ _CONTRAST_BEHIND_RE = re.compile(
 # Postpositive negation cues: "Article 50 does not apply", "Annex III is not applicable", "Article 50 obligations do not apply", "Article 6 is therefore excluded"
 _NEGATION_AHEAD_RE = re.compile(
     r"^\s*(?:\([^)]*\)\s*)*(?:,\s*)?"
-    r"(?:(?:obligations?|requirements?|duties|rules?|provisions?)\s+)?"
-    r"(?:(?:is|are|would\s+be|was|were)\s+)?"
-    r"(?:therefore\s+|currently\s+|automatically\s+)?"
-    r"(?:does\s+not\s+apply|do\s+not\s+apply|"
+    r"(?:(?:obligations?|requirements?|duties|rules?|provisions?|human\s+oversight|data\s+governance|risk\s+management|logging|transparency)\s+)?"
+    r"(?:(?:is|are|would\s+be|was|were|shall|will|can|could|may|might|does|do|did)\s+)?"
+    r"(?:(?:therefore|currently|automatically|generally|specifically|clearly|thus|strictly)\s+)?"
+    r"(?:(?:does|do|did|shall|will|can|could|may|might)\s+not\s+apply|"
     r"is\s+not\s+applicable|are\s+not\s+applicable|not\s+applicable|"
     r"is\s+inapplicable|are\s+inapplicable|inapplicable|"
     r"is\s+excluded|are\s+excluded|excluded|"
@@ -4749,6 +4752,10 @@ _NEGATION_AHEAD_RE = re.compile(
     r"is\s+outside\s+the\s+scope|are\s+outside\s+the\s+scope|outside\s+the\s+scope|"
     r"is\s+not\s+required|are\s+not\s+required|not\s+required|"
     r"falls\s+outside|fall\s+outside)\b",
+    re.IGNORECASE,
+)
+_INTRO_PREP_BEHIND_RE = re.compile(
+    r"\b(?:under|pursuant\s+to|in\s+accordance\s+with|in\s+terms\s+of|as\s+per)\s*$",
     re.IGNORECASE,
 )
 
@@ -4778,7 +4785,8 @@ def _prose_mention_is_real_citation(prose: str, start: int, end: int) -> bool:
     m_reg = _NUMBERED_REG_RE.search(ahead)
     if m_reg and m_reg.group(1) != "2024/1689":
         return False  # a different numbered EU Regulation
-    if _NEGATION_AHEAD_RE.search(ahead):
+    is_intro_clause = bool(_INTRO_PREP_BEHIND_RE.search(prose[max(0, start - 30) : start]))
+    if not is_intro_clause and _NEGATION_AHEAD_RE.search(ahead):
         return False  # postpositive negation ("Article 50 does not apply")
     # R311 — widened 24 -> 60 chars so the cue + up to four intervening words
     # fit in the window (see ``_CONTRAST_BEHIND_RE``).
@@ -6654,9 +6662,11 @@ def _extract_conversation_anchors(turns: list[Any]) -> str:
     for turn in turns:
         # R91 — only consult USER turns; assistant text is untrusted for
         # anchor extraction (see docstring).
-        if getattr(turn, "role", "") != "user":
+        turn_role = turn.get("role") if isinstance(turn, dict) else getattr(turn, "role", "")
+        if turn_role != "user":
             continue
-        full_text: str = turn.content if turn.content else ""
+        turn_content = turn.get("content") if isinstance(turn, dict) else getattr(turn, "content", "")
+        full_text: str = str(turn_content or "")
         text_lower = full_text.lower()
 
         # Article / Annex references — preserve original capitalisation
@@ -6950,9 +6960,12 @@ def _rewrite_multiturn_query(
 
     # Build a compact context block from the last 4 turns max
     context_turns = history_turns[-4:]
+    def _c_role(m: Any) -> str:
+        return (m.get("role") if isinstance(m, dict) else getattr(m, "role", "user")) or "user"
+    def _c_content(m: Any) -> str:
+        return (m.get("content") if isinstance(m, dict) else getattr(m, "content", str(m))) or ""
     context_block = "\n".join(
-        f"{getattr(m, 'role', 'user').capitalize()}: "
-        f"{getattr(m, 'content', str(m)).strip()[:300]}"
+        f"{_c_role(m).capitalize()}: {_c_content(m).strip()[:300]}"
         for m in context_turns
     )
     user_prompt = (
@@ -7282,6 +7295,7 @@ def _build_question_from_history(messages: list[Any]) -> QuestionHistoryResult:
     # anchor line will carry forward as a scope anchor too.
     anchor_line = _extract_conversation_anchors(all_prior_turns) if all_prior_turns else ""
 
+    max_chars = _max_question_chars()
     _salvaged = False  # R131 — set when the deterministic de-noiser salvage fires
     _self_contained_focus = False  # R133.1 — focus scope + R88-A on the live turn
 
@@ -7365,6 +7379,22 @@ def _build_question_from_history(messages: list[Any]) -> QuestionHistoryResult:
                         f"Target inquiry to answer:\n"
                         f"{_root_q}"
                     )
+                    if len(q_combined) > max_chars:
+                        live_marker = "Latest question:\n"
+                        marker_idx = q_combined.rfind(live_marker)
+                        if marker_idx >= 0:
+                            live_part = q_combined[marker_idx:]
+                            if len(live_part) >= max_chars:
+                                head_budget = max_chars - len(live_marker)
+                                q_combined = live_marker + live_part[len(live_marker):][:head_budget]
+                            else:
+                                history_budget = max_chars - len(live_part)
+                                history_part = q_combined[:marker_idx][-history_budget:]
+                                q_combined = history_part + live_part
+                        else:
+                            q_combined = q_combined[-max_chars:]
+                    if system_context is not None and len(system_context) > 1000:
+                        system_context = system_context[:1000]
                     return QuestionHistoryResult(
                         q_combined,
                         system_context,
@@ -7418,7 +7448,7 @@ def _build_question_from_history(messages: list[Any]) -> QuestionHistoryResult:
         # (graphrag_expand.should_expand_for_question, R72
         # _reconcile_references_to_prose guard).
         _scenario_shape_in_prior = any(
-            _looks_like_scenario_shape(getattr(t, "content", "") or "")
+            _looks_like_scenario_shape(_msg_content(t))
             for t in history_turns
         ) or _looks_like_scenario_shape(live_question)
         _denoised_dropped_shape = (
