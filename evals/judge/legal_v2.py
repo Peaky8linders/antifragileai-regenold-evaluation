@@ -145,7 +145,7 @@ from evals.judge.grounded import (  # reuse the sidecar-loading + row-norm plumb
     _has_independent_answer_grounding,
 )
 
-_DEFAULT_MODEL = "claude-sonnet-5"
+_DEFAULT_MODEL = "qwen.qwen3-32b-v1:0"
 
 AXES: tuple[str, ...] = (
     "answer_correctness",
@@ -1842,7 +1842,11 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--sidecar", required=True, type=Path)
     p.add_argument("--label", required=True)
     p.add_argument("--model", default=_DEFAULT_MODEL)
-    p.add_argument("--provider", choices=("wrapper", "anthropic", "groq", "gemini", "bedrock"), default="wrapper")
+    p.add_argument(
+        "--provider",
+        choices=("wrapper", "anthropic", "groq", "gemini", "bedrock", "openrouter"),
+        default="bedrock",
+    )
     p.add_argument("--timeout", type=float, default=90.0)
     p.add_argument("--concurrency", type=int, default=2)
     p.add_argument("--limit", type=int, default=None)

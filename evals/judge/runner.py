@@ -102,11 +102,9 @@ _JUDGE_SYSTEM = (
 )
 
 # Default judge model — overridable via the CLI ``--model`` flag.
-# ``claude-sonnet-4-6`` is the historical default the R66-C pipeline
-# was tuned against; operators wanting a stronger (and more expensive)
-# judge can pass ``--model claude-opus-4-7`` for runs where the
-# additional reasoning quality is worth the extra latency + spend.
-_DEFAULT_JUDGE_MODEL = "claude-sonnet-4-6"
+# `qwen.qwen3-32b-v1:0` via Bedrock is the standard zero-openrouter-token
+# judge model used for reliable, cost-effective evaluation runs.
+_DEFAULT_JUDGE_MODEL = "qwen.qwen3-32b-v1:0"
 _JUDGE_MODEL: str = _DEFAULT_JUDGE_MODEL
 
 
@@ -271,7 +269,7 @@ def _call_judge_bedrock(prompt: str, timeout_s: float = 30.0) -> dict[str, Any]:
     # name onto its EU cross-region profile.
     model_id = os.getenv("REGENOLD_BEDROCK_JUDGE_MODEL", "").strip()
     if not model_id:
-        model_id = resolve_bedrock_model(_JUDGE_MODEL or "claude-sonnet-5")
+        model_id = resolve_bedrock_model(_JUDGE_MODEL or "qwen.qwen3-32b-v1:0")
     # NOT the wrapper path's 400. Bedrock honours the system prompt (the Claude
     # Max wrapper drops it), so the judge reasons in prose before emitting its
     # JSON — at 400 tokens it gets cut off mid-reasoning and the row comes back

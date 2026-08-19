@@ -1275,10 +1275,10 @@ def main() -> None:
                     default=None,
                     help="force the probe-sensitivity control layer "
                          "(default: inferred from the branch flag name)")
-    ap.add_argument("--judge-model", default="claude-sonnet-4-6",
+    ap.add_argument("--judge-model", default="qwen.qwen3-32b-v1:0",
                     help="legal_v2 judge model (R349 answer-level axes)")
     ap.add_argument("--judge-provider",
-                    choices=("wrapper", "anthropic", "groq", "gemini", "bedrock"),
+                    choices=("wrapper", "anthropic", "groq", "gemini", "bedrock", "openrouter"),
                     default="bedrock")
     ap.add_argument("--judge-concurrency", type=int, default=4)
     ap.add_argument("--judge-timeout", type=float, default=120.0)
