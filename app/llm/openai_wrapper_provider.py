@@ -519,6 +519,18 @@ class _OpenAIWrapperProvider:
                 "max_tokens": req.reasoning_max_tokens,
                 "exclude": False,
             }
+            # THINK-TEMP-05 — Anthropic rejects a temperature other than 1 when
+            # extended thinking is enabled. This repo already encodes that
+            # contract on the sibling transport
+            # (``bedrock_client._build_converse_kwargs``: "Claude requires
+            # temperature == 1 when thinking is enabled (a plain 0 is rejected
+            # too)"), but the OpenRouter path shipped ``temperature: 0.0``
+            # alongside ``reasoning``. One concept, one definition — and the
+            # failure mode was expensive AND invisible: a 400 here is treated
+            # as a plain error, so every complex row would roll to
+            # ``deepseek/deepseek-v4-flash`` while the trace named Opus 5.
+            if "anthropic/" in _model_lc or _model_lc.startswith("claude"):
+                body["temperature"] = 1.0
         elif not _is_claude_cli_wrapper:
             effort = (req.reasoning_effort or "").strip().lower()
             if not effort:

@@ -47,6 +47,7 @@ load_dotenv()
 from evals.judge.runner import (  # reuse the battle-tested call plumbing
     _call_judge_with_retry,
     _resolve_caller,
+    normalise_verdict as _verdict,
     set_judge_model,
 )
 
@@ -489,7 +490,7 @@ def _aggregate(judged: list[dict[str, Any]]) -> dict[str, Any]:
             v = (row.get("verdicts") or {}).get(axis) or {}
             if v.get("judge_error"):
                 e += 1; continue
-            verd = str(v.get("verdict") or "").lower()
+            verd = _verdict(v)
             if verd == "pass":
                 p += 1
             elif verd == "fail":

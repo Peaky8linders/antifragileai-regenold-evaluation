@@ -50,6 +50,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import threading
 import time
@@ -106,15 +107,25 @@ _JUDGE_SYSTEM = (
 # judge model used for reliable, cost-effective evaluation runs.
 _DEFAULT_JUDGE_MODEL = "qwen.qwen3-32b-v1:0"
 _JUDGE_MODEL: str = _DEFAULT_JUDGE_MODEL
+_JUDGE_MODEL_EXPLICIT: bool = False
+"""C5 — whether the judge model was CHOSEN or merely defaulted.
+
+The non-Bedrock transports substitute a Claude id when the configured model is
+not one they can serve, and they decided that by comparing the VALUE against
+``_DEFAULT_JUDGE_MODEL``. So an operator who explicitly passed
+``--model qwen.qwen3-32b-v1:0`` was silently graded on ``claude-sonnet-5``
+while the sidecar recorded the qwen id — an active false attribution, which is
+worse than no record."""
 
 
-def set_judge_model(model: str) -> None:
+def set_judge_model(model: str | None) -> None:
     """Module-level override for the judge model. Called by ``main`` from
     the CLI ``--model`` flag before any judge call fires. Goes through a
     helper rather than direct global assignment so future tests can
     monkey-patch the same surface."""
-    global _JUDGE_MODEL
+    global _JUDGE_MODEL, _JUDGE_MODEL_EXPLICIT
     _JUDGE_MODEL = (model or _DEFAULT_JUDGE_MODEL).strip()
+    _JUDGE_MODEL_EXPLICIT = model is not None and bool(str(model).strip())
 
 
 # Retryable failure SHAPES (judge_error string fragments). Mirrors the
@@ -144,14 +155,16 @@ _RETRYABLE_ERROR_SUBSTRINGS: tuple[str, ...] = (
     "rate limit",
     "ratelimit",
     "overloaded",
-    "529",
     "internalservererror",
-    "500",
-    "502",
-    "503",
-    "504",
-    "408",
-    "api_status_408",
+    "serviceunavailable",
+    "badgateway",
+    "gatewaytimeout",
+    "requesttimeout",
+    # HTTP status codes are matched by ``_RETRYABLE_STATUS_RE`` below, ANCHORED
+    # to a status-ish token. Bare "500"/"408"/... substrings matched an AWS
+    # account id, a token count, a request id and a model name — measured, 6 of
+    # 10 realistic PERMANENT errors classified as retryable, which burns budget
+    # and disguises a dead key as a transient blip.
     "api_status_5",                    # api_status_5XX
     "api_status_429",                  # 429 from wrapper after its own retry exhausted
 )
@@ -169,6 +182,12 @@ _NON_RETRYABLE_ERROR_SUBSTRINGS: tuple[str, ...] = (
     "no_api_key",                      # no key configured
     "authentication",                  # 401/403 from upstream
     "permission",                      # 403 from upstream
+)
+
+
+_RETRYABLE_STATUS_RE = re.compile(
+    r"(?:api_status_|status[ _]?code[:= ]?|http[ _]?|error[ _]?)(408|429|5\d\d)\b",
+    re.IGNORECASE,
 )
 
 
@@ -194,6 +213,9 @@ def is_retryable_judge_error(error_message: str) -> bool:
     for marker in _RETRYABLE_ERROR_SUBSTRINGS:
         if marker in lower:
             return True
+    # A 3-digit code counts only next to a status-ish token — never bare.
+    if _RETRYABLE_STATUS_RE.search(lower):
+        return True
     return False
 
 
@@ -219,11 +241,7 @@ def _call_judge_sonnet(prompt: str, timeout_s: float = 30.0) -> dict[str, Any]:
     if not is_openai_wrapper_enabled():
         return {"judge_error": "wrapper_not_configured"}
     provider = get_openai_wrapper_provider()
-    model = (
-        _JUDGE_MODEL
-        if _JUDGE_MODEL and _JUDGE_MODEL != _DEFAULT_JUDGE_MODEL
-        else "claude-sonnet-5"
-    )
+    model = _JUDGE_MODEL if (_JUDGE_MODEL and _JUDGE_MODEL_EXPLICIT) else "claude-sonnet-5"
     req = OpenAIWrapperRequest(
         system=_JUDGE_SYSTEM,
         user=prompt,
@@ -506,7 +524,7 @@ def _call_judge_openrouter(prompt: str, timeout_s: float = 30.0) -> dict[str, An
 
     model = os.environ.get("OPENROUTER_JUDGE_MODEL", "").strip()
     if not model:
-        if _JUDGE_MODEL and _JUDGE_MODEL != _DEFAULT_JUDGE_MODEL:
+        if _JUDGE_MODEL and _JUDGE_MODEL_EXPLICIT:
             model = _JUDGE_MODEL
         else:
             model = "anthropic/claude-sonnet-5"
@@ -570,11 +588,7 @@ def _call_judge_anthropic(prompt: str, timeout_s: float = 30.0) -> dict[str, Any
         return {"judge_error": f"sdk_init_failed: {exc}"[:200]}
 
     try:
-        model = (
-            _JUDGE_MODEL
-            if _JUDGE_MODEL and _JUDGE_MODEL != _DEFAULT_JUDGE_MODEL
-            else "claude-sonnet-5"
-        )
+        model = _JUDGE_MODEL if (_JUDGE_MODEL and _JUDGE_MODEL_EXPLICIT) else "claude-sonnet-5"
         response = client.messages.create(
             model=model,
             system=_JUDGE_SYSTEM,
@@ -959,6 +973,25 @@ def _run_judge(
 # ── Aggregation (per-axis pass rate + failure-mode buckets) ─────────────
 
 
+def normalise_verdict(v: dict[str, Any]) -> str:
+    """The ONE reading of a judge ``verdict`` field. Returns "pass"/"fail"/"".
+
+    I3 — ``_aggregate_judge`` learned to read a boolean ``{"verdict": true}``
+    and a punctuated ``"Pass."``; every SIBLING consumer of the very same
+    ``_parse_judge_json`` output kept the raw ``str(...).lower()`` form, which
+    yields ``"true"`` and ``"pass."`` — neither equal to ``"pass"``. Executed
+    on the identical three rows, ``runner._aggregate_judge`` scored 3/3 pass
+    while ``legal_v2._aggregate`` scored 1/3 with 2 errors. In ``dynamic_ab``
+    (the MERGE GATE) the same divergence made ``_scorable`` reject those rows
+    outright, silently shrinking the paired sample. One concept, one
+    definition.
+    """
+    raw = v.get("verdict")
+    if isinstance(raw, bool):
+        return "pass" if raw else "fail"
+    return str(raw or "").strip().rstrip(".").lower()
+
+
 def _aggregate_judge(rows: list[dict[str, Any]]) -> dict[str, Any]:
     per_axis: dict[str, dict[str, Any]] = {}
     for axis in AXES:
@@ -975,11 +1008,7 @@ def _aggregate_judge(rows: list[dict[str, Any]]) -> dict[str, Any]:
             if v.get("judge_error"):
                 errors += 1
                 continue
-            raw_v = v.get("verdict")
-            if isinstance(raw_v, bool):
-                verdict = "pass" if raw_v else "fail"
-            else:
-                verdict = str(raw_v or "").strip().rstrip(".").lower()
+            verdict = normalise_verdict(v)
             if verdict == "pass":
                 passes += 1
             elif verdict == "fail":
@@ -1222,7 +1251,7 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     parser.add_argument(
-        "--model", default=_DEFAULT_JUDGE_MODEL,
+        "--model", default=None,
         help=(
             f"Judge model id (default {_DEFAULT_JUDGE_MODEL}). Pass "
             "'claude-opus-4-7' for higher-quality reasoning runs at extra "

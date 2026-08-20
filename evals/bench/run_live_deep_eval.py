@@ -347,7 +347,7 @@ def _resolve_run_provider(provider: str | None) -> str:
        (it is the only case that writes to the environment);
     2. otherwise an exported ``P2P_GRAPH_RAG_PROVIDER`` stands, untouched;
     3. otherwise unset/``auto`` resolves the way the engine itself resolves it,
-       via the canonical :func:`app.llm.resolve_provider` — to ``openai_wrapper``.
+       via the canonical :func:`app.llm.resolve_provider` — to ``openrouter``.
 
     Note that in case 3 nothing is written either: the engine performs the same
     resolution internally, so the returned value is a REPORT of what will run,

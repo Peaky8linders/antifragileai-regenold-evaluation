@@ -106,6 +106,13 @@ from pathlib import Path
 from typing import Any
 
 from app.integrations.regenold import refs as central_refs
+from evals.judge.runner import normalise_verdict as _norm_verdict
+
+# M4 — ONE judge-model default. The function signature said
+# ``claude-sonnet-4-6`` while the CLI flag said ``qwen.qwen3-32b-v1:0``, so a
+# programmatic caller and a command-line caller graded the SAME canonical axes
+# (ans_corr / ref_corr / cite_faith / ans_conc) on two different rulers.
+_DEFAULT_JUDGE_MODEL = 'qwen.qwen3-32b-v1:0'
 from evals.bench import metrics as bench_metrics
 from evals.harness.probe_set import ProbeRow, load_probe_set
 
@@ -312,8 +319,8 @@ def _judge_axes(
             vb = (base["judged"][rid].get("verdicts") or {}).get(ax) or {}
             vc = (branch["judged"][rid].get("verdicts") or {}).get(ax) or {}
             if _scorable(vb) and _scorable(vc):
-                sb = str(vb.get("verdict") or "").lower()
-                sc = str(vc.get("verdict") or "").lower()
+                sb = _norm_verdict(vb)
+                sc = _norm_verdict(vc)
                 deltas.append((1.0 if sc == "pass" else 0.0)
                               - (1.0 if sb == "pass" else 0.0))
             else:
@@ -335,12 +342,12 @@ def _judge_axes(
         pairs = [rid for rid in common if _pair_scored(base, branch, ax, rid)]
         axes[label] = {
             "baseline": st.fmean(
-                1.0 if str(((base["judged"][rid].get("verdicts") or {})
-                            .get(ax) or {}).get("verdict") or "").lower() == "pass"
+                1.0 if _norm_verdict((base["judged"][rid].get("verdicts") or {})
+                                .get(ax) or {}) == "pass"
                 else 0.0 for rid in pairs),
             "branch": st.fmean(
-                1.0 if str(((branch["judged"][rid].get("verdicts") or {})
-                            .get(ax) or {}).get("verdict") or "").lower() == "pass"
+                1.0 if _norm_verdict((branch["judged"][rid].get("verdicts") or {})
+                                .get(ax) or {}) == "pass"
                 else 0.0 for rid in pairs),
             "delta": mean, "ci_lo": lo, "ci_hi": hi,
             "n_changed": sum(1 for d in deltas if d != 0),
@@ -369,7 +376,7 @@ def _scorable(v: dict[str, Any]) -> bool:
     """
     if v.get("judge_error") or v.get("evaluation_error"):
         return False
-    return str(v.get("verdict") or "").lower() in ("pass", "fail")
+    return _norm_verdict(v) in ("pass", "fail")
 
 
 def _pair_scored(base: dict[str, Any], branch: dict[str, Any], ax: str, rid: str) -> bool:
@@ -755,7 +762,7 @@ def run(
     min_rows: int = 0,
     control_layer: str | None = None,
     min_gap: float = 0.0,
-    judge_model: str | None = "claude-sonnet-4-6",
+    judge_model: str | None = _DEFAULT_JUDGE_MODEL,
     judge_provider: str = "bedrock",
     judge_concurrency: int = 4,
     judge_timeout: float = 120.0,
@@ -1275,7 +1282,7 @@ def main() -> None:
                     default=None,
                     help="force the probe-sensitivity control layer "
                          "(default: inferred from the branch flag name)")
-    ap.add_argument("--judge-model", default="qwen.qwen3-32b-v1:0",
+    ap.add_argument("--judge-model", default=_DEFAULT_JUDGE_MODEL,
                     help="legal_v2 judge model (R349 answer-level axes)")
     ap.add_argument("--judge-provider",
                     choices=("wrapper", "anthropic", "groq", "gemini", "bedrock", "openrouter"),
