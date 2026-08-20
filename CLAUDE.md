@@ -542,6 +542,56 @@ that the instance is pristine.
   still cites Art. 13 via retrieval with correct attribution; la_q45 unchanged
   (pre-existing generation-side gap). 140-row leak probe: 0 wrong-direction
   claims. Record: `docs/R371.6-ontology-misfact-audit.md`.
+* **R377 — end-to-end validation of the OpenRouter Stage-2 configuration (2026-08-20).**
+  Validated IN-PROCESS with the HTTP boundary stubbed (no live keys in this
+  environment — see the caveat below), so the real body builder, model routing,
+  thinking budget, rollover chain and cross-provider fallback all executed.
+  Pins: `tests/test_r377_openrouter_kg_wiring.py` (17). Suite **7005 passed / 0
+  failed**, `runner` **255/255**, RISK_F1 **1.00**, OOS **49 / 0 leaks**.
+  * **Routing confirmed as specified.** simple → `anthropic/claude-sonnet-5`,
+    temp 0.0, no `reasoning`; complex → `anthropic/claude-opus-5`, temp **1.0**,
+    `reasoning={"max_tokens": 2048}`. Held on the pushback turn too.
+  * **Bedrock fallback confirmed**, and one real defect fixed:
+    `_bedrock_complete_for_graph_rag` never set `BedrockRequest.thinking_budget`,
+    so Bedrock was the ONE Stage-2 transport with NO deliberation — a
+    `complex=True` question that failed over from OpenRouter was answered with
+    `thinking_budget=0` while the primary used 2048. Same clamp and `> 0` guard
+    as the other three transports; `REGENOLD_BEDROCK_STAGE2_THINKING=0` is the
+    off-switch; registered in `_engine_cache_key` (the R334/R355 drift guards
+    caught the omission). This also makes R376's `record_llm_thinking` on that
+    path reachable — `resp.thinking` is only populated when a budget is sent.
+  * **Rerank made OBSERVABLE.** It reorders the citation set — a
+    reference-affecting lever — but left only `_bump` counters and a debug log.
+    Nothing in the eval pipeline reads logs, which is exactly how a
+    rate-limited reranker reads as a clean `+0.0000` wash instead of INERT. Now
+    emits `rerank_applied model=… docs=… reordered=…` into the reasoning trace.
+    Verified firing at BOTH placements through the route, capped at the budget
+    of 2, `rerank-v4.0-pro` with `max_tokens_per_doc=16384`.
+  * **`app/graph/client.py` carried the INVERTED backend-default comment** that
+    R318 fixed in its sibling — it claimed `embedded` was the default and
+    `neo4j` had to be explicit. `_DEFAULT_BACKEND = "neo4j"` since R313.1, so
+    Aura is the DEFAULT. R318 recorded why this matters: "it is how an audit
+    concludes the hosted graph is inactive when it is in fact serving every
+    request". Corrected and test-pinned.
+  * **Knowledge surface re-measured, 7/7 exact:** ARTICLE_EXISTENCE 126, KB
+    stubs 131, definitions 68, xrefs 248, tree 1,412, BM25 **373**
+    (131 kb / 48 ontology / 126 corpus / 68 definition), avg_doc_len 91.7.
+    TurboQuant enabled + compressed available;
+    `dense_top_k('serious incident reporting deadline')` → **Art. 73 @ 0.807**
+    (correct — the R338 corpus-identity fix is holding).
+  * **All 16 Stage-2 blocks deliver** when the graph client is live, including
+    the four KG blocks (`KNOWLEDGE-GRAPH PROVISION STRUCTURE` / `SUB-POINT
+    DETAIL` / `REGULATORY CLASSIFICATION` / `RECITAL ANCHORS`). ⚠ They render
+    ONLY with Aura reachable: `GraphClient._should_activate` needs
+    backend=`neo4j` **and** `NEO4J_URI` **and** the driver. With
+    `REGENOLD_GRAPH_BACKEND=embedded` (or no `NEO4J_URI`) the client is
+    disabled and all four are silently absent — the whole ontology/semantic
+    layer with them.
+  ⚠ **NOT live-verified.** This container has no `OPENROUTER_API_KEY`, no
+  Neo4j/Cohere credentials and placeholder AWS values, and the egress policy
+  denies `openrouter.ai`, `api.cohere.com`, the wrapper and the Railway domain
+  (403 CONNECT). Every claim above is in-process against stubbed transports:
+  it proves the WIRING, not the live behaviour, latency or answer quality.
 * **R376 — engineering review of the R372→`6c076bf` window (2026-08-20).**
   Two independent passes (validation of the 14 findings `6c076bf` claimed fixed,
   plus a fresh specialist sweep), each adversarially verified. **Only 5 of 14

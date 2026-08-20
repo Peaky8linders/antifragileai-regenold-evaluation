@@ -80,11 +80,16 @@ def _should_activate(settings: GraphSettings) -> bool:
     non-negotiable for the eval/test envs that don't set ``NEO4J_URI``.
     """
     # R127 — Aura activates only when the embedded graph is NOT the active
-    # backend (i.e. an explicit ``REGENOLD_GRAPH_BACKEND=neo4j``). The
-    # default backend is now ``embedded`` (in-process SQLite), so a deploy
-    # that still carries ``NEO4J_URI`` in its dashboard does not pay the Aura
-    # retrieval / boot-seed network cost unless it opts back in. Lazy import
-    # to avoid a hard dependency cycle at module load.
+    # backend. ⚠ R377 — this comment used to say "the default backend is now
+    # ``embedded`` … unless it opts back in", i.e. that ``neo4j`` had to be set
+    # EXPLICITLY. That is inverted: ``_DEFAULT_BACKEND = "neo4j"`` since R313.1,
+    # so the hosted graph is the DEFAULT and a deploy wanting the in-process
+    # SQLite backend must set ``REGENOLD_GRAPH_BACKEND=embedded`` explicitly.
+    # R318 corrected the identical inversion in the sibling docstring
+    # (``embedded_graph.neo4j_backend_selected``) and recorded why it matters:
+    # "it is how an audit concludes the hosted graph is inactive when it is in
+    # fact serving every request". One concept, one definition — this copy was
+    # the one still lying. Lazy import to avoid a dependency cycle at load.
     try:
         from app.graph.embedded_graph import neo4j_backend_selected
         if not neo4j_backend_selected():

@@ -715,6 +715,42 @@ def _bedrock_complete_for_graph_rag(
 
     model_id = resolve_bedrock_model(model)
 
+    # R377 — extended-thinking parity. ``BedrockRequest.thinking_budget``
+    # defaults to 0 and this function never set it, so Bedrock was the ONE
+    # Stage-2 transport with no deliberation at all: the wrapper
+    # (``X-Claude-Max-Thinking-Tokens``), Anthropic (``thinking``) and
+    # OpenRouter (``reasoning``) all send the configured budget. Demonstrated
+    # on the cross-provider fallback — a ``complex=True`` GPAI question that
+    # rolls over from OpenRouter was answered with ``thinking_budget=0`` while
+    # the primary would have used 2048 — so a failover silently downgraded the
+    # reasoning on exactly the hard questions the budget exists for. It also
+    # made the R376 ``record_llm_thinking(resp.thinking, ...)`` call
+    # unreachable, because ``resp.thinking`` is only populated when a budget is
+    # requested.
+    #
+    # Same clamp and the same ``> 0`` guard as the other three transports
+    # (``max(2048, min(x, 4096))``), so the simple tier — ``thinking_tokens``
+    # default 0 — is unchanged. ``bedrock_client._build_converse_kwargs``
+    # already raises ``maxTokens`` to ``budget + 512`` and pins
+    # ``temperature = 1.0`` when a budget is present, which is what Claude
+    # requires. ``REGENOLD_BEDROCK_STAGE2_THINKING=0`` disables it.
+    _bedrock_thinking = 0
+    if is_stage2 and os.getenv("REGENOLD_BEDROCK_STAGE2_THINKING", "1").strip().lower() not in (
+        "0", "false", "no", "off",
+    ):
+        try:
+            from app.config import settings as _bt_settings  # noqa: PLC0415
+
+            _bt_raw = int(
+                getattr(_bt_settings.graph_rag, "complex_thinking_tokens", 0) or 0
+            ) if complex_question else int(
+                getattr(_bt_settings.graph_rag, "thinking_tokens", 0) or 0
+            )
+        except Exception:  # noqa: BLE001 — never break Stage-2 over a budget
+            _bt_raw = 0
+        if _bt_raw > 0:
+            _bedrock_thinking = max(2048, min(_bt_raw, 4096))
+
     # R366.1 — cross-model Bedrock fallback chain. The operator's eval runs
     # hit hard 429 throttles on the Claude tiers mid-batch (measured: 256
     # throttles on a 63-row run → 32 rows 503). The verified-invocable
@@ -777,6 +813,7 @@ def _bedrock_complete_for_graph_rag(
                     model=_mid,
                     max_tokens=max_tokens or 1024,
                     temperature=temperature,
+                    thinking_budget=_bedrock_thinking,
                     timeout_seconds=_stage2_timeout,
                 ),
                 fallbacks=(),

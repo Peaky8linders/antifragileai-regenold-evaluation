@@ -1880,6 +1880,11 @@ def _engine_cache_key(
             "REGENOLD_OPENROUTER_ROUTING",
             "REGENOLD_OPENROUTER_FALLBACK_CHAIN",
             "REGENOLD_OPENROUTER_MAX_TOKENS",
+            # R377 — Bedrock Stage-2 extended-thinking parity. Engine-level: it
+            # changes the Converse request (and, via the client, maxTokens and
+            # temperature), so the two arms must be cache-distinct or an
+            # in-process A/B measures nothing.
+            "REGENOLD_BEDROCK_STAGE2_THINKING",
             # R328.2 — this gates whether Stage-2 LANDS AT ALL (a rejected
             # verdict falls back to deterministic Stage-1), so it changes both
             # the answer and the references. It was missing from this list while
