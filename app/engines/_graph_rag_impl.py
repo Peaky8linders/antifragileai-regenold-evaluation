@@ -634,6 +634,50 @@ BEDROCK_COMPLEX_MODEL = "eu.anthropic.claude-opus-5"
 """Complex tier — the ~20% of questions ``complex_question`` flags. Same
 restoration as :data:`BEDROCK_RAG_MODEL` (was opus-4-6-v1 in the window)."""
 
+BEDROCK_STAGE2_MODEL = "eu.anthropic.claude-sonnet-5"
+"""R376 — the SIMPLE Stage-2 answer tier on Bedrock.
+
+The operator's standing tier split is *Opus 5 for complex questions, Sonnet 5
+for simple ones*, and it was honoured on exactly one of the two providers.
+``app/config.py`` sets ``stage2_model='claude-sonnet-5'`` /
+``complex_model='claude-opus-5'``, and the OpenRouter path mirrors that with
+``anthropic/claude-sonnet-5`` / ``anthropic/claude-opus-5`` — but the Bedrock
+path routed a simple Stage-2 answer through :data:`BEDROCK_RAG_MODEL`, the
+Stage-1 parse tier, which is Opus 4.8. Measured on the wire (R376): a simple
+question that had degraded to Bedrock posted ``eu.anthropic.claude-opus-4-8``.
+
+The two constants are now distinct because they answer two different questions:
+:data:`BEDROCK_RAG_MODEL` is the Stage-1 *parse* tier (unchanged), and this is
+the Stage-2 *simple answer* tier. Override per-deploy with
+``REGENOLD_BEDROCK_STAGE2_MODEL``; ``REGENOLD_OPUS_FOR_ALL=1`` still lifts every
+Stage-2 call to the complex tier."""
+
+
+
+def _supports_extended_thinking(model_id: str) -> bool:
+    """True iff ``model_id`` is a Bedrock Claude tier that accepts ``reasoning_config``.
+
+    R376 — the guard that keeps the R366.1 cross-model rollover safe once the
+    Stage-2 path started sending an extended-thinking budget. The chain mixes
+    Anthropic tiers with qwen / nemotron / devstral, and
+    ``additionalModelRequestFields.reasoning_config`` is Anthropic-specific:
+    sending it to a non-Claude tier turns a recoverable throttle into a
+    ``ValidationException``, i.e. the rollover would break in exactly the
+    situation it exists for.
+
+    Matches on the Anthropic vendor segment of the model id / inference-profile
+    id (``eu.anthropic.claude-…``, ``anthropic.claude-…``), not on a bare
+    ``"claude"`` substring, so an unrelated tier that happens to carry the word
+    cannot opt itself in.
+    """
+    mid = (model_id or "").strip().lower()
+    if not mid:
+        return False
+    # Strip a geography prefix (``eu.`` / ``us.`` / ``apac.``) before matching.
+    head = mid.split(".", 2)
+    if len(head) >= 2 and head[0] in {"eu", "us", "apac", "global"}:
+        mid = ".".join(head[1:])
+    return mid.startswith("anthropic.claude")
 
 
 def _bedrock_complete_for_graph_rag(
@@ -675,7 +719,10 @@ def _bedrock_complete_for_graph_rag(
                 or BEDROCK_COMPLEX_MODEL
             )
         else:
-            model = os.getenv("REGENOLD_BEDROCK_STAGE2_MODEL", "").strip() or default_model
+            model = (
+                os.getenv("REGENOLD_BEDROCK_STAGE2_MODEL", "").strip()
+                or BEDROCK_STAGE2_MODEL
+            )
 
     else:
         model = os.getenv("REGENOLD_BEDROCK_STAGE1_MODEL", "").strip() or default_model
@@ -727,10 +774,58 @@ def _bedrock_complete_for_graph_rag(
         _stage2_timeout = 180.0
     if "stage 2" in (stage_name or "").lower() and (max_tokens or 0) < _stage2_ceiling:
         max_tokens = _stage2_ceiling
+    # R376 — EXTENDED THINKING ON THE BEDROCK STAGE-2 PATH.
+    #
+    # ``BedrockRequest.thinking_budget`` has existed since R355 and
+    # ``_build_converse_kwargs`` translates it into the Converse
+    # ``additionalModelRequestFields.reasoning_config`` block — but the Stage-2
+    # adapter never set it, so the budget was reachable only from the judge.
+    # The consequence was silent and asymmetric: a complex question answered by
+    # OpenRouter deliberated with 2048 thinking tokens, and the SAME question
+    # answered by the Bedrock fallback did not. Measured on the wire (R376), a
+    # complex Stage-2 Converse call carried
+    # ``additionalModelRequestFields: None``.
+    #
+    # The budget is the same ``settings.graph_rag.complex_thinking_tokens`` the
+    # OpenRouter path reads, clamped identically to [2048, 4096], so the two
+    # providers now deliberate to the same depth on the same question.
+    #
+    # CLAUDE-ONLY BY CONSTRUCTION. ``reasoning_config`` is an Anthropic field;
+    # the R366.1 rollover chain also carries qwen / nemotron / devstral tiers,
+    # which reject it with a ValidationException. The budget is therefore
+    # resolved PER MODEL inside the loop, not once for the whole chain — a
+    # thinking-enabled Claude primary that rolls over to qwen must drop the
+    # block on the way, or the rollover trades a throttle for a 400.
+    _thinking_budget = 0
+    if complex_question:
+        try:
+            from app.config import settings as _cfg  # noqa: PLC0415
+            _thinking_budget = int(
+                getattr(_cfg.graph_rag, "complex_thinking_tokens", 0) or 0
+            )
+        except Exception:  # noqa: BLE001
+            _thinking_budget = 0
+        if _thinking_budget > 0:
+            _thinking_budget = max(2048, min(_thinking_budget, 4096))
+
     try:
         provider = get_bedrock_provider()
         last_error = ""
         for _idx, _mid in enumerate(ordered):
+            _mid_thinking = (
+                _thinking_budget if _supports_extended_thinking(_mid) else 0
+            )
+            if _mid_thinking > 0:
+                try:
+                    from app.integrations.regenold.reasoning_trace import (  # noqa: PLC0415
+                        record_note as _rn,
+                    )
+                    _rn(
+                        f"bedrock_thinking_budget={_mid_thinking}"
+                        f" complex={complex_question} model={_mid}"
+                    )
+                except Exception:  # noqa: BLE001 — trace is best-effort
+                    pass
             # Each tier attempt routes through ``complete_with_fallback`` with
             # an EMPTY family chain: the R366.1 model rollover lives in the
             # outer loop here, so the inner call must not re-roll across the
@@ -745,6 +840,7 @@ def _bedrock_complete_for_graph_rag(
                     max_tokens=max_tokens or 1024,
                     temperature=temperature,
                     timeout_seconds=_stage2_timeout,
+                    thinking_budget=_mid_thinking,
                 ),
                 fallbacks=(),
             )
@@ -1210,9 +1306,49 @@ def _openai_wrapper_complete_for_graph_rag(
 
 _OPENROUTER_STAGE2_MODEL_DEFAULT = "anthropic/claude-sonnet-5"
 _OPENROUTER_COMPLEX_MODEL_DEFAULT = "anthropic/claude-opus-5"
-_OPENROUTER_FALLBACK_CHAIN_DEFAULT = (
-    "deepseek/deepseek-v4-flash,google/gemini-2.5-flash"
-)
+_OPENROUTER_FALLBACK_CHAIN_DEFAULT = "anthropic/claude-sonnet-5"
+"""R376 — the OpenRouter rollover DEGRADES within Anthropic; it never escalates,
+and it never changes model family.
+
+TWO THINGS WERE WRONG WITH THE PREVIOUS DEFAULT
+(``deepseek/deepseek-v4-flash,google/gemini-2.5-flash``):
+
+1. **It put a different model family ahead of the Bedrock Claude safety net.**
+   Measured end-to-end (R376) with the primary returning 429 on every call, the
+   wire order was ``anthropic/claude-opus-5 → deepseek/deepseek-v4-flash →
+   google/gemini-2.5-flash`` before Bedrock — configured, healthy, holding the
+   Claude tiers — saw a single request. Everything here is calibrated on Claude:
+   the Stage-2 system prompt, the truncation and verdict guards, and reference
+   conciseness, the one axis the official scorecard says we lead. Serving a
+   legal citation answer from another family to dodge one throttle trades that
+   away silently, and the trace records only a model name, so nobody reading the
+   answer would know.
+
+2. **A flat chain escalates on the simple tier.** ``app/llm/bedrock_client.py``
+   learned this already: ``fallback_chain_for`` returns the chain SUFFIX below
+   the requested model precisely so that pinning a cheap tier cannot retry on a
+   costlier one the operator did not choose. A flat list here would do exactly
+   that — a simple question pinned to Sonnet 5 would roll UP to an Opus tier.
+
+WHY ONE ENTRY IS THE RIGHT LENGTH. The de-duplication in
+``_openrouter_complete_for_graph_rag`` gives this constant tier-awareness for
+free: on a COMPLEX question the primary is ``anthropic/claude-opus-5`` and this
+appends a genuine degrade to the standard tier; on a SIMPLE question the primary
+already IS ``anthropic/claude-sonnet-5``, so it de-dupes away and the request
+goes straight to the cross-provider hop. No escalation is possible in either
+direction.
+
+It is also the honest limit of what is verified. ``anthropic/claude-sonnet-5``
+and ``anthropic/claude-opus-5`` are the two OpenRouter slugs this repo actually
+configures; older Anthropic slugs on OpenRouter are unverified from here, and
+CLAUDE.md's Bedrock section is emphatic that model ids are read from a catalog
+and never extrapolated. Guessing one would put a name on the wire that fails and
+rolls anyway — a wasted round-trip inside the request, on a scored latency axis.
+The fine-grained Anthropic ladder already exists one hop down, in Bedrock's
+``BEDROCK_FALLBACK_CHAINS``, against profile ids that were probed live.
+
+``REGENOLD_OPENROUTER_FALLBACK_CHAIN`` sets any other chain (including the
+previous one) in one env var — the mechanism is unchanged, only its default."""
 
 
 def _openrouter_routing_suffix() -> str:
@@ -1729,6 +1865,42 @@ def _anthropic_complete_for_graph_rag(
     return text
 
 
+def _stage2_fallback_provider_available() -> str | None:
+    """Name of the first configured cross-provider Stage-2 fallback, or ``None``.
+
+    R376 — the availability probe behind the pinned-provider degradation in
+    :func:`_stage2_provider_enabled`. Order mirrors the ``auto`` cascade that
+    function already implements (Bedrock → Anthropic SDK → Claude-Max wrapper),
+    so a pinned primary that cannot serve degrades to exactly the provider an
+    unpinned deploy would have used. Purely a readiness check: it constructs
+    nothing and calls no model.
+    """
+    try:
+        from app.llm.bedrock_client import is_bedrock_provider_enabled  # noqa: PLC0415
+
+        if is_bedrock_provider_enabled():
+            return "bedrock"
+    except Exception:  # noqa: BLE001 — a missing boto3 is just "no bedrock"
+        pass
+    try:
+        from app.config import settings  # noqa: PLC0415
+
+        if settings.graph_rag.api_key is not None:
+            return "anthropic"
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from app.llm.openai_wrapper_provider import (  # noqa: PLC0415
+            is_openai_wrapper_enabled,
+        )
+
+        if is_openai_wrapper_enabled():
+            return "openai_wrapper"
+    except Exception:  # noqa: BLE001
+        pass
+    return None
+
+
 def _stage2_provider_enabled() -> bool:
     """R56 — Stage-2 polish gate: True when EITHER openai_wrapper OR
     anthropic-SDK-direct is configured for the current request.
@@ -1760,7 +1932,42 @@ def _stage2_provider_enabled() -> bool:
         from app.llm.openai_wrapper_provider import is_openrouter_provider_enabled
         result = is_openrouter_provider_enabled()
         logger.debug("Stage2 openrouter provider enabled: %s", result)
-        return result
+        if result:
+            return True
+        # R376 — AN UNREACHABLE FALLBACK IS THE SAME AS NO FALLBACK.
+        #
+        # This branch used to ``return False`` here, which disabled Stage-2
+        # OUTRIGHT whenever ``P2P_GRAPH_RAG_PROVIDER=openrouter`` was pinned and
+        # ``OPENROUTER_API_KEY`` was absent — a lapsed key, a rotation, a typo
+        # in a Railway service variable. The gate sits ABOVE the whole Stage-2
+        # dispatch, so the cross-provider Bedrock safety net at the end of
+        # :func:`_claude_max_enhance_answer` was never reached: the request
+        # returned the deterministic Stage-1 answer, ``/healthz`` stayed green,
+        # and the only visible symptom was that answers quietly got worse.
+        #
+        # MEASURED (R376, end-to-end through the route with a live mock Bedrock
+        # on the wire): pinned ``openrouter`` + no key served the deterministic
+        # answer and issued **zero** Bedrock calls, with a fully healthy Bedrock
+        # configured. That is the repo's own "inert-feature trap", in the one
+        # place it costs production.
+        #
+        # The pin is a PREFERENCE for which provider serves Stage-2, not an
+        # instruction to switch Stage-2 off when that provider is unavailable.
+        # So an unusable primary degrades to the configured fallback here, and
+        # says so, exactly as ``auto`` already did.
+        fallback = _stage2_fallback_provider_available()
+        if fallback:
+            logger.warning(
+                "Stage2 provider pinned to openrouter but OPENROUTER_API_KEY is "
+                "absent — degrading to %s. Set the key to restore the primary.",
+                fallback,
+            )
+            return True
+        logger.warning(
+            "Stage2 provider pinned to openrouter but OPENROUTER_API_KEY is "
+            "absent and no fallback provider is configured — Stage-2 is OFF."
+        )
+        return False
     if env_value == "groq":
         from app.llm.openai_wrapper_provider import is_groq_provider_enabled
         result = is_groq_provider_enabled()
@@ -9331,13 +9538,36 @@ def _claude_max_enhance_answer(
                 _use_openrouter = is_openrouter_provider_enabled()
             except Exception:  # noqa: BLE001
                 _use_openrouter = False
-            # If openrouter is not enabled (e.g. key unset) and provider was auto/unset, try bedrock
-            if not _use_openrouter and _env_provider in ("auto", ""):
+            # R376 — an unusable OpenRouter degrades to Bedrock on the PINNED
+            # path too, not only on auto/unset.
+            #
+            # The ``_env_provider in ("auto", "")`` guard used to exclude the
+            # explicit ``openrouter`` pin, so a deploy with a lapsed key fell
+            # through every branch here into the wrapper ``else`` below and
+            # spent a full wrapper timeout against a host it has no reason to
+            # believe in, before the cross-provider net at the bottom of this
+            # function finally reached Bedrock. Selecting Bedrock up front skips
+            # that dead round-trip and makes the dispatch agree with
+            # :func:`_stage2_provider_enabled`, which now degrades the same way.
+            if not _use_openrouter:
                 try:
                     from app.llm.bedrock_client import is_bedrock_provider_enabled  # noqa: PLC0415
                     _use_bedrock = is_bedrock_provider_enabled()
                 except Exception:  # noqa: BLE001
                     _use_bedrock = False
+                if _use_bedrock and _env_provider == "openrouter":
+                    logger.warning(
+                        "graph_rag.stage2_openrouter_unavailable_serving_bedrock "
+                        "(OPENROUTER_API_KEY absent while provider is pinned to "
+                        "openrouter)"
+                    )
+                    try:
+                        from app.integrations.regenold.reasoning_trace import (  # noqa: PLC0415
+                            record_note as _rn,
+                        )
+                        _rn("stage2_openrouter_unavailable_degraded_to_bedrock")
+                    except Exception:  # noqa: BLE001 — trace is best-effort
+                        pass
         elif _env_provider == "bedrock":
             try:
                 from app.llm.bedrock_client import is_bedrock_provider_enabled  # noqa: PLC0415
@@ -9529,12 +9759,35 @@ def _claude_max_enhance_answer(
         if text_raw is None and not _use_gemini and not _use_bedrock:
             try:
                 from app.integrations.regenold.reasoning_trace import record_note
-                record_note("stage2_primary_failed_fallback_bedrock_opus46")
+                # R376 — the note names the EVENT, not a tier it no longer
+                # pins. It read ``..._bedrock_opus46`` while the retry now
+                # routes by complexity, so the trace asserted a model the
+                # request had not asked for; the served model is recorded
+                # separately by ``stage2_model=`` on the Bedrock call itself.
+                record_note("stage2_primary_failed_fallback_bedrock")
             except Exception:
                 pass
-            # Force the opus-4-6 tier for the retry regardless of the primary
-            # env pin (sonnet-4-6 on simple lanes): the fallback is defined as
-            # Bedrock + claude-opus-4-6 via thread-safe model_override.
+            # R376 — THE FALLBACK KEEPS THE TIER SPLIT; IT DOES NOT COLLAPSE IT.
+            #
+            # This used to pin ``model_override="claude-opus-4-6"`` for every
+            # cross-provider retry, so a row that fell over to Bedrock was
+            # answered by Opus 4.6 whether it was simple or complex — quietly
+            # discarding the operator's Opus-5-complex / Sonnet-5-simple split
+            # at exactly the moment the answer was already degraded. Measured
+            # (R376): a SIMPLE question that fell over posted
+            # ``eu.anthropic.claude-opus-4-6-v1``.
+            #
+            # The pin was also redundant. ``complete_with_fallback`` degrades
+            # WITHIN the Claude family on an entitlement error
+            # (``fallback_chain_for``: opus-5 → opus-4-6-v1, sonnet-5 →
+            # sonnet-4-6 → sonnet-4-5), so asking for the right tier and letting
+            # the chain step down reaches opus-4-6 anyway on a key that cannot
+            # invoke Opus 5 — and reaches Opus 5 on a key that can. Hard-coding
+            # the degraded tier could only ever prevent the good outcome.
+            #
+            # ``REGENOLD_BEDROCK_FALLBACK_MODEL`` restores an explicit pin in one
+            # env var if a deploy needs to force a specific fallback tier.
+            _fb_override = os.getenv("REGENOLD_BEDROCK_FALLBACK_MODEL", "").strip() or None
             text_raw = _bedrock_complete_for_graph_rag(
                 system=system_prompt,
                 user=user_message,
@@ -9542,7 +9795,7 @@ def _claude_max_enhance_answer(
                 temperature=0.0,
                 complex_question=complex_q,
                 stage_name="Stage 2 (Polishing) fallback",
-                model_override="claude-opus-4-6",
+                model_override=_fb_override,
             )
             if text_raw is None:
                 logger.warning("graph_rag.stage2_fallback_bedrock_failed -- deterministic")

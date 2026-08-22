@@ -150,11 +150,20 @@ class TestCompleteFunction:
             "app.llm.openai_wrapper_provider.get_openrouter_provider",
             lambda: fake,
         )
+        # R376 — exercise the rollover on the tier that HAS a ladder. The
+        # chain degrades within Anthropic and never escalates, so only the
+        # complex tier (primary ``anthropic/claude-opus-5``) has a second
+        # OpenRouter model below it; the simple tier de-dupes to a single
+        # attempt by design and is pinned separately below.
         out = impl._openrouter_complete_for_graph_rag(
-            system="s", user="u", max_tokens=128, temperature=0.0
+            system="s", user="u", max_tokens=128, temperature=0.0,
+            complex_question=True,
         )
         assert out == "Served by the fallback tier."
-        assert fake.seen[1] == "deepseek/deepseek-v4-flash"
+        assert fake.seen == [
+            "anthropic/claude-opus-5",
+            "anthropic/claude-sonnet-5",
+        ]
 
     def test_rolls_on_finish_reason_length(self, monkeypatch):
         class _FakeResp:
@@ -183,10 +192,52 @@ class TestCompleteFunction:
             lambda: fake,
         )
         out = impl._openrouter_complete_for_graph_rag(
-            system="s", user="u", max_tokens=128, temperature=0.0
+            system="s", user="u", max_tokens=128, temperature=0.0,
+            complex_question=True,
         )
         assert out == "Complete."
-        assert fake.seen[1] == "deepseek/deepseek-v4-flash"
+        assert fake.seen[1] == "anthropic/claude-sonnet-5"
+
+    def test_simple_tier_never_escalates_to_a_costlier_model(self, monkeypatch):
+        """R376 — a throttled Sonnet 5 must NOT retry on an Opus tier.
+
+        ``bedrock_client.fallback_chain_for`` already encodes this rule for the
+        other provider: it returns the chain SUFFIX below the requested model so
+        that pinning a cheap tier cannot silently promote to a costlier one. A
+        flat OpenRouter chain would have broken that rule on the 80% of traffic
+        the complexity gate does not flag. Here the single-entry default
+        de-dupes against the primary, so the simple tier makes exactly ONE
+        OpenRouter attempt and then hands off to the cross-provider hop.
+        """
+        class _FakeResp:
+            error = "api_status_429: throttled"
+            text = ""
+            finish_reason = "stop"
+            model = "m"
+            completion_tokens = 0
+
+        class _FakeProvider:
+            def __init__(self):
+                self.seen = []
+
+            def complete(self, req):
+                self.seen.append(req.model)
+                return _FakeResp()
+
+        fake = _FakeProvider()
+        monkeypatch.setattr(
+            "app.llm.openai_wrapper_provider.get_openrouter_provider",
+            lambda: fake,
+        )
+        assert (
+            impl._openrouter_complete_for_graph_rag(
+                system="s", user="u", max_tokens=128, temperature=0.0,
+                complex_question=False,
+            )
+            is None
+        )
+        assert fake.seen == ["anthropic/claude-sonnet-5"]
+        assert not any("opus" in m for m in fake.seen)
 
     def test_chain_exhausted_returns_none(self, monkeypatch):
         class _FakeResp:
@@ -425,11 +476,45 @@ class TestOpenRouterExtendedThinking:
 
     def test_stage2_provider_enabled_openrouter(self, monkeypatch):
         monkeypatch.setenv("P2P_GRAPH_RAG_PROVIDER", "openrouter")
-        monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
-        assert impl._stage2_provider_enabled() is False
-
         monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-dummy")
         assert impl._stage2_provider_enabled() is True
+
+    def test_pinned_openrouter_without_key_degrades_to_bedrock(self, monkeypatch):
+        """R376 — a lapsed key must degrade Stage-2, not switch it off.
+
+        This asserted ``is False`` before, which is what shipped: pinning the
+        provider to ``openrouter`` and losing the key disabled Stage-2 OUTRIGHT,
+        above the dispatch, so the cross-provider Bedrock net at the end of
+        ``_claude_max_enhance_answer`` was never reached. Measured end-to-end
+        with a live mock Bedrock on the wire, that configuration issued ZERO
+        Bedrock calls and served the deterministic answer while ``/healthz``
+        stayed green. The pin says which provider is PREFERRED; it is not an
+        instruction to stop answering when that provider is unavailable.
+        """
+        monkeypatch.setenv("P2P_GRAPH_RAG_PROVIDER", "openrouter")
+        monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+        monkeypatch.setattr(
+            "app.llm.bedrock_client.is_bedrock_provider_enabled", lambda: True
+        )
+        assert impl._stage2_provider_enabled() is True
+
+    def test_pinned_openrouter_without_key_or_fallback_is_off(self, monkeypatch):
+        """The other half: with NO fallback configured, Stage-2 is genuinely off.
+
+        The degradation must not become an unconditional ``True`` — that would
+        send every request down a Stage-2 path with no provider behind it and
+        pay a full timeout per row to discover it.
+        """
+        monkeypatch.setenv("P2P_GRAPH_RAG_PROVIDER", "openrouter")
+        monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+        monkeypatch.setattr(
+            "app.llm.bedrock_client.is_bedrock_provider_enabled", lambda: False
+        )
+        monkeypatch.setattr(
+            "app.llm.openai_wrapper_provider.is_openai_wrapper_enabled", lambda: False
+        )
+        monkeypatch.setattr(impl, "_stage2_fallback_provider_available", lambda: None)
+        assert impl._stage2_provider_enabled() is False
 
     def test_openrouter_model_opus_for_all(self, monkeypatch):
         monkeypatch.delenv("REGENOLD_STAGE2_MODEL_OPENROUTER", raising=False)

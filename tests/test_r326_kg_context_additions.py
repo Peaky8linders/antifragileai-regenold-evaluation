@@ -151,9 +151,33 @@ def test_strict_read_failure_is_not_memoised_as_empty(monkeypatch):
     monkeypatch.setattr("app.graph.timeouts.record_graph_success", lambda: None)
     reset_kg_context_memo()
 
+    # R376 — the GUARANTEE under test is that a failed read is not memoised as
+    # an empty success, i.e. the next request re-tries the real graph. That is
+    # what ``len(calls) == 2`` proves, and it is unchanged.
+    #
+    # The assertions used to spell that as ``== []``, which also pinned "a
+    # failed read contributes nothing to the answer" — the silent-degradation
+    # behaviour R376 deliberately replaced with the in-process mirror. With the
+    # mirror OFF the old return value is reproduced exactly; with it ON the
+    # layer is served from ``build_hierarchy_payload()`` (the same source the
+    # seeder writes to Aura) instead of vanishing. Both are asserted, so neither
+    # can regress unnoticed.
+    monkeypatch.setenv("REGENOLD_KG_LOCAL_MIRROR", "0")
     assert kg.fetch_provision_hierarchy(["Art. 97"]) == []
     assert kg.fetch_provision_hierarchy(["Art. 97"]) == []
     assert len(calls) == 2
+
+    monkeypatch.setenv("REGENOLD_KG_LOCAL_MIRROR", "1")
+    reset_kg_context_memo()
+    mirrored = kg.fetch_provision_hierarchy(["Art. 9"])
+    assert mirrored, "mirror must serve the hierarchy when the graph read fails"
+    assert mirrored[0]["cite"] == "Article 9"
+    assert mirrored[0]["units"], "a mirrored provision must carry its paragraphs"
+    # Still no memoisation of a failed read: the mirror is a substitution for
+    # THIS request, not a cached answer for the next one.
+    assert len(calls) == 3
+    kg.fetch_provision_hierarchy(["Art. 9"])
+    assert len(calls) == 4
 
 
 def test_admission_saturation_does_not_submit_more_work(monkeypatch):

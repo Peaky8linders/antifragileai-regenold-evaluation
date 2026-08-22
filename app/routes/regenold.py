@@ -1665,6 +1665,11 @@ def _engine_cache_key(
             # necessary, not sufficient.
             "REGENOLD_ONTOLOGY_RISK_DOCS",
             "REGENOLD_KG_CONTEXT",
+            # R376 — the in-process hierarchy mirror changes the Stage-2
+            # grounding block's CONTENT (it supplies the paragraph/sub-point
+            # layer when the graph cannot), so the two arms must be
+            # cache-distinct or an A/B of it measures one arm twice.
+            "REGENOLD_KG_LOCAL_MIRROR",
             "REGENOLD_KG_MAX_REFS",
             "REGENOLD_KG_MAX_UNITS",
             "REGENOLD_KG_UNIT_CHARS",
@@ -1858,6 +1863,9 @@ def _engine_cache_key(
             # R56 / R79 / R263.2 doctrine — otherwise an A/B arm that changes
             # the chain serves the other arm's cached engine output).
             "REGENOLD_BEDROCK_FALLBACK_CHAIN",
+            # R376 — the cross-provider fallback tier is no longer hard-coded,
+            # so the override that pins it selects a different Stage-2 model.
+            "REGENOLD_BEDROCK_FALLBACK_MODEL",
             # R328.3 (restored) — the Bedrock Stage-2 max-tokens ceiling and
             # request timeout are read fresh inside
             # _bedrock_complete_for_graph_rag; a mid-process flip changes how

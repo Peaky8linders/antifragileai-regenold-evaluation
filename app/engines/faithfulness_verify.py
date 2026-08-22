@@ -297,7 +297,21 @@ def build_ground_truth(refs: list[str], *, max_refs: int | None = None,
                 if not (num and body and m_num):
                     continue
                 sub_ref = f"Art. {m_num.group(1)}({num})"
-                if sub_ref not in seen and len(out) < limit + 4:
+                # R376 — ``limit``, not ``limit + 4``. The graph-sourced
+                # additions carried their own slack, so the caller's explicit
+                # ``max_refs`` was not a cap at all: measured,
+                # ``build_ground_truth(refs, max_refs=2)`` returned SIX entries
+                # once the hierarchy layer had rows to contribute. Each entry
+                # costs up to ``ref_chars`` in the verify prompt, so the slack
+                # was unbudgeted prompt growth on the Stage-2 verification call.
+                #
+                # This was latent rather than new: the overflow needs the
+                # hierarchy fetch to return rows, which only happens when the
+                # graph is reachable — so it has been live on every
+                # Aura-connected deploy and invisible on every other one. It
+                # surfaced here because R376's in-process mirror makes the
+                # hierarchy available unconditionally.
+                if sub_ref not in seen and len(out) < limit:
                     seen.add(sub_ref)
                     out.append((sub_ref, body[:budget]))
     except Exception:  # noqa: BLE001 — the graph must never break the verifier
