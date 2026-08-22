@@ -674,6 +674,274 @@ def _flat(text: object, limit: int) -> str:
     return ((cut[:idx] if idx > floor else cut).strip()) + " [...]"
 
 
+# ── R376 — in-process mirror of the Aura provision hierarchy ─────────────────
+#
+# THE PROBLEM THIS SOLVES. Every fetcher above fails soft to ``[]``, and
+# ``render_kg_context`` treats ``[]`` as "render nothing". That is the right
+# contract for a graph that might be wrong, but it makes an ABSENT graph
+# indistinguishable from a graph with nothing to say, and the failure is
+# completely silent: no ``NEO4J_URI``, a rotated Aura password, an open circuit
+# breaker, a cold-start timeout — in every case the request still returns 200,
+# ``/healthz`` still reports ok, and the answer simply loses its sub-provision
+# grounding. Measured (R376) on a deploy without Aura credentials: the Stage-2
+# user message contained no PROVISION HIERARCHY, no SUB-POINT and no
+# REGULATORY CLASSIFICATION block at all — the layers this module exists to
+# supply.
+#
+# WHY A MIRROR IS FAITHFUL RATHER THAN INVENTED. The hierarchy in Aura is not
+# independent knowledge: ``scripts/seed_neo4j_kb.py`` WRITES it from
+# ``app.data.provision_hierarchy.build_hierarchy_payload()``, the same in-repo
+# function called here. So this is not a substitute source with its own error
+# modes — it is the identical structure, one step earlier in the pipeline. If
+# anything the mirror is FRESHER: the in-repo KB is ``2024.1689.v21`` while the
+# live instance is seeded at v18.
+#
+# WHAT IS DELIBERATELY *NOT* MIRRORED. Recital anchors. The graph's
+# ``HAS_RECITAL_ANCHOR`` edges are a curated legal judgement (and there are only
+# five of them instance-wide), and CLAUDE.md records prose-mined
+# recital→article edges as MEASURED AND DEAD — ~4 of 32 candidates were genuine
+# AI Act references, the rest pointed at GDPR/MDR/TFEU. Deriving them here would
+# re-open a refuted idea. Same for the role×risk-class layer, which encodes a
+# curated matrix, and for the semantic layers, which are genuine ANN reads with
+# no offline equivalent. The mirror covers only what is structurally derivable
+# from the pinned statute text: the paragraph/point hierarchy and the sub-point
+# carve-outs.
+#
+# HARD RULE #10 IS UNTOUCHED. This changes WHERE the non-citable context comes
+# from, never what it is: the block is still labelled non-citable, still never
+# enters ranking, and still cannot contribute a wire reference.
+#
+# ``REGENOLD_KG_LOCAL_MIRROR=0`` restores the pre-R376 behaviour (an
+# unreachable graph renders nothing).
+
+_MIRROR_ENV = "REGENOLD_KG_LOCAL_MIRROR"
+
+#: R376 review — provenance of the most recent hierarchy read, per request.
+#:
+#: ``/healthz/graph`` INFERRED ``served_by`` from "client enabled and breaker
+#: closed", which reports "graph" in precisely the case the probe exists to
+#: detect: an instance that is reachable but seeded without HAS_PARAGRAPH
+#: edges answers empty-but-successfully, the mirror serves, and the operator is
+#: told Aura is contributing when it is not. CLAUDE.md calls that class of
+#: false attribution "worse than no record".
+#:
+#: Request-scoped for the same reason the memo is: a ContextVar is discarded
+#: with the request context, so one request's provenance can never be read as
+#: another's.
+_LAST_HIERARCHY_SOURCE: ContextVar[str | None] = ContextVar(
+    "kg_hierarchy_source", default=None
+)
+
+
+def last_hierarchy_source() -> str | None:
+    """``"graph"`` / ``"local_mirror"`` / ``"none"`` for this request, or None."""
+    try:
+        return _LAST_HIERARCHY_SOURCE.get()
+    except Exception:  # noqa: BLE001 — provenance must never break a read
+        return None
+
+
+def _set_hierarchy_source(source: str) -> None:
+    try:
+        _LAST_HIERARCHY_SOURCE.set(source)
+    except Exception:  # noqa: BLE001
+        pass
+_MIRROR_LOCK = threading.Lock()
+_MIRROR_CACHE: dict | None = None
+
+
+def kg_local_mirror_enabled() -> bool:
+    """True when the in-process hierarchy mirror may serve an unreachable graph.
+
+    Default ON. Fresh env read per call (R263.2) so an A/B can flip it.
+    """
+    return os.getenv(_MIRROR_ENV, "1").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _mirror_index() -> dict:
+    """Build (once per process) the ``node_id -> hierarchy`` index.
+
+    Shape mirrors what the Cypher returns, so the renderers need no branch:
+    ``{node_id: {"units": [{"num": str, "text": str}, ...],
+                 "subpoints": [{"para","letter","roman","sid","text"}, ...]}}``.
+    """
+    global _MIRROR_CACHE  # noqa: PLW0603 — process-wide memo of static data
+    if _MIRROR_CACHE is not None:
+        return _MIRROR_CACHE
+    with _MIRROR_LOCK:
+        if _MIRROR_CACHE is not None:
+            return _MIRROR_CACHE
+        index: dict = {}
+        try:
+            from app.data.provision_hierarchy import (  # noqa: PLC0415
+                build_hierarchy_payload,
+            )
+
+            payload = build_hierarchy_payload()
+
+            para_by_id = {n["id"]: n for n in payload.paragraph_nodes}
+            point_by_id = {n["id"]: n for n in payload.point_nodes}
+            subpoint_by_id = {n["id"]: n for n in payload.subpoint_nodes}
+
+            # article/annex -> [paragraph_id]
+            for edge in payload.has_paragraph_edges:
+                index.setdefault(edge["source_id"], {"units": [], "subpoints": []})
+                node = para_by_id.get(edge["target_id"])
+                if node is None:
+                    continue
+                index[edge["source_id"]]["units"].append(
+                    {
+                        "num": str(node.get("number") or ""),
+                        "text": node.get("text") or "",
+                        "_id": node["id"],
+                    }
+                )
+
+            # NOTE — there is deliberately no top-level Point loop here.
+            #
+            # An earlier cut had one, on the theory that the Cypher matches
+            # ``HAS_PARAGRAPH|HAS_POINT`` from the Article, so an Annex whose
+            # Points attach directly to the Annex node would need picking up.
+            # Executed against the payload, that premise is false: all 421
+            # ``has_point_edges`` have a Paragraph id as their source, because
+            # ``_emit_points`` is only ever called with a ``para_id``. The loop
+            # appended exactly 0 units and its ``continue`` fired on every
+            # edge — dead code carrying a comment a reader would trust. Points
+            # reach the render through the sub-point layer below.
+
+            # article/annex -> paragraph -> point -> subpoint
+            points_by_para: dict[str, list[dict]] = {}
+            for edge in payload.has_point_edges:
+                node = point_by_id.get(edge["target_id"])
+                if node is not None:
+                    points_by_para.setdefault(edge["source_id"], []).append(node)
+            subs_by_point: dict[str, list[dict]] = {}
+            for edge in payload.has_subpoint_edges:
+                node = subpoint_by_id.get(edge["target_id"])
+                if node is not None:
+                    subs_by_point.setdefault(edge["source_id"], []).append(node)
+
+            for edge in payload.has_paragraph_edges:
+                root, para_id = edge["source_id"], edge["target_id"]
+                para = para_by_id.get(para_id)
+                if para is None:
+                    continue
+                for point in points_by_para.get(para_id, []):
+                    for sub in subs_by_point.get(point["id"], []):
+                        index.setdefault(root, {"units": [], "subpoints": []})
+                        index[root]["subpoints"].append(
+                            {
+                                "para": str(para.get("number") or ""),
+                                "letter": str(point.get("letter") or ""),
+                                "roman": str(sub.get("roman") or ""),
+                                "sid": sub.get("id") or "",
+                                "text": sub.get("text") or "",
+                            }
+                        )
+        except Exception:  # noqa: BLE001 — a broken mirror must never break an answer
+            logger.warning("kg_context: local hierarchy mirror unavailable", exc_info=True)
+            index = {}
+        _MIRROR_CACHE = index
+        return _MIRROR_CACHE
+
+
+def _reset_mirror_for_tests() -> None:
+    """Drop the process-wide mirror memo. Test-only."""
+    global _MIRROR_CACHE  # noqa: PLW0603
+    with _MIRROR_LOCK:
+        _MIRROR_CACHE = None
+
+
+def _mirror_note(kind: str, n: int) -> None:
+    """Record that the mirror, not Aura, supplied a layer — loudly and durably.
+
+    A degraded graph that is invisible in the artefact is the defect this whole
+    module keeps re-learning, so the substitution goes into the reasoning trace
+    (which the eval sidecars read) as well as the log.
+    """
+    logger.info("kg_context.local_mirror_served layer=%s rows=%d", kind, n)
+    try:
+        from app.integrations.regenold.reasoning_trace import (  # noqa: PLC0415
+            record_note as _rn,
+        )
+        _rn(f"kg_local_mirror_served layer={kind} rows={n}")
+    except Exception:  # noqa: BLE001 — trace is best-effort
+        pass
+
+
+def _mirror_hierarchy(ids: list[str], max_units: int) -> list[dict]:
+    """Hierarchy rows for ``ids`` from the in-process mirror, Cypher-shaped."""
+    index = _mirror_index()
+    if not index:
+        return []
+    out: list[dict] = []
+    for node_id in ids:
+        entry = index.get(node_id)
+        if not entry or not entry["units"]:
+            continue
+        units = sorted(
+            entry["units"],
+            key=lambda u: (_unit_sort_key(u.get("num")), str(u.get("num") or "")),
+        )[:max_units]
+        out.append(
+            {
+                "id": node_id,
+                "cite": _cite_for_node(node_id),
+                "title": None,
+                "units": [{"num": u["num"], "text": u["text"]} for u in units],
+            }
+        )
+    return out
+
+
+def _mirror_subpoints(ids: list[str], limit: int) -> list[dict]:
+    """Sub-point rows for ``ids`` from the in-process mirror, Cypher-shaped."""
+    index = _mirror_index()
+    if not index:
+        return []
+    out: list[dict] = []
+    for node_id in ids:
+        entry = index.get(node_id)
+        if not entry:
+            continue
+        cite = _cite_for_node(node_id)
+        for sub in sorted(
+            entry["subpoints"],
+            key=lambda sp: (
+                _unit_sort_key(sp.get("para")),
+                str(sp.get("letter") or ""),
+                str(sp.get("sid") or ""),
+            ),
+        ):
+            out.append({"cite": cite, **sub})
+            if len(out) >= limit:
+                return out
+    return out
+
+
+def _unit_sort_key(num) -> int:
+    """Numeric sort key matching the Cypher's ``coalesce(toInteger(n), MAXINT)``."""
+    try:
+        return int(str(num).strip())
+    except (TypeError, ValueError):
+        return 2147483647
+
+
+def _cite_for_node(node_id: str) -> str:
+    """``article_6`` -> ``Article 6``; ``annex_III`` -> ``Annex III``.
+
+    Mirrors ``coalesce(a.strict_citation, a.id)`` for the two id families
+    :func:`_node_ids` produces. Anything else is returned unchanged so an
+    unexpected id is visible rather than silently reshaped.
+    """
+    nid = (node_id or "").strip()
+    if nid.startswith("article_"):
+        return f"Article {nid[len('article_'):]}"
+    if nid.startswith("annex_"):
+        return f"Annex {nid[len('annex_'):]}"
+    return nid
+
+
 def fetch_provision_hierarchy(refs: list[str]) -> list[dict]:
     """Paragraph/point breakdown of the cited provisions, straight from Aura.
 
@@ -697,9 +965,41 @@ def fetch_provision_hierarchy(refs: list[str]) -> list[dict]:
     if cached is not None:
         return cached
     rows = _bounded_execute_read(_HIERARCHY_CYPHER, {"ids": ids, "max_units": max_units})
-    if not getattr(rows, "failed", False):
+    read_failed = bool(getattr(rows, "failed", False))
+    if not read_failed and rows:
         _memo_put("hierarchy", ids, max_units, list(rows))
-    return list(rows)
+        _set_hierarchy_source("graph")
+        return list(rows)
+    # R376 — the graph could not answer (disabled / unreachable / breaker open /
+    # timed out) or answered successfully with nothing for provisions that
+    # demonstrably have a hierarchy. Serve the same structure from the in-repo
+    # source the seeder writes to Aura rather than dropping the layer silently.
+    if not kg_local_mirror_enabled():
+        if not read_failed:
+            _memo_put("hierarchy", ids, max_units, list(rows))
+        _set_hierarchy_source("graph" if rows else "none")
+        return list(rows)
+    mirrored = _mirror_hierarchy(ids, max_units)
+    if mirrored:
+        _mirror_note("hierarchy", len(mirrored))
+    # MEMOISE WHAT WE RETURN, not the raw graph rows.
+    #
+    # An earlier cut of this memoised the graph's empty-but-successful result
+    # and THEN fell through to the mirror, so the first call in a request
+    # returned the mirrored hierarchy and every later call in the SAME request
+    # returned nothing — the same question grounded two different ways.
+    # ``render_kg_context`` is reached 2-3x per request, so that was reachable
+    # on any deploy whose graph answers empty.
+    #
+    # The memo is request-scoped (a ContextVar, discarded with the request
+    # context), so storing the substitution keeps ONE request self-consistent
+    # without carrying it into the next one — the real graph is still re-tried
+    # on the following request. A FAILED read is still never memoised: that is
+    # the R326 guarantee, and it is about not caching a transport error.
+    if not read_failed:
+        _memo_put("hierarchy", ids, max_units, list(mirrored))
+    _set_hierarchy_source("local_mirror" if mirrored else "none")
+    return mirrored
 
 
 def fetch_recital_anchors(refs: list[str]) -> list[dict]:
@@ -738,9 +1038,23 @@ def fetch_subpoint_detail(refs: list[str]) -> list[dict]:
     except Exception:  # noqa: BLE001
         logger.debug("kg_context: subpoint fetch failed", exc_info=True)
         result = []
-    if not getattr(rows, "failed", False):
+    read_failed = bool(getattr(rows, "failed", False))
+    if not read_failed and result:
         _memo_put("subpoint", ids, 24, result)
-    return result
+        return result
+    # R376 — same substitution as the hierarchy layer above, with the same
+    # memo rule: store what is RETURNED so one request stays self-consistent,
+    # and never memoise a failed read.
+    if not kg_local_mirror_enabled():
+        if not read_failed:
+            _memo_put("subpoint", ids, 24, result)
+        return result
+    mirrored = _mirror_subpoints(ids, 24)
+    if mirrored:
+        _mirror_note("subpoint", len(mirrored))
+    if not read_failed:
+        _memo_put("subpoint", ids, 24, mirrored)
+    return mirrored
 
 
 def fetch_role_risk_class_context(refs: list[str]) -> list[dict]:

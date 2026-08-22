@@ -1279,8 +1279,123 @@ def healthz_llm() -> dict[str, object]:
     return base
 
 
+def _kg_contribution_probe(deep: bool = False) -> dict[str, object]:
+    """Is the graph layer actually CONTRIBUTING to answers right now?
+
+    R376 — ``/healthz/graph`` answers "can I reach Neo4j?", which is a different
+    question from "is the provision-hierarchy block reaching Stage-2?", and only
+    the second one shows up in an answer. A graph can ping healthy while the
+    layer is dead: ``REGENOLD_KG_CONTEXT=0``, an open circuit breaker after a
+    burst of timeouts, a seeded instance missing the HAS_PARAGRAPH edges, or a
+    saturated worker pool. Every one of those degrades silently — CLAUDE.md's
+    own words for the seed hazard are "the seeder succeeds, /healthz/graph still
+    reports ok, answers just get worse".
+
+    So this runs the real fetcher on a fixed provision and reports what came
+    back and WHERE FROM. It is the same call the answer path makes, which is the
+    point: a probe that exercises a different code path can agree with a broken
+    one.
+
+    Read-only, bounded by the standard graph timeout, and never raises.
+    """
+    out: dict[str, object] = {
+        "kg_context_enabled": False,
+        "circuit_open": False,
+        "local_mirror_enabled": False,
+        "local_mirror_nodes": 0,
+        "hierarchy_rows": 0,
+        "hierarchy_units": 0,
+        "served_by": "none",
+    }
+    try:
+        from app.engines.kg_context import (
+            _mirror_hierarchy,
+            _mirror_index,
+            fetch_provision_hierarchy,
+            kg_context_enabled,
+            kg_local_mirror_enabled,
+            last_hierarchy_source,
+        )
+
+        out["kg_context_enabled"] = bool(kg_context_enabled())
+        mirror_on = bool(kg_local_mirror_enabled())
+        out["local_mirror_enabled"] = mirror_on
+        try:
+            out["local_mirror_nodes"] = len(_mirror_index())
+        except Exception:  # noqa: BLE001
+            out["local_mirror_nodes"] = 0
+    except Exception as exc:  # noqa: BLE001 — a probe must never break /healthz
+        out["detail"] = f"kg_context_import_failed: {exc!s}"[:160]
+        return out
+
+    try:
+        from app.graph.timeouts import graph_circuit_open
+
+        out["circuit_open"] = bool(graph_circuit_open())
+    except Exception:  # noqa: BLE001
+        pass
+
+    # R376 review — A DIAGNOSTIC MUST NOT MUTATE THE THING IT DIAGNOSES.
+    #
+    # The live read goes through ``_bounded_execute_read``, which takes one of
+    # the four ``REGENOLD_KG_MAX_INFLIGHT`` worker slots and calls
+    # ``record_graph_failure()`` on a timeout or a saturated pool. An uptime
+    # monitor polling this endpoint against a degraded Aura would therefore
+    # vote in the circuit breaker (3 consecutive failures opens it for 60 s of
+    # real traffic) and, under the harness's concurrency-3 load, steal a slot
+    # from a live request. CLAUDE.md already records the shape: "a non-blocking
+    # admission gate is a graph OFF switch under load."
+    #
+    # So the default is a NON-MUTATING report built from the in-process mirror,
+    # which needs no network and no admission slot, and ``?deep=1`` opts into
+    # the real fetch for an operator who wants the live path exercised.
+    if not deep:
+        mirrored = _mirror_hierarchy(["article_9"], 70) if mirror_on else []
+        out["hierarchy_rows"] = len(mirrored)
+        out["hierarchy_units"] = sum(len(r.get("units") or []) for r in mirrored)
+        out["served_by"] = "local_mirror (probe: mirror-only)" if mirrored else "none"
+        out["detail"] = (
+            "mirror-only probe — pass ?deep=1 to exercise the live graph read "
+            "(that path consumes a graph worker slot and votes in the circuit "
+            "breaker, so it is opt-in)"
+        )
+        return out
+
+    # Article 9 is a stable choice: it carries numbered paragraphs in both the
+    # seeded graph and the in-repo hierarchy, so zero rows here means the layer
+    # is genuinely not contributing rather than that the probe picked a
+    # single-block provision.
+    try:
+        rows = fetch_provision_hierarchy(["Art. 9"]) or []
+        out["hierarchy_rows"] = len(rows)
+        out["hierarchy_units"] = sum(len(r.get("units") or []) for r in rows)
+    except Exception as exc:  # noqa: BLE001
+        out["detail"] = f"hierarchy_probe_failed: {exc!s}"[:160]
+        return out
+
+    if not out["hierarchy_rows"]:
+        out["served_by"] = "none"
+        out["detail"] = (
+            "the provision-hierarchy layer is contributing NOTHING to Stage-2 — "
+            "check REGENOLD_KG_CONTEXT, the circuit breaker, and whether the "
+            "instance carries HAS_PARAGRAPH edges"
+        )
+        return out
+
+    # R376 review — READ THE PROVENANCE, DO NOT INFER IT.
+    #
+    # This used to derive ``served_by`` from "client enabled and breaker
+    # closed", which reports "graph" in exactly the case the probe exists to
+    # catch: a reachable instance seeded WITHOUT HAS_PARAGRAPH edges answers
+    # empty-but-successfully, the mirror serves, and the operator concludes
+    # Aura is contributing when it is not. ``fetch_provision_hierarchy`` now
+    # records which source actually produced the rows.
+    out["served_by"] = last_hierarchy_source() or "none"
+    return out
+
+
 @app.get("/healthz/graph")
-def healthz_graph() -> dict[str, object]:
+def healthz_graph(deep: bool = False) -> dict[str, object]:
     """Probe Neo4j connectivity + KB seed status.
 
     Returns HTTP 200 always — uptime monitors should alert on
@@ -1355,12 +1470,18 @@ def healthz_graph() -> dict[str, object]:
                 )
         except Exception as exc:  # noqa: BLE001 — health probe must never raise
             base["detail"] = f"embedded_graph_probe_failed: {exc!s}"[:200]
+        base["kg_context"] = _kg_contribution_probe(deep)
         base["elapsed_ms"] = int((_time.perf_counter() - start) * 1000)
         return base
 
     # ─── Disabled path ────────────────────────────────────────────────────
     if not os.environ.get("NEO4J_URI"):
         base["detail"] = "NEO4J_URI not set"
+        # R376 — report the contribution probe even here. "NEO4J_URI not set"
+        # used to be the end of the story, which left the operator unable to
+        # tell a deploy that is degrading silently from one where the local
+        # mirror is carrying the layer correctly.
+        base["kg_context"] = _kg_contribution_probe(deep)
         return base
 
     start = _time.perf_counter()
@@ -1368,6 +1489,7 @@ def healthz_graph() -> dict[str, object]:
         client = get_graph_client()
     except Exception as exc:  # noqa: BLE001 — health probe must never raise
         base["detail"] = f"graph_client_init_failed: {exc!s}"[:200]
+        base["kg_context"] = _kg_contribution_probe(deep)
         base["elapsed_ms"] = int((_time.perf_counter() - start) * 1000)
         return base
 
@@ -1379,6 +1501,7 @@ def healthz_graph() -> dict[str, object]:
             "installed or the connection was refused at init. Install with "
             "`pip install neo4j>=5.0` and verify the URI."
         )
+        base["kg_context"] = _kg_contribution_probe(deep)
         base["elapsed_ms"] = int((_time.perf_counter() - start) * 1000)
         return base
 
@@ -1389,6 +1512,7 @@ def healthz_graph() -> dict[str, object]:
         hc = client.health_check()
     except Exception as exc:  # noqa: BLE001 — health probe must never raise
         base["detail"] = f"health_check_exception: {exc!s}"[:200]
+        base["kg_context"] = _kg_contribution_probe(deep)
         base["elapsed_ms"] = int((_time.perf_counter() - start) * 1000)
         return base
 
@@ -1396,6 +1520,7 @@ def healthz_graph() -> dict[str, object]:
     if status != "healthy":
         err = hc.get("error") or hc.get("message") or "unknown"
         base["detail"] = f"unhealthy: {err}"[:200]
+        base["kg_context"] = _kg_contribution_probe(deep)
         base["elapsed_ms"] = int((_time.perf_counter() - start) * 1000)
         return base
 
@@ -1465,6 +1590,11 @@ def healthz_graph() -> dict[str, object]:
     base["seed_version"] = seed_version
     base["node_counts"] = node_counts
     base["edge_counts"] = edge_counts
+    # R376 — a healthy ping is not a contributing graph. This is the field to
+    # read when an answer looks under-grounded: ``served_by`` says whether the
+    # hierarchy came from Aura or from the in-process mirror, and
+    # ``hierarchy_rows == 0`` says the layer is dead regardless of the ping.
+    base["kg_context"] = _kg_contribution_probe(deep)
     base["elapsed_ms"] = int((_time.perf_counter() - start) * 1000)
     return base
 

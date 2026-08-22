@@ -276,6 +276,27 @@ def build_ground_truth(refs: list[str], *, max_refs: int | None = None,
     for ref in refs:
         _add(ref)
 
+    # Sibling paragraphs of any cited sub-provision, so a misattributed claim
+    # can be re-pointed at the provision that actually carries it.
+    #
+    # R376 review — THIS RUNS BEFORE THE GRAPH LAYER. The docstring calls the
+    # sibling context "what lets the pass repair rather than merely delete",
+    # i.e. it is the load-bearing evidence, while the graph paragraph breakdown
+    # is described as an ADDITIONAL source. With the ref budget now a hard cap
+    # (it used to be ``limit + 4``, which silently overran the caller's
+    # ``max_refs``) the two compete for the same slots, and R376's in-process
+    # mirror means the graph layer always has rows to contribute — so whichever
+    # runs first wins the budget. Ordering the higher-value evidence first is
+    # the whole fix; nothing else about either loop changed.
+    for ref in list(refs):
+        m = re.match(r"^(Art\.\s*\d{1,3})\((\d{1,3})\)$", ref.strip())
+        if not m:
+            continue
+        parent, para = m.group(1), int(m.group(2))
+        for sibling in (para - 1, para + 1):
+            if sibling >= 1:
+                _add(f"{parent}({sibling})")
+
     # R313.1 — the Neo4j Aura hierarchy as an ADDITIONAL evidence source.
     #
     # The graph holds 656 Paragraph + 416 Point nodes keyed at exactly the grain
@@ -297,22 +318,25 @@ def build_ground_truth(refs: list[str], *, max_refs: int | None = None,
                 if not (num and body and m_num):
                     continue
                 sub_ref = f"Art. {m_num.group(1)}({num})"
-                if sub_ref not in seen and len(out) < limit + 4:
+                # R376 — ``limit``, not ``limit + 4``. The graph-sourced
+                # additions carried their own slack, so the caller's explicit
+                # ``max_refs`` was not a cap at all: measured,
+                # ``build_ground_truth(refs, max_refs=2)`` returned SIX entries
+                # once the hierarchy layer had rows to contribute. Each entry
+                # costs up to ``ref_chars`` in the verify prompt, so the slack
+                # was unbudgeted prompt growth on the Stage-2 verification call.
+                #
+                # This was latent rather than new: the overflow needs the
+                # hierarchy fetch to return rows, which only happens when the
+                # graph is reachable — so it has been live on every
+                # Aura-connected deploy and invisible on every other one. It
+                # surfaced here because R376's in-process mirror makes the
+                # hierarchy available unconditionally.
+                if sub_ref not in seen and len(out) < limit:
                     seen.add(sub_ref)
                     out.append((sub_ref, body[:budget]))
     except Exception:  # noqa: BLE001 — the graph must never break the verifier
         logger.debug("faithfulness: kg hierarchy unavailable", exc_info=True)
-
-    # Sibling paragraphs of any cited sub-provision, so a misattributed claim
-    # can be re-pointed at the provision that actually carries it.
-    for ref in list(refs):
-        m = re.match(r"^(Art\.\s*\d{1,3})\((\d{1,3})\)$", ref.strip())
-        if not m:
-            continue
-        parent, para = m.group(1), int(m.group(2))
-        for sibling in (para - 1, para + 1):
-            if sibling >= 1:
-                _add(f"{parent}({sibling})")
 
     return out
 

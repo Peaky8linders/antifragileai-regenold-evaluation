@@ -152,6 +152,33 @@ def rerank_kg_hops() -> int:
     return 2 if hops >= 2 else 1
 
 COHERE_RERANK_URL = "https://api.cohere.com/v2/rerank"
+#: R376 — the rerank endpoint is overridable, and the override is read PER CALL.
+#:
+#: It was a module constant, which made the cross-encoder the one retrieval
+#: stage that could not be exercised without live Cohere egress: a deploy behind
+#: an egress proxy, a self-hosted rerank endpoint, and a local wire-level fire
+#: check were all equally impossible. That matters more here than for a typical
+#: knob, because this reranker has already shipped THREE placements that made
+#: zero calls (R329) and read ``+0.0000`` on every axis — the failure mode is
+#: "looks correct in the diff, never executes", and the only defence against it
+#: is being able to watch the request leave.
+#:
+#: ``COHERE_RERANK_URL`` sets the full endpoint; ``COHERE_API_BASE`` sets just
+#: the host/prefix and keeps the ``/v2/rerank`` path. Unset on both → Cohere's
+#: public endpoint, byte-identical to before.
+_ENV_RERANK_URL = "COHERE_RERANK_URL"
+_ENV_API_BASE = "COHERE_API_BASE"
+
+
+def _rerank_url() -> str:
+    """Resolve the rerank endpoint (fresh env read per call, R263.2)."""
+    explicit = os.getenv(_ENV_RERANK_URL, "").strip()
+    if explicit:
+        return explicit
+    base = os.getenv(_ENV_API_BASE, "").strip().rstrip("/")
+    if base:
+        return f"{base}/v2/rerank"
+    return COHERE_RERANK_URL
 
 _ENV_GATE = "REGENOLD_COHERE_RERANK"
 _ENV_MODEL = "REGENOLD_COHERE_RERANK_MODEL"
@@ -372,7 +399,7 @@ def rerank_documents(
     _bump("attempts")
     try:
         resp = _get_client().post(
-            COHERE_RERANK_URL,
+            _rerank_url(),
             json=payload,
             headers={
                 "Authorization": f"Bearer {key}",

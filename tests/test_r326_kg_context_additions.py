@@ -151,9 +151,79 @@ def test_strict_read_failure_is_not_memoised_as_empty(monkeypatch):
     monkeypatch.setattr("app.graph.timeouts.record_graph_success", lambda: None)
     reset_kg_context_memo()
 
+    # R376 — the GUARANTEE under test is that a failed read is not memoised as
+    # an empty success, i.e. the next request re-tries the real graph. That is
+    # what ``len(calls) == 2`` proves, and it is unchanged.
+    #
+    # The assertions used to spell that as ``== []``, which also pinned "a
+    # failed read contributes nothing to the answer" — the silent-degradation
+    # behaviour R376 deliberately replaced with the in-process mirror. With the
+    # mirror OFF the old return value is reproduced exactly; with it ON the
+    # layer is served from ``build_hierarchy_payload()`` (the same source the
+    # seeder writes to Aura) instead of vanishing. Both are asserted, so neither
+    # can regress unnoticed.
+    monkeypatch.setenv("REGENOLD_KG_LOCAL_MIRROR", "0")
     assert kg.fetch_provision_hierarchy(["Art. 97"]) == []
     assert kg.fetch_provision_hierarchy(["Art. 97"]) == []
     assert len(calls) == 2
+
+    monkeypatch.setenv("REGENOLD_KG_LOCAL_MIRROR", "1")
+    reset_kg_context_memo()
+    mirrored = kg.fetch_provision_hierarchy(["Art. 9"])
+    assert mirrored, "mirror must serve the hierarchy when the graph read fails"
+    assert mirrored[0]["cite"] == "Article 9"
+    assert mirrored[0]["units"], "a mirrored provision must carry its paragraphs"
+    # Still no memoisation of a failed read: the mirror is a substitution for
+    # THIS request, not a cached answer for the next one.
+    assert len(calls) == 3
+    kg.fetch_provision_hierarchy(["Art. 9"])
+    assert len(calls) == 4
+
+
+def test_mirror_is_consistent_within_one_request(monkeypatch):
+    """R376 — the same question must ground the same way twice in one request.
+
+    ``render_kg_context`` is reached 2-3x per request. An earlier cut of the
+    mirror memoised the graph's empty-but-SUCCESSFUL result and then fell
+    through to the mirror, so the first call returned the mirrored hierarchy and
+    every later call in the same request returned nothing. Reachable on any
+    deploy whose graph answers empty rather than erroring.
+
+    Note the distinction this pins: a SUCCESSFUL empty read may be memoised (as
+    whatever is ultimately returned), while a FAILED read must not be — that is
+    the separate R326 guarantee, covered by the test above.
+    """
+
+    class EmptyButHealthyClient:
+        enabled = True
+
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def execute_read_strict(self, cypher, params=None):
+            self.calls += 1
+            return []
+
+        def execute_read(self, *_a, **_kw):
+            return []
+
+    client = EmptyButHealthyClient()
+    monkeypatch.setattr("app.graph.client.get_graph_client", lambda: client)
+    monkeypatch.setattr("app.graph.timeouts.graph_circuit_open", lambda: False)
+    monkeypatch.setattr("app.graph.timeouts.record_graph_failure", lambda: None)
+    monkeypatch.setattr("app.graph.timeouts.record_graph_success", lambda: None)
+    monkeypatch.setenv("REGENOLD_KG_LOCAL_MIRROR", "1")
+    reset_kg_context_memo()
+
+    first = kg.fetch_provision_hierarchy(["Art. 9"])
+    assert first, "the mirror must serve when the graph answers empty"
+    for _ in range(3):
+        assert len(kg.fetch_provision_hierarchy(["Art. 9"])) == len(first)
+    # Served from the request memo, so the graph is queried once.
+    assert client.calls == 1
+
+    sub_first = kg.fetch_subpoint_detail(["Art. 5"])
+    assert len(kg.fetch_subpoint_detail(["Art. 5"])) == len(sub_first)
 
 
 def test_admission_saturation_does_not_submit_more_work(monkeypatch):

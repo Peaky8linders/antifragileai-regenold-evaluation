@@ -427,6 +427,66 @@ def _looks_incomplete_final_sentence(text: str | None) -> bool:
     return False
 
 
+def _challenge_is_complex_enabled() -> bool:
+    """R376 — default ON. Route an adversarial challenge turn to the COMPLEX tier.
+
+    ``REGENOLD_CHALLENGE_IS_COMPLEX=0`` restores the pre-R376 tier decision.
+    Fresh env read per call (R263.2).
+    """
+    return os.getenv("REGENOLD_CHALLENGE_IS_COMPLEX", "1").strip().lower() not in (
+        "0", "false", "no", "off",
+    )
+
+
+def _norm_ws(text: str) -> str:
+    """Whitespace-normalised text, for comparing two renderings of one string."""
+    return " ".join(str(text or "").split())
+
+
+def _challenge_objection_enabled() -> bool:
+    """R376 — default ON. Deliver the user's verbatim objection to Stage-2 on a
+    challenge turn.
+
+    ``REGENOLD_CHALLENGE_OBJECTION=0`` restores the pre-R376 behaviour, where the
+    recovered root question was the only thing the model saw. Fresh env read per
+    call (R263.2).
+    """
+    return os.getenv("REGENOLD_CHALLENGE_OBJECTION", "1").strip().lower() not in (
+        "0", "false", "no", "off",
+    )
+
+
+def _extract_live_challenge(flattened: str) -> str:
+    """The live user turn from a flattened multi-turn question, or ``""``.
+
+    The route flattens a conversation as ``Conversation so far: … / Latest
+    question: <live turn>`` and, on a challenge turn, appends ``Target inquiry
+    to answer: <root question>``. The live turn is therefore the span between
+    the LAST ``Latest question:`` marker and the ``Target inquiry`` marker —
+    reading to the end instead would append the root question a second time,
+    since it is already the ``QUESTION:`` line.
+
+    Uses the same last-marker rule as ``is_challenge_turn`` so the two agree on
+    what "the live turn" means (the R60.1 / R71 live-turn doctrine).
+    """
+    text = str(flattened or "")
+    marker = "Latest question:\n"
+    idx = text.rfind(marker)
+    if idx < 0:
+        # No flatten marker means the route did not build a multi-turn prompt,
+        # so the whole string IS the live turn — the self-contained challenge
+        # shape. Returning "" here would silently drop the objection on exactly
+        # the conversations where the recovery did not fire.
+        return text.strip()
+    live = text[idx + len(marker):]
+    for tail in ("\nTarget inquiry to answer:", "\nTarget inquiry:"):
+        cut = live.find(tail)
+        if cut >= 0:
+            live = live[:cut]
+            break
+    return live.strip()
+
+
 def _stage2_answer_headroom() -> int:
     """R142 — output-token headroom for the answer ABOVE the thinking budget.
 
@@ -634,6 +694,50 @@ BEDROCK_COMPLEX_MODEL = "eu.anthropic.claude-opus-5"
 """Complex tier — the ~20% of questions ``complex_question`` flags. Same
 restoration as :data:`BEDROCK_RAG_MODEL` (was opus-4-6-v1 in the window)."""
 
+BEDROCK_STAGE2_MODEL = "eu.anthropic.claude-sonnet-5"
+"""R376 — the SIMPLE Stage-2 answer tier on Bedrock.
+
+The operator's standing tier split is *Opus 5 for complex questions, Sonnet 5
+for simple ones*, and it was honoured on exactly one of the two providers.
+``app/config.py`` sets ``stage2_model='claude-sonnet-5'`` /
+``complex_model='claude-opus-5'``, and the OpenRouter path mirrors that with
+``anthropic/claude-sonnet-5`` / ``anthropic/claude-opus-5`` — but the Bedrock
+path routed a simple Stage-2 answer through :data:`BEDROCK_RAG_MODEL`, the
+Stage-1 parse tier, which is Opus 4.8. Measured on the wire (R376): a simple
+question that had degraded to Bedrock posted ``eu.anthropic.claude-opus-4-8``.
+
+The two constants are now distinct because they answer two different questions:
+:data:`BEDROCK_RAG_MODEL` is the Stage-1 *parse* tier (unchanged), and this is
+the Stage-2 *simple answer* tier. Override per-deploy with
+``REGENOLD_BEDROCK_STAGE2_MODEL``; ``REGENOLD_OPUS_FOR_ALL=1`` still lifts every
+Stage-2 call to the complex tier."""
+
+
+
+def _supports_extended_thinking(model_id: str) -> bool:
+    """True iff ``model_id`` is a Bedrock Claude tier that accepts ``reasoning_config``.
+
+    R376 — the guard that keeps the R366.1 cross-model rollover safe once the
+    Stage-2 path started sending an extended-thinking budget. The chain mixes
+    Anthropic tiers with qwen / nemotron / devstral, and
+    ``additionalModelRequestFields.reasoning_config`` is Anthropic-specific:
+    sending it to a non-Claude tier turns a recoverable throttle into a
+    ``ValidationException``, i.e. the rollover would break in exactly the
+    situation it exists for.
+
+    Matches on the Anthropic vendor segment of the model id / inference-profile
+    id (``eu.anthropic.claude-…``, ``anthropic.claude-…``), not on a bare
+    ``"claude"`` substring, so an unrelated tier that happens to carry the word
+    cannot opt itself in.
+    """
+    mid = (model_id or "").strip().lower()
+    if not mid:
+        return False
+    # Strip a geography prefix (``eu.`` / ``us.`` / ``apac.``) before matching.
+    head = mid.split(".", 2)
+    if len(head) >= 2 and head[0] in {"eu", "us", "apac", "global"}:
+        mid = ".".join(head[1:])
+    return mid.startswith("anthropic.claude")
 
 
 def _bedrock_complete_for_graph_rag(
@@ -675,7 +779,10 @@ def _bedrock_complete_for_graph_rag(
                 or BEDROCK_COMPLEX_MODEL
             )
         else:
-            model = os.getenv("REGENOLD_BEDROCK_STAGE2_MODEL", "").strip() or default_model
+            model = (
+                os.getenv("REGENOLD_BEDROCK_STAGE2_MODEL", "").strip()
+                or BEDROCK_STAGE2_MODEL
+            )
 
     else:
         model = os.getenv("REGENOLD_BEDROCK_STAGE1_MODEL", "").strip() or default_model
@@ -727,10 +834,103 @@ def _bedrock_complete_for_graph_rag(
         _stage2_timeout = 180.0
     if "stage 2" in (stage_name or "").lower() and (max_tokens or 0) < _stage2_ceiling:
         max_tokens = _stage2_ceiling
+    # R376 — EXTENDED THINKING ON THE BEDROCK STAGE-2 PATH.
+    #
+    # ``BedrockRequest.thinking_budget`` has existed since R355 and
+    # ``_build_converse_kwargs`` translates it into the Converse
+    # ``additionalModelRequestFields.reasoning_config`` block — but the Stage-2
+    # adapter never set it, so the budget was reachable only from the judge.
+    # The consequence was silent and asymmetric: a complex question answered by
+    # OpenRouter deliberated with 2048 thinking tokens, and the SAME question
+    # answered by the Bedrock fallback did not. Measured on the wire (R376), a
+    # complex Stage-2 Converse call carried
+    # ``additionalModelRequestFields: None``.
+    #
+    # The budget is the same ``settings.graph_rag.complex_thinking_tokens`` the
+    # OpenRouter path reads, clamped identically to [2048, 4096], so the two
+    # providers now deliberate to the same depth on the same question.
+    #
+    # CLAUDE-ONLY BY CONSTRUCTION. ``reasoning_config`` is an Anthropic field;
+    # the R366.1 rollover chain also carries qwen / nemotron / devstral tiers,
+    # which reject it with a ValidationException. The budget is therefore
+    # resolved PER MODEL inside the loop, not once for the whole chain — a
+    # thinking-enabled Claude primary that rolls over to qwen must drop the
+    # block on the way, or the rollover trades a throttle for a 400.
+    _thinking_budget = 0
+    if complex_question:
+        try:
+            from app.config import settings as _cfg  # noqa: PLC0415
+            _thinking_budget = int(
+                getattr(_cfg.graph_rag, "complex_thinking_tokens", 0) or 0
+            )
+        except Exception:  # noqa: BLE001
+            _thinking_budget = 0
+        if _thinking_budget > 0:
+            _thinking_budget = max(2048, min(_thinking_budget, 4096))
+
+    # THE BUDGET COUNTS INSIDE ``maxTokens`` — SO THE ANSWER NEEDS HEADROOM
+    # ABOVE IT.
+    #
+    # Found by adversarial review of R376's own change and confirmed on the
+    # wire. ``_build_converse_kwargs`` raises ``maxTokens`` only when it is
+    # <= the budget, so a Stage-2 call carrying ``maxTokens: 4096`` and
+    # ``budget_tokens: 2048`` left the ANSWER just 2048 tokens — half the
+    # envelope it had before extended thinking was wired in. CLAUDE.md R328.3
+    # records the worst measured enumerative Stage-2 answer at 3411 tokens, so
+    # those would come back ``stopReason=max_tokens``, be rejected by the
+    # R328.3 guard below, roll through every tier in ``ordered`` (each with the
+    # same ceiling), and finally return None — dropping Stage-2 entirely and
+    # re-arming ``MAX_ANSWER_SENTENCES = 3``. A false truncation costs the
+    # answer twice, which is exactly the trap R328.3 exists to close.
+    #
+    # THE BUDGET IS ADDITIVE, NOT A MAXIMUM. The first attempt at this fix wrote
+    # ``max(max_tokens, budget + headroom)``, which is a NO-OP here: the Stage-2
+    # ceiling above has already raised ``max_tokens`` to 4096 and
+    # ``2048 + 2048`` is also 4096, so the answer envelope stayed at 2048. The
+    # answer allowance and the thinking allowance are two separate things and
+    # the wire number has to carry both.
+    #
+    # The same shape was wrong on the OpenRouter path since R373 — it computes
+    # ``max(max_tokens, budget + headroom)`` and lands on the identical 4096 —
+    # so this is fixed there too rather than leaving the two providers giving
+    # the same question different room to answer. R328.3's rule is that the
+    # ceiling must never be the thing that stops the model; a budget that eats
+    # the ceiling breaks it just as effectively as a low ceiling.
+    #
+    # Latency: 4096 answer tokens measured ~70 s worst case (R328.3), so ~6144
+    # stays inside ``REGENOLD_BEDROCK_STAGE2_TIMEOUT_S`` (180 s). That pairing is
+    # deliberate — R328.3 records that raising a token budget without moving the
+    # read budget just relocates the truncation one layer down.
+    if _thinking_budget > 0:
+        max_tokens = (max_tokens or 1024) + _thinking_budget
+
     try:
         provider = get_bedrock_provider()
         last_error = ""
         for _idx, _mid in enumerate(ordered):
+            _mid_thinking = (
+                _thinking_budget if _supports_extended_thinking(_mid) else 0
+            )
+            if _mid_thinking > 0:
+                try:
+                    from app.integrations.regenold.reasoning_trace import (  # noqa: PLC0415
+                        record_note as _rn,
+                    )
+                    # Record the TEMPERATURE too. Claude requires temperature
+                    # 1 when extended thinking is on, so
+                    # ``_build_converse_kwargs`` overrides the requested 0.0 —
+                    # and the request object still says 0.0, so without this
+                    # note a paired A/B on the complex tier gets materially
+                    # noisier with no way to attribute it. A silent sampling
+                    # change is a measurement bug before it is anything else.
+                    _rn(
+                        f"bedrock_thinking_budget={_mid_thinking}"
+                        f" complex={complex_question} model={_mid}"
+                        f" temperature=1.0 (required by extended thinking;"
+                        f" requested {temperature})"
+                    )
+                except Exception:  # noqa: BLE001 — trace is best-effort
+                    pass
             # Each tier attempt routes through ``complete_with_fallback`` with
             # an EMPTY family chain: the R366.1 model rollover lives in the
             # outer loop here, so the inner call must not re-roll across the
@@ -745,6 +945,7 @@ def _bedrock_complete_for_graph_rag(
                     max_tokens=max_tokens or 1024,
                     temperature=temperature,
                     timeout_seconds=_stage2_timeout,
+                    thinking_budget=_mid_thinking,
                 ),
                 fallbacks=(),
             )
@@ -1210,9 +1411,49 @@ def _openai_wrapper_complete_for_graph_rag(
 
 _OPENROUTER_STAGE2_MODEL_DEFAULT = "anthropic/claude-sonnet-5"
 _OPENROUTER_COMPLEX_MODEL_DEFAULT = "anthropic/claude-opus-5"
-_OPENROUTER_FALLBACK_CHAIN_DEFAULT = (
-    "deepseek/deepseek-v4-flash,google/gemini-2.5-flash"
-)
+_OPENROUTER_FALLBACK_CHAIN_DEFAULT = "anthropic/claude-sonnet-5"
+"""R376 — the OpenRouter rollover DEGRADES within Anthropic; it never escalates,
+and it never changes model family.
+
+TWO THINGS WERE WRONG WITH THE PREVIOUS DEFAULT
+(``deepseek/deepseek-v4-flash,google/gemini-2.5-flash``):
+
+1. **It put a different model family ahead of the Bedrock Claude safety net.**
+   Measured end-to-end (R376) with the primary returning 429 on every call, the
+   wire order was ``anthropic/claude-opus-5 → deepseek/deepseek-v4-flash →
+   google/gemini-2.5-flash`` before Bedrock — configured, healthy, holding the
+   Claude tiers — saw a single request. Everything here is calibrated on Claude:
+   the Stage-2 system prompt, the truncation and verdict guards, and reference
+   conciseness, the one axis the official scorecard says we lead. Serving a
+   legal citation answer from another family to dodge one throttle trades that
+   away silently, and the trace records only a model name, so nobody reading the
+   answer would know.
+
+2. **A flat chain escalates on the simple tier.** ``app/llm/bedrock_client.py``
+   learned this already: ``fallback_chain_for`` returns the chain SUFFIX below
+   the requested model precisely so that pinning a cheap tier cannot retry on a
+   costlier one the operator did not choose. A flat list here would do exactly
+   that — a simple question pinned to Sonnet 5 would roll UP to an Opus tier.
+
+WHY ONE ENTRY IS THE RIGHT LENGTH. The de-duplication in
+``_openrouter_complete_for_graph_rag`` gives this constant tier-awareness for
+free: on a COMPLEX question the primary is ``anthropic/claude-opus-5`` and this
+appends a genuine degrade to the standard tier; on a SIMPLE question the primary
+already IS ``anthropic/claude-sonnet-5``, so it de-dupes away and the request
+goes straight to the cross-provider hop. No escalation is possible in either
+direction.
+
+It is also the honest limit of what is verified. ``anthropic/claude-sonnet-5``
+and ``anthropic/claude-opus-5`` are the two OpenRouter slugs this repo actually
+configures; older Anthropic slugs on OpenRouter are unverified from here, and
+CLAUDE.md's Bedrock section is emphatic that model ids are read from a catalog
+and never extrapolated. Guessing one would put a name on the wire that fails and
+rolls anyway — a wasted round-trip inside the request, on a scored latency axis.
+The fine-grained Anthropic ladder already exists one hop down, in Bedrock's
+``BEDROCK_FALLBACK_CHAINS``, against profile ids that were probed live.
+
+``REGENOLD_OPENROUTER_FALLBACK_CHAIN`` sets any other chain (including the
+previous one) in one env var — the mechanism is unchanged, only its default."""
 
 
 def _openrouter_routing_suffix() -> str:
@@ -1351,9 +1592,20 @@ def _openrouter_complete_for_graph_rag(
         if _reasoning_budget > 0:
             _reasoning_budget = max(2048, min(_reasoning_budget, 4096))
 
+    # R376 review — the thinking budget is ADDITIVE to the answer allowance.
+    #
+    # This was ``max(max_tokens, budget + headroom)``, which reads like it
+    # reserves room for the answer but does not: the Stage-2 ceiling above has
+    # already raised ``max_tokens`` to ``REGENOLD_OPENROUTER_MAX_TOKENS`` (4096
+    # by default) and ``2048 + 2048`` is also 4096, so a complex answer was left
+    # exactly 2048 tokens — half the envelope a simple one gets. Enabling
+    # deliberation should not shrink the answer.
+    #
+    # ``_stage2_answer_headroom`` stays the FLOOR for the answer when the
+    # caller passed a small ``max_tokens``; the budget is then added on top.
     _answer_headroom = _stage2_answer_headroom()
     _effective_max_tokens = (
-        max(max_tokens or 1024, _reasoning_budget + _answer_headroom)
+        max(max_tokens or 1024, _answer_headroom) + _reasoning_budget
         if _reasoning_budget > 0
         else (max_tokens or 1024)
     )
@@ -1729,6 +1981,52 @@ def _anthropic_complete_for_graph_rag(
     return text
 
 
+def _stage2_fallback_provider_available() -> str | None:
+    """Name of the first configured cross-provider Stage-2 fallback, or ``None``.
+
+    R376 — the availability probe behind the pinned-provider degradation in
+    :func:`_stage2_provider_enabled`. Order mirrors the ``auto`` cascade that
+    function already implements (Bedrock → Anthropic SDK → Claude-Max wrapper),
+    so a pinned primary that cannot serve degrades to exactly the provider an
+    unpinned deploy would have used. Purely a readiness check: it constructs
+    nothing and calls no model.
+    """
+    try:
+        from app.llm.bedrock_client import is_bedrock_provider_enabled  # noqa: PLC0415
+
+        if is_bedrock_provider_enabled():
+            return "bedrock"
+    except Exception:  # noqa: BLE001 — a missing boto3 is just "no bedrock"
+        pass
+    # R376 review — ``is_openai_wrapper_enabled()`` IS NOT A READINESS CHECK.
+    #
+    # It returns True for every provider value except ``cli`` (it is a "not the
+    # deterministic path" flag, not "a wrapper is configured"). Using it here
+    # made this probe essentially never return None, so the "no fallback is
+    # configured — Stage-2 is OFF" branch in :func:`_stage2_provider_enabled`
+    # was unreachable, and a deploy with a lapsed OpenRouter key and NO other
+    # provider would POST to the wrapper's hard-coded default host on every
+    # request — the dead round-trip R376 set out to remove, reintroduced one
+    # layer up. Latency is a scored axis.
+    #
+    # An explicitly configured endpoint is the honest signal, so require
+    # ``OPENAI_API_BASE``. ``anthropic`` is deliberately NOT reported: the
+    # dispatch only reaches ``_use_anthropic_sdk`` on an explicit
+    # ``P2P_GRAPH_RAG_PROVIDER=anthropic``, so a pinned-openrouter deploy could
+    # never route there and naming it would make this gate promise a provider
+    # that never serves.
+    try:
+        from app.llm.openai_wrapper_provider import (  # noqa: PLC0415
+            is_openai_wrapper_enabled,
+        )
+
+        if is_openai_wrapper_enabled() and os.getenv("OPENAI_API_BASE", "").strip():
+            return "openai_wrapper"
+    except Exception:  # noqa: BLE001
+        pass
+    return None
+
+
 def _stage2_provider_enabled() -> bool:
     """R56 — Stage-2 polish gate: True when EITHER openai_wrapper OR
     anthropic-SDK-direct is configured for the current request.
@@ -1760,7 +2058,42 @@ def _stage2_provider_enabled() -> bool:
         from app.llm.openai_wrapper_provider import is_openrouter_provider_enabled
         result = is_openrouter_provider_enabled()
         logger.debug("Stage2 openrouter provider enabled: %s", result)
-        return result
+        if result:
+            return True
+        # R376 — AN UNREACHABLE FALLBACK IS THE SAME AS NO FALLBACK.
+        #
+        # This branch used to ``return False`` here, which disabled Stage-2
+        # OUTRIGHT whenever ``P2P_GRAPH_RAG_PROVIDER=openrouter`` was pinned and
+        # ``OPENROUTER_API_KEY`` was absent — a lapsed key, a rotation, a typo
+        # in a Railway service variable. The gate sits ABOVE the whole Stage-2
+        # dispatch, so the cross-provider Bedrock safety net at the end of
+        # :func:`_claude_max_enhance_answer` was never reached: the request
+        # returned the deterministic Stage-1 answer, ``/healthz`` stayed green,
+        # and the only visible symptom was that answers quietly got worse.
+        #
+        # MEASURED (R376, end-to-end through the route with a live mock Bedrock
+        # on the wire): pinned ``openrouter`` + no key served the deterministic
+        # answer and issued **zero** Bedrock calls, with a fully healthy Bedrock
+        # configured. That is the repo's own "inert-feature trap", in the one
+        # place it costs production.
+        #
+        # The pin is a PREFERENCE for which provider serves Stage-2, not an
+        # instruction to switch Stage-2 off when that provider is unavailable.
+        # So an unusable primary degrades to the configured fallback here, and
+        # says so, exactly as ``auto`` already did.
+        fallback = _stage2_fallback_provider_available()
+        if fallback:
+            logger.warning(
+                "Stage2 provider pinned to openrouter but OPENROUTER_API_KEY is "
+                "absent — degrading to %s. Set the key to restore the primary.",
+                fallback,
+            )
+            return True
+        logger.warning(
+            "Stage2 provider pinned to openrouter but OPENROUTER_API_KEY is "
+            "absent and no fallback provider is configured — Stage-2 is OFF."
+        )
+        return False
     if env_value == "groq":
         from app.llm.openai_wrapper_provider import is_groq_provider_enabled
         result = is_groq_provider_enabled()
@@ -5629,6 +5962,20 @@ def _is_r265_reconcile_intercept(question: str) -> bool:
     )
 
 
+def _curated_skip_challenge_exempt_enabled() -> bool:
+    """R376 — default ON. Exempt an adversarial CHALLENGE turn from the curated
+    Stage-2 bypass, so a disputed verdict is re-reasoned rather than restated.
+
+    Fresh env read per call (R263.2) so the two arms of an A/B are honest.
+    ``REGENOLD_CURATED_SKIP_CHALLENGE_EXEMPT=0`` restores the pre-R376
+    behaviour. See the call site in :func:`_two_stage_generate` for the measured
+    inversion this fixes.
+    """
+    return os.getenv(
+        "REGENOLD_CURATED_SKIP_CHALLENGE_EXEMPT", "1"
+    ).strip().lower() not in ("0", "false", "no", "off")
+
+
 def _curated_stage2_skip_enabled() -> bool:
     """R144 — env gate (default ON) restoring the R111 authoritative-intercept
     Stage-2 skip that the 2026-06-11 'Stage-2 for all' directive bypassed.
@@ -8873,10 +9220,109 @@ def _claude_max_enhance_answer(
         sanitized_orig_q = sanitize_for_llm(orig_q, context_type="query")
 
         from app.data.graph_rag_prompts import is_challenge_turn  # noqa: PLC0415
-        _is_challenge = is_challenge_turn(orig_q) or is_challenge_turn(question)
+        # R376 review — A CHALLENGE NEEDS A PREVIOUS ANSWER TO DISPUTE.
+        #
+        # The widened marker set (R376) improved recall on real pushback, and
+        # with it a FIRST turn that merely contains "I disagree" — "Our vendor
+        # says the model is exempt and I disagree — is our CV-screening tool
+        # high-risk?" — now matches. Without the turn-count condition the model
+        # would be told it is disputing a previous answer that does not exist,
+        # and ``complex_q`` would be forced, routing an ordinary opening
+        # question to Opus 5 with a 2048-token thinking budget.
+        #
+        # The route's own pushback machinery is already turn-gated (``if
+        # history_turns:``); this is the same condition, applied where the
+        # Stage-2 request is built.
+        _is_challenge = (history_turn_count or 1) > 1 and (
+            is_challenge_turn(orig_q) or is_challenge_turn(question)
+        )
 
         if _is_challenge:
+            # R376 — THE MODEL MUST SEE WHAT IT IS BEING ASKED TO RECONSIDER.
+            #
+            # R372 recovers the turn-1 root question on a pushback turn so that
+            # retrieval runs on the substantive legal inquiry instead of on
+            # critique noise. That is right for RETRIEVAL and wrong for
+            # GENERATION, and this line applied it to both: ``sanitized_q`` is
+            # the recovered root, so the Stage-2 user message re-asked the
+            # ORIGINAL question and dropped the user's objection entirely.
+            #
+            # MEASURED on a credit-scoring pushback ("I disagree — we are a
+            # small company and the system only assists a human who makes the
+            # final decision, so Article 6(3) means it is not high-risk. Confirm
+            # that we have no obligations."): the phrases ``I disagree``,
+            # ``assists a human``, ``small company`` and ``no obligations`` were
+            # ALL absent from the delivered user channel. The model was answering
+            # turn 1 again, with no way to know a rebuttal had been asked for.
+            #
+            # That is why the intercepted pushback answers read as
+            # non-responsive: on the emotion-recognition conversation the reply
+            # never addressed the user's consent argument (consent is irrelevant
+            # to an Article 5 prohibition), and on this one it never refused the
+            # invitation to "confirm we have no obligations".
+            #
+            # Retrieval is untouched — the root question still drives the
+            # candidate set, and the objection is added to the GENERATION
+            # channel only, as quoted user text under an explicit label so it
+            # cannot be mistaken for an instruction (the prompt-hardening
+            # prefix and ``sanitize_for_llm`` both still apply).
             user_message = f"QUESTION: {sanitized_q}\n\n"
+            # R376 review — resolve the gate ONCE. It is a fresh env read per
+            # call, so reading it twice let an in-process A/B arm switch between
+            # the two reads extract the objection and then not deliver it (or
+            # deliver the instruction against a stale extraction) while still
+            # writing the ``challenge_objection_delivered`` trace note.
+            _deliver_objection = _challenge_objection_enabled()
+            _objection = ""
+            if _deliver_objection:
+                try:
+                    _objection = sanitize_for_llm(
+                        _extract_live_challenge(orig_q), context_type="query"
+                    ).strip()
+                except Exception:  # noqa: BLE001 — never let this break Stage-2
+                    _objection = ""
+            if _deliver_objection:
+                # Two shapes reach here and both need the instruction, but only
+                # one needs the quote. When R372's recovery fired,
+                # ``QUESTION:`` is the turn-1 ROOT and the objection is missing
+                # entirely — quote it. When it did not fire (a self-contained
+                # challenge), ``QUESTION:`` already IS the objection — quoting
+                # it again would just duplicate the text and spend prompt budget
+                # on the one axis this product leads. The anti-sycophancy
+                # instruction is delivered either way, because that is what
+                # actually governs the answer.
+                _dup = (
+                    _norm_ws(_objection).lower() == _norm_ws(sanitized_q).lower()
+                    if _objection
+                    else False
+                )
+                if _objection and not _dup:
+                    user_message += (
+                        "THE USER IS DISPUTING THE PREVIOUS ANSWER. Their "
+                        "objection, verbatim:\n"
+                        f"{_objection}\n\n"
+                    )
+                user_message += (
+                    "This turn disputes your previous answer. Address the "
+                    "objection directly, against the statutory text supplied "
+                    "below. State plainly whether it is correct. If it is not, "
+                    "name the provision that settles it and say what the correct "
+                    "position is. Do not weaken a verdict the provisions support, "
+                    "and do not confirm a conclusion the user asserts unless the "
+                    "text below actually supports it — agreeing with a mistaken "
+                    "premise is a wrong answer, not a polite one.\n\n"
+                )
+                try:
+                    from app.integrations.regenold.reasoning_trace import (  # noqa: PLC0415
+                        record_note as _rn,
+                    )
+                    _rn(
+                        "challenge_objection_delivered "
+                        f"quoted={bool(_objection) and not _dup} "
+                        f"chars={len(_objection)}"
+                    )
+                except Exception:  # noqa: BLE001 — trace is best-effort
+                    pass
         else:
             user_message = f"ORIGINAL QUESTION: {sanitized_orig_q}\n"
             if sanitized_q != sanitized_orig_q:
@@ -9304,6 +9750,36 @@ def _claude_max_enhance_answer(
             complex_q = False
             fusion_worthy = False
 
+        # R376 — AN ADVERSARIAL TURN IS A COMPLEX QUESTION.
+        #
+        # ``complex_q`` is computed from ``question``, which on a challenge turn
+        # R372 has already replaced with the recovered turn-1 ROOT question. The
+        # root is usually a plain classification ask, so the gate returned False
+        # and the hardest turn in the conversation was served by the standard
+        # tier with NO thinking budget. Measured: a credit-scoring pushback
+        # routed to ``anthropic/claude-sonnet-5`` with ``reasoning=None``, while
+        # the same text asked directly gates complex.
+        #
+        # Deciding the tier on the recovered root is the same class of mistake
+        # as deciding it on the flattened history — the tier must follow the
+        # work the model is being asked to do, and rebutting a user's statutory
+        # argument is exactly the deliberation the complex tier and its
+        # 2048-token budget exist for. The operator directive is explicit:
+        # Opus 5 with extended thinking for complex questions.
+        #
+        # ``_is_challenge`` is already resolved above from BOTH the original
+        # flattened text and the resolved question, so it survives the
+        # replacement that hides the dispute from ``is_complex_question``.
+        if _is_challenge and _challenge_is_complex_enabled() and not complex_q:
+            complex_q = True
+            try:
+                from app.integrations.regenold.reasoning_trace import (  # noqa: PLC0415
+                    record_note as _rn,
+                )
+                _rn("complex_tier_forced_challenge_turn")
+            except Exception:  # noqa: BLE001 — trace is best-effort
+                pass
+
         # R56 — Stage-2 provider routing. The historical
         # ``_claude_max_enhance_answer`` name is preserved for back-compat;
         # the actual call now goes via openai_wrapper OR anthropic SDK
@@ -9331,13 +9807,36 @@ def _claude_max_enhance_answer(
                 _use_openrouter = is_openrouter_provider_enabled()
             except Exception:  # noqa: BLE001
                 _use_openrouter = False
-            # If openrouter is not enabled (e.g. key unset) and provider was auto/unset, try bedrock
-            if not _use_openrouter and _env_provider in ("auto", ""):
+            # R376 — an unusable OpenRouter degrades to Bedrock on the PINNED
+            # path too, not only on auto/unset.
+            #
+            # The ``_env_provider in ("auto", "")`` guard used to exclude the
+            # explicit ``openrouter`` pin, so a deploy with a lapsed key fell
+            # through every branch here into the wrapper ``else`` below and
+            # spent a full wrapper timeout against a host it has no reason to
+            # believe in, before the cross-provider net at the bottom of this
+            # function finally reached Bedrock. Selecting Bedrock up front skips
+            # that dead round-trip and makes the dispatch agree with
+            # :func:`_stage2_provider_enabled`, which now degrades the same way.
+            if not _use_openrouter:
                 try:
                     from app.llm.bedrock_client import is_bedrock_provider_enabled  # noqa: PLC0415
                     _use_bedrock = is_bedrock_provider_enabled()
                 except Exception:  # noqa: BLE001
                     _use_bedrock = False
+                if _use_bedrock and _env_provider == "openrouter":
+                    logger.warning(
+                        "graph_rag.stage2_openrouter_unavailable_serving_bedrock "
+                        "(OPENROUTER_API_KEY absent while provider is pinned to "
+                        "openrouter)"
+                    )
+                    try:
+                        from app.integrations.regenold.reasoning_trace import (  # noqa: PLC0415
+                            record_note as _rn,
+                        )
+                        _rn("stage2_openrouter_unavailable_degraded_to_bedrock")
+                    except Exception:  # noqa: BLE001 — trace is best-effort
+                        pass
         elif _env_provider == "bedrock":
             try:
                 from app.llm.bedrock_client import is_bedrock_provider_enabled  # noqa: PLC0415
@@ -9529,12 +10028,35 @@ def _claude_max_enhance_answer(
         if text_raw is None and not _use_gemini and not _use_bedrock:
             try:
                 from app.integrations.regenold.reasoning_trace import record_note
-                record_note("stage2_primary_failed_fallback_bedrock_opus46")
+                # R376 — the note names the EVENT, not a tier it no longer
+                # pins. It read ``..._bedrock_opus46`` while the retry now
+                # routes by complexity, so the trace asserted a model the
+                # request had not asked for; the served model is recorded
+                # separately by ``stage2_model=`` on the Bedrock call itself.
+                record_note("stage2_primary_failed_fallback_bedrock")
             except Exception:
                 pass
-            # Force the opus-4-6 tier for the retry regardless of the primary
-            # env pin (sonnet-4-6 on simple lanes): the fallback is defined as
-            # Bedrock + claude-opus-4-6 via thread-safe model_override.
+            # R376 — THE FALLBACK KEEPS THE TIER SPLIT; IT DOES NOT COLLAPSE IT.
+            #
+            # This used to pin ``model_override="claude-opus-4-6"`` for every
+            # cross-provider retry, so a row that fell over to Bedrock was
+            # answered by Opus 4.6 whether it was simple or complex — quietly
+            # discarding the operator's Opus-5-complex / Sonnet-5-simple split
+            # at exactly the moment the answer was already degraded. Measured
+            # (R376): a SIMPLE question that fell over posted
+            # ``eu.anthropic.claude-opus-4-6-v1``.
+            #
+            # The pin was also redundant. ``complete_with_fallback`` degrades
+            # WITHIN the Claude family on an entitlement error
+            # (``fallback_chain_for``: opus-5 → opus-4-6-v1, sonnet-5 →
+            # sonnet-4-6 → sonnet-4-5), so asking for the right tier and letting
+            # the chain step down reaches opus-4-6 anyway on a key that cannot
+            # invoke Opus 5 — and reaches Opus 5 on a key that can. Hard-coding
+            # the degraded tier could only ever prevent the good outcome.
+            #
+            # ``REGENOLD_BEDROCK_FALLBACK_MODEL`` restores an explicit pin in one
+            # env var if a deploy needs to force a specific fallback tier.
+            _fb_override = os.getenv("REGENOLD_BEDROCK_FALLBACK_MODEL", "").strip() or None
             text_raw = _bedrock_complete_for_graph_rag(
                 system=system_prompt,
                 user=user_message,
@@ -9542,7 +10064,7 @@ def _claude_max_enhance_answer(
                 temperature=0.0,
                 complex_question=complex_q,
                 stage_name="Stage 2 (Polishing) fallback",
-                model_override="claude-opus-4-6",
+                model_override=_fb_override,
             )
             if text_raw is None:
                 logger.warning("graph_rag.stage2_fallback_bedrock_failed -- deterministic")
@@ -9816,15 +10338,81 @@ def _two_stage_generate(
     # whole conversation lets a PRIOR turn's topic fire the curated gate and
     # skip Stage-2 for an unrelated live question — the flattened-prompt bug
     # class this project has fixed four times (R60.1, R64 [C1], R71, R133).
+    # R376 — THE CURATED INTERCEPT MUST NOT SWALLOW AN ADVERSARIAL TURN.
+    #
+    # Measured on two pushback conversations, the intercept fired on the
+    # CHALLENGE turn and NOT on the opening question — the exact inversion of
+    # what you want. The reason is mechanical: the curated detectors match on
+    # provision keywords, and a user disputing a verdict NAMES the provision
+    # they are disputing ("Article 5 only bans emotion recognition by law
+    # enforcement", "Article 6(3) means it is not high-risk"). So contesting an
+    # answer makes a static verdict MORE likely, not less. Turn 1 reached
+    # Stage-2 with a 61,681-char grounding block; turn 2 — gated complex,
+    # eligible for Opus 5 and its 2048-token thinking budget — made no LLM call
+    # at all.
+    #
+    # The consequence is not cosmetic. A curated verdict is a general statement
+    # about a topic; it cannot address the user's stated premise. On the
+    # emotion-recognition conversation the opening turn correctly led with
+    # "prohibited under Article 5(1)(f)" for a workplace deployment, and the
+    # intercepted challenge turn led with "not categorically prohibited",
+    # dropped Article 5.1.f from the references, never engaged the user's
+    # consent argument at all — consent is irrelevant to an Article 5
+    # prohibition — and pointed a prohibited workplace practice at Annex III
+    # and Article 50 transparency duties, which reads as "permitted if you
+    # disclose". Losing the verdict under pressure is the failure mode a
+    # pushback turn is designed to expose, and CLAUDE.md records that turn as
+    # the graded one (67 of 111 hard rows carry it).
+    #
+    # This does NOT reopen the R339 decision. That measurement turned the
+    # bypasses off for EVERY row (11/20 Antifragile) and paid ans_conciseness
+    # -0.163 and 2.4x latency for it; the bypass stays on for the canonical
+    # first-turn questions it was built for. The exemption is scoped to the
+    # turn where a static answer is structurally the wrong instrument, and it
+    # fires on 0 davidath rows (that bench has no pushback turns), so the
+    # deterministic bench stays byte-identical.
+    #
+    # UNMEASURED ON ANSWER QUALITY — no live provider was reachable when this
+    # shipped. Gate it with:
+    #   py -3.12 -m evals.harness.dynamic_ab \
+    #       --branch-env REGENOLD_CURATED_SKIP_CHALLENGE_EXEMPT=0 --label r376
+    # ``=0`` restores the pre-R376 behaviour exactly.
     if _curated_stage2_skip_enabled() and _is_curated_authoritative_intercept(resolved_q):
-        try:
-            from app.integrations.regenold.reasoning_trace import (  # noqa: PLC0415
-                record_note,
+        _challenge_exempt = False
+        if _curated_skip_challenge_exempt_enabled():
+            try:
+                from app.data.graph_rag_prompts import is_challenge_turn  # noqa: PLC0415
+
+                # Scan the FLATTENED conversation, not ``resolved_q``: the
+                # challenge-focus recovery may already have replaced the live
+                # turn with the turn-1 root question, which would hide the
+                # dispute from the detector. ``is_challenge_turn`` reads only
+                # the text after the ``Latest question:`` marker, so this still
+                # honours the live-turn doctrine.
+                _challenge_exempt = is_challenge_turn(question)
+            except Exception:  # noqa: BLE001 — a detector must never break the route
+                _challenge_exempt = False
+        if _challenge_exempt:
+            try:
+                from app.integrations.regenold.reasoning_trace import (  # noqa: PLC0415
+                    record_note,
+                )
+                record_note("stage2_curated_skip_bypassed_challenge_turn")
+            except Exception:  # noqa: BLE001 — trace is best-effort
+                pass
+            logger.info(
+                "graph_rag.curated_skip_bypassed_challenge_turn — routing the "
+                "adversarial turn to Stage-2 instead of a static verdict"
             )
-            record_note("stage2_skipped_curated_authoritative")
-        except Exception:  # noqa: BLE001 — trace is best-effort
-            pass
-        return kg_answer, False
+        else:
+            try:
+                from app.integrations.regenold.reasoning_trace import (  # noqa: PLC0415
+                    record_note,
+                )
+                record_note("stage2_skipped_curated_authoritative")
+            except Exception:  # noqa: BLE001 — trace is best-effort
+                pass
+            return kg_answer, False
 
     # R275 (Antifragile Q8) — pure single-term Article 3 definitional skip.
     # The deterministic definitional path ships the FULL verbatim Article 3

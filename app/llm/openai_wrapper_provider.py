@@ -399,18 +399,61 @@ class _OpenAIWrapperProvider:
     backwards-compatible singleton path.
     """
 
+    #: R376 — class-level default for the OpenRouter identity.
+    #:
+    #: Several tests build a provider with ``__new__`` and assign the handful of
+    #: attributes they need, bypassing ``__init__`` entirely. Reading an
+    #: instance-only attribute in ``complete()`` would turn that into an
+    #: ``AttributeError`` on a code path those tests are not about. A class
+    #: attribute keeps the lookup total: ``__init__`` overrides it with the real
+    #: value, and a hand-built instance behaves as the non-OpenRouter provider
+    #: it is.
+    _is_openrouter: bool = False
+
     def __init__(
         self,
         *,
         base_url: str | None = None,
         api_key: str | None = None,
         timeout: float | None = None,
+        is_openrouter: bool | None = None,
     ) -> None:
         self._base_url = (
             (base_url or os.getenv("OPENAI_API_BASE", "")).strip().rstrip("/")
             or "https://wrapper.antifragile-ai.net/v1"
         )
         self._api_key = api_key or os.getenv("OPENAI_API_KEY", "dummy")
+        # R376 — OPENROUTER IDENTITY IS A PROPERTY OF THE INSTANCE, NOT OF THE
+        # URL STRING.
+        #
+        # ``complete()`` used to decide "is this OpenRouter?" with
+        # ``"openrouter.ai" in self._base_url``. That is a URL substring
+        # standing in for a provider identity, and it fails SILENTLY in the one
+        # direction that costs an answer: any base that is not literally on
+        # ``openrouter.ai`` — a gateway, an observability proxy, a regional
+        # mirror, a local replay server — makes an ``anthropic/claude-*`` model
+        # match ``_is_claude_cli_wrapper`` instead, so the extended-thinking
+        # budget is routed to a Claude-Code-CLI HTTP header that OpenRouter does
+        # not read, and the ``reasoning`` object never reaches the wire. The
+        # complex tier keeps its Opus model name and quietly loses its 2048
+        # thinking tokens, with no log line and no trace note.
+        #
+        # MEASURED (R376, local wire capture): with
+        # ``OPENROUTER_API_BASE`` on a non-``openrouter.ai`` host, a complex
+        # question posted ``model=anthropic/claude-opus-5`` and
+        # ``reasoning=None``; the same request against an ``openrouter.ai``
+        # host posted ``reasoning={'max_tokens': 2048, 'exclude': False}``.
+        # Same code, same config, opposite behaviour — decided by a hostname.
+        #
+        # :func:`get_openrouter_provider` now passes ``is_openrouter=True``
+        # explicitly, so the identity travels with the object that has it. The
+        # URL heuristic is kept ONLY as the default for instances constructed
+        # without the flag (back-compat for tests and ad-hoc callers).
+        self._is_openrouter = (
+            bool(is_openrouter)
+            if is_openrouter is not None
+            else "openrouter.ai" in self._base_url.lower()
+        )
         # R277 — resolved once per instance (env is read at construction, as
         # for every other setting here). Empty for the local wrapper and for
         # the Groq / Gemini / Mistral instances; see _resolve_cf_access_headers.
@@ -509,7 +552,7 @@ class _OpenAIWrapperProvider:
         # On OpenRouter, Anthropic models use the unified ``reasoning`` object.
         # On the local Claude CLI wrapper, thinking tokens use HTTP headers instead.
         _model_lc = (req.model or "").lower()
-        _is_openrouter = "openrouter.ai" in (self._base_url or "").lower()
+        _is_openrouter = self._is_openrouter
         _is_claude_cli_wrapper = not _is_openrouter and (
             _model_lc.startswith("claude") or "claude-" in _model_lc
         )
@@ -943,6 +986,12 @@ def get_openrouter_provider() -> _OpenAIWrapperProvider:
                     ),
                     api_key=os.getenv("OPENROUTER_API_KEY", ""),
                     timeout=float(os.getenv("OPENROUTER_TIMEOUT_SECONDS", "60")),
+                    # R376 — this factory KNOWS it is building the OpenRouter
+                    # provider, so it says so instead of leaving ``complete()``
+                    # to infer it from the hostname. An operator pointing
+                    # ``OPENROUTER_API_BASE`` at a gateway keeps extended
+                    # thinking.
+                    is_openrouter=True,
                 )
     return _OPENROUTER_SINGLETON
 
