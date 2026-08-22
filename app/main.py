@@ -134,13 +134,31 @@ def _log_llm_provider_status() -> None:
     elif provider_label == "openrouter":
         from app.llm.openai_wrapper_provider import is_openrouter_provider_enabled
         configured = is_openrouter_provider_enabled()
+        # I6 — report the OpenRouter model ids that actually go on the wire.
+        # Logging ``settings.graph_rag.model`` here named ``claude-sonnet-5``
+        # while every Stage-2 call goes to ``anthropic/claude-sonnet-5`` /
+        # ``anthropic/claude-opus-5``: a boot line is worse than useless when
+        # it is confidently wrong.
+        try:
+            from app.engines._graph_rag_impl import (
+                _OPENROUTER_COMPLEX_MODEL_DEFAULT,
+                _OPENROUTER_STAGE2_MODEL_DEFAULT,
+            )
+            _or_std = os.getenv(
+                "REGENOLD_STAGE2_MODEL_OPENROUTER", ""
+            ).strip() or _OPENROUTER_STAGE2_MODEL_DEFAULT
+            _or_cpx = os.getenv(
+                "REGENOLD_STAGE2_COMPLEX_MODEL_OPENROUTER", ""
+            ).strip() or _OPENROUTER_COMPLEX_MODEL_DEFAULT
+        except Exception:  # noqa: BLE001 — a log line must never break boot
+            _or_std = _or_cpx = "unknown"
         logger.info(
-            "regenold.startup provider=openrouter api_key_configured=%s model=%s "
-            "intent_model=%s graph_rag_model=%s",
+            "regenold.startup provider=openrouter api_key_configured=%s "
+            "stage2_model=%s complex_model=%s intent_model=%s",
             configured,
-            settings.graph_rag.model,
+            _or_std,
+            _or_cpx,
             _intent_model_for_log(),
-            settings.graph_rag.model,
         )
     elif provider_label == "bedrock":
         try:
@@ -1049,6 +1067,16 @@ def healthz_email(
     return payload
 
 
+def _probe_timeout(default: float = 30.0) -> float:
+    """Shared ``/healthz/llm`` probe budget. See the wrapper branch for why 30 s:
+    a cold Railway container stacks DNS + TLS + pool warm-up on the first call
+    after a deploy, which false-negatived the post-deploy canary at 10 s."""
+    try:
+        return float(os.getenv("REGENOLD_HEALTHZ_PROBE_TIMEOUT", "").strip() or default)
+    except ValueError:
+        return default
+
+
 @app.get("/healthz/llm")
 def healthz_llm() -> dict[str, object]:
     """Live LLM-path probe — verifies the configured provider can actually answer.
@@ -1166,16 +1194,24 @@ def healthz_llm() -> dict[str, object]:
             from app.llm.openai_wrapper_provider import is_openrouter_provider_enabled  # noqa: PLC0415
             from app.llm.bedrock_client import is_bedrock_provider_enabled  # noqa: PLC0415
 
-            if is_openrouter_provider_enabled():
-                base["llm_ok"] = True
-                base["provider"] = "openrouter (fallback)"
-                base["detail"] = f"primary (openai_wrapper) offline ({response.error[:60]}); openrouter fallback active"
-                base["elapsed_ms"] = response.elapsed_ms
-                return base
-            if is_bedrock_provider_enabled():
-                base["llm_ok"] = True
-                base["provider"] = "bedrock (fallback)"
-                base["detail"] = f"primary (openai_wrapper) offline ({response.error[:60]}); bedrock fallback active"
+            # M13 — report the fallback, never CLAIM it. Both
+            # ``is_*_provider_enabled`` are pure env-var checks with no network
+            # call, so setting ``llm_ok = True`` here turned a MEASURED failure
+            # into a pass on the strength of a configured key: an expired ABSK
+            # token or a zero-credit OpenRouter key would report healthy
+            # forever. ``/healthz/llm`` already has a reputation for lying;
+            # it must not claim health it did not measure.
+            fallback = (
+                "openrouter" if is_openrouter_provider_enabled()
+                else "bedrock" if is_bedrock_provider_enabled()
+                else ""
+            )
+            if fallback:
+                base["fallback_configured"] = fallback
+                base["detail"] = (
+                    f"primary (openai_wrapper) offline ({response.error[:60]}); "
+                    f"{fallback} is configured but was NOT probed"
+                )
                 base["elapsed_ms"] = response.elapsed_ms
                 return base
 
@@ -1255,13 +1291,53 @@ def healthz_llm() -> dict[str, object]:
         base["model"] = settings.graph_rag.model
         return base
 
+    # HEALTHZ-02 — this endpoint's contract (see the docstring) is a LIVE
+    # probe, and ``llm_ok`` is the field consumers alert on. Both branches used
+    # to return ``llm_ok = True`` from a config check alone — on OpenRouter,
+    # which R372 made the DEFAULT provider — so a revoked key or an
+    # out-of-credit account reported healthy indefinitely while every request
+    # served the deterministic answer. Probe for real, exactly as the wrapper
+    # branch does; a configured-but-unreachable provider is NOT ok.
     if provider_label == "openrouter":
-        from app.llm.openai_wrapper_provider import is_openrouter_provider_enabled
+        from app.llm.openai_wrapper_provider import (
+            get_openrouter_provider,
+            is_openrouter_provider_enabled,
+        )
         if not is_openrouter_provider_enabled():
             base["detail"] = "OPENROUTER_API_KEY is not set"
             return base
-        base["llm_ok"] = True
-        base["detail"] = "openrouter_configured"
+        base["provider_configured"] = True
+        import time as _time  # noqa: PLC0415
+        start = _time.perf_counter()
+        try:
+            from app.engines._graph_rag_impl import (
+                _OPENROUTER_STAGE2_MODEL_DEFAULT,
+            )
+            probe_model = (
+                os.getenv("REGENOLD_HEALTHZ_PROBE_MODEL", "").strip()
+                or os.getenv("REGENOLD_STAGE2_MODEL_OPENROUTER", "").strip()
+                or _OPENROUTER_STAGE2_MODEL_DEFAULT
+            )
+            response = get_openrouter_provider().complete(
+                OpenAIWrapperRequest(
+                    user="Reply with the word OK.",
+                    model=probe_model,
+                    max_tokens=8,
+                    temperature=0.0,
+                    timeout_seconds=_probe_timeout(),
+                )
+            )
+        except Exception as exc:  # noqa: BLE001 — health probe must never raise
+            base["detail"] = f"openrouter_probe_exception: {exc!s}"[:200]
+            base["elapsed_ms"] = int((_time.perf_counter() - start) * 1000)
+            return base
+        base["elapsed_ms"] = int((_time.perf_counter() - start) * 1000)
+        base["model"] = probe_model
+        if response.error:
+            base["detail"] = f"openrouter_probe_failed: {response.error}"[:200]
+            return base
+        base["llm_ok"] = bool((response.text or "").strip())
+        base["detail"] = "ok" if base["llm_ok"] else "empty_response"
         return base
 
     if provider_label == "bedrock":
@@ -1269,8 +1345,39 @@ def healthz_llm() -> dict[str, object]:
         if not is_bedrock_provider_enabled():
             base["detail"] = "AWS Bedrock credentials or region not configured"
             return base
-        base["llm_ok"] = True
-        base["detail"] = "bedrock_configured"
+        base["provider_configured"] = True
+        import time as _time  # noqa: PLC0415
+        start = _time.perf_counter()
+        try:
+            from app.llm.bedrock_client import (
+                BedrockRequest,
+                _resolve_default_model,
+                complete_with_fallback,
+            )
+            probe_model = (
+                os.getenv("REGENOLD_HEALTHZ_PROBE_MODEL", "").strip()
+                or _resolve_default_model()
+            )
+            response = complete_with_fallback(
+                BedrockRequest(
+                    user="Reply with the word OK.",
+                    model=probe_model,
+                    max_tokens=8,
+                    temperature=0.0,
+                    timeout_seconds=_probe_timeout(),
+                )
+            )
+        except Exception as exc:  # noqa: BLE001 — health probe must never raise
+            base["detail"] = f"bedrock_probe_exception: {exc!s}"[:200]
+            base["elapsed_ms"] = int((_time.perf_counter() - start) * 1000)
+            return base
+        base["elapsed_ms"] = int((_time.perf_counter() - start) * 1000)
+        base["model"] = getattr(response, "model", probe_model)
+        if response.error:
+            base["detail"] = f"bedrock_probe_failed: {response.error}"[:200]
+            return base
+        base["llm_ok"] = bool((response.text or "").strip())
+        base["detail"] = "ok" if base["llm_ok"] else "empty_response"
         return base
 
     # cli / deterministic path

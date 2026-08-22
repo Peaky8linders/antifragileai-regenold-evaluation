@@ -413,6 +413,7 @@ def _looks_incomplete_final_sentence(text: str | None) -> bool:
     """
     if not text:
         return False
+    text = _guardable_answer(text)
     if _looks_structurally_truncated(text):
         return True
     if _looks_incomplete_verdict(text):
@@ -636,6 +637,38 @@ restoration as :data:`BEDROCK_RAG_MODEL` (was opus-4-6-v1 in the window)."""
 
 
 
+def _guardable_answer(text: str | None) -> str:
+    """The USER-FACING answer inside a channelled reply, for the truncation guards.
+
+    F1 — ad300b4 gave the two default-ON challenge-turn prompts an output
+    contract of
+    ``<reasoning_scratchpad>…</reasoning_scratchpad><answer>…</answer>``, but
+    every Stage-2 transport still ran ``_looks_structurally_truncated`` on the
+    RAW reply. Measured: a fully COMPLIANT answer scores ``True`` there — the
+    closing ``</answer>`` reads as a broken ending — so the polish was
+    discarded, the chain rolled through every fallback model, and the row fell
+    back to the deterministic Stage-1 answer. That happens on the PUSHBACK
+    turn, which is the graded one (CLAUDE.md: 67 of 111 hard rows carry it),
+    and because ``set_answer_no_cap`` is gated on Stage-2 landing it also
+    re-arms ``MAX_ANSWER_SENTENCES = 3`` — consistent with the 5.4 -> 3.6
+    sentence drop and the -11.2% answer-correctness drop recorded in
+    ``docs/reviews/live_comparative_pushback_audit.json``.
+
+    Judging the EXTRACTED answer flips only that false positive: verified, a
+    reply cut mid-``<answer>``, cut mid-scratchpad, or a plain cut answer all
+    still score ``True``.
+    """
+    if not text:
+        return ""
+    try:
+        from app.security.prompt_guard import extract_xml_channels  # noqa: PLC0415
+
+        clean, _reasoning = extract_xml_channels(text)
+        return clean or text
+    except Exception:  # noqa: BLE001 — a guard helper must never break Stage-2
+        return text
+
+
 def _bedrock_complete_for_graph_rag(
     *, system: str, user: str, max_tokens: int, temperature: float,
     complex_question: bool = False, stage_name: str = "Stage",
@@ -681,6 +714,42 @@ def _bedrock_complete_for_graph_rag(
         model = os.getenv("REGENOLD_BEDROCK_STAGE1_MODEL", "").strip() or default_model
 
     model_id = resolve_bedrock_model(model)
+
+    # R377 — extended-thinking parity. ``BedrockRequest.thinking_budget``
+    # defaults to 0 and this function never set it, so Bedrock was the ONE
+    # Stage-2 transport with no deliberation at all: the wrapper
+    # (``X-Claude-Max-Thinking-Tokens``), Anthropic (``thinking``) and
+    # OpenRouter (``reasoning``) all send the configured budget. Demonstrated
+    # on the cross-provider fallback — a ``complex=True`` GPAI question that
+    # rolls over from OpenRouter was answered with ``thinking_budget=0`` while
+    # the primary would have used 2048 — so a failover silently downgraded the
+    # reasoning on exactly the hard questions the budget exists for. It also
+    # made the R376 ``record_llm_thinking(resp.thinking, ...)`` call
+    # unreachable, because ``resp.thinking`` is only populated when a budget is
+    # requested.
+    #
+    # Same clamp and the same ``> 0`` guard as the other three transports
+    # (``max(2048, min(x, 4096))``), so the simple tier — ``thinking_tokens``
+    # default 0 — is unchanged. ``bedrock_client._build_converse_kwargs``
+    # already raises ``maxTokens`` to ``budget + 512`` and pins
+    # ``temperature = 1.0`` when a budget is present, which is what Claude
+    # requires. ``REGENOLD_BEDROCK_STAGE2_THINKING=0`` disables it.
+    _bedrock_thinking = 0
+    if is_stage2 and os.getenv("REGENOLD_BEDROCK_STAGE2_THINKING", "1").strip().lower() not in (
+        "0", "false", "no", "off",
+    ):
+        try:
+            from app.config import settings as _bt_settings  # noqa: PLC0415
+
+            _bt_raw = int(
+                getattr(_bt_settings.graph_rag, "complex_thinking_tokens", 0) or 0
+            ) if complex_question else int(
+                getattr(_bt_settings.graph_rag, "thinking_tokens", 0) or 0
+            )
+        except Exception:  # noqa: BLE001 — never break Stage-2 over a budget
+            _bt_raw = 0
+        if _bt_raw > 0:
+            _bedrock_thinking = max(2048, min(_bt_raw, 4096))
 
     # R366.1 — cross-model Bedrock fallback chain. The operator's eval runs
     # hit hard 429 throttles on the Claude tiers mid-batch (measured: 256
@@ -744,6 +813,7 @@ def _bedrock_complete_for_graph_rag(
                     model=_mid,
                     max_tokens=max_tokens or 1024,
                     temperature=temperature,
+                    thinking_budget=_bedrock_thinking,
                     timeout_seconds=_stage2_timeout,
                 ),
                 fallbacks=(),
@@ -774,7 +844,7 @@ def _bedrock_complete_for_graph_rag(
                 except Exception:  # noqa: BLE001 — trace is best-effort
                     pass
                 continue
-            if _looks_structurally_truncated(resp.text):
+            if _looks_structurally_truncated(_guardable_answer(resp.text)):
                 last_error = "structural_truncation"
                 logger.warning(
                     "graph_rag.bedrock_truncated_structural tried=%s — rolling to next", _mid,
@@ -786,8 +856,9 @@ def _bedrock_complete_for_graph_rag(
                     model_id, _mid,
                 )
             # F4/F5 — Stage-2 model provenance in the reasoning trace. The
-            # wrapper and OpenRouter paths already record ``stage2_model=``;
-            # this was the one Stage-2 provider that did NOT, so a R366.1
+            # wrapper path already records ``stage2_model=`` (the OpenRouter
+            # path recorded only the REQUESTED model until M14 moved its note
+            # onto the success path); this provider recorded nothing, so a R366.1
             # chain rollover (primary 429/truncated → qwen3-235b / nemotron /
             # devstral / qwen3-32b) was invisible to every consumer of the
             # trace and the sidecar ``stage2_models`` harvest. Record the
@@ -1152,8 +1223,9 @@ def _openai_wrapper_complete_for_graph_rag(
         os.getenv("REGENOLD_STAGE2_VERDICT_GUARD", "1").strip().lower()
         in ("1", "true", "yes", "on")
     )
-    if _looks_structurally_truncated(response.text) or (
-        _verdict_guard and _looks_incomplete_verdict(response.text)
+    _guardable = _guardable_answer(response.text)
+    if _looks_structurally_truncated(_guardable) or (
+        _verdict_guard and _looks_incomplete_verdict(_guardable)
     ):
         logger.warning(
             "graph_rag.openai_wrapper_truncated_structural — finish_reason=%r "
@@ -1317,16 +1389,15 @@ def _openrouter_complete_for_graph_rag(
         if _cand and _cand not in ordered:
             ordered.append(_cand)
 
-    try:
-        from app.integrations.regenold.reasoning_trace import record_note as _rn  # noqa: PLC0415
-        try:
-            _rn(
-                f"stage2_model={model} provider=openrouter complex={complex_question}"
-            )
-        except Exception:  # noqa: BLE001 — trace is best-effort
-            pass
-    except Exception:  # noqa: BLE001
-        pass
+    # F4/M14 — the ``stage2_model=`` note MUST name the model that actually
+    # answered, not the one we asked for. Recording it here (pre-loop, from the
+    # REQUESTED ``model``) made a rollover to the R373 chain
+    # (deepseek-v4-flash / gemini-2.5-flash) invisible to the durable artifact,
+    # while every sidecar asserted the pin — and nothing in the eval pipeline
+    # reads logs. It also fired on a FULLY FAILED chain, falsely attributing a
+    # Bedrock- or deterministically-served answer to OpenRouter. The note now
+    # lives on the success path below, keyed on ``_mid``, exactly as the
+    # Bedrock path does.
 
     _verdict_guard = (
         os.getenv("REGENOLD_STAGE2_VERDICT_GUARD", "1").strip().lower()
@@ -1417,8 +1488,9 @@ def _openrouter_complete_for_graph_rag(
             continue
         # R102/R142 — structural + verdict truncation guards, mirroring the
         # wrapper path (the verdict guard is env-gated the same way).
-        if _looks_structurally_truncated(resp.text) or (
-            _verdict_guard and _looks_incomplete_verdict(resp.text)
+        _guardable = _guardable_answer(resp.text)
+        if _looks_structurally_truncated(_guardable) or (
+            _verdict_guard and _looks_incomplete_verdict(_guardable)
         ):
             last_error = "structural_truncation"
             logger.warning(
@@ -1431,6 +1503,18 @@ def _openrouter_complete_for_graph_rag(
                 "graph_rag.openrouter_fallback_chain_served primary=%s served_by=%s",
                 model, _mid,
             )
+        # F4/M14 — Stage-2 model provenance into the reasoning trace, on the
+        # SUCCESS path and naming the SERVED model. Mirrors
+        # ``_bedrock_complete_for_graph_rag``: one concept, one definition.
+        try:
+            from app.integrations.regenold.reasoning_trace import (  # noqa: PLC0415
+                record_note as _rn,
+            )
+            _rn(f"stage2_model={_mid} complex={complex_question} provider=openrouter")
+            if _mid != model:
+                _rn(f"openrouter_fallback requested={model} served_by={_mid}")
+        except Exception:  # noqa: BLE001 — trace is best-effort
+            pass
         if getattr(resp, "thinking", None):
             try:
                 from app.integrations.regenold.reasoning_trace import record_llm_thinking  # noqa: PLC0415
@@ -1525,9 +1609,19 @@ def _stage2_complete(
                         stage_name=stage_name + " (bedrock-fallback)",
                         model_override="claude-opus-4-6",
                     )
-            except Exception:
+            except Exception:  # noqa: BLE001 — fall through to the wrapper
                 pass
-            return None
+            # STAGE2COMPLETE-03 — do NOT dead-end here. CLAUDE.md documents the
+            # cascade as "OpenRouter first, then Bedrock, then
+            # Anthropic/wrapper", and both the answer path
+            # (``_claude_max_enhance_answer``) and ``_stage2_provider_enabled``
+            # walk all three. Returning None instead meant that on a
+            # wrapper-only deploy with P2P_GRAPH_RAG_PROVIDER unset — which now
+            # resolves to ``openrouter`` — Stage-2 itself ran fine on the
+            # wrapper while every auxiliary caller of ``_stage2_complete``
+            # (the R357 tail repair, the faithfulness verifier) silently got
+            # nothing. Falling through costs a wasted call only when the
+            # wrapper is also unconfigured, which the wrapper path handles.
         return _openai_wrapper_complete_for_graph_rag(
             system=system, user=user, max_tokens=max_tokens,
             temperature=temperature, complex_question=complex_question,
@@ -9475,7 +9569,7 @@ def _claude_max_enhance_answer(
                     resp.completion_tokens,
                 )
                 text_raw = None
-            elif _looks_structurally_truncated(resp.text):
+            elif _looks_structurally_truncated(_guardable_answer(resp.text)):
                 logger.warning(
                     "graph_rag.gemini_stage2_truncated_structural — "
                     "finish_reason=%r but text ends mid-clause "
@@ -9662,6 +9756,21 @@ def _attempt_stage2_tail_repair(
             stage_name="Stage 2 (Tail Repair)",
         )
         if not tail or not tail.strip():
+            return None
+        # M10 — this splice is the ONE Stage-2 answer path that never reached
+        # ``validate_llm_output`` / ``extract_xml_channels`` (the only
+        # ``extract_xml_channels`` call site is ``_claude_max_enhance_answer``),
+        # so a rollover to an open-reasoning model — deepseek-v4-flash and
+        # gemini-2.5-flash are the OpenRouter chain, qwen3 / nemotron / devstral
+        # the Bedrock one — spliced a raw ``<think>`` block straight into the
+        # user-facing legal answer. ``validate_llm_output`` is the wrong tool
+        # here because it strips, and the LEADING WHITESPACE below IS the
+        # word-boundary signal.
+        from app.security.prompt_guard import (  # noqa: PLC0415
+            strip_reasoning_keep_boundary,
+        )
+        tail = strip_reasoning_keep_boundary(tail)
+        if not tail.strip():
             return None
         # Preserve the boundary signal the model expressed: a leading space
         # means the cut landed between words (the model was told to begin

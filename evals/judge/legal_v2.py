@@ -144,6 +144,7 @@ from evals.judge.grounded import (  # reuse the sidecar-loading + row-norm plumb
     _answer_grounding_block,
     _has_independent_answer_grounding,
 )
+from evals.judge.runner import normalise_verdict as _verdict
 
 _DEFAULT_MODEL = "qwen.qwen3-32b-v1:0"
 
@@ -1487,7 +1488,7 @@ def _aggregate(judged: list[dict[str, Any]]) -> dict[str, Any]:
             if v.get("judge_error"):
                 e += 1
                 continue
-            verd = str(v.get("verdict") or "").lower()
+            verd = _verdict(v)
             if verd == "pass":
                 p += 1
             elif verd == "fail":

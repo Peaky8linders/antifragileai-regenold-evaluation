@@ -542,6 +542,95 @@ that the instance is pristine.
   still cites Art. 13 via retrieval with correct attribution; la_q45 unchanged
   (pre-existing generation-side gap). 140-row leak probe: 0 wrong-direction
   claims. Record: `docs/R371.6-ontology-misfact-audit.md`.
+* **R377 — end-to-end validation of the OpenRouter Stage-2 configuration (2026-08-20).**
+  Validated IN-PROCESS with the HTTP boundary stubbed (no live keys in this
+  environment — see the caveat below), so the real body builder, model routing,
+  thinking budget, rollover chain and cross-provider fallback all executed.
+  Pins: `tests/test_r377_openrouter_kg_wiring.py` (17). Suite **7005 passed / 0
+  failed**, `runner` **255/255**, RISK_F1 **1.00**, OOS **49 / 0 leaks**.
+  * **Routing confirmed as specified.** simple → `anthropic/claude-sonnet-5`,
+    temp 0.0, no `reasoning`; complex → `anthropic/claude-opus-5`, temp **1.0**,
+    `reasoning={"max_tokens": 2048}`. Held on the pushback turn too.
+  * **Bedrock fallback confirmed**, and one real defect fixed:
+    `_bedrock_complete_for_graph_rag` never set `BedrockRequest.thinking_budget`,
+    so Bedrock was the ONE Stage-2 transport with NO deliberation — a
+    `complex=True` question that failed over from OpenRouter was answered with
+    `thinking_budget=0` while the primary used 2048. Same clamp and `> 0` guard
+    as the other three transports; `REGENOLD_BEDROCK_STAGE2_THINKING=0` is the
+    off-switch; registered in `_engine_cache_key` (the R334/R355 drift guards
+    caught the omission). This also makes R376's `record_llm_thinking` on that
+    path reachable — `resp.thinking` is only populated when a budget is sent.
+  * **Rerank made OBSERVABLE.** It reorders the citation set — a
+    reference-affecting lever — but left only `_bump` counters and a debug log.
+    Nothing in the eval pipeline reads logs, which is exactly how a
+    rate-limited reranker reads as a clean `+0.0000` wash instead of INERT. Now
+    emits `rerank_applied model=… docs=… reordered=…` into the reasoning trace.
+    Verified firing at BOTH placements through the route, capped at the budget
+    of 2, `rerank-v4.0-pro` with `max_tokens_per_doc=16384`.
+  * **`app/graph/client.py` carried the INVERTED backend-default comment** that
+    R318 fixed in its sibling — it claimed `embedded` was the default and
+    `neo4j` had to be explicit. `_DEFAULT_BACKEND = "neo4j"` since R313.1, so
+    Aura is the DEFAULT. R318 recorded why this matters: "it is how an audit
+    concludes the hosted graph is inactive when it is in fact serving every
+    request". Corrected and test-pinned.
+  * **Knowledge surface re-measured, 7/7 exact:** ARTICLE_EXISTENCE 126, KB
+    stubs 131, definitions 68, xrefs 248, tree 1,412, BM25 **373**
+    (131 kb / 48 ontology / 126 corpus / 68 definition), avg_doc_len 91.7.
+    TurboQuant enabled + compressed available;
+    `dense_top_k('serious incident reporting deadline')` → **Art. 73 @ 0.807**
+    (correct — the R338 corpus-identity fix is holding).
+  * **All 16 Stage-2 blocks deliver** when the graph client is live, including
+    the four KG blocks (`KNOWLEDGE-GRAPH PROVISION STRUCTURE` / `SUB-POINT
+    DETAIL` / `REGULATORY CLASSIFICATION` / `RECITAL ANCHORS`). ⚠ They render
+    ONLY with Aura reachable: `GraphClient._should_activate` needs
+    backend=`neo4j` **and** `NEO4J_URI` **and** the driver. With
+    `REGENOLD_GRAPH_BACKEND=embedded` (or no `NEO4J_URI`) the client is
+    disabled and all four are silently absent — the whole ontology/semantic
+    layer with them.
+  ⚠ **NOT live-verified.** This container has no `OPENROUTER_API_KEY`, no
+  Neo4j/Cohere credentials and placeholder AWS values, and the egress policy
+  denies `openrouter.ai`, `api.cohere.com`, the wrapper and the Railway domain
+  (403 CONNECT). Every claim above is in-process against stubbed transports:
+  it proves the WIRING, not the live behaviour, latency or answer quality.
+* **R376 — engineering review of the R372→`6c076bf` window (2026-08-20).**
+  Two independent passes (validation of the 14 findings `6c076bf` claimed fixed,
+  plus a fresh specialist sweep), each adversarially verified. **Only 5 of 14
+  prior findings were actually closed.** 18 defects fixed, all with executed
+  evidence; suite **6988 passed / 0 failed**, `runner` **255/255**, RISK_F1
+  **1.00**, OOS **49 pass / 0 leaks**. Record:
+  [`docs/reviews/main-2026-08-20-r376-eng-review.md`](docs/reviews/main-2026-08-20-r376-eng-review.md);
+  pins in `tests/test_r376_review_fixes.py`. The four that matter:
+  * **The graded pushback turn was losing Stage-2 entirely.** `ad300b4` gave the
+    challenge prompts a `<reasoning_scratchpad>…</reasoning_scratchpad><answer>…</answer>`
+    contract, but every transport still ran `_looks_structurally_truncated` on
+    the RAW reply — and a fully COMPLIANT answer scores True there. The polish
+    was discarded, the chain rolled through every fallback, and the row fell
+    back to Stage-1 — which also re-arms `MAX_ANSWER_SENTENCES = 3`. That is
+    consistent with the optimisation's own audit (sentences 5.4 → 3.6,
+    answer-correctness **−11.2%**, n=5). Guards now judge the EXTRACTED answer
+    (`_guardable_answer`); real truncation still caught on every shape tested.
+  * **A truncated `<reasoning_scratchpad>` shipped as the legal answer.** Only
+    `<think>` had an unclosed-block guard, so a `max_tokens` cut mid-scratchpad
+    returned the model's raw deliberation verbatim — non-empty, therefore past
+    the empty-answer guard. ⚠ `xml_channel_leak_rate = 0.0` in
+    `pushback_evaluation_results.json` is measured over 5 rows **none of which
+    were truncated**; it was never evidence.
+  * **The F4 provenance defect was live on the new PRIMARY provider.** The
+    OpenRouter path recorded the REQUESTED model before its fallback loop, so a
+    DeepSeek- or Gemini-served legal answer was stamped
+    `anthropic/claude-sonnet-5` in every sidecar. Fixed; see the F4 bullet above.
+  * **`/healthz/llm` reported health it never measured** — `llm_ok: true` from a
+    pure env-var check on the default provider. Now a real probe.
+  Also: challenge recovery re-answered the wrong question on topic drift;
+  challenge turns bypassed the scope gate (prompt-injection refusals never
+  fired); the re-ask path was frozen to the answer it disputes; `dynamic_ab` had
+  two judge defaults and five readings of one verdict field; and `6c076bf`'s
+  retry-substring "fix" made **6 of 10** permanent errors retryable.
+  ⚠ **Owed gates, not satisfied:** `REGENOLD_PUSHBACK_FREEZE_GUARDED` (I4),
+  Bedrock extended-thinking parity (I5 — `_bedrock_complete_for_graph_rag`
+  never sets `thinking_budget`, so that provider has NO thinking at all and
+  `6c076bf`'s `record_llm_thinking` there is dead code), and the `gold_dropped`
+  reading for the M2 citation-guard narrowing.
 * **R371.8 — Art. 4 scope + Cohere rerank (2026-08-18).** (1) The matrix now
   binds Art. 4 (AI literacy) to providers AND deployers at every SYSTEM tier
   (statute-verified unqualified; was minimal-risk-only — under-scope mis-fact,
@@ -598,8 +687,14 @@ that the instance is pristine.
   WHAT WAS RETRIEVED; the Regenold rubric scores the ANSWER. The harness now
   runs the legal_v2 judge (answer_correctness, reference_correctness,
   citation_faithfulness, answer_conciseness) per arm over the same rows —
-  through the SAME caller plumbing, `--judge-model claude-sonnet-4-6` via
-  `--judge-provider bedrock` by default — and reports them as paired axes
+  through the SAME caller plumbing. ⚠ **The judge default is now
+  `qwen.qwen3-32b-v1:0` via `--judge-provider bedrock`** (R372's zero-token
+  judge), NOT `claude-sonnet-4-6` as this line used to say — and it said so
+  while the CLI flag and the function signature disagreed with EACH OTHER, so
+  a CLI run and a programmatic run graded the same canonical axes on two
+  different rulers. Unified on the qwen tier: a qwen-judged number is
+  comparable to R365/R369 and NOT to any Claude-judged baseline. It reports
+  them as paired axes
   (`ans_corr` / `ref_corr` / `cite_faith` / `ans_conc`) in the SAME table,
   with `--no-judge` to skip. Verified LIVE: 8 judge calls, 27.5 s, 0 errors,
   genuine discrimination. `--judge-samples K` (majority verdict, ties fail).
@@ -733,9 +828,19 @@ that the instance is pristine.
     4/4). The remaining pre-R361 failures were triaged as stale tests of
     deliberate R368/R69 changes and updated to the new wires — not reverted.
   * **F4 — Stage-2 model provenance.** `_bedrock_complete_for_graph_rag` now
-    records `stage2_model=<served>` like the wrapper/OpenRouter paths, so a
-    cross-model rollover (R366.1 chain) is visible in the artifact, not just
-    logs. **Read the trace note before quoting any Bedrock-graded number.**
+    records `stage2_model=<served>` like the wrapper path, so a cross-model
+    rollover (R366.1 chain) is visible in the artifact, not just logs. **Read
+    the trace note before quoting any Bedrock-graded number.**
+    ⚠ **"like the wrapper/OpenRouter paths" was FALSE and is corrected here.**
+    Measured 2026-08-20: `_openrouter_complete_for_graph_rag` recorded
+    `stage2_model=` BEFORE its fallback loop, from the REQUESTED model, and on
+    rollover emitted only a `logger.warning` — so a R373 chain hop
+    (`deepseek/deepseek-v4-flash`, `google/gemini-2.5-flash`) was invisible to
+    every sidecar, on the provider R372 made PRIMARY, and the note fired even
+    when the chain failed outright and Bedrock served the answer. The note now
+    lives on the SUCCESS path keyed on the SERVED model, with an
+    `openrouter_fallback requested=... served_by=...` companion, exactly as the
+    Bedrock path does.
   * **R369 — wire-level collapse + promote (ref_corr 0.35 → 0.4333 on the
     60-row golden read, same qwen judge as baseline).** `REGENOLD_REF_COLLAPSE_
     LEAF_TO_HEAD` (default ON) drops a leaf whose head is on the wire (judge
@@ -1192,6 +1297,8 @@ Keep the curated subset here; do not inline the index.
 | `REGENOLD_BEDROCK_JUDGE_THINKING_TOKENS` | *(0)* | R355 — thinking budget for the Bedrock judge path. `0` = no extended thinking |
 | `REGENOLD_STAGE2_MODEL_OPENROUTER` | `anthropic/claude-sonnet-5` | R373 — the tunnel-free OpenRouter Stage-2 model (standard tier). Provider active when `P2P_GRAPH_RAG_PROVIDER=openrouter` + `OPENROUTER_API_KEY` set. Keyed in `_engine_cache_key` |
 | `REGENOLD_STAGE2_COMPLEX_MODEL_OPENROUTER` | `anthropic/claude-opus-5` | R373 — the complex-tier OpenRouter model; falls back to the standard model when unset |
+| `REGENOLD_PUSHBACK_FREEZE_GUARDED` | **OFF** | I4 (2026-08-20) — build the R302 pushback reference CEILING from `_prose_citation_bases` (the guarded extractor both prose→ref paths already use) instead of `extract_referenced_articles` (every raw mention). Today a provision the prior answer merely DISCUSSED — including ones it said do NOT apply — joins the allowed set, so the ceiling barely constrains: measured on a realistic GPAI answer the raw reading admits `Art. 50` and `Art. 55` that the prose explicitly negated, while the guarded reading drops exactly those two and adds nothing. Default OFF because a wire-reference change owes hard rule #8 a `gold_dropped` reading: `dynamic_ab --branch-env REGENOLD_PUSHBACK_FREEZE_GUARDED=1`. Route-level, so correctly ABSENT from `_engine_cache_key` |
+| `REGENOLD_OPENROUTER_MAX_TOKENS` | *(unset → falls back to `REGENOLD_BEDROCK_MAX_TOKENS`, 4096)* | R372.1 — Stage-2 answer ceiling on the OpenRouter transport. Read fresh per call (`_graph_rag_impl.py:1297`) and keyed in `_engine_cache_key`. Documented NOWHERE — neither here nor `docs/ENV-FLAGS.md` — until 2026-08-20; since `railway.toml [deploy.envs]` never applies, an undocumented default is live behaviour nobody wrote down |
 | `REGENOLD_OPENROUTER_ROUTING` | `balanced` | R370 — OpenRouter provider-sorting mode: `balanced` (price+speed), `nitro` (throughput-first latency lever), `exacto` (quality/tool-calling-first — irrelevant, Stage-2 calls no tools). Applies a `:nitro` / `:exacto` model suffix |
 | `REGENOLD_OPENROUTER_FALLBACK_CHAIN` | `deepseek/deepseek-v4-flash,google/gemini-2.5-flash` | R373 — OpenRouter rollover chain when the primary errors/throttles/truncates (mirror of the R366.1 Bedrock chain) |
 

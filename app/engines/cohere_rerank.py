@@ -794,7 +794,26 @@ def rerank_pool(
         logger.debug("cohere_rerank: permutation invariant violated, keeping input")
         _bump("failed")
         return list(refs), False
-    _bump("reordered" if ordered != list(refs) else "noop")
+    _reordered = ordered != list(refs)
+    _bump("reordered" if _reordered else "noop")
+    # R377 — the rerank REORDERS the citation set, and reference order decides
+    # what survives the budget cut, so it is a reference-affecting lever. It
+    # left no mark on the durable artifact: only ``_bump`` counters (process
+    # state) and a debug log, and CLAUDE.md is explicit that "nothing in the
+    # eval pipeline reads logs". That is how a rate-limited reranker reads as a
+    # clean +0.0000 wash rather than as INERT. One note, at the one place that
+    # knows both the input and the output.
+    try:
+        from app.integrations.regenold.reasoning_trace import (  # noqa: PLC0415
+            record_note as _rn,
+        )
+
+        _rn(
+            f"rerank_applied model={_effective_model()} docs={len(docs)} "
+            f"reordered={_reordered}"
+        )
+    except Exception:  # noqa: BLE001 — trace is best-effort
+        pass
     return ordered, True
 
 

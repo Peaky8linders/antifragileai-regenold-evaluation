@@ -23,8 +23,12 @@ _TAGS_TO_STRIP = re.compile(
 )
 _INSTR_TAGS = re.compile(r"\[INST\]|\[/INST\]|<<SYS>>|<</SYS>>", re.IGNORECASE)
 _USER_QUERY_TAGS = re.compile(r"</?user_query>", re.IGNORECASE)
+# ``[^>]*`` was unbounded, so a "<" ... ">" span whose first token happened to
+# be one of these keywords swallowed every word between them: measured,
+# sanitize_for_llm("Compare a < answer and b > answer thresholds") deleted four
+# words of the user question. Attributes cannot contain "<".
 _XML_CHANNEL_TAGS = re.compile(
-    r"</?\s*(?:answer|reasoning|reasoning_scratchpad|scratchpad|think)(?:\s+[^>]*)?>",
+    r"</?(?:answer|reasoning|reasoning_scratchpad|scratchpad|think)(?:\s+[^<>]{0,200})?>",
     re.IGNORECASE,
 )
 
@@ -33,7 +37,22 @@ _XML_CHANNEL_TAGS = re.compile(
 # reasoning is not fully disabled server-side.  Strip it defensively here so
 # every call-site that goes through validate_llm_output() is protected.
 _THINK_BLOCK_RE = re.compile(r"<\s*think(?:\s+[^>]*)?>.*?</\s*think\s*>\s*", re.DOTALL | re.IGNORECASE)
-_UNCLOSED_THINK_RE = re.compile(r"<\s*think(?:\s+[^>]*)?>.*$", re.DOTALL | re.IGNORECASE)
+# Anchored to the START: a leaked CoT block is a PREFIX phenomenon (see the
+# note above). Unanchored, this deleted everything from the first literal
+# "<think" onward — so a legitimate answer that merely MENTIONS the tag
+# ("We reject the <think> convention. Article 50 applies.") shipped as
+# "We reject the", non-empty and therefore past the empty-answer guard.
+_UNCLOSED_THINK_RE = re.compile(r"^\s*<\s*think(?:\s+[^>]*)?>.*$", re.DOTALL | re.IGNORECASE)
+# The SHIPPED V2 prompt asks for private reasoning in <reasoning_scratchpad>
+# (graph_rag_prompts.py, ANSWER_GENERATE_SYSTEM_V2 + USER_CHALLENGE_BREVITY_CLAUSE_V2),
+# so a max_tokens cut mid-scratchpad leaves that block UNCLOSED. Only <think>
+# had an unclosed-case guard, so the model's raw deliberation — "The user
+# disputes the prior answer..." — was returned verbatim as the user-facing
+# legal answer, non-empty and therefore past the empty-answer guard.
+_UNCLOSED_REASONING_RE = re.compile(
+    r"^\s*<\s*(?:reasoning|reasoning_scratchpad|scratchpad)(?:\s+[^>]*)?>.*$",
+    re.DOTALL | re.IGNORECASE,
+)
 
 _REASONING_BLOCK_RE = re.compile(
     r"<\s*(?:reasoning|reasoning_scratchpad|scratchpad)(?:\s+[^>]*)?>(.*?)<\s*/\s*(?:reasoning|reasoning_scratchpad|scratchpad)\s*>",
@@ -75,6 +94,7 @@ def extract_xml_channels(text: str | None) -> tuple[str, str]:
     # 1. Strip reasoning and think blocks first so inner <answer> quotes inside reasoning scratchpads do not hijack the answer
     text_without_reasoning = _THINK_BLOCK_RE.sub("", _REASONING_BLOCK_RE.sub("", text)).strip()
     text_without_reasoning = _UNCLOSED_THINK_RE.sub("", text_without_reasoning).strip()
+    text_without_reasoning = _UNCLOSED_REASONING_RE.sub("", text_without_reasoning).strip()
 
     answer_matches = list(_ANSWER_BLOCK_RE.finditer(text_without_reasoning))
     if answer_matches:
@@ -86,6 +106,29 @@ def extract_xml_channels(text: str | None) -> tuple[str, str]:
         clean_answer = cleaned
 
     return clean_answer, extracted_reasoning
+
+
+_THINK_BLOCK_KEEP_WS_RE = re.compile(
+    r"<\s*think(?:\s+[^>]*)?>.*?<\s*/\s*think\s*>", re.DOTALL | re.IGNORECASE
+)
+
+
+def strip_reasoning_keep_boundary(text: str | None) -> str:
+    """Remove reasoning / think channels WITHOUT touching surrounding whitespace.
+
+    :func:`validate_llm_output` ``.strip()``s its result, which is right for a
+    whole answer and WRONG for a fragment whose LEADING WHITESPACE carries
+    meaning. The R357 Stage-2 tail repair encodes the word boundary exactly
+    that way (a leading space means "the cut landed between words"), so it
+    needs the channels gone and the whitespace kept.
+    """
+    if not text:
+        return ""
+    out = _REASONING_BLOCK_RE.sub("", text)
+    out = _THINK_BLOCK_KEEP_WS_RE.sub("", out)
+    out = _UNCLOSED_THINK_RE.sub("", out)
+    out = _UNCLOSED_REASONING_RE.sub("", out)
+    return out
 
 
 def sanitize_for_llm(user_input: str, *, context_type: str = "query") -> str:
@@ -126,7 +169,11 @@ def validate_llm_output(text: str | None) -> str:
         return ""
     stripped = _THINK_BLOCK_RE.sub("", text).strip()
     stripped = _UNCLOSED_THINK_RE.sub("", stripped).strip()
-    if not stripped and "<think" in text.lower():
+    stripped = _UNCLOSED_REASONING_RE.sub("", stripped).strip()
+    _low = text.lower()
+    if not stripped and (
+        "<think" in _low or "<reasoning" in _low or "<scratchpad" in _low
+    ):
         return ""
     return stripped or text
 
