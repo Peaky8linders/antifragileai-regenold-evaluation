@@ -166,3 +166,67 @@ class TestEndToEndVerdictRecovery:
         monkeypatch.setenv("REGENOLD_PROHIBITION_CONTRADICTION_GUARD", "0")
         off = client(question)["answer"]
         assert on == off
+
+
+class TestExactDuplicateSentenceRemoval:
+    """R376 — a sentence repeated verbatim is never the intent.
+
+    Measured on the deterministic path, the GPAI systemic-risk answer ended with
+    the same sentence twice: "Under Annex III, Eight high-risk use-case
+    categories: biometrics, critical infrastructure." ``stitch_grounded_prose``
+    has a near-duplicate guard of its own, but it dedupes on the REF while the
+    final answer is assembled from several fragments — so two refs resolving to
+    the same KB stub each contributed the identical sentence through different
+    paths. The pass sits in the normaliser, where every path converges.
+
+    Exact match only, after whitespace + case normalisation: a NEAR duplicate
+    can carry a different coordinate or carve-out and is a judgement call.
+    """
+
+    def test_a_verbatim_repeat_is_dropped(self):
+        from app.integrations.regenold.models import normalise_answer_for_regenold
+
+        text = (
+            "Article 53 sets the provider obligations for general-purpose AI "
+            "models. Under Annex III, eight high-risk use-case categories apply. "
+            "Under Annex III, eight high-risk use-case categories apply."
+        )
+        out = normalise_answer_for_regenold(text, max_sentences=12)
+        assert out.count("eight high-risk use-case categories") == 1
+        # The first occurrence is kept, so a verdict-first lead cannot be
+        # displaced (hard rule #2).
+        assert out.startswith("Article 53 sets the provider obligations")
+
+    def test_case_and_spacing_differences_still_count_as_duplicates(self):
+        from app.integrations.regenold.models import normalise_answer_for_regenold
+
+        text = (
+            "Providers must keep the technical documentation. "
+            "providers  must   keep the technical documentation."
+        )
+        out = normalise_answer_for_regenold(text, max_sentences=12)
+        assert out.lower().count("must keep the technical documentation") == 1
+
+    def test_distinct_sentences_are_all_kept(self):
+        from app.integrations.regenold.models import normalise_answer_for_regenold
+
+        text = (
+            "Article 9 requires a risk management system. "
+            "Article 10 requires data governance. "
+            "Article 11 requires technical documentation."
+        )
+        out = normalise_answer_for_regenold(text, max_sentences=12)
+        for article in ("Article 9", "Article 10", "Article 11"):
+            assert article in out
+
+    def test_near_duplicates_are_left_alone(self):
+        """Two sentences differing only by coordinate are NOT duplicates."""
+        from app.integrations.regenold.models import normalise_answer_for_regenold
+
+        text = (
+            "Under Annex III(1)(a), remote biometric identification is listed. "
+            "Under Annex III(1)(c), emotion recognition is listed."
+        )
+        out = normalise_answer_for_regenold(text, max_sentences=12)
+        assert "III(1)(a)" in out
+        assert "III(1)(c)" in out

@@ -556,6 +556,31 @@ that the instance is pristine.
   vs 0.50 s, sharper score separation; 32,768-token context — doc cap 24k
   chars, `max_tokens_per_doc: 16384`). Record:
   `docs/R371.8-art4-and-cohere-rerank.md`.
+* **R376 — the E2E provider path, the graph layer and the PUSHBACK turn
+  (2026-08-22).** Driven through local servers speaking the real OpenRouter and
+  Bedrock Converse wire protocols (`scripts/e2e_provider_mocks.py`,
+  `scripts/e2e_route_probe.py`), because no external provider was reachable from
+  that environment. **Every defect below was invisible to the suite for one
+  structural reason: the existing tests mock `provider.complete` and assert on
+  the request OBJECT — which proves the engine formed the right intent, not that
+  the intent survived serialisation.** Provider: a pinned `openrouter` with a
+  lapsed key disabled Stage-2 OUTRIGHT above the dispatch (**zero** Bedrock
+  calls with a healthy Bedrock configured); the thinking budget was bound to
+  `"openrouter.ai" in base_url` so any other base silently dropped it
+  (`reasoning=None` off-host vs `{'max_tokens': 2048}` on-host); Bedrock Stage-2
+  never set `thinking_budget` at all; its simple tier was the Stage-1 PARSE
+  model (opus-4-8, not Sonnet 5); the cross-provider retry hard-coded opus-4-6.
+  Graph: without Aura the hierarchy layer rendered NOTHING, silently — now
+  mirrored from the seeder's own source. Pushback: the curated intercept fired
+  on the CHALLENGE turn and not the opener, the model never saw the user's
+  objection, and the turn routed to the standard tier. Answer: a sentence
+  DENYING an Article 5 prohibition suppressed the correct curated verdict, so
+  the emotion-in-the-workplace question shipped *"not among the practices
+  prohibited under Article 5"*. Gates: pytest **7005/0 failed**,
+  `evals.regenold.runner` **255/255** (RISK_F1 1.00, `sentence_cap` 140→**146**),
+  OOS **49/51, 0 leaks**. ⚠ **All answer-affecting levers are UNMEASURED on
+  answer quality** — the owed `dynamic_ab` commands are listed in the record.
+  Full evidence: [`docs/R376-e2e-provider-graph-pushback.md`](docs/R376-e2e-provider-graph-pushback.md).
 * **The judge cannot read the tail of long answers.** 8 of 22 answer failures
   are labelled "truncated" and **all 8 are false positives** — the content
   called missing is the answer's last sentence. Zero of 100 answers lack
@@ -988,6 +1013,25 @@ that the instance is pristine.
   toward a conclusion, that is the bug**; check which direction it pushes.
 * **`/healthz/llm` lies** — verify the wrapper with a real POST.
 * **Never run two wrapper-bound jobs concurrently.**
+* **A MOCKED SEAM CANNOT SEE THE WIRE.** Five provider-routing defects shipped
+  green through a suite that mocks `provider.complete` and asserts on the
+  request OBJECT: `req.reasoning_max_tokens == 2048` passed while the JSON body
+  posted `reasoning: None`, because the drop happened one layer lower. The same
+  shape hid a Bedrock call with no `additionalModelRequestFields`, a simple-tier
+  answer on the Stage-1 parse model, and a "fallback" that was unreachable
+  because the gate ABOVE it returned False first. `scripts/e2e_provider_mocks.py`
+  runs real HTTP servers speaking the OpenRouter and Bedrock Converse protocols
+  on `127.0.0.1` and records every request byte-for-byte —
+  `AWS_ENDPOINT_URL_BEDROCK_RUNTIME` points botocore at the second one. **When a
+  test asserts on an object the code is about to serialise, it is testing the
+  intent, not the behaviour.**
+* **AN ADVERSARIAL TURN IS NOT A HARDER VERSION OF THE EASY TURN — IT TAKES A
+  DIFFERENT PATH.** Measured at R376: the curated intercept fires MORE readily on
+  a challenge (the detectors match provision keywords, and disputing a verdict
+  names the provision), R372's root recovery hides the objection from generation
+  AND from the tier decision, and `is_challenge_turn` recognised neither of two
+  ordinary pushbacks. Every lever aimed at that turn was inert on it. **Measure
+  the graded turn on the graded turn.**
 * **The instrument trap.** Repeatedly, an authoritative-looking instrument was
   structurally blind to the decision: davidath is BM25-saturated, so a gate
   reads byte-identical *because* it is a no-op there; a deterministic reference
@@ -1127,6 +1171,12 @@ Keep the curated subset here; do not inline the index.
 | `REGENOLD_CROSS_REF_SNIPPET_CHARS` | **20000** | R339 — per-node ceiling, clamped `[240, 60000]`. Was a hard-coded 240 that cut MID-WORD, and clipped Article 41 to 158 of 3,873 chars (96% loss) with **no marker at all**. Set above the largest reachable node (`art_3`, 17,079) so nothing truncates by default; `_clip_clause` now cuts on a clause/word boundary and always marks ` [...]`. Measured: Stage-2 user payload 122,828 → **135,778** chars, ellipses 2 → **0**, and **Annex IV now arrives complete at 5,720 chars** — where Annex IV(1)(e) lives |
 | `REGENOLD_ANSWER_NO_CAP` | **ON** | removes sentence + char caps live (hard rule #2) |
 | `REGENOLD_KG_CONTEXT` | **ON** | graph context into Stage-2 |
+| `REGENOLD_KG_LOCAL_MIRROR` | **ON** | R376 — when the Aura read FAILS or returns nothing, serve the provision hierarchy + sub-point carve-outs from `provision_hierarchy.build_hierarchy_payload()`, **the same function `scripts/seed_neo4j_kb.py` writes to Aura**. Not a second source: the identical structure one step earlier in the pipeline, and reproducing the documented live census exactly (658 paragraph units / 37 SubPoints). ⚠ Fixes a SILENT layer death: measured without Aura credentials, the Stage-2 user message carried **no PROVISION HIERARCHY, no SUB-POINT and no REGULATORY CLASSIFICATION block at all** — 38,962 → **57,193** chars once mirrored, leading with `Annex III (4) Employment`. Recital anchors and the role × risk-class layer are deliberately NOT mirrored (curated legal judgement; prose-mined recital→article edges are measured-and-dead). Hard rule #10 untouched — still non-citable, still cannot reach the wire. `=0` restores the pre-R376 silence |
+| `REGENOLD_CURATED_SKIP_CHALLENGE_EXEMPT` | **ON** | R376 — the curated Stage-2 intercept does NOT fire on an adversarial CHALLENGE turn. ⚠ It used to fire on the challenge and NOT on the opener, because the curated detectors match provision keywords and a user disputing a verdict NAMES the provision: contesting an answer made a static verdict MORE likely. Measured — turn 1 reached Stage-2 with a 61,681-char grounding block; turn 2 made **no LLM call at all**. Does NOT reopen R339 (that turned the bypasses off for EVERY row); scoped to the turn where a static answer is structurally the wrong instrument, fires on 0 davidath rows |
+| `REGENOLD_CHALLENGE_IS_COMPLEX` | **ON** | R376 — an adversarial turn routes to the COMPLEX tier. `complex_q` is computed from `question`, which R372's recovery has already replaced with the turn-1 ROOT — usually a plain classification ask — so the hardest turn in the conversation routed to `claude-sonnet-5` with `reasoning=None` while the same text asked directly gates complex |
+| `REGENOLD_CHALLENGE_OBJECTION` | **ON** | R376 — deliver the user's VERBATIM objection to Stage-2 on a challenge turn, plus an anti-sycophancy instruction. ⚠ R372's root recovery is right for RETRIEVAL and was applied to GENERATION too: measured, `I disagree` / `assists a human` / `small company` / `no obligations` were **ALL absent** from the delivered user channel — the model was re-answering turn 1 with no way to know a rebuttal had been asked for. Retrieval is untouched |
+| `REGENOLD_PROHIBITION_CONTRADICTION_GUARD` | **ON** | R376 — a sentence DENYING an Article 5 prohibition no longer suppresses the curated verdict. The prepend is gated on `"Article 5" not in answer_text`, and a denial names Article 5 too, so the verdict was discarded by the sentence contradicting it. Measured on `provider=cli`: gatekeeper matched `Art. 5.1.f`, the correct verdict was built, and the shipped answer said *"not among the practices prohibited under Article 5"*. Shape-based, never practice-based (hard rule #3 — emotion recognition is one of the three PDF topics): matches the GRAMMAR of a denial near an Article 5 anchor, only where `scan_for_prohibitions` fired. Route-level, NOT in `_engine_cache_key` (R79 doctrine) |
+| `REGENOLD_BEDROCK_FALLBACK_MODEL` | *(unset)* | R376 — pin the cross-provider fallback tier. The retry used to hard-code `claude-opus-4-6` for every row, collapsing the Opus-5-complex / Sonnet-5-simple split exactly when the answer was already degraded — and redundantly, since `complete_with_fallback` degrades within the family anyway. Unset = route by complexity |
 | `REGENOLD_ROLE_OBLIGATION_CONTEXT` | **OFF** | R371 — renders the role × RISK-CLASS obligation layer as a NON-CITABLE Stage-2 block (risk-class dimension the `REGULATORY CLASSIFICATION` block collapsed). Cypher matches only on `$ids` — can never introduce a provision (hard rule #10); budget-reserved, cache-keyed. **R371.5 gate (n=140, Bedrock, qwen3-32b): fire 111/140, gold_dropped_head 30 → 34 — VETO; stays OFF.** **R371.6 audit: 16 direction-inverted matrix bindings removed (90 → 74) + direction-lint tests; the 16 stale `HAS_RISK_CLASS_OBLIGATION` Aura edges were surgically deleted (74 left, == matrix projection, verified). Records: docs/R371.5-role-obligation-gate-resolved.md, docs/R371.6-ontology-misfact-audit.md.** |
 | `REGENOLD_KG_MAX_CHARS` | **48000** | total graph-context ceiling. R328.4 — was 16000 |
 | `REGENOLD_KG_MAX_UNITS` | **70** | units per provision. R328.4 — was 24, which rendered Article 3 as 24 of its 68 definitions with 3(4)-3(8) (the five OPERATOR ROLE definitions) absent and unmarked |
@@ -1193,7 +1243,7 @@ Keep the curated subset here; do not inline the index.
 | `REGENOLD_STAGE2_MODEL_OPENROUTER` | `anthropic/claude-sonnet-5` | R373 — the tunnel-free OpenRouter Stage-2 model (standard tier). Provider active when `P2P_GRAPH_RAG_PROVIDER=openrouter` + `OPENROUTER_API_KEY` set. Keyed in `_engine_cache_key` |
 | `REGENOLD_STAGE2_COMPLEX_MODEL_OPENROUTER` | `anthropic/claude-opus-5` | R373 — the complex-tier OpenRouter model; falls back to the standard model when unset |
 | `REGENOLD_OPENROUTER_ROUTING` | `balanced` | R370 — OpenRouter provider-sorting mode: `balanced` (price+speed), `nitro` (throughput-first latency lever), `exacto` (quality/tool-calling-first — irrelevant, Stage-2 calls no tools). Applies a `:nitro` / `:exacto` model suffix |
-| `REGENOLD_OPENROUTER_FALLBACK_CHAIN` | `deepseek/deepseek-v4-flash,google/gemini-2.5-flash` | R373 — OpenRouter rollover chain when the primary errors/throttles/truncates (mirror of the R366.1 Bedrock chain) |
+| `REGENOLD_OPENROUTER_FALLBACK_CHAIN` | `anthropic/claude-sonnet-5` | R373, **re-defaulted R376**. ⚠ Was `deepseek/deepseek-v4-flash,google/gemini-2.5-flash`, which put two other model families AHEAD of the Bedrock Claude safety net: measured with the primary 429-ing every call, the wire order was `claude-opus-5 → deepseek-v4-flash → gemini-2.5-flash` before Bedrock saw one request. Every prompt, guard and judge here is Claude-calibrated, and Ref-Conciseness — the one axis we lead — is a function of how the model cites. ONE entry is deliberate: the existing de-dup makes it tier-aware for free (complex degrades opus-5 → sonnet-5; simple de-dupes to a single attempt), so it can never ESCALATE to a tier the operator did not choose — the rule `fallback_chain_for` already encodes for Bedrock. The fine-grained ladder lives one hop down in `BEDROCK_FALLBACK_CHAINS`, against profile ids that were probed live |
 
 ⚠ **This table was BROKEN in the middle until 2026-08-15** — the R329 paragraph
 below sat between two rows, so everything from `GROUNDED_JUDGE_STRICT_GROUNDING`
