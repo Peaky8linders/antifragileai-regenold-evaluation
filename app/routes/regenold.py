@@ -8601,7 +8601,27 @@ def regenold_eu_ai_act_ask(
             and not _is_classification_topic
             and answer_denies_prohibition(answer_text or "")
         ):
-            answer_text, _denial_removed = strip_prohibition_denials(answer_text or "")
+            _pre_strip = answer_text or ""
+            _stripped, _denial_removed = strip_prohibition_denials(_pre_strip)
+            # R376 review — a strip that removes EVERY sentence is allowed, but
+            # only because the verdict prepend below is guaranteed to replace it
+            # (this branch already requires a truthy ``_verdict_prefix``, and the
+            # prepend's extra ``not _is_classification_topic`` condition is
+            # mirrored on the strip). An answer whose every sentence denies the
+            # prohibition has no correct analysis to preserve, so a short
+            # correct answer beats a long wrong one — but it is worth seeing in
+            # the trace, because it also means retrieval produced nothing usable.
+            answer_text = _stripped
+            if _denial_removed and not _stripped.strip():
+                try:
+                    _trace_note("prohibition_denial_stripped_whole_answer")
+                except Exception:  # noqa: BLE001 — trace is best-effort
+                    pass
+                logger.warning(
+                    "regenold.prohibition_denial_stripped_whole_answer — every "
+                    "sentence denied the matched Article 5 prohibition; shipping "
+                    "the curated verdict alone"
+                )
             if _denial_removed:
                 try:
                     _trace_note(

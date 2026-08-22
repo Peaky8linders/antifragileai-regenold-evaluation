@@ -293,12 +293,20 @@ class TestGraphContributionProbe:
     seeder succeeds, /healthz/graph still reports ok, answers just get worse".
     """
 
-    def _probe(self):
+    def _probe(self, deep: bool = True):
+        """``deep=True`` exercises the live graph read.
+
+        The endpoint DEFAULTS to a mirror-only report because the live read
+        consumes a graph worker slot and votes in the circuit breaker — an
+        uptime monitor polling it must not be able to open the breaker on real
+        traffic. Both modes are asserted below.
+        """
         from fastapi.testclient import TestClient
 
         import app.main as main_mod
 
-        return TestClient(main_mod.app).get("/healthz/graph").json()
+        url = "/healthz/graph" + ("?deep=1" if deep else "")
+        return TestClient(main_mod.app).get(url).json()
 
     def test_contribution_is_reported_even_without_neo4j_credentials(
         self, monkeypatch
@@ -309,10 +317,19 @@ class TestGraphContributionProbe:
         kg = self._probe()["kg_context"]
         assert kg["kg_context_enabled"] is True
         assert kg["local_mirror_nodes"] > 0
-        # The layer is CONTRIBUTING, and the operator is told which source.
+        # The layer is CONTRIBUTING, and the operator is told which source —
+        # read from the fetcher's recorded provenance, not inferred from
+        # "client enabled and breaker closed", which would say "graph" for a
+        # reachable instance seeded without HAS_PARAGRAPH edges.
         assert kg["hierarchy_rows"] >= 1
         assert kg["hierarchy_units"] >= 1
         assert kg["served_by"] == "local_mirror"
+
+        # The default (non-mutating) mode reports the same conclusion without
+        # touching the answer path's admission slots or circuit breaker.
+        shallow = self._probe(deep=False)["kg_context"]
+        assert shallow["hierarchy_rows"] >= 1
+        assert shallow["served_by"].startswith("local_mirror")
 
     def test_a_dead_layer_is_reported_as_dead(self, monkeypatch):
         monkeypatch.delenv("NEO4J_URI", raising=False)
@@ -324,3 +341,5 @@ class TestGraphContributionProbe:
         assert kg["hierarchy_rows"] == 0
         assert kg["served_by"] == "none"
         assert "contributing NOTHING" in str(kg.get("detail", ""))
+        # And the cheap default mode reaches the same verdict.
+        assert self._probe(deep=False)["kg_context"]["served_by"] == "none"

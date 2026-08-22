@@ -868,6 +868,42 @@ def _bedrock_complete_for_graph_rag(
         if _thinking_budget > 0:
             _thinking_budget = max(2048, min(_thinking_budget, 4096))
 
+    # THE BUDGET COUNTS INSIDE ``maxTokens`` — SO THE ANSWER NEEDS HEADROOM
+    # ABOVE IT.
+    #
+    # Found by adversarial review of R376's own change and confirmed on the
+    # wire. ``_build_converse_kwargs`` raises ``maxTokens`` only when it is
+    # <= the budget, so a Stage-2 call carrying ``maxTokens: 4096`` and
+    # ``budget_tokens: 2048`` left the ANSWER just 2048 tokens — half the
+    # envelope it had before extended thinking was wired in. CLAUDE.md R328.3
+    # records the worst measured enumerative Stage-2 answer at 3411 tokens, so
+    # those would come back ``stopReason=max_tokens``, be rejected by the
+    # R328.3 guard below, roll through every tier in ``ordered`` (each with the
+    # same ceiling), and finally return None — dropping Stage-2 entirely and
+    # re-arming ``MAX_ANSWER_SENTENCES = 3``. A false truncation costs the
+    # answer twice, which is exactly the trap R328.3 exists to close.
+    #
+    # THE BUDGET IS ADDITIVE, NOT A MAXIMUM. The first attempt at this fix wrote
+    # ``max(max_tokens, budget + headroom)``, which is a NO-OP here: the Stage-2
+    # ceiling above has already raised ``max_tokens`` to 4096 and
+    # ``2048 + 2048`` is also 4096, so the answer envelope stayed at 2048. The
+    # answer allowance and the thinking allowance are two separate things and
+    # the wire number has to carry both.
+    #
+    # The same shape was wrong on the OpenRouter path since R373 — it computes
+    # ``max(max_tokens, budget + headroom)`` and lands on the identical 4096 —
+    # so this is fixed there too rather than leaving the two providers giving
+    # the same question different room to answer. R328.3's rule is that the
+    # ceiling must never be the thing that stops the model; a budget that eats
+    # the ceiling breaks it just as effectively as a low ceiling.
+    #
+    # Latency: 4096 answer tokens measured ~70 s worst case (R328.3), so ~6144
+    # stays inside ``REGENOLD_BEDROCK_STAGE2_TIMEOUT_S`` (180 s). That pairing is
+    # deliberate — R328.3 records that raising a token budget without moving the
+    # read budget just relocates the truncation one layer down.
+    if _thinking_budget > 0:
+        max_tokens = (max_tokens or 1024) + _thinking_budget
+
     try:
         provider = get_bedrock_provider()
         last_error = ""
@@ -880,9 +916,18 @@ def _bedrock_complete_for_graph_rag(
                     from app.integrations.regenold.reasoning_trace import (  # noqa: PLC0415
                         record_note as _rn,
                     )
+                    # Record the TEMPERATURE too. Claude requires temperature
+                    # 1 when extended thinking is on, so
+                    # ``_build_converse_kwargs`` overrides the requested 0.0 —
+                    # and the request object still says 0.0, so without this
+                    # note a paired A/B on the complex tier gets materially
+                    # noisier with no way to attribute it. A silent sampling
+                    # change is a measurement bug before it is anything else.
                     _rn(
                         f"bedrock_thinking_budget={_mid_thinking}"
                         f" complex={complex_question} model={_mid}"
+                        f" temperature=1.0 (required by extended thinking;"
+                        f" requested {temperature})"
                     )
                 except Exception:  # noqa: BLE001 — trace is best-effort
                     pass
@@ -1547,9 +1592,20 @@ def _openrouter_complete_for_graph_rag(
         if _reasoning_budget > 0:
             _reasoning_budget = max(2048, min(_reasoning_budget, 4096))
 
+    # R376 review — the thinking budget is ADDITIVE to the answer allowance.
+    #
+    # This was ``max(max_tokens, budget + headroom)``, which reads like it
+    # reserves room for the answer but does not: the Stage-2 ceiling above has
+    # already raised ``max_tokens`` to ``REGENOLD_OPENROUTER_MAX_TOKENS`` (4096
+    # by default) and ``2048 + 2048`` is also 4096, so a complex answer was left
+    # exactly 2048 tokens — half the envelope a simple one gets. Enabling
+    # deliberation should not shrink the answer.
+    #
+    # ``_stage2_answer_headroom`` stays the FLOOR for the answer when the
+    # caller passed a small ``max_tokens``; the budget is then added on top.
     _answer_headroom = _stage2_answer_headroom()
     _effective_max_tokens = (
-        max(max_tokens or 1024, _reasoning_budget + _answer_headroom)
+        max(max_tokens or 1024, _answer_headroom) + _reasoning_budget
         if _reasoning_budget > 0
         else (max_tokens or 1024)
     )
@@ -1942,19 +1998,29 @@ def _stage2_fallback_provider_available() -> str | None:
             return "bedrock"
     except Exception:  # noqa: BLE001 — a missing boto3 is just "no bedrock"
         pass
-    try:
-        from app.config import settings  # noqa: PLC0415
-
-        if settings.graph_rag.api_key is not None:
-            return "anthropic"
-    except Exception:  # noqa: BLE001
-        pass
+    # R376 review — ``is_openai_wrapper_enabled()`` IS NOT A READINESS CHECK.
+    #
+    # It returns True for every provider value except ``cli`` (it is a "not the
+    # deterministic path" flag, not "a wrapper is configured"). Using it here
+    # made this probe essentially never return None, so the "no fallback is
+    # configured — Stage-2 is OFF" branch in :func:`_stage2_provider_enabled`
+    # was unreachable, and a deploy with a lapsed OpenRouter key and NO other
+    # provider would POST to the wrapper's hard-coded default host on every
+    # request — the dead round-trip R376 set out to remove, reintroduced one
+    # layer up. Latency is a scored axis.
+    #
+    # An explicitly configured endpoint is the honest signal, so require
+    # ``OPENAI_API_BASE``. ``anthropic`` is deliberately NOT reported: the
+    # dispatch only reaches ``_use_anthropic_sdk`` on an explicit
+    # ``P2P_GRAPH_RAG_PROVIDER=anthropic``, so a pinned-openrouter deploy could
+    # never route there and naming it would make this gate promise a provider
+    # that never serves.
     try:
         from app.llm.openai_wrapper_provider import (  # noqa: PLC0415
             is_openai_wrapper_enabled,
         )
 
-        if is_openai_wrapper_enabled():
+        if is_openai_wrapper_enabled() and os.getenv("OPENAI_API_BASE", "").strip():
             return "openai_wrapper"
     except Exception:  # noqa: BLE001
         pass
@@ -9154,7 +9220,22 @@ def _claude_max_enhance_answer(
         sanitized_orig_q = sanitize_for_llm(orig_q, context_type="query")
 
         from app.data.graph_rag_prompts import is_challenge_turn  # noqa: PLC0415
-        _is_challenge = is_challenge_turn(orig_q) or is_challenge_turn(question)
+        # R376 review — A CHALLENGE NEEDS A PREVIOUS ANSWER TO DISPUTE.
+        #
+        # The widened marker set (R376) improved recall on real pushback, and
+        # with it a FIRST turn that merely contains "I disagree" — "Our vendor
+        # says the model is exempt and I disagree — is our CV-screening tool
+        # high-risk?" — now matches. Without the turn-count condition the model
+        # would be told it is disputing a previous answer that does not exist,
+        # and ``complex_q`` would be forced, routing an ordinary opening
+        # question to Opus 5 with a 2048-token thinking budget.
+        #
+        # The route's own pushback machinery is already turn-gated (``if
+        # history_turns:``); this is the same condition, applied where the
+        # Stage-2 request is built.
+        _is_challenge = (history_turn_count or 1) > 1 and (
+            is_challenge_turn(orig_q) or is_challenge_turn(question)
+        )
 
         if _is_challenge:
             # R376 — THE MODEL MUST SEE WHAT IT IS BEING ASKED TO RECONSIDER.
@@ -9186,15 +9267,21 @@ def _claude_max_enhance_answer(
             # cannot be mistaken for an instruction (the prompt-hardening
             # prefix and ``sanitize_for_llm`` both still apply).
             user_message = f"QUESTION: {sanitized_q}\n\n"
+            # R376 review — resolve the gate ONCE. It is a fresh env read per
+            # call, so reading it twice let an in-process A/B arm switch between
+            # the two reads extract the objection and then not deliver it (or
+            # deliver the instruction against a stale extraction) while still
+            # writing the ``challenge_objection_delivered`` trace note.
+            _deliver_objection = _challenge_objection_enabled()
             _objection = ""
-            if _challenge_objection_enabled():
+            if _deliver_objection:
                 try:
                     _objection = sanitize_for_llm(
                         _extract_live_challenge(orig_q), context_type="query"
                     ).strip()
                 except Exception:  # noqa: BLE001 — never let this break Stage-2
                     _objection = ""
-            if _challenge_objection_enabled():
+            if _deliver_objection:
                 # Two shapes reach here and both need the instruction, but only
                 # one needs the quote. When R372's recovery fired,
                 # ``QUESTION:`` is the turn-1 ROOT and the objection is missing

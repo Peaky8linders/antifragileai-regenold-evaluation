@@ -113,6 +113,62 @@ def _keyword_pattern_index() -> tuple[tuple[re.Pattern[str], str, str], ...]:
     return tuple(rows)
 
 
+#: R376 review — STATUTORY qualifiers that take a question OUT of a prohibition
+#: the keyword scan would otherwise match.
+#:
+#: The scan is substring-based over ``PRACTICE_REGISTRY`` keywords, which is
+#: the right instrument for recall and blind to qualifiers that change the
+#: legal answer. Article 5(1)(h) prohibits **real-time** remote biometric
+#: identification in publicly accessible spaces for law enforcement;
+#: **post** (ex-post) remote biometric identification is NOT an Article 5
+#: prohibition — it is governed by Article 26(10), which requires prior
+#: judicial or administrative authorisation. The keyword "remote biometric
+#: identification" matches both.
+#:
+#: Measured before this guard: "Can law enforcement use post-remote biometric
+#: identification for a targeted search?" matched ``Art. 5.1.h`` and produced
+#: the verdict "Real-time remote biometric identification ... is prohibited
+#: under Article 5(1)(h)" — a statement about a different practice than the one
+#: asked about. Harmless while the verdict was being suppressed by any mention
+#: of Article 5; the R376 contradiction guard removes that accidental
+#: suppression, so the imprecision would have been promoted to the answer's
+#: lead.
+#:
+#: This is a NARROW, statute-anchored exclusion, not a topic classifier: it
+#: encodes the real-time/post distinction the Regulation itself draws, and it
+#: applies only to the sub-point whose text carries that qualifier.
+_SUB_REF_NEGATIVE_QUALIFIERS: dict[str, tuple[re.Pattern[str], ...]] = {
+    "Art. 5.1.h": (
+        re.compile(r"\bpost[- ]?remote\b", re.I),
+        re.compile(r"\bex[- ]?post\b", re.I),
+        re.compile(r"\bpost[- ]?hoc\b", re.I),
+        re.compile(r"\bnot\s+real[- ]?time\b", re.I),
+        re.compile(r"\bafter\s+the\s+fact\b", re.I),
+        re.compile(r"\bretrospective(?:ly)?\b", re.I),
+    ),
+}
+
+
+def _sub_ref_excluded_by_question(sub_ref: str, question: str) -> bool:
+    """True when ``question`` carries a qualifier that puts it outside ``sub_ref``.
+
+    Deliberately asymmetric: an exclusion only ever REMOVES a match the keyword
+    scan made, so it can shrink the citation set but never invent one. A
+    question that says both "real-time" and "post" keeps the match — the
+    exclusion requires the negative qualifier with no competing positive one,
+    because a question comparing the two regimes is asking about both.
+    """
+    patterns = _SUB_REF_NEGATIVE_QUALIFIERS.get(sub_ref)
+    if not patterns:
+        return False
+    text = str(question or "")
+    if not any(rx.search(text) for rx in patterns):
+        return False
+    # A question that explicitly names the real-time regime as well is asking
+    # about the comparison; keep the Article 5 anchor for it.
+    return not re.search(r"\breal[- ]?time\b", text, re.I)
+
+
 def scan_for_prohibitions(question: str) -> tuple[tuple[str, str], ...]:
     """Detect Art. 5 prohibition keywords in the question.
 
@@ -133,6 +189,8 @@ def scan_for_prohibitions(question: str) -> tuple[tuple[str, str], ...]:
         if sub in seen:
             continue
         if pattern.search(question):
+            if _sub_ref_excluded_by_question(sub, question):
+                continue
             seen.add(sub)
             out.append((parent, sub))
     return tuple(out)

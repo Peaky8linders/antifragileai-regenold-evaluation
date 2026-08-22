@@ -715,6 +715,37 @@ def _flat(text: object, limit: int) -> str:
 # unreachable graph renders nothing).
 
 _MIRROR_ENV = "REGENOLD_KG_LOCAL_MIRROR"
+
+#: R376 review — provenance of the most recent hierarchy read, per request.
+#:
+#: ``/healthz/graph`` INFERRED ``served_by`` from "client enabled and breaker
+#: closed", which reports "graph" in precisely the case the probe exists to
+#: detect: an instance that is reachable but seeded without HAS_PARAGRAPH
+#: edges answers empty-but-successfully, the mirror serves, and the operator is
+#: told Aura is contributing when it is not. CLAUDE.md calls that class of
+#: false attribution "worse than no record".
+#:
+#: Request-scoped for the same reason the memo is: a ContextVar is discarded
+#: with the request context, so one request's provenance can never be read as
+#: another's.
+_LAST_HIERARCHY_SOURCE: ContextVar[str | None] = ContextVar(
+    "kg_hierarchy_source", default=None
+)
+
+
+def last_hierarchy_source() -> str | None:
+    """``"graph"`` / ``"local_mirror"`` / ``"none"`` for this request, or None."""
+    try:
+        return _LAST_HIERARCHY_SOURCE.get()
+    except Exception:  # noqa: BLE001 — provenance must never break a read
+        return None
+
+
+def _set_hierarchy_source(source: str) -> None:
+    try:
+        _LAST_HIERARCHY_SOURCE.set(source)
+    except Exception:  # noqa: BLE001
+        pass
 _MIRROR_LOCK = threading.Lock()
 _MIRROR_CACHE: dict | None = None
 
@@ -766,27 +797,17 @@ def _mirror_index() -> dict:
                     }
                 )
 
-            # A Point hangs off a Paragraph; the Cypher matches
+            # NOTE — there is deliberately no top-level Point loop here.
+            #
+            # An earlier cut had one, on the theory that the Cypher matches
             # ``HAS_PARAGRAPH|HAS_POINT`` from the Article, so an Annex whose
-            # points attach directly to the Annex node must be picked up here.
-            for edge in payload.has_point_edges:
-                parent = edge["source_id"]
-                node = point_by_id.get(edge["target_id"])
-                if node is None:
-                    continue
-                if parent in index or parent in para_by_id:
-                    # Points under a paragraph are rendered via the sub-point
-                    # layer, not as top-level units.
-                    if parent in para_by_id:
-                        continue
-                index.setdefault(parent, {"units": [], "subpoints": []})
-                index[parent]["units"].append(
-                    {
-                        "num": str(node.get("letter") or node.get("number") or ""),
-                        "text": node.get("text") or "",
-                        "_id": node["id"],
-                    }
-                )
+            # Points attach directly to the Annex node would need picking up.
+            # Executed against the payload, that premise is false: all 421
+            # ``has_point_edges`` have a Paragraph id as their source, because
+            # ``_emit_points`` is only ever called with a ``para_id``. The loop
+            # appended exactly 0 units and its ``continue`` fired on every
+            # edge — dead code carrying a comment a reader would trust. Points
+            # reach the render through the sub-point layer below.
 
             # article/annex -> paragraph -> point -> subpoint
             points_by_para: dict[str, list[dict]] = {}
@@ -947,6 +968,7 @@ def fetch_provision_hierarchy(refs: list[str]) -> list[dict]:
     read_failed = bool(getattr(rows, "failed", False))
     if not read_failed and rows:
         _memo_put("hierarchy", ids, max_units, list(rows))
+        _set_hierarchy_source("graph")
         return list(rows)
     # R376 — the graph could not answer (disabled / unreachable / breaker open /
     # timed out) or answered successfully with nothing for provisions that
@@ -955,6 +977,7 @@ def fetch_provision_hierarchy(refs: list[str]) -> list[dict]:
     if not kg_local_mirror_enabled():
         if not read_failed:
             _memo_put("hierarchy", ids, max_units, list(rows))
+        _set_hierarchy_source("graph" if rows else "none")
         return list(rows)
     mirrored = _mirror_hierarchy(ids, max_units)
     if mirrored:
@@ -975,6 +998,7 @@ def fetch_provision_hierarchy(refs: list[str]) -> list[dict]:
     # the R326 guarantee, and it is about not caching a transport error.
     if not read_failed:
         _memo_put("hierarchy", ids, max_units, list(mirrored))
+    _set_hierarchy_source("local_mirror" if mirrored else "none")
     return mirrored
 
 

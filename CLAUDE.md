@@ -1225,7 +1225,8 @@ Keep the curated subset here; do not inline the index.
 | `GROUNDED_JUDGE_STRICT_GROUNDING` | **OFF** | R327 — ON makes answer-correctness unscorable on gold-free rows (they have no gold at all). ⚠ **It governs `evals/judge/grounded.py` ONLY.** Since `d7be457` it is SILENTLY INERT on `evals/judge/legal_v2.py` — grep for the flag there returns **0 hits** — whose `_prepare` builds the evidence block from `gold_refs + pred_refs`, i.e. from `pred_refs` alone on a gold-free row, with no `[NOTE]`, no `answer_grounding_source` stamp and no off-switch. A `legal_v2` answer-correctness number there grades the answer against the answer's own citations. Open item #7 nominates `legal_v2` as the replacement judge — fix `_prepare` AND the `_judge_row` guard together, or the axis keeps running |
 | `NEO4J_AUTO_SEED` | **OFF unless `1`** | R327 — now opt-IN, and even then only seeds a graph proven to have 0 nodes. Hard rule #12 |
 | `BEDROCK_REGION` | **`eu-central-1`** | R328 — Bedrock source Region. Also reads `AWS_DEFAULT_REGION` / `AWS_REGION`. NOT `us-east-1`: an `eu.` profile is unresolvable there |
-| `REGENOLD_BEDROCK_MODEL` | `eu.anthropic.claude-opus-4-8` | R328 — Stage-1 + Stage-2 main RAG tier. 403 on the 08-13 key vintage; the 08-15 re-mint invokes `opus-4-6-v1` (the live A/Bs pinned `claude-opus-4-6`). R328.2 degrades within the family. ABSK entitlement is fixed at key creation — see the expiry gotcha |
+| `REGENOLD_BEDROCK_MODEL` | `eu.anthropic.claude-opus-4-8` | R328 — the Stage-1 PARSE tier. ⚠ **R376 narrowed this: it is NO LONGER the simple Stage-2 answer tier.** That lane now reads `REGENOLD_BEDROCK_STAGE2_MODEL` (code default `eu.anthropic.claude-sonnet-5`), because the operator's Opus-5-complex / Sonnet-5-simple split was honoured on OpenRouter and not on Bedrock — measured, a simple question that degraded to Bedrock posted `claude-opus-4-8`. **An A/B that exports this variable expecting to move the simple Stage-2 answer is now INERT** — export `REGENOLD_BEDROCK_STAGE2_MODEL` instead. 403 on the 08-13 key vintage; the 08-15 re-mint invokes `opus-4-6-v1`. R328.2 degrades within the family. ABSK entitlement is fixed at key creation — see the expiry gotcha |
+| `REGENOLD_BEDROCK_STAGE2_MODEL` | `eu.anthropic.claude-sonnet-5` | R376 — the SIMPLE Stage-2 answer tier on Bedrock, split out of `REGENOLD_BEDROCK_MODEL` so the two constants answer two different questions (Stage-1 parse vs Stage-2 simple answer). `REGENOLD_OPUS_FOR_ALL=1` still lifts every Stage-2 call to the complex tier |
 | `REGENOLD_BEDROCK_COMPLEX_MODEL` | `eu.anthropic.claude-opus-5` | R328 — the `complex_question` tier. 403 on the 08-13 key vintage; same family chain, re-mint restores the pin |
 | `REGENOLD_BEDROCK_JUDGE_MODEL` | `eu.anthropic.claude-sonnet-5` | R328 — judge. Precedence: this env > the CLI `--model` flag > the default. 403 on the 08-13 key vintage; the 08-15 re-mint invokes `sonnet-4-6`, the tier used for judging |
 | `REGENOLD_STAGE2_VERDICT_GUARD` | **ON** | Rejects a Stage-2 answer that stops mid-verdict, on BOTH the wrapper and (since 2026-08-13) the Bedrock path. `=0` disables. ⚠ Never measured on `ab_judge` — davidath cannot see it (Stage-2 only) |
@@ -1342,7 +1343,9 @@ account-level block unless you swap the credential.
 
 Model targets are **code defaults**, not env (`railway.toml [deploy.envs]` has
 never applied — hard-won; see the gotchas):
-`REGENOLD_BEDROCK_MODEL` = `eu.anthropic.claude-opus-4-8` (Stage-1 + Stage-2),
+`REGENOLD_BEDROCK_MODEL` = `eu.anthropic.claude-opus-4-8` (Stage-1 parse; **R376
+— no longer the simple Stage-2 answer tier, which is
+`REGENOLD_BEDROCK_STAGE2_MODEL` = `eu.anthropic.claude-sonnet-5`**),
 `REGENOLD_BEDROCK_COMPLEX_MODEL` = `eu.anthropic.claude-opus-5`,
 `REGENOLD_BEDROCK_JUDGE_MODEL` = `eu.anthropic.claude-sonnet-5`.
 
