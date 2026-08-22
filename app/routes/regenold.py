@@ -1534,6 +1534,21 @@ def _drop_unresolvable_subpoints(references: list[str]) -> list[str]:
     return out
 
 
+def _prohibition_contradiction_guard_enabled() -> bool:
+    """R376 — default ON. Strip a sentence that DENIES an Article 5 prohibition
+    the gatekeeper independently matched, so the curated verdict can lead.
+
+    ``REGENOLD_PROHIBITION_CONTRADICTION_GUARD=0`` restores the pre-R376
+    behaviour, where any mention of "Article 5" — including a denial — suppressed
+    the verdict prepend. Route-level post-processing over cached engine output,
+    so it stays OUT of ``_engine_cache_key`` per the R79 doctrine; fresh env read
+    per call (R263.2).
+    """
+    return os.getenv(
+        "REGENOLD_PROHIBITION_CONTRADICTION_GUARD", "1"
+    ).strip().lower() not in ("0", "false", "no", "off")
+
+
 def _engine_cache_key(
     question: str,
     system_context: str | None,
@@ -8535,9 +8550,11 @@ def regenold_eu_ai_act_ask(
     # fires — architecturally consistent with the spec's "immediate
     # alert that skips lower-tier testing loops".
     from app.engines.prohibited_gatekeeper import (  # noqa: PLC0415
+        answer_denies_prohibition,
         build_verdict_prefix,
         force_prohibited_citations,
         scan_for_prohibitions,
+        strip_prohibition_denials,
     )
     _prohibition_matches = scan_for_prohibitions(resolved_question or question)
     if _prohibition_matches:
@@ -8553,9 +8570,46 @@ def regenold_eu_ai_act_ask(
         # tight (1 sentence, ≤200 chars) so the existing 3-sentence
         # + 600-char cap absorbs it without dropping engine content.
         _verdict_prefix = build_verdict_prefix(resolved_question or question)
+
+        # R376 — A DENIAL IS NOT AN ANCHOR.
+        #
+        # The ``"Article 5" not in answer_text`` guard below stops a duplicate
+        # anchor, which is right when the answer already STATES the prohibition.
+        # It also fires when the answer states the OPPOSITE, because a denial
+        # names Article 5 too — so the curated verdict was suppressed by the
+        # sentence contradicting it. Measured on the deterministic path: the
+        # emotion-in-the-workplace question shipped "The system described is not
+        # among the practices prohibited under Article 5", with the correct
+        # Article 5(1)(f) verdict computed and discarded.
+        #
+        # An answer carrying both claims would be worse than either, so the
+        # denial is REMOVED (only the sentences that carry it) before the
+        # verdict leads. Shape-based and practice-agnostic — see the guard's
+        # module docstring on hard rule #3.
+        _denial_removed = 0
         if (
             _verdict_prefix
-            and "Article 5" not in (answer_text or "")
+            and _prohibition_contradiction_guard_enabled()
+            and answer_denies_prohibition(answer_text or "")
+        ):
+            answer_text, _denial_removed = strip_prohibition_denials(answer_text or "")
+            if _denial_removed:
+                try:
+                    _trace_note(
+                        "prohibition_denial_stripped "
+                        f"sentences={_denial_removed} anchor={_prohibition_matches[0][1]}"
+                    )
+                except Exception:  # noqa: BLE001 — trace is best-effort
+                    pass
+                logger.warning(
+                    "regenold.prohibition_denial_stripped sentences=%d — the "
+                    "answer denied an Article 5 prohibition the gatekeeper matched",
+                    _denial_removed,
+                )
+
+        if (
+            _verdict_prefix
+            and ("Article 5" not in (answer_text or "") or _denial_removed)
             # Round-36 issue #49: classification verdicts already lead
             # with the canonical anchor — a re-prepend duplicates it and
             # re-normalisation would lop off the closing clause.

@@ -279,3 +279,48 @@ class TestCrossProviderFallbackKeepsTheTierSplit:
         )
         assert served
         assert bedrock_wire.model_ids()[0].endswith("claude-opus-4-6-v1")
+
+
+class TestGraphContributionProbe:
+    """``/healthz/graph`` must answer "is the graph CONTRIBUTING?", not only
+    "can I reach it?".
+
+    R376 — the two questions come apart in every direction that matters, and
+    only the second one was reported. A graph can ping healthy while the
+    provision-hierarchy layer is dead (``REGENOLD_KG_CONTEXT=0``, an open
+    circuit breaker, an instance seeded without HAS_PARAGRAPH edges), and
+    CLAUDE.md's description of the seed hazard is exactly this shape: "the
+    seeder succeeds, /healthz/graph still reports ok, answers just get worse".
+    """
+
+    def _probe(self):
+        from fastapi.testclient import TestClient
+
+        import app.main as main_mod
+
+        return TestClient(main_mod.app).get("/healthz/graph").json()
+
+    def test_contribution_is_reported_even_without_neo4j_credentials(
+        self, monkeypatch
+    ):
+        monkeypatch.delenv("NEO4J_URI", raising=False)
+        monkeypatch.setenv("REGENOLD_GRAPH_BACKEND", "neo4j")
+        monkeypatch.setenv("REGENOLD_KG_LOCAL_MIRROR", "1")
+        kg = self._probe()["kg_context"]
+        assert kg["kg_context_enabled"] is True
+        assert kg["local_mirror_nodes"] > 0
+        # The layer is CONTRIBUTING, and the operator is told which source.
+        assert kg["hierarchy_rows"] >= 1
+        assert kg["hierarchy_units"] >= 1
+        assert kg["served_by"] == "local_mirror"
+
+    def test_a_dead_layer_is_reported_as_dead(self, monkeypatch):
+        monkeypatch.delenv("NEO4J_URI", raising=False)
+        monkeypatch.setenv("REGENOLD_GRAPH_BACKEND", "neo4j")
+        monkeypatch.setenv("REGENOLD_KG_LOCAL_MIRROR", "0")
+        monkeypatch.setenv("REGENOLD_KG_CONTEXT", "0")
+        kg = self._probe()["kg_context"]
+        assert kg["kg_context_enabled"] is False
+        assert kg["hierarchy_rows"] == 0
+        assert kg["served_by"] == "none"
+        assert "contributing NOTHING" in str(kg.get("detail", ""))

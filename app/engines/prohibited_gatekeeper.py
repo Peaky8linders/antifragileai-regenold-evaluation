@@ -270,7 +270,111 @@ def build_verdict_prefix(
     return None
 
 
+# ── R376 — the contradiction guard ───────────────────────────────────────────
+#
+# THE BUG THIS EXISTS FOR. The route prepends :func:`build_verdict_prefix` only
+# when ``"Article 5" not in answer_text``. That guard is there to stop a
+# duplicate anchor, and on its face it is reasonable: if the answer already
+# names Article 5, the verdict has been stated.
+#
+# But an answer can name Article 5 in order to DENY the prohibition, and that is
+# precisely when the verdict is most needed. Measured on the deterministic path
+# (``P2P_GRAPH_RAG_PROVIDER=cli``) for "Can we use an AI system that infers the
+# emotions of our employees during performance reviews?":
+#
+#   gatekeeper hits : (('Art. 5', 'Art. 5.1.f'),)
+#   verdict prefix  : "Emotion recognition in the workplace and education
+#                      contexts is prohibited under Article 5(1)(f), with
+#                      narrow medical and safety carve-outs."
+#   shipped answer  : "The system described is not among the practices
+#                      prohibited under Article 5 ..."
+#
+# The curated, correct verdict was suppressed BY THE SENTENCE THAT CONTRADICTS
+# IT, because that sentence contains the string "Article 5". A user asking
+# whether they may run emotion recognition on staff was told they may. Emotion
+# recognition in the workplace is prohibited by Article 5(1)(f) — consent does
+# not cure it, and the only carve-outs are medical and safety.
+#
+# WHY THE FIX IS SHAPE-BASED, NOT TOPIC-BASED. Hard rule #3 forbids new
+# classification topics for the three PDF example questions, and
+# emotion-recognition prohibition is one of the three. So nothing here mentions
+# emotion recognition, or any practice: it matches the GRAMMAR of a denial
+# ("is not prohibited", "not among the practices prohibited", "does not fall
+# under Article 5") near an Article 5 anchor, and fires only when the gatekeeper
+# has independently matched a curated PRACTICE_REGISTRY keyword. Every Article 5
+# practice benefits identically.
+#
+# PREPENDING ALONE WOULD NOT BE ENOUGH. An answer that says both "prohibited"
+# and "not prohibited" is worse than either, so the denial is removed rather
+# than argued with — and only the sentence carrying it, never the surrounding
+# analysis.
+
+_ART5_ANCHOR_RE = re.compile(r"\bArticle\s+5\b|\bArt\.\s*5\b", re.I)
+
+#: Denial shapes, anchored on the words that carry the negation. Each must be
+#: unambiguous on its own: a sentence matching one of these is asserting that
+#: Article 5 does NOT bite, which is the claim the gatekeeper contradicts.
+_PROHIBITION_DENIAL_RES = (
+    re.compile(r"\bnot\s+(?:among|one\s+of)\s+the\s+(?:practices\s+)?prohibit", re.I),
+    re.compile(r"\b(?:is|are|was|were)\s+not\s+prohibit", re.I),
+    re.compile(r"\bnot\s+prohibited\s+(?:under|by)\b", re.I),
+    re.compile(r"\bdoes\s+not\s+(?:fall|come)\s+(?:with)?in(?:to)?\b", re.I),
+    re.compile(r"\bno\s+prohibition\s+applies\b", re.I),
+    re.compile(r"\bnot\s+a\s+prohibited\s+(?:practice|use)\b", re.I),
+    re.compile(r"\bis\s+not\s+banned\b", re.I),
+)
+
+#: Sentence split that keeps the terminator, so a rebuilt answer reads normally.
+_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
+
+
+def _denies_prohibition(sentence: str) -> bool:
+    """True when ``sentence`` denies an Article 5 prohibition.
+
+    Requires BOTH an Article 5 anchor and a denial shape in the same sentence:
+    "this is not high-risk" must not match (that is an Article 6 statement and
+    is frequently correct), and a bare mention of Article 5 must not match
+    either.
+    """
+    text = str(sentence or "")
+    if not _ART5_ANCHOR_RE.search(text):
+        return False
+    return any(rx.search(text) for rx in _PROHIBITION_DENIAL_RES)
+
+
+def answer_denies_prohibition(answer: str) -> bool:
+    """True when any sentence of ``answer`` denies an Article 5 prohibition."""
+    return any(
+        _denies_prohibition(part)
+        for part in _SENTENCE_SPLIT_RE.split(str(answer or ""))
+    )
+
+
+def strip_prohibition_denials(answer: str) -> tuple[str, int]:
+    """Drop the sentences that deny an Article 5 prohibition.
+
+    Returns ``(rewritten, n_removed)``. Only sentences matching
+    :func:`_denies_prohibition` are removed; everything else — including
+    correct Article 6 / Annex III analysis in the same answer — is preserved
+    verbatim and in order.
+
+    Callers must apply this ONLY when :func:`scan_for_prohibitions` has matched,
+    so a merely cautious answer about a non-prohibited system is never edited.
+    """
+    text = str(answer or "")
+    if not text.strip():
+        return text, 0
+    parts = _SENTENCE_SPLIT_RE.split(text)
+    kept = [part for part in parts if not _denies_prohibition(part)]
+    removed = len(parts) - len(kept)
+    if not removed:
+        return text, 0
+    return " ".join(p.strip() for p in kept if p.strip()).strip(), removed
+
+
 __all__ = [
+    "answer_denies_prohibition",
+    "strip_prohibition_denials",
     "build_verdict_prefix",
     "force_prohibited_citations",
     "scan_for_prohibitions",
