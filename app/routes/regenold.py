@@ -8590,6 +8590,15 @@ def regenold_eu_ai_act_ask(
         if (
             _verdict_prefix
             and _prohibition_contradiction_guard_enabled()
+            # NEVER STRIP WITHOUT REPLACING. The prepend below is additionally
+            # gated on ``not _is_classification_topic`` (Round-36 issue #49 — a
+            # classification verdict already leads with the canonical anchor).
+            # Without this matching condition, a classification-topic answer
+            # would lose its denying sentence and gain NOTHING in its place:
+            # silent content deletion, which is worse than the wrong sentence it
+            # removes. The strip earns its keep only as the first half of
+            # "remove the denial, then lead with the verdict".
+            and not _is_classification_topic
             and answer_denies_prohibition(answer_text or "")
         ):
             answer_text, _denial_removed = strip_prohibition_denials(answer_text or "")

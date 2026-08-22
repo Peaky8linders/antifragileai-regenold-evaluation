@@ -944,21 +944,37 @@ def fetch_provision_hierarchy(refs: list[str]) -> list[dict]:
     if cached is not None:
         return cached
     rows = _bounded_execute_read(_HIERARCHY_CYPHER, {"ids": ids, "max_units": max_units})
-    if not getattr(rows, "failed", False):
+    read_failed = bool(getattr(rows, "failed", False))
+    if not read_failed and rows:
         _memo_put("hierarchy", ids, max_units, list(rows))
-        if rows:
-            return list(rows)
+        return list(rows)
     # R376 — the graph could not answer (disabled / unreachable / breaker open /
-    # timed out) or answered with nothing for provisions that demonstrably have
-    # a hierarchy. Serve the same structure from the in-repo source the seeder
-    # writes to Aura rather than dropping the layer silently. The mirror result
-    # is deliberately NOT memoised into the graph memo: the next request should
-    # re-try the real graph, not inherit a substitution.
+    # timed out) or answered successfully with nothing for provisions that
+    # demonstrably have a hierarchy. Serve the same structure from the in-repo
+    # source the seeder writes to Aura rather than dropping the layer silently.
     if not kg_local_mirror_enabled():
+        if not read_failed:
+            _memo_put("hierarchy", ids, max_units, list(rows))
         return list(rows)
     mirrored = _mirror_hierarchy(ids, max_units)
     if mirrored:
         _mirror_note("hierarchy", len(mirrored))
+    # MEMOISE WHAT WE RETURN, not the raw graph rows.
+    #
+    # An earlier cut of this memoised the graph's empty-but-successful result
+    # and THEN fell through to the mirror, so the first call in a request
+    # returned the mirrored hierarchy and every later call in the SAME request
+    # returned nothing — the same question grounded two different ways.
+    # ``render_kg_context`` is reached 2-3x per request, so that was reachable
+    # on any deploy whose graph answers empty.
+    #
+    # The memo is request-scoped (a ContextVar, discarded with the request
+    # context), so storing the substitution keeps ONE request self-consistent
+    # without carrying it into the next one — the real graph is still re-tried
+    # on the following request. A FAILED read is still never memoised: that is
+    # the R326 guarantee, and it is about not caching a transport error.
+    if not read_failed:
+        _memo_put("hierarchy", ids, max_units, list(mirrored))
     return mirrored
 
 
@@ -998,17 +1014,22 @@ def fetch_subpoint_detail(refs: list[str]) -> list[dict]:
     except Exception:  # noqa: BLE001
         logger.debug("kg_context: subpoint fetch failed", exc_info=True)
         result = []
-    if not getattr(rows, "failed", False):
+    read_failed = bool(getattr(rows, "failed", False))
+    if not read_failed and result:
         _memo_put("subpoint", ids, 24, result)
-        if result:
-            return result
-    # R376 — same substitution as the hierarchy layer above; see the mirror
-    # block for why this is the seeder's own source rather than a second one.
+        return result
+    # R376 — same substitution as the hierarchy layer above, with the same
+    # memo rule: store what is RETURNED so one request stays self-consistent,
+    # and never memoise a failed read.
     if not kg_local_mirror_enabled():
+        if not read_failed:
+            _memo_put("subpoint", ids, 24, result)
         return result
     mirrored = _mirror_subpoints(ids, 24)
     if mirrored:
         _mirror_note("subpoint", len(mirrored))
+    if not read_failed:
+        _memo_put("subpoint", ids, 24, mirrored)
     return mirrored
 
 

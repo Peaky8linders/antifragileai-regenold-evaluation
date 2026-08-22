@@ -230,3 +230,61 @@ class TestExactDuplicateSentenceRemoval:
         out = normalise_answer_for_regenold(text, max_sentences=12)
         assert "III(1)(a)" in out
         assert "III(1)(c)" in out
+
+
+class TestStripNeverRunsWithoutAReplacement:
+    """The strip is the first half of "remove the denial, then lead with the
+    verdict". It must not run when the second half is gated off, or the answer
+    loses a sentence and gains nothing — silent content deletion, which is worse
+    than the wrong sentence it removes.
+
+    The prepend carries an extra condition the strip did not:
+    ``not _is_classification_topic`` (Round-36 issue #49 — a classification
+    verdict already leads with the canonical anchor). The invariant below holds
+    the two together without reaching into the route's internals, so it keeps
+    working if either gate is re-shaped.
+    """
+
+    QUESTIONS = [
+        "Can we use an AI system that infers the emotions of our employees "
+        "during performance reviews?",
+        "May we use AI to infer emotions of students in our classroom?",
+        "Is emotion recognition of employees prohibited under the AI Act?",
+        "Can we use AI to detect the emotional state of our call-centre staff?",
+    ]
+
+    @pytest.mark.parametrize("question", QUESTIONS)
+    def test_a_stripped_denial_is_always_replaced_by_the_verdict(
+        self, monkeypatch, question
+    ):
+        from fastapi.testclient import TestClient
+
+        import app.main as main_mod
+        from app.routes import regenold as regenold_route
+
+        monkeypatch.setenv("P2P_GRAPH_RAG_PROVIDER", "cli")
+        monkeypatch.setenv("REGENOLD_GRAPH_BACKEND", "neo4j")
+        client = TestClient(main_mod.app)
+        regenold_route._ENGINE_CACHE.clear()
+        resp = client.post(
+            "/api/v1/regenold/eu-ai-act/ask",
+            json={"messages": [{"role": "user", "content": question}]},
+        )
+        assert resp.status_code == 200
+        answer = resp.json()["answer"]
+
+        denial_present = "not among the practices prohibited" in answer
+        # Several correct paths assert the prohibition in different words: the
+        # curated prefix says "prohibited under Article 5(1)(f)", the R369
+        # lower-risk verdict says "prohibited under Article 5 when deployed in
+        # workplaces or educational institutions". Matching the literal
+        # sub-point would fail a GOOD answer, so the invariant is on the claim,
+        # not the phrasing.
+        verdict_present = "prohibited under Article 5" in answer
+        # Exactly one of the two states is acceptable: the original answer with
+        # its denial intact, or a corrected answer that asserts the prohibition.
+        # The forbidden state is "denial removed, nothing put in its place".
+        assert denial_present or verdict_present, (
+            "the denial was stripped without the verdict replacing it — "
+            f"answer={answer!r}"
+        )
