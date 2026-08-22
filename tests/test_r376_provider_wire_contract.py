@@ -34,9 +34,8 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from scripts.e2e_provider_mocks import MockBedrock, MockOpenRouter  # noqa: E402
-
 from app.engines import _graph_rag_impl as impl  # noqa: E402
+from scripts.e2e_provider_mocks import MockBedrock, MockOpenRouter  # noqa: E402
 
 
 @pytest.fixture
@@ -191,7 +190,10 @@ class TestBedrockWireBody:
         bedrock_wire.behaviour = _deny_claude
         out = impl._bedrock_complete_for_graph_rag(**_stage2(complex_question=True))
         assert out, "the chain must still serve from a non-Claude tier"
-        seen = list(zip(bedrock_wire.model_ids(), bedrock_wire.calls))
+        # strict=True: the two lists are the same recorded calls viewed two
+        # ways, so a length mismatch would mean the recorder is broken —
+        # better to raise than to silently compare a truncated pair set.
+        seen = list(zip(bedrock_wire.model_ids(), bedrock_wire.calls, strict=True))
         assert len(seen) >= 2
         for model_id, call in seen:
             has_reasoning = call["body"].get("additionalModelRequestFields") is not None

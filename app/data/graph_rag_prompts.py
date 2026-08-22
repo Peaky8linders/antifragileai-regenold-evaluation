@@ -649,6 +649,41 @@ _CHALLENGE_MARKERS = (
     "that is wrong",
     "that's wrong",
     "are you sure",
+    # R376 — the list above is 17 phrases of one family ("you are wrong"), and
+    # it MISSED the two most ordinary ways a user disputes a legal answer:
+    # stating a counter-position ("I disagree", "that is not right") and
+    # demanding a correction ("please correct your answer"). Measured on two
+    # adversarial pushback turns written the way a compliance lead actually
+    # writes them, ``is_challenge_turn`` returned **False on both**, so every
+    # piece of pushback machinery this repo has built — the R372 challenge-focus
+    # root recovery, the brevity clause and the reference freeze — sat inert on
+    # exactly the turn it exists for. That matters more than it looks: CLAUDE.md
+    # records the adversarial follow-up as THE GRADED TURN (67 of 111 hard rows
+    # carry it).
+    #
+    # Precision is the constraint, not recall: a false positive freezes
+    # references and shortens an answer on a turn that was not a challenge. So
+    # every phrase here is one that disputes or demands correction outright —
+    # no bare "no", no bare "actually", and nothing like "reconsider", which
+    # appears in ordinary questions ("should we reconsider our classification?").
+    "that is not right",
+    "that's not right",
+    "this is not right",
+    "that is not correct",
+    "that's not correct",
+    "i disagree",
+    "i don't agree",
+    "i dont agree",
+    "i do not agree",
+    "you are mistaken",
+    "you're mistaken",
+    "you are wrong",
+    "you're wrong",
+    "i think you are wrong",
+    "i think you're wrong",
+    "correct your answer",
+    "that doesn't sound right",
+    "that does not sound right",
 )
 
 

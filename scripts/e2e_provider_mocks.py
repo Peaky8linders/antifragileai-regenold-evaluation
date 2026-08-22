@@ -27,8 +27,9 @@ from __future__ import annotations
 
 import json
 import threading
+from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Any, Callable
+from typing import Any
 
 __all__ = ["MockOpenRouter", "MockBedrock", "RecordedCall"]
 
@@ -37,7 +38,7 @@ class RecordedCall(dict):
     """One recorded request: ``path``, ``headers``, ``body`` (parsed JSON)."""
 
 
-def _make_handler(server_obj: "_RecordingServer") -> type[BaseHTTPRequestHandler]:
+def _make_handler(server_obj: _RecordingServer) -> type[BaseHTTPRequestHandler]:
     class _Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
 
@@ -83,7 +84,7 @@ class _RecordingServer:
     def respond(self, call: RecordedCall, index: int) -> tuple[int, dict[str, Any]]:
         raise NotImplementedError
 
-    def start(self) -> "_RecordingServer":
+    def start(self) -> _RecordingServer:
         handler = _make_handler(self)
         self._httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)
         self.port = self._httpd.server_address[1]
@@ -101,7 +102,7 @@ class _RecordingServer:
         with self.lock:
             self.calls.clear()
 
-    def __enter__(self) -> "_RecordingServer":
+    def __enter__(self) -> _RecordingServer:
         return self.start()
 
     def __exit__(self, *_exc: Any) -> None:

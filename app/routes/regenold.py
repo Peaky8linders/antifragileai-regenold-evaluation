@@ -272,6 +272,24 @@ class _BoundedLRUCache:
             if len(self._data) > self._capacity:
                 self._data.popitem(last=False)
 
+    def clear(self) -> None:
+        """Drop every entry. For tests and in-process A/B arms.
+
+        R376 — a memo that outlives an arm switch is the single most reliable
+        way to make an A/B measure nothing in this repo, and it has done so
+        repeatedly: R326, R327 and three R329 reranker placements all reported
+        a clean ``+0.0000`` on features that never executed, and R332 needed the
+        BM25 index memo keyed on the gate before the two arms differed at all.
+        The entries here are keyed on ``_engine_cache_key``, which registers the
+        engine flags — but a harness that flips a ROUTE-level flag, or a test
+        that replays the same conversation twice, still gets a hit and never
+        reaches the engine. The counters are deliberately NOT reset: they are
+        lifetime-of-process telemetry, and zeroing them here would hide the
+        clear from anyone reading ``include_telemetry=true``.
+        """
+        with self._lock:
+            self._data.clear()
+
 
 _ENGINE_CACHE = _BoundedLRUCache(capacity=512)
 
@@ -2252,6 +2270,13 @@ def _engine_cache_key(
             # is the difference between an uncapped answer and one re-armed to
             # MAX_ANSWER_SENTENCES by `set_answer_no_cap`.
             "REGENOLD_CURATED_STAGE2_SKIP",
+            # R376 — decides whether an adversarial turn reaches Stage-2 at
+            # all, so the two arms must be cache-distinct.
+            "REGENOLD_CURATED_SKIP_CHALLENGE_EXEMPT",
+            # R376 — both change the Stage-2 request on a challenge turn (the
+            # delivered user channel, and the model tier + thinking budget).
+            "REGENOLD_CHALLENGE_OBJECTION",
+            "REGENOLD_CHALLENGE_IS_COMPLEX",
             "REGENOLD_DEFINITIONAL_STAGE2_SKIP",
             "REGENOLD_STAGE2_ANSWER_HEADROOM",
             # Complexity gating — both feed `is_complex_question`, which selects

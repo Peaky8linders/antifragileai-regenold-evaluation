@@ -427,6 +427,66 @@ def _looks_incomplete_final_sentence(text: str | None) -> bool:
     return False
 
 
+def _challenge_is_complex_enabled() -> bool:
+    """R376 — default ON. Route an adversarial challenge turn to the COMPLEX tier.
+
+    ``REGENOLD_CHALLENGE_IS_COMPLEX=0`` restores the pre-R376 tier decision.
+    Fresh env read per call (R263.2).
+    """
+    return os.getenv("REGENOLD_CHALLENGE_IS_COMPLEX", "1").strip().lower() not in (
+        "0", "false", "no", "off",
+    )
+
+
+def _norm_ws(text: str) -> str:
+    """Whitespace-normalised text, for comparing two renderings of one string."""
+    return " ".join(str(text or "").split())
+
+
+def _challenge_objection_enabled() -> bool:
+    """R376 — default ON. Deliver the user's verbatim objection to Stage-2 on a
+    challenge turn.
+
+    ``REGENOLD_CHALLENGE_OBJECTION=0`` restores the pre-R376 behaviour, where the
+    recovered root question was the only thing the model saw. Fresh env read per
+    call (R263.2).
+    """
+    return os.getenv("REGENOLD_CHALLENGE_OBJECTION", "1").strip().lower() not in (
+        "0", "false", "no", "off",
+    )
+
+
+def _extract_live_challenge(flattened: str) -> str:
+    """The live user turn from a flattened multi-turn question, or ``""``.
+
+    The route flattens a conversation as ``Conversation so far: … / Latest
+    question: <live turn>`` and, on a challenge turn, appends ``Target inquiry
+    to answer: <root question>``. The live turn is therefore the span between
+    the LAST ``Latest question:`` marker and the ``Target inquiry`` marker —
+    reading to the end instead would append the root question a second time,
+    since it is already the ``QUESTION:`` line.
+
+    Uses the same last-marker rule as ``is_challenge_turn`` so the two agree on
+    what "the live turn" means (the R60.1 / R71 live-turn doctrine).
+    """
+    text = str(flattened or "")
+    marker = "Latest question:\n"
+    idx = text.rfind(marker)
+    if idx < 0:
+        # No flatten marker means the route did not build a multi-turn prompt,
+        # so the whole string IS the live turn — the self-contained challenge
+        # shape. Returning "" here would silently drop the objection on exactly
+        # the conversations where the recovery did not fire.
+        return text.strip()
+    live = text[idx + len(marker):]
+    for tail in ("\nTarget inquiry to answer:", "\nTarget inquiry:"):
+        cut = live.find(tail)
+        if cut >= 0:
+            live = live[:cut]
+            break
+    return live.strip()
+
+
 def _stage2_answer_headroom() -> int:
     """R142 — output-token headroom for the answer ABOVE the thinking budget.
 
@@ -5836,6 +5896,20 @@ def _is_r265_reconcile_intercept(question: str) -> bool:
     )
 
 
+def _curated_skip_challenge_exempt_enabled() -> bool:
+    """R376 — default ON. Exempt an adversarial CHALLENGE turn from the curated
+    Stage-2 bypass, so a disputed verdict is re-reasoned rather than restated.
+
+    Fresh env read per call (R263.2) so the two arms of an A/B are honest.
+    ``REGENOLD_CURATED_SKIP_CHALLENGE_EXEMPT=0`` restores the pre-R376
+    behaviour. See the call site in :func:`_two_stage_generate` for the measured
+    inversion this fixes.
+    """
+    return os.getenv(
+        "REGENOLD_CURATED_SKIP_CHALLENGE_EXEMPT", "1"
+    ).strip().lower() not in ("0", "false", "no", "off")
+
+
 def _curated_stage2_skip_enabled() -> bool:
     """R144 — env gate (default ON) restoring the R111 authoritative-intercept
     Stage-2 skip that the 2026-06-11 'Stage-2 for all' directive bypassed.
@@ -9083,7 +9157,85 @@ def _claude_max_enhance_answer(
         _is_challenge = is_challenge_turn(orig_q) or is_challenge_turn(question)
 
         if _is_challenge:
+            # R376 — THE MODEL MUST SEE WHAT IT IS BEING ASKED TO RECONSIDER.
+            #
+            # R372 recovers the turn-1 root question on a pushback turn so that
+            # retrieval runs on the substantive legal inquiry instead of on
+            # critique noise. That is right for RETRIEVAL and wrong for
+            # GENERATION, and this line applied it to both: ``sanitized_q`` is
+            # the recovered root, so the Stage-2 user message re-asked the
+            # ORIGINAL question and dropped the user's objection entirely.
+            #
+            # MEASURED on a credit-scoring pushback ("I disagree — we are a
+            # small company and the system only assists a human who makes the
+            # final decision, so Article 6(3) means it is not high-risk. Confirm
+            # that we have no obligations."): the phrases ``I disagree``,
+            # ``assists a human``, ``small company`` and ``no obligations`` were
+            # ALL absent from the delivered user channel. The model was answering
+            # turn 1 again, with no way to know a rebuttal had been asked for.
+            #
+            # That is why the intercepted pushback answers read as
+            # non-responsive: on the emotion-recognition conversation the reply
+            # never addressed the user's consent argument (consent is irrelevant
+            # to an Article 5 prohibition), and on this one it never refused the
+            # invitation to "confirm we have no obligations".
+            #
+            # Retrieval is untouched — the root question still drives the
+            # candidate set, and the objection is added to the GENERATION
+            # channel only, as quoted user text under an explicit label so it
+            # cannot be mistaken for an instruction (the prompt-hardening
+            # prefix and ``sanitize_for_llm`` both still apply).
             user_message = f"QUESTION: {sanitized_q}\n\n"
+            _objection = ""
+            if _challenge_objection_enabled():
+                try:
+                    _objection = sanitize_for_llm(
+                        _extract_live_challenge(orig_q), context_type="query"
+                    ).strip()
+                except Exception:  # noqa: BLE001 — never let this break Stage-2
+                    _objection = ""
+            if _challenge_objection_enabled():
+                # Two shapes reach here and both need the instruction, but only
+                # one needs the quote. When R372's recovery fired,
+                # ``QUESTION:`` is the turn-1 ROOT and the objection is missing
+                # entirely — quote it. When it did not fire (a self-contained
+                # challenge), ``QUESTION:`` already IS the objection — quoting
+                # it again would just duplicate the text and spend prompt budget
+                # on the one axis this product leads. The anti-sycophancy
+                # instruction is delivered either way, because that is what
+                # actually governs the answer.
+                _dup = (
+                    _norm_ws(_objection).lower() == _norm_ws(sanitized_q).lower()
+                    if _objection
+                    else False
+                )
+                if _objection and not _dup:
+                    user_message += (
+                        "THE USER IS DISPUTING THE PREVIOUS ANSWER. Their "
+                        "objection, verbatim:\n"
+                        f"{_objection}\n\n"
+                    )
+                user_message += (
+                    "This turn disputes your previous answer. Address the "
+                    "objection directly, against the statutory text supplied "
+                    "below. State plainly whether it is correct. If it is not, "
+                    "name the provision that settles it and say what the correct "
+                    "position is. Do not weaken a verdict the provisions support, "
+                    "and do not confirm a conclusion the user asserts unless the "
+                    "text below actually supports it — agreeing with a mistaken "
+                    "premise is a wrong answer, not a polite one.\n\n"
+                )
+                try:
+                    from app.integrations.regenold.reasoning_trace import (  # noqa: PLC0415
+                        record_note as _rn,
+                    )
+                    _rn(
+                        "challenge_objection_delivered "
+                        f"quoted={bool(_objection) and not _dup} "
+                        f"chars={len(_objection)}"
+                    )
+                except Exception:  # noqa: BLE001 — trace is best-effort
+                    pass
         else:
             user_message = f"ORIGINAL QUESTION: {sanitized_orig_q}\n"
             if sanitized_q != sanitized_orig_q:
@@ -9510,6 +9662,36 @@ def _claude_max_enhance_answer(
         except Exception:  # noqa: BLE001
             complex_q = False
             fusion_worthy = False
+
+        # R376 — AN ADVERSARIAL TURN IS A COMPLEX QUESTION.
+        #
+        # ``complex_q`` is computed from ``question``, which on a challenge turn
+        # R372 has already replaced with the recovered turn-1 ROOT question. The
+        # root is usually a plain classification ask, so the gate returned False
+        # and the hardest turn in the conversation was served by the standard
+        # tier with NO thinking budget. Measured: a credit-scoring pushback
+        # routed to ``anthropic/claude-sonnet-5`` with ``reasoning=None``, while
+        # the same text asked directly gates complex.
+        #
+        # Deciding the tier on the recovered root is the same class of mistake
+        # as deciding it on the flattened history — the tier must follow the
+        # work the model is being asked to do, and rebutting a user's statutory
+        # argument is exactly the deliberation the complex tier and its
+        # 2048-token budget exist for. The operator directive is explicit:
+        # Opus 5 with extended thinking for complex questions.
+        #
+        # ``_is_challenge`` is already resolved above from BOTH the original
+        # flattened text and the resolved question, so it survives the
+        # replacement that hides the dispute from ``is_complex_question``.
+        if _is_challenge and _challenge_is_complex_enabled() and not complex_q:
+            complex_q = True
+            try:
+                from app.integrations.regenold.reasoning_trace import (  # noqa: PLC0415
+                    record_note as _rn,
+                )
+                _rn("complex_tier_forced_challenge_turn")
+            except Exception:  # noqa: BLE001 — trace is best-effort
+                pass
 
         # R56 — Stage-2 provider routing. The historical
         # ``_claude_max_enhance_answer`` name is preserved for back-compat;
@@ -10069,15 +10251,81 @@ def _two_stage_generate(
     # whole conversation lets a PRIOR turn's topic fire the curated gate and
     # skip Stage-2 for an unrelated live question — the flattened-prompt bug
     # class this project has fixed four times (R60.1, R64 [C1], R71, R133).
+    # R376 — THE CURATED INTERCEPT MUST NOT SWALLOW AN ADVERSARIAL TURN.
+    #
+    # Measured on two pushback conversations, the intercept fired on the
+    # CHALLENGE turn and NOT on the opening question — the exact inversion of
+    # what you want. The reason is mechanical: the curated detectors match on
+    # provision keywords, and a user disputing a verdict NAMES the provision
+    # they are disputing ("Article 5 only bans emotion recognition by law
+    # enforcement", "Article 6(3) means it is not high-risk"). So contesting an
+    # answer makes a static verdict MORE likely, not less. Turn 1 reached
+    # Stage-2 with a 61,681-char grounding block; turn 2 — gated complex,
+    # eligible for Opus 5 and its 2048-token thinking budget — made no LLM call
+    # at all.
+    #
+    # The consequence is not cosmetic. A curated verdict is a general statement
+    # about a topic; it cannot address the user's stated premise. On the
+    # emotion-recognition conversation the opening turn correctly led with
+    # "prohibited under Article 5(1)(f)" for a workplace deployment, and the
+    # intercepted challenge turn led with "not categorically prohibited",
+    # dropped Article 5.1.f from the references, never engaged the user's
+    # consent argument at all — consent is irrelevant to an Article 5
+    # prohibition — and pointed a prohibited workplace practice at Annex III
+    # and Article 50 transparency duties, which reads as "permitted if you
+    # disclose". Losing the verdict under pressure is the failure mode a
+    # pushback turn is designed to expose, and CLAUDE.md records that turn as
+    # the graded one (67 of 111 hard rows carry it).
+    #
+    # This does NOT reopen the R339 decision. That measurement turned the
+    # bypasses off for EVERY row (11/20 Antifragile) and paid ans_conciseness
+    # -0.163 and 2.4x latency for it; the bypass stays on for the canonical
+    # first-turn questions it was built for. The exemption is scoped to the
+    # turn where a static answer is structurally the wrong instrument, and it
+    # fires on 0 davidath rows (that bench has no pushback turns), so the
+    # deterministic bench stays byte-identical.
+    #
+    # UNMEASURED ON ANSWER QUALITY — no live provider was reachable when this
+    # shipped. Gate it with:
+    #   py -3.12 -m evals.harness.dynamic_ab \
+    #       --branch-env REGENOLD_CURATED_SKIP_CHALLENGE_EXEMPT=0 --label r376
+    # ``=0`` restores the pre-R376 behaviour exactly.
     if _curated_stage2_skip_enabled() and _is_curated_authoritative_intercept(resolved_q):
-        try:
-            from app.integrations.regenold.reasoning_trace import (  # noqa: PLC0415
-                record_note,
+        _challenge_exempt = False
+        if _curated_skip_challenge_exempt_enabled():
+            try:
+                from app.data.graph_rag_prompts import is_challenge_turn  # noqa: PLC0415
+
+                # Scan the FLATTENED conversation, not ``resolved_q``: the
+                # challenge-focus recovery may already have replaced the live
+                # turn with the turn-1 root question, which would hide the
+                # dispute from the detector. ``is_challenge_turn`` reads only
+                # the text after the ``Latest question:`` marker, so this still
+                # honours the live-turn doctrine.
+                _challenge_exempt = is_challenge_turn(question)
+            except Exception:  # noqa: BLE001 — a detector must never break the route
+                _challenge_exempt = False
+        if _challenge_exempt:
+            try:
+                from app.integrations.regenold.reasoning_trace import (  # noqa: PLC0415
+                    record_note,
+                )
+                record_note("stage2_curated_skip_bypassed_challenge_turn")
+            except Exception:  # noqa: BLE001 — trace is best-effort
+                pass
+            logger.info(
+                "graph_rag.curated_skip_bypassed_challenge_turn — routing the "
+                "adversarial turn to Stage-2 instead of a static verdict"
             )
-            record_note("stage2_skipped_curated_authoritative")
-        except Exception:  # noqa: BLE001 — trace is best-effort
-            pass
-        return kg_answer, False
+        else:
+            try:
+                from app.integrations.regenold.reasoning_trace import (  # noqa: PLC0415
+                    record_note,
+                )
+                record_note("stage2_skipped_curated_authoritative")
+            except Exception:  # noqa: BLE001 — trace is best-effort
+                pass
+            return kg_answer, False
 
     # R275 (Antifragile Q8) — pure single-term Article 3 definitional skip.
     # The deterministic definitional path ships the FULL verbatim Article 3
