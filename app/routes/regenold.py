@@ -2215,6 +2215,12 @@ def _engine_cache_key(
             # must be cache-distinct or an A/B of it is served one arm's
             # cached answer.
             "REGENOLD_FIDELITY_TIER_NEGATION",
+            # R377-C - the frames_rewriter breaker changes whether the
+            # sub-query rewrite hop runs, which changes retrieval, so the
+            # arms must be cache-distinct.
+            "REGENOLD_FRAMES_REWRITER_BREAKER",
+            "REGENOLD_FRAMES_REWRITER_BREAKER_FAILS",
+            "REGENOLD_FRAMES_REWRITER_BREAKER_COOLDOWN_S",
             # R149 — the lower-risk-tier toggle flips the engine output (the
             # general-verdict "regulated" admission + the full-question
             # classification gate change which describer/verdict fires →
