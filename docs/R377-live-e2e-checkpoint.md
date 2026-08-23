@@ -150,11 +150,86 @@ quoted=True chars=173`, `stage2_model=anthropic/claude-opus-5 ... complex=True`,
 P12) are all firing live. It was the truncation detector downstream of them,
 not the routing, that destroyed the turn.
 
-## Gates run so far
+## Live re-test after the two fixes
 
-| gate | result |
-| --- | --- |
-| `pytest -k "truncat or structural or r357 or r328"` | **156 passed**, 0 failed |
+Same conversations, same env, uncached.
 
-Full suite, `evals.regenold.runner`, OOS probe and the owed `dynamic_ab` runs
-are pending and recorded here as they complete.
+| | before | after |
+| --- | --- | --- |
+| pushback turn latency | 78 047 ms | **14 969 ms** |
+| pushback Stage-2 | `False` — both chains exhausted | **`True`**, no fallback hop |
+| pushback answer | 2 538 chars of unrelated Article 5 carve-outs | 812 chars rebutting consent directly |
+| complex question | 516 chars, **"limited-risk"** (wrong) | 2 466 chars, **"High-risk"** (correct) |
+
+The pushback answer now reads *"Consent of the employees is not a condition of
+that prohibition and cannot make the practice lawful ... The deployer
+transparency duty ... under Article 50(3) applies only to permitted uses and
+does not cure a prohibited practice."* That is precisely the failure mode the
+R376 record described as *"reads as permitted if you disclose"*.
+
+The complex question now answers all four of its sub-questions: high-risk via
+the Annex III employment use case with the Article 6(3) derogation ruled out on
+profiling; provider, including Article 25(1)(c) for the fine-tune and the
+Article 25(4) written agreement; the Article 43 internal-control route with no
+notified body; and the documentation set (Articles 11, 17, 12, 47, plus 72/73).
+
+The second pushback conversation (CV-screening, "our vendor says we're exempt
+… and we're a small company") is also correct on both turns, rebutting the
+human-in-the-loop claim on Article 6(3) profiling and the size claim on the
+absence of any size threshold, with precise Article 26 sub-paragraphs.
+
+## Gates
+
+| gate | result | baseline |
+| --- | --- | --- |
+| `pytest tests/` | **7048 passed, 17 skipped, 0 failed** | 7032 (R376) |
+| `evals.regenold.runner` | **247/255**, RISK_F1 macro 0.96 | **247/255 at `f831145`** — measured in an isolated worktree with the same `.env`; the change is exactly neutral |
+| OOS probe (`--oos-suite all`, 51 rows) | 24 pass / 26 leak | **25 pass / 25 leak at `f831145`** — same env, so ≤1 row, inside observed variance |
+
+⚠ **Neither the runner nor the OOS probe can be read against CLAUDE.md's
+documented 255/255 and 49/51 right now.** Both were measured here with the real
+`.env`, whose Groq daily token quota is **exhausted** (`api_status_429 ... tokens
+per day (TPD): Limit 200000`). CLAUDE.md's own gotcha covers this: the denoiser
+/ topic-filter / safety-gate cluster changes behaviour on `GROQ_API_KEY`
+(measured 63 vs 92 failures on one commit). That is why both gates were re-run
+at the **pre-R377 base in an isolated worktree with the same `.env` copied in**,
+which is the only comparison that means anything here. Against that baseline the
+two fixes are neutral.
+
+The `sentence_cap` sub-metric ranged 156–159 across runs at BOTH commits, so it
+is not a stable discriminator in this environment.
+
+## Owed, not run
+
+Per the validation policy these changes are answer-affecting and owe a
+`dynamic_ab` verdict, which was not run: the account's Groq quota is spent and a
+judge-graded A/B needs a working judge transport.
+
+```bash
+py -3.12 -m evals.harness.dynamic_ab --branch-env REGENOLD_FIDELITY_TIER_NEGATION=0 --label r377-tier-negation
+```
+
+There is no env gate for the XML-channel truncation fix, deliberately: a
+complete answer being read as truncated is a detector fault, not a policy
+choice, and both providers' chains exhausting on it is not a behaviour worth
+keeping switchable.
+
+⚠ **Choose the probe pool by measured fire rate.** The tier-negation lever only
+fires where a deterministic draft DENIES a tier it also anchors, and the
+truncation fix only fires on XML-channel answers, i.e. challenge turns. A pool
+without pushback rows reports a meaningless NULL.
+
+## Deployment preconditions — READ BEFORE TRUSTING THE DEPLOY
+
+`railway` CLI is present but unauthenticated here, so the service variables
+could not be read or set. Three of them decide whether any of this works live:
+
+1. **`NEO4J_URI` must be repointed to the NEW instance.** The recorded
+   `0644b854` is NXDOMAIN. Until Railway's variable is updated, production runs
+   with a dead graph and serves the R376 local mirror — hierarchy and sub-points
+   only, no semantic layers, no recital anchors.
+2. **`P2P_GRAPH_RAG_PROVIDER` must be `openrouter` or `auto`**, with
+   `OPENROUTER_API_KEY` set, or Stage-2 does not run on the tier this round
+   validated.
+3. **The ABSK Bedrock key is on the old entitlement.** The fallback works, but
+   one tier down (`opus-4-6-v1` / `sonnet-4-6`), never Opus 5.
