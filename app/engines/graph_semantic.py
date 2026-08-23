@@ -546,7 +546,22 @@ def fetch_focused_subprovisions(question: str, refs: list[str]) -> list[dict]:
 
         if not kg_context_enabled():
             return []
-        ids = _node_ids(refs or [], _int_env("REGENOLD_KG_MAX_REFS", 8, 1, 10))
+        # R377 - ONE CONCEPT, ONE DEFINITION. This read used a default of 8
+        # and a ceiling of 10 while all five kg_context call sites read the
+        # SAME variable as (_DEFAULT_MAX_REFS=12, 1, 24). So the ANN-constrained
+        # sub-provision layer - the graph's one MEASURED win (R327.1: citation
+        # faithfulness 0.900 -> 0.960) - was capped at 8 cited provisions and
+        # could never exceed 10, while the blunt hierarchy dump got 12 and could
+        # reach 24. An operator setting the DOCUMENTED default of 12 was silently
+        # coerced to 10 here. That is exactly the anti-pattern CLAUDE.md records
+        # against this very flag - "a clamp below its own default silently
+        # coerces the default down" - which R328.4 fixed at four call sites and
+        # missed at this one.
+        from app.engines.kg_context import _DEFAULT_MAX_REFS  # noqa: PLC0415
+
+        ids = _node_ids(
+            refs or [], _int_env("REGENOLD_KG_MAX_REFS", _DEFAULT_MAX_REFS, 1, 24)
+        )
         if not ids:
             return []
         emb = _embed(question)
