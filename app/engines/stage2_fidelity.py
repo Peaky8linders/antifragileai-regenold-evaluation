@@ -59,6 +59,7 @@ __all__ = [
     "fidelity_guard_enabled",
     "fidelity_mode",
     "extract_tier_set",
+    "extract_asserted_tier_set",
     "is_cross_tier_classification_ask",
     "guard_cross_tier_polish",
 ]
@@ -166,6 +167,103 @@ def extract_tier_set(text: str) -> set[str]:
     present: set[str] = set()
     for tier, patterns in _TIER_PATTERNS.items():
         if any(p.search(text) for p in patterns):
+            present.add(tier)
+    return present
+
+
+#: R377-B - the plain-language LABEL of each tier. Anchors alone cannot tell an
+#: ASSERTION of a tier from a DENIAL of it: "Article 6" sits in "the system is
+#: not high-risk under Article 6" exactly as it sits in "Article 6(2)
+#: classifies it as high-risk".
+_TIER_LABEL_RE: dict[str, re.Pattern[str]] = {
+    "prohibited": re.compile(r"\b(?:prohibited|prohibits|banned|bans)\b", re.IGNORECASE),
+    "high_risk": re.compile(r"\bhigh[-\s]?risk\b", re.IGNORECASE),
+    "limited": re.compile(r"\blimited[-\s]?risk\b", re.IGNORECASE),
+    "gpai": re.compile(r"\b(?:general[-\s]purpose\s+ai|gpai)\b", re.IGNORECASE),
+}
+
+#: R377-B - a sentence-local DENIAL of a tier's own label. Deliberately tight:
+#: the negation cue must sit within 40 characters of the label and inside the
+#: same sentence, so "Article 6(3) does not remove this classification, because
+#: ranking candidates materially influences the outcome" is NOT read as a denial
+#: of high-risk - there is no label inside the window.
+_TIER_DENIAL_RE: dict[str, re.Pattern[str]] = {
+    "prohibited": re.compile(
+        r"\b(?:not|neither|nor)\b[^.!?]{0,40}?\b(?:prohibited|banned)\b", re.IGNORECASE
+    ),
+    "high_risk": re.compile(
+        r"\b(?:not|no\s+longer)\b[^.!?]{0,40}?\bhigh[-\s]?risk\b", re.IGNORECASE
+    ),
+    "limited": re.compile(
+        r"\b(?:not|no\s+longer)\b[^.!?]{0,40}?\blimited[-\s]?risk\b", re.IGNORECASE
+    ),
+    "gpai": re.compile(
+        r"\b(?:not|no\s+longer)\b[^.!?]{0,40}?\b(?:general[-\s]purpose\s+ai|gpai)\b",
+        re.IGNORECASE,
+    ),
+}
+
+
+def tier_negation_enabled() -> bool:
+    """R377-B env gate. Default ON; ``REGENOLD_FIDELITY_TIER_NEGATION=0``
+    restores the pre-R377 reading in which the CONTRACT was anchor-only."""
+    return os.getenv("REGENOLD_FIDELITY_TIER_NEGATION", "1").strip().lower() not in (
+        "0",
+        "false",
+        "no",
+        "off",
+    )
+
+
+def extract_asserted_tier_set(text: str) -> set[str]:
+    """Tiers ``text`` ASSERTS - the CONTRACT side of the cross-tier guard.
+
+    R377-B. :func:`extract_tier_set` answers "is this tier ADDRESSED here", which
+    is the right question for the POLISH: a polish that says "not categorically
+    prohibited under Article 5" has preserved the deterministic draft's coverage
+    of that tier and dropped nothing. It is the WRONG question for the CONTRACT,
+    which must answer "what content does the polish have to preserve" - and a
+    denial is not content to preserve.
+
+    MEASURED LIVE 2026-08-22, the CV-screening + GPAI question::
+
+        extract_tier_set(deterministic)  ->  {"limited", "high_risk"}
+
+    because the draft's second sentence reads "... document a classification
+    assessment confirming the system is not high-risk under Article 6". The
+    draft therefore looked like a CROSS-TIER verdict while asserting exactly ONE
+    tier. The guard then found the polish had "dropped" ``limited`` and shipped
+    the deterministic draft - so a WRONG "classified as limited-risk under the
+    Article 50 transparency obligations" vetoed a CORRECT Opus 5 answer reading
+    "high-risk ... Annex III ... Article 6(2) ... provider under Article
+    25(1)(c)". Executed: action ``fallback_tier_drop``, ``out == kg_answer``.
+
+    With the denial discounted the draft asserts ``{"limited"}`` alone, the guard
+    reports ``not_cross_tier``, and the polish ships - which is the guard's own
+    documented contract for a single-tier draft.
+
+    The rule, per tier: consider only sentences that do NOT deny the tier's own
+    label. The tier is asserted when one of those sentences names an anchor or,
+    failing that, names the label positively. That second limb is what keeps a
+    QUALIFIED denial intact - "The system is not categorically prohibited under
+    Article 5. In workplaces or education it is banned ..." still asserts
+    ``prohibited``, because the ban is asserted in a sentence that does not deny
+    it even though the only ``Article 5`` anchor sits inside the denial.
+    """
+    if not text:
+        return set()
+    if not tier_negation_enabled():
+        return extract_tier_set(text)
+
+    sentences = [s for s in _SENTENCE_SPLIT.split(text) if s.strip()] or [text]
+    present: set[str] = set()
+    for tier, patterns in _TIER_PATTERNS.items():
+        denial = _TIER_DENIAL_RE.get(tier)
+        label = _TIER_LABEL_RE.get(tier)
+        candidates = [s for s in sentences if not (denial and denial.search(s))]
+        if any(p.search(s) for s in candidates for p in patterns):
+            present.add(tier)
+        elif label is not None and any(label.search(s) for s in candidates):
             present.add(tier)
     return present
 
@@ -278,7 +376,9 @@ def guard_cross_tier_polish(
             # re-inflate it (the R142.1 over-citation/conciseness trap).
             return polished, "not_classification_ask"
 
-        contract = extract_tier_set(deterministic)
+        # R377-B - the CONTRACT is what the draft ASSERTS, not merely what it
+        # mentions. A denied tier is not content the polish must preserve.
+        contract = extract_asserted_tier_set(deterministic)
         if len(contract) < 2:
             # Not a cross-tier classification — the guard does not apply.
             return polished, "not_cross_tier"
