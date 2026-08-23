@@ -219,6 +219,13 @@ def _graph_rag_provider() -> str:
     )
 
 
+#: R377 - a well-formed closing XML channel tag at the very end of a model
+#: reply (the closing tag of the ``answer`` or ``reasoning_scratchpad``
+#: channel). Anchored to the end of the string and requiring a real tag
+#: name, so a bare ">" is never peeled.
+_CLOSING_XML_CHANNEL_RE = re.compile(r"</[A-Za-z][A-Za-z0-9_.-]*>\s*$")
+
+
 def _looks_structurally_truncated(text: str | None) -> bool:
     """Heuristic: does ``text`` look cut mid-clause (no natural ending)?
 
@@ -258,8 +265,39 @@ def _looks_structurally_truncated(text: str | None) -> bool:
     # ``*Sources: … Recitals 46-59.*`` was judged truncated on its closing
     # ``*`` and discarded. A formatting character is not a truncation.
     tail = stripped
-    while tail and tail[-1] in ")]}\"”’'*_`~":
-        tail = tail[:-1].rstrip()
+    # R377 - a trailing XML CHANNEL tag is a WRAPPER, not a terminator.
+    #
+    # The V2 output contract (``ANSWER_GENERATE_SYSTEM_V2`` output_contract)
+    # and ``USER_CHALLENGE_BREVITY_CLAUSE_V2`` both instruct the model to put
+    # its clean statutory answer inside an ``answer`` XML channel when it is
+    # re-deriving under a challenge. ``prompt_guard.split_reasoning_and_answer``
+    # unwraps that - but it runs AFTER this guard, which sees the RAW provider
+    # text. So a correctly-formatted challenge answer ends on ">", which is not
+    # in ".!?", and this returned True.
+    #
+    # MEASURED LIVE 2026-08-22 on the emotion-recognition pushback turn: a
+    # COMPLETE and CORRECT Sonnet 5 answer whose final characters were
+    # "... regardless of written employee consent." followed by the closing
+    # answer tag was judged truncated on that tag. Every model on BOTH
+    # providers then "truncated" identically - anthropic/claude-opus-5,
+    # anthropic/claude-sonnet-5, eu.anthropic.claude-opus-4-6-v1, qwen3-235b,
+    # nemotron-super, devstral - both chains exhausted, and the route shipped a
+    # 2538-char deterministic dump of unrelated Article 5 carve-outs on THE
+    # GRADED TURN. Six models failing the same way is a detector fault, not six
+    # model faults.
+    #
+    # Same category as the R328.3 markdown peel below it: a tag WRAPS text
+    # rather than ending it. Only a WELL-FORMED closing tag is peeled, so an
+    # answer genuinely ending on a bare ">" still reads as truncated.
+    while True:
+        _before_peel = tail
+        while tail and tail[-1] in ")]}\"”’'*_`~":
+            tail = tail[:-1].rstrip()
+        _closing = _CLOSING_XML_CHANNEL_RE.search(tail)
+        if _closing:
+            tail = tail[: _closing.start()].rstrip()
+        if tail == _before_peel:
+            break
     if not tail:
         return False
     # R357 — an ending ellipsis ("…") is a CUT, not a terminator: a
