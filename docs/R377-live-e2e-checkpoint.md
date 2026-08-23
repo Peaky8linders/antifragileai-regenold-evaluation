@@ -57,6 +57,56 @@ Question 94  Guideline 4  LegalInstrument 1  KBMetadata 1
 which should leave 74), and total edges are **2156** vs the documented 2166.
 The snapshot appears to predate part of the R371.6 cleanup.
 
+## ⚠ CORRECTION — WHICH CONFIGURATION THESE DEFECTS FIRE IN
+
+**Added 2026-08-23 after probing the deployed service directly. Read this before
+quoting any impact claim below it.**
+
+Both defects recorded in this document are REAL and were reproduced repeatedly by
+execution. But they were reproduced against the **local `.env` configuration**,
+and this file originally described their impact as if it were production's. It is
+not. Measured against the deployed service (`f831145`, i.e. WITHOUT either fix):
+
+| probe | production result |
+| --- | --- |
+| graded pushback turn, 6 independent conversations | **stage2 landed 6/6**, `claude-opus-5:exacto`, thinking 2048, correct consent rebuttal every time |
+| complex CV + GPAI question | **correct** — "High-risk ... Article 25(1)(c) ... Article 25(4) ... Article 43 ... Article 47", 2 890 chars |
+
+So neither defect fires on the deployed configuration today.
+
+**Why the two configurations diverge.** The local `.env` sets ~15 `REGENOLD_*`
+tuning flags that the Railway service does not (`REGENOLD_GRAPH_2HOP`,
+`REGENOLD_GRAPH_AWARE`, `REGENOLD_DYNAMIC_GROUNDING`, `REGENOLD_QA_LENGTH_CAP`,
+`REGENOLD_AI_USECASE_RESCUE`, `REGENOLD_R89A_FORCE_APPEND`, …), and production
+additionally pins `REGENOLD_OPENROUTER_ROUTING=exacto`. Measured, the same
+question takes a DIFFERENT answer route in each: production reports
+`answer_route=synthesis:complex_question`, the local env routes through the
+scenario classifier and reaches `scenario-provider-limited`. The fidelity guard
+that discarded the correct polish is only reachable on the second route.
+
+Re-running the complex question locally with production's flag set — credentials
+only, no local tuning flags — returns the correct high-risk answer, confirming
+the flags are the trigger and not the code path alone.
+
+**What this does and does not change.**
+
+* It does NOT retract the defects. Both are genuine, both are demonstrated by
+  captured wire output, both are now fixed and pinned by tests, and `.env` is a
+  supported configuration — an operator running it hits them.
+* It DOES retract the urgency. "Destroying answers in production" was wrong.
+  Production is healthy on both probes.
+* The fixes are latent-failure removals, not an outage repair. Deploy them on
+  the normal cadence.
+* Two of the round's findings are configuration-independent and hold everywhere:
+  the `REGENOLD_KG_MAX_REFS` split definition (`96c5251`) and `topP` sent
+  alongside extended thinking (`fb36f8a`).
+
+This is exactly the instrument trap CLAUDE.md records — *"before trusting a
+measurement, ask: can this instrument physically observe the thing I am
+deciding?"* The local server was a faithful instrument for the CODE and an
+unfaithful one for the DEPLOYMENT, and the difference was fifteen environment
+variables.
+
 ## The graded turn was completely broken, and now is not
 
 **R377-A — a complete XML-channel answer read as truncated.** Fixed in `0f76fa0`.
