@@ -1,0 +1,158 @@
+# R377 — measured but NOT landed
+
+Six specialist agents designed and measured fixes for the live defects this
+round surfaced. Four landed (see `docs/R377-live-e2e-checkpoint.md`). The rest
+are recorded here **with their measurements**, because each is an
+answer-affecting change that owes a `dynamic_ab` verdict which could not be run:
+the account's Groq daily token quota is exhausted and the Cohere key 429s.
+
+Do not land any of these on the strength of this document alone. Each entry
+records what was measured so the next round can go straight to the gate.
+
+## 1. The ungrounded tier still holds veto authority
+
+**This is the ROOT of the defect `bc44bfb` treated.** That commit stopped a
+DENIED tier counting as an ASSERTED one, which fixes the observed case — but
+only because the canned limited-risk prose happens to contain the clause
+*"confirming the system is not high-risk under Article 6"*. Flip its documented
+rollback `REGENOLD_FIDELITY_TIER_NEGATION=0` and `fallback_tier_drop` returns on
+the identical inputs. The two fixes are complementary: `bc44bfb` fixes what the
+draft MENTIONS; this fixes what the draft is ENTITLED to veto with.
+
+`scenario_classifier.py:1425` sets `risk_level = "limited"` when
+`_detect_risk_level` returned `None` AND `_detect_gpai_signal` returned `False`
+— i.e. when nothing in the question established a tier at all. `ScenarioVerdict`
+has no field recording that, so the guard cannot tell an evidence-free default
+from a detected tier.
+
+**The fix:** carry provenance. One `bool` on `ScenarioVerdict` (default `True`),
+one on `GraphContext`, one write at the point the ungrounded verdict is
+returned, one keyword arg on `guard_cross_tier_polish`, one early return. Gate
+`REGENOLD_FIDELITY_UNGROUNDED_TIER_SKIP`, default ON, `=0` an exact rollback.
+
+**Measured:** over the whole 297-row probe pool × 4 synthetic tier-dropping
+polishes — **1,188 guard invocations, 0 differing rows**. The R146 emotion case
+is `grounded=True` (it comes from `_detect_classification_topic`, a positive
+curated detector, not the scenario path) and still falls back in all four flag
+combinations.
+
+Placement matters and was measured: AFTER `_verdict_flip`, so the guard against
+shipping a false PROHIBITION keeps its authority. Empirically free —
+`_DET_NOT_PROHIBITED` fires on 0 of the 11 ungrounded drafts in the pool.
+
+## 2. One curated keyword hit suppresses the whole BM25 lane
+
+**The precise mechanism behind "richer questions retrieve worse."**
+
+`_graph_rag_impl.py:3295-3296`
+
+```python
+_original_lanes_empty = len(entities) - _expansion_added == 0
+if _original_lanes_empty:
+    _bm25_fallback_used = True
+```
+
+The BM25 recall lane fires **only** when the curated lanes produced *zero*
+entities. One curated hit therefore suppresses the entire lane.
+
+On the live failing question, `_keyword_scan_refs` returns `['Art. 43']` —
+exactly three of the 517 map entries match and all three are the same anchor
+(`conformity assessment` ×2, `conformity assessment route`). The phrase *"what
+conformity assessment route"* is the only curated phrase in a four-part
+question, so it alone suppressed BM25 and the question retrieved one provision.
+
+Both levers CLAUDE.md nominates for this were **disproved by execution**, not by
+argument:
+
+* **Parse-level Cohere rerank is structurally inert here.** With an identity
+  rerank stub the entity list is `['Art. 43']` before and after — a one-element
+  list has one permutation, and R350 already projects the reranked ORDER back
+  onto the original MEMBERSHIP.
+* Query expansion adds paraphrases through the same curated map, so it cannot
+  reach a question the map does not cover.
+
+The fix belongs in the parse. It is reference-affecting, so it owes the
+`gold_dropped` veto over the full pool before it can ship.
+
+## 3. The Annex III(4) markers, measured
+
+`_detect_risk_level` misses the ordinary phrasings:
+
+```
+_detect_risk_level("Our AI ranks job applicants for employers.")  -> None
+_detect_risk_level("We screen CVs and rank job applicants.")      -> None
+_detect_risk_level("Is an AI CV-screening tool high-risk...")     -> 'high-risk'
+```
+
+The designed widening copies the existing `_MIGRATION_CONTEXT_RE` /
+`_ELECTION_CONTEXT_RE` shape — a TERM plus the statutory CONTEXT, word-bounded —
+rather than inventing one, because CLAUDE.md records that a bare `migration` and
+a bare `election` marker each shipped false positives that had to be reverted.
+It splits the employment objects into STRONG and WEAK tiers so weak markers can
+be dropped individually on the precision reading.
+
+`_detect_gpai_signal` has the same brittleness: it requires the literal
+`"general-purpose ai"`, so *"fine-tune a third-party general-purpose model"* →
+`False` while *"...general-purpose AI model"* → `True`.
+
+R352 doctrine binds this absolutely: **compute the exact gold precision over the
+297-row pool before shipping.** The broad risk-class triad was refuted at 12%
+precision and Article 6 at 0%.
+
+## 4. The unclassified default under-warns
+
+`scenario_classifier.py:1425` defaults to `"limited"`, documented at `:1384` as
+*"the conservative 'limited' tier"*. In the Act's pyramid that is the
+second-**lowest** obligation tier, so an unrecognised scenario is told a
+transparency notice suffices.
+
+The docstring is wrong, and the history explains why nobody noticed: R33 built
+this fallback because davidath returned `None` on 226/339 (67%) of bench
+scenarios, and davidath gold for a scenario is literally
+`"This system is classified as {risk_level}. " + first 3 obligations`. Emitting
+Article 50 + Article 4 tokens moved `ans_loose` 0.027 → 0.1876 on that subset.
+**It was a token-overlap optimisation against a retired, `provider=cli`,
+head-level bench** — not a legal judgement.
+
+Recommended: keep the verdict and its article pack exactly as they are, but stop
+ASSERTING a tier the classifier never detected. Gate
+`REGENOLD_SCENARIO_TIER_UNGROUNDED`. This composes with item 1 — land them
+together.
+
+Note also the second default at `_graph_rag_impl.py:7273` and `:7570`
+(`query.risk_context or risk_level or "high"`) points the OTHER way. One
+concept, two definitions, opposite directions.
+
+## 5. `risk_context` is a two-substring test
+
+`_graph_rag_impl.py:2900`:
+
+```python
+if "high" in q_lower and "risk" in q_lower:
+```
+
+so *"what risk class applies"* yields `None`.
+
+## Carried over from the finding re-verification
+
+`docs/R377-finding-verification.md` lists eight further open items from the
+independent re-verification of the R376 review, including the two that touch
+shipped behaviour most directly: the Article 5(1)(h) qualifier that can suppress
+a genuine real-time RBI verdict, and the `auto`/unset Stage-2 cascade that still
+treats a bare `is_openai_wrapper_enabled()` as a readiness signal on the DEFAULT
+provider path.
+
+## The owed gates
+
+```bash
+py -3.12 -m evals.harness.dynamic_ab --branch-env REGENOLD_FIDELITY_TIER_NEGATION=0 --label r377-tier-negation
+py -3.12 -m evals.harness.dynamic_ab --branch-env REGENOLD_FRAMES_REWRITER_BREAKER=0 --label r377-frames-breaker
+py -3.12 -m evals.harness.dynamic_ab --branch-env REGENOLD_KG_MAX_REFS=8 --label r377-kg-max-refs
+```
+
+⚠ Choose the probe pool by MEASURED FIRE RATE. The tier-negation lever fires
+only where a deterministic draft denies a tier it also anchors; the frames
+breaker fires only on multi-phrase decomposed questions; the XML-channel
+truncation fix fires only on challenge turns. A pool without those shapes
+reports a meaningless NULL — the inert-A/B trap arriving through the probe pool
+rather than the harness.
