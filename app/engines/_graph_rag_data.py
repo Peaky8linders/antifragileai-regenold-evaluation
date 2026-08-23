@@ -797,18 +797,45 @@ _CLASSIFICATION_TOPICS: list[dict] = [
         "refs": ["Art. 5", "Art. 6", "Annex I", "Annex III", "Art. 50"],
     },
     # ── Emotion recognition in workplaces / education (Q2) ─────────────
+    # R377 - MEASURED LIVE against the deployed service. "We deploy an
+    # emotion recognition system in our call centre to monitor agent stress.
+    # Is that permitted in the EU?" did NOT match this entry, fell through to
+    # emotion_recognition_general, and shipped "Emotion recognition is not
+    # categorically prohibited ... Elsewhere the system is high-risk" -- while
+    # "Can we use emotion recognition on our employees in the office?" reached
+    # Stage-2 and correctly answered "Prohibited. Article 5 bans ...".
+    #
+    # A call centre is a workplace and its agents are workers, so Article
+    # 5(1)(f) bites. The token list simply lacked the ordinary words for a
+    # workplace. This widens an EXISTING entry toward the statutory phrase
+    # "in the areas of workplace and education institutions"; it is not a new
+    # classification topic (hard rule #3), nothing here is keyed to a graded
+    # example, and a non-workplace deployment still falls through to the
+    # general entry and still reads "not categorically prohibited".
+    #
+    # "agent" is deliberately NOT a token: it collides with "AI agent".
+    #
+    # Under-warning on a prohibited practice is the worst direction this
+    # product can fail in -- a compliance lead acting on the old answer would
+    # have deployed a prohibited system.
     {
         "name": "emotion_recognition_workplace",
         "patterns": [
             re.compile(
                 r"emotion\s+(recognition|inference|detection|ai)"
                 r"[\w\s\-,]{0,40}?"
-                r"(workplace|workplaces|employer|employee|hr|hiring|interview|"
+                r"(workplace|workplaces|employer|employee|employees|staff|"
+                r"worker|workers|workforce|personnel|colleague|colleagues|"
+                r"call[\s\-]?cent(?:re|er)|"
+                r"hr|hiring|interview|"
                 r"school|schools|education|educational|classroom|student|teacher)",
                 re.IGNORECASE,
             ),
             re.compile(
-                r"(workplace|workplaces|employer|employee|hr|hiring|interview|"
+                r"(workplace|workplaces|employer|employee|employees|staff|"
+                r"worker|workers|workforce|personnel|colleague|colleagues|"
+                r"call[\s\-]?cent(?:re|er)|"
+                r"hr|hiring|interview|"
                 r"school|schools|education|educational|classroom|student|teacher)"
                 r"[\w\s\-,]{0,40}?emotion\s+(recognition|inference|detection)",
                 re.IGNORECASE,

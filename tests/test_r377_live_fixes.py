@@ -224,3 +224,67 @@ class TestR377CFramesRewriterBreaker:
                 fr.rewrite_sub_query_llm("sub", "orig")
                 == "provider obligations for CV screening"
             )
+
+
+# ─── R377-D ──────────────────────────────────────────────────────────────────
+
+
+class TestR377DWorkplaceEmotionRecognition:
+    """A call centre is a workplace, so Article 5(1)(f) bites.
+
+    MEASURED LIVE against the deployed service:
+
+        "We deploy an emotion recognition system in our call centre to monitor
+         agent stress. Is that permitted in the EU?"
+        -> "Emotion recognition is not categorically prohibited under the AI
+            Act ... Elsewhere the system is high-risk"          (WRONG)
+
+        "Can we use emotion recognition on our employees in the office?"
+        -> "Prohibited. Article 5 bans ..."                     (CORRECT)
+
+    The only difference was the vocabulary: the workplace token list carried
+    ``employee`` but not ``staff`` / ``worker`` / ``call centre``. Under-warning
+    on a prohibited practice is the worst direction this product can fail in.
+    """
+
+    def _match(self, question: str) -> str | None:
+        from app.engines._graph_rag_data import _CLASSIFICATION_TOPICS
+
+        for entry in _CLASSIFICATION_TOPICS:
+            if "emotion" not in entry.get("name", ""):
+                continue
+            if any(p.search(question) for p in entry["patterns"]):
+                return entry["name"]
+        return None
+
+    @pytest.mark.parametrize(
+        "question",
+        [
+            "We deploy an emotion recognition system in our call centre to monitor agent stress.",
+            "We monitor the stress of our call-centre agents with an emotion recognition AI.",
+            "Can we use emotion recognition on our employees in the office?",
+            "Emotion recognition used on our staff during shifts",
+            "Emotion detection applied to our workforce",
+            "Emotion recognition on personnel in the plant",
+        ],
+    )
+    def test_workplace_shapes_reach_the_prohibition_entry(self, question: str) -> None:
+        assert self._match(question) == "emotion_recognition_workplace"
+
+    @pytest.mark.parametrize(
+        "question",
+        [
+            "Emotion recognition in our retail stores to measure customer satisfaction",
+            "Emotion detection on viewers of our advertising",
+            "Emotion recognition for driver drowsiness in consumer cars",
+        ],
+    )
+    def test_non_workplace_shapes_stay_general(self, question: str) -> None:
+        """The widening must not sweep in deployments Article 5(1)(f) does not reach."""
+        assert self._match(question) == "emotion_recognition_general"
+
+    def test_agent_alone_is_not_a_workplace_token(self) -> None:
+        """"agent" collides with "AI agent" and is deliberately excluded."""
+        assert self._match("Emotion recognition inside our AI agent product") == (
+            "emotion_recognition_general"
+        )
