@@ -153,3 +153,74 @@ class TestR377BDeniedTierIsNotAssertedTier:
         monkeypatch.setenv("REGENOLD_FIDELITY_TIER_NEGATION", "1")
         fixed = extract_asserted_tier_set(_LIVE_DETERMINISTIC_DRAFT)
         assert legacy != fixed
+
+
+# ─── R377-C ──────────────────────────────────────────────────────────────────
+
+
+class TestR377CFramesRewriterBreaker:
+    """The hot-path sub-query rewrite must not re-pay a timeout forever.
+
+    Measured live: 3690 / 3052 / 3026 ms for three sub-queries, every one
+    returning the sub-query UNCHANGED, because the hop is hard-bound to the
+    wrapper tunnel regardless of ``P2P_GRAPH_RAG_PROVIDER``.
+    """
+
+    def _stub_failure(self, monkeypatch):
+        import app.engines.frames_rewriter as fr
+
+        calls = {"n": 0}
+
+        def boom(*_a, **_k):
+            calls["n"] += 1
+            raise TimeoutError("read timed out")
+
+        monkeypatch.setattr(fr, "is_openai_wrapper_enabled", lambda: True)
+        monkeypatch.setattr(fr, "get_openai_wrapper_provider", boom)
+        fr._reset_frames_breaker_for_tests()
+        return fr, calls
+
+    def test_breaker_opens_and_stops_calling(self, monkeypatch) -> None:
+        fr, calls = self._stub_failure(monkeypatch)
+        for _ in range(6):
+            assert fr.rewrite_sub_query_llm("sub", "orig") == "sub"
+        # Threshold is 2, so only the first two attempts reach the provider.
+        assert calls["n"] == 2
+
+    def test_off_switch_restores_unbounded_calling(self, monkeypatch) -> None:
+        monkeypatch.setenv("REGENOLD_FRAMES_REWRITER_BREAKER", "0")
+        fr, calls = self._stub_failure(monkeypatch)
+        for _ in range(5):
+            fr.rewrite_sub_query_llm("sub", "orig")
+        assert calls["n"] == 5
+
+    def test_a_success_resets_the_breaker(self, monkeypatch) -> None:
+        import app.engines.frames_rewriter as fr
+
+        fr._reset_frames_breaker_for_tests()
+        fr._breaker_record_failure()
+        fr._breaker_record_failure()
+        assert fr._breaker_is_open() is True
+        fr._breaker_record_success()
+        assert fr._breaker_is_open() is False
+
+    def test_the_hop_still_runs_when_the_provider_works(self, monkeypatch) -> None:
+        """The breaker must be invisible whenever the rewrite actually works."""
+        import app.engines.frames_rewriter as fr
+
+        class _Resp:
+            error = None
+            text = "provider obligations for CV screening"
+
+        class _P:
+            def complete(self, _req):
+                return _Resp()
+
+        monkeypatch.setattr(fr, "is_openai_wrapper_enabled", lambda: True)
+        monkeypatch.setattr(fr, "get_openai_wrapper_provider", lambda: _P())
+        fr._reset_frames_breaker_for_tests()
+        for _ in range(5):
+            assert (
+                fr.rewrite_sub_query_llm("sub", "orig")
+                == "provider obligations for CV screening"
+            )
