@@ -32,7 +32,7 @@ Real 5-token invokes, `eu-central-1`, current `.env` key:
 So the R328.2 picture is unchanged: **the Bedrock fallback cannot serve Opus 5
 or Sonnet 5 with this credential.** It degrades within the Claude family to
 `opus-4-6-v1` / `sonnet-4-6`, exactly as `complete_with_fallback` is built to.
-"OpenRouter Opus 5 primary with a Bedrock fallback" is真 for the primary and
+"OpenRouter Opus 5 primary with a Bedrock fallback" holds for the primary and
 **one tier down** for the fallback until the ABSK key is re-minted.
 
 ### Aura, after the snapshot restore
@@ -79,9 +79,10 @@ minors) that never engaged the consent argument.
 
 Six models failing the same way is a detector fault, not six model faults.
 
-## The other live defects found (fixes in progress)
+## The complex question was answered wrongly, and now is not
 
-**R377-B — the fidelity guard enshrines a WRONG deterministic tier.** On the
+**R377-B — the fidelity guard enshrined a WRONG deterministic tier.** Fixed in
+`bc44bfb`. On the
 complex CV-screening + GPAI question, Stage-2 (Opus 5, 2048 thinking) produced a
 correct 2183-char answer — *"high-risk ... Annex III ... Article 6(2) ...
 provider under Article 25(1)(c)"* — with zero citation drift and a complete
@@ -92,6 +93,12 @@ Executed directly: `out == kg_answer` is True, `out == polish` is False. The
 R146 guard's doctrine is "the deterministic Stage-1 draft is the CONTENT source
 of truth" — which is right when that draft is grounded and catastrophic when it
 is a default.
+
+The fix is on the CONTRACT side only: a tier the draft DENIES is not a tier the
+polish must preserve. `extract_tier_set` is left byte-identical because "is this
+tier ADDRESSED" remains the right question for the POLISH.
+
+## Found and recorded, not yet fixed
 
 **R377-C — Annex III(4) markers are brittle literal substrings.**
 `_detect_risk_level("Our AI ranks job applicants for employers.")` → `None`.
