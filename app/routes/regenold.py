@@ -2210,6 +2210,11 @@ def _engine_cache_key(
             # guard is inert there → the bench stays byte-identical either way.
             "REGENOLD_STAGE2_FIDELITY",
             "REGENOLD_STAGE2_FIDELITY_MODE",
+            # R377-B - engine-level: it changes the CONTRACT the fidelity
+            # guard enforces inside _two_stage_generate, so the two arms
+            # must be cache-distinct or an A/B of it is served one arm's
+            # cached answer.
+            "REGENOLD_FIDELITY_TIER_NEGATION",
             # R149 — the lower-risk-tier toggle flips the engine output (the
             # general-verdict "regulated" admission + the full-question
             # classification gate change which describer/verdict fires →
