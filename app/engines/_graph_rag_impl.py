@@ -10456,7 +10456,23 @@ def _two_stage_generate(
                 # dispute from the detector. ``is_challenge_turn`` reads only
                 # the text after the ``Latest question:`` marker, so this still
                 # honours the live-turn doctrine.
-                _challenge_exempt = is_challenge_turn(question)
+                # R377 - A CHALLENGE NEEDS A PREVIOUS ANSWER TO DISPUTE.
+                #
+                # This was the LAST ungated is_challenge_turn call in the
+                # repo. The other three are gated: the Stage-2 request
+                # builder on (history_turn_count or 1) > 1, and both route
+                # sites on ``if history_turns:`` / ``_is_multiturn``. R376
+                # review finding #4 added the first of those after the
+                # widened markers were shown to fire on a FIRST turn ("Our
+                # vendor says the model is exempt and I disagree - is our
+                # CV-screening tool high-risk?"); this call was left behind,
+                # so route and engine could disagree about whether a turn is
+                # a challenge. R377 widens the detector again with the
+                # leading-confirmation family, which makes closing the gap
+                # load-bearing rather than tidy.
+                _challenge_exempt = (history_turn_count or 1) > 1 and (
+                    is_challenge_turn(question)
+                )
             except Exception:  # noqa: BLE001 — a detector must never break the route
                 _challenge_exempt = False
         if _challenge_exempt:

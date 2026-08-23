@@ -327,3 +327,109 @@ class TestR377DWorkplaceEmotionRecognition:
         topic = _detect_classification_topic(question)
         assert topic is not None
         assert topic["name"] == "emotion_recognition_general"
+
+
+# ─── R377-E ──────────────────────────────────────────────────────────────────
+
+
+class TestR377EChallengeTurnDetection:
+    """A pushback does not have to say "you are wrong" to be a pushback.
+
+    MEASURED: against ten realistic pushback turns written the way a compliance
+    lead actually pushes back, the pre-R377 detector scored 0/10. Every marker
+    it carried was an explicit dispute phrase; none of these disputes anything
+    explicitly -- they assert a conclusion and ask the assistant to ratify it.
+    """
+
+    #: The exact turn measured live, which produced
+    #: ``stage2_skipped_curated_authoritative``, no Stage-2 and eleven refs.
+    LIVE_DEROGATION_PUSHBACK = (
+        "But Article 6(3) says a system is not high-risk if it performs a narrow "
+        "procedural task. Ours only sorts CVs into a preliminary order for a human "
+        "recruiter. So the derogation applies and we are exempt, correct?"
+    )
+
+    GENUINE_PUSHBACKS = [
+        LIVE_DEROGATION_PUSHBACK,
+        "Our vendor says we're exempt because the tool only assists a human recruiter. "
+        "So we have no obligations, correct?",
+        "We are a US company and the model is hosted in Virginia. The AI Act is EU law, "
+        "so it does not reach us. Agreed?",
+        "So we are out of scope then?",
+        "That means we do not need a conformity assessment, right?",
+        "Just confirm that a loyalty programme is fine so we can move on.",
+        "So we don't need technical documentation for this, correct?",
+        "We're exempt under Article 2(6) because this is research, right?",
+        "Then we have no obligations under Chapter III, correct?",
+        "So it is not covered by Annex III, agreed?",
+    ]
+
+    #: Ordinary turn-2 follow-ups. A false positive here freezes references,
+    #: shortens the answer and bypasses the curated intercept on a turn that was
+    #: not a challenge, so precision is the binding constraint.
+    ORDINARY_FOLLOW_UPS = [
+        "Thanks. What about the deployer's obligations?",
+        "Can you also explain the conformity assessment route?",
+        "Is that correct for Annex I products too?",
+        "Which article covers the logging requirement?",
+        "How long must we retain the logs?",
+        "What happens if we modify the intended purpose later?",
+        "Does the same apply to our importer?",
+        "Could you list the Annex IV contents?",
+        "And for a general-purpose model, is the threshold different?",
+        "What is the deadline for compliance?",
+        "Should we reconsider our classification if we add profiling?",
+        "Is the fine calculated on group turnover or entity turnover?",
+        "Please confirm the article number you cited.",
+        "Can you confirm whether Annex III point 4 applies?",
+        "We want to be sure we are compliant. What else is needed?",
+    ]
+
+    @pytest.mark.parametrize("question", GENUINE_PUSHBACKS)
+    def test_leading_confirmation_pushback_is_a_challenge(self, question: str) -> None:
+        from app.data.graph_rag_prompts import is_challenge_turn
+
+        assert is_challenge_turn(question) is True
+
+    @pytest.mark.parametrize("question", ORDINARY_FOLLOW_UPS)
+    def test_ordinary_follow_ups_are_not_challenges(self, question: str) -> None:
+        """Precision guard: none of these asserts a conclusion."""
+        from app.data.graph_rag_prompts import is_challenge_turn
+
+        assert is_challenge_turn(question) is False
+
+    def test_bare_verification_request_is_not_a_challenge(self) -> None:
+        """The punctuation before the tag is load-bearing.
+
+        "Is that correct?" asks; "..., correct?" asserts.
+        """
+        from app.data.graph_rag_prompts import is_challenge_turn
+
+        assert is_challenge_turn("Is that correct?") is False
+        assert is_challenge_turn("We are exempt, correct?") is True
+
+    def test_live_turn_doctrine_preserved(self) -> None:
+        """Only the text after the flatten marker is scanned (R60.1 / R71)."""
+        from app.data.graph_rag_prompts import is_challenge_turn
+
+        flattened = (
+            "Conversation so far:\nUser: So we are exempt, correct?\n"
+            "Assistant: No.\n\nLatest question:\nWhat are the logging duties?"
+        )
+        assert is_challenge_turn(flattened) is False
+
+    def test_every_call_site_is_turn_gated(self) -> None:
+        """R377 closed the last ungated call.
+
+        A challenge needs a previous answer to dispute. R376 review finding #4
+        gated the Stage-2 request builder after the widened markers were shown to
+        fire on a FIRST turn; the curated-skip exemption was left behind, so route
+        and engine could disagree about whether a turn is a challenge.
+        """
+        import inspect
+
+        from app.engines import _graph_rag_impl as impl
+
+        src = inspect.getsource(impl._two_stage_generate)
+        assert "_challenge_exempt = is_challenge_turn(question)" not in src
+        assert "(history_turn_count or 1) > 1" in src
