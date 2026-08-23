@@ -135,7 +135,24 @@ so *"what risk class applies"* yields `None`.
 
 ## 6. A leading-confirmation pushback does not register as a challenge
 
-**Found by the live production battery; still open.**
+**CLOSED in `f48df96`.** Recall 0/10 -> 10/10 on realistic pushback, one false
+positive on a 16-row corpus of ordinary turn-2 follow-ups (a SINGLE-TURN
+davidath sycophancy row that every caller's turn gate keeps out of reach). The
+last ungated `is_challenge_turn` call was gated at the same time, so route and
+engine can no longer disagree about whether a turn is a challenge.
+
+Measured end-to-end under production's configuration, the turn below went from
+`stage2=False` / 11 refs / question-never-answered to `stage2=True` on opus-5
+with thinking 2048, 5 refs, opening *"High-risk, and the derogation does not
+apply."* A five-conversation regression pass showed 0 regressions and one
+further improvement: *"Just confirm that a loyalty programme is fine so we can
+move on."* is now challenge-detected and answered *"That confirmation cannot be
+given as stated."* An ordinary follow-up ("How long must we retain the logs?")
+correctly carries no challenge flags.
+
+The original evidence is kept below.
+
+**Found by the live production battery.**
 
 Measured against the deployed service:
 
