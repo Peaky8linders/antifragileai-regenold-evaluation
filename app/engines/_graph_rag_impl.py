@@ -4028,9 +4028,38 @@ def _detect_classification_topic(question: str) -> dict | None:
         # ``emotion_recognition_workplace`` entry still wins over the
         # general one on its own traffic).
         if _emotion_curated_emit_enabled() and _detect_emotion_classification_inquiry(question):
+            # R377 - PREFER THE NARROW ENTRY. This rescue used to hard-code
+            # ``emotion_recognition_general``, so a question that was not
+            # classification-SHAPED could never reach the workplace entry even
+            # when its patterns matched. The comment directly above claims the
+            # narrow entry "still wins over the general one on its own traffic",
+            # and that was true only on the classification-shaped path.
+            #
+            # MEASURED LIVE against the deployed service, two phrasings of one
+            # question that differ only in their closing clause:
+            #   "... in our call centre to monitor agent stress. Is that
+            #    permitted in the EU?"   -> NOT classification-shaped -> rescue
+            #    -> general -> "Emotion recognition is not categorically
+            #    prohibited ..."                                        WRONG
+            #   "... our call-centre agents ... Is that allowed?"
+            #    -> classification-shaped -> main loop -> workplace
+            #    -> "prohibited under Article 5 when deployed in workplaces"
+            #                                                          CORRECT
+            # Same deployment, same law, opposite answers, decided by whether
+            # the sentence happened to read as a verdict ask.
+            #
+            # Article 5(1)(f) turns on WHERE the system is deployed, not on how
+            # the question is phrased. Non-workplace traffic still falls through
+            # to the general entry, so the rescue's original job is unchanged.
+            _general_fallback = None
             for topic in _CLASSIFICATION_TOPICS:
-                if topic["name"] == "emotion_recognition_general":
-                    return topic
+                name = topic.get("name", "")
+                if name == "emotion_recognition_workplace":
+                    if any(p.search(question) for p in topic["patterns"]):
+                        return topic
+                elif name == "emotion_recognition_general":
+                    _general_fallback = topic
+            return _general_fallback
         return None
     live = question
     if "Latest question:" in live:

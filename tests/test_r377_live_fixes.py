@@ -288,3 +288,42 @@ class TestR377DWorkplaceEmotionRecognition:
         assert self._match("Emotion recognition inside our AI agent product") == (
             "emotion_recognition_general"
         )
+
+    def test_rescue_path_prefers_the_narrow_workplace_entry(self) -> None:
+        """R377 — the R330 emotion rescue used to hard-code the general entry.
+
+        The two questions below describe the SAME deployment and differ only in
+        their closing clause. Measured live, the first was not classification-
+        SHAPED, took the rescue, and got "not categorically prohibited"; the
+        second was, took the main loop, and got the Article 5 prohibition.
+        """
+        from app.engines._graph_rag_impl import _detect_classification_topic
+
+        not_verdict_shaped = (
+            "We deploy an emotion recognition system in our call centre to "
+            "monitor agent stress. Is that permitted in the EU?"
+        )
+        verdict_shaped = (
+            "We monitor the stress levels of our call-centre agents with an "
+            "emotion recognition AI. Is that allowed?"
+        )
+        for q in (not_verdict_shaped, verdict_shaped):
+            topic = _detect_classification_topic(q)
+            assert topic is not None
+            assert topic["name"] == "emotion_recognition_workplace"
+
+    @pytest.mark.parametrize(
+        "question",
+        [
+            "Emotion recognition in our retail stores to measure customer satisfaction. Is that permitted?",
+            "Is emotion detection on viewers of our advertising permitted?",
+            "Is emotion recognition for driver drowsiness in consumer cars allowed?",
+        ],
+    )
+    def test_rescue_path_still_serves_general_off_workplace(self, question: str) -> None:
+        """The rescue's original job is unchanged for non-workplace traffic."""
+        from app.engines._graph_rag_impl import _detect_classification_topic
+
+        topic = _detect_classification_topic(question)
+        assert topic is not None
+        assert topic["name"] == "emotion_recognition_general"
