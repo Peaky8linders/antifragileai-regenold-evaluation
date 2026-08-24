@@ -695,3 +695,185 @@ class TestAnthropicCompleteForGraphRagTruncation:
             system="s", user="u", max_tokens=10, temperature=0.0,
         )
         assert result == "Article 13 requires logs."
+
+
+# ─── R378. The Bedrock link, driven through the REAL producer ─────────────
+#
+# Every truncation row above hand-builds a MagicMock and sets
+# ``finish_reason`` itself (``_mk_resp``, :152) — always ``"length"``. That is
+# the OpenAI/Groq spelling. The Bedrock link added by R377 speaks Converse,
+# whose token-cap value is ``"max_tokens"``, so the suite asserted against a
+# value the real adapter cannot emit and 87 tests stayed green over a dead
+# guard.
+#
+# CLAUDE.md's R338 doctrine: "A test fixture that builds its own input is not a
+# test of the producer — make the test call the producer." These rows do.
+
+
+def _converse_reply(text: str, stop_reason: str) -> dict:
+    """A Converse reply shaped exactly as botocore returns it."""
+    return {
+        "output": {"message": {"content": [{"text": text}]}},
+        "stopReason": stop_reason,
+        "usage": {"inputTokens": 120, "outputTokens": 100},
+    }
+
+
+def _wire_real_bedrock_adapter(
+    monkeypatch: pytest.MonkeyPatch, *, text: str, stop_reason: str
+) -> list:
+    """Wire the REAL ``_BedrockDenoiserProvider`` over a stubbed transport.
+
+    Only ``complete_with_fallback`` is replaced, and its return value is built
+    by the REAL ``_parse_converse_response``. So the adapter, the parser and the
+    denoiser's guard all execute — the seam is at the network, not above it.
+    """
+    from app.llm.bedrock_client import _parse_converse_response
+
+    seen: list = []
+
+    def _fake_cwf(req, **kwargs):  # noqa: ANN001
+        seen.append((req, kwargs))
+        return _parse_converse_response(
+            _converse_reply(text, stop_reason),
+            "eu.anthropic.claude-sonnet-4-6",
+            1234,
+        )
+
+    monkeypatch.setenv("REGENOLD_DENOISER_BEDROCK", "1")
+    monkeypatch.setattr(
+        "app.llm.bedrock_client.is_bedrock_provider_enabled", lambda: True
+    )
+    monkeypatch.setattr("app.llm.bedrock_client.complete_with_fallback", _fake_cwf)
+    return seen
+
+
+_TRUNCATED = "deployer transparency obligations under Article 26 of the"
+
+
+class TestR378BedrockTruncationVocabulary:
+    """The vocabulary gap, and the gate that closes it."""
+
+    @pytest.fixture(autouse=True)
+    def _chain_reachable(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """``conftest`` sets ``REGENOLD_QUERY_DENOISER=0`` (:152).
+
+        Without re-enabling it these rows bail at
+        ``fallback_reason="disabled"`` before any candidate is built, and every
+        assertion below would pass VACUOUSLY — the same trap the R339 note on
+        the sibling class documents. The ``seen`` / ``complete`` guards in these
+        rows exist to fail loudly if they ever regress to that path.
+        """
+        monkeypatch.setenv("REGENOLD_QUERY_DENOISER", "1")
+        monkeypatch.delenv("REGENOLD_INTENT_PROVIDER", raising=False)
+        monkeypatch.setenv("REGENOLD_DENOISER_TRUNCATION_FALLTHROUGH", "1")
+
+    def test_the_real_parser_emits_max_tokens_not_length(self) -> None:
+        """The premise, stated as a measurement rather than an assumption."""
+        from app.llm.bedrock_client import _parse_converse_response
+
+        resp = _parse_converse_response(
+            _converse_reply(_TRUNCATED, "max_tokens"), "m", 1
+        )
+        assert resp.finish_reason == "max_tokens"
+        assert resp.finish_reason != "length"
+        # And the character bound cannot backstop it: a 100-token cut is far
+        # inside the 10 < len <= 500 window the denoiser sanity-checks.
+        assert 10 < len(resp.text) <= 500
+
+    def test_gate_off_is_the_shipped_behaviour_truncation_flows_through(
+        self, monkeypatch: pytest.MonkeyPatch, denoiser_trace
+    ) -> None:
+        """DEFAULT OFF: the fragment still becomes the retrieval query.
+
+        Pinned deliberately. R91's denoiser guard is NO-RECORD (no Round 91
+        entry, no A/B), and with R377's fall-through a caught truncation on the
+        last candidate routes to salvage -> concatenation, which is measurably
+        not always better. This row documents what ships today so that flipping
+        the gate is a visible, reviewable change rather than a silent one.
+        """
+        monkeypatch.delenv("REGENOLD_DENOISER_TRUNCATION_VOCAB", raising=False)
+        groq = MagicMock()
+        groq.complete.return_value = _mk_resp("", None)  # empty -> next link
+        _wire_groq_candidate(monkeypatch, groq)
+        _wire_real_bedrock_adapter(
+            monkeypatch, text=_TRUNCATED, stop_reason="max_tokens"
+        )
+
+        from app.routes.regenold import _rewrite_multiturn_query
+
+        out = _rewrite_multiturn_query(
+            "What about deployers?", [_mk_msg("user", "What is Article 13?")]
+        )
+        assert out == _TRUNCATED
+
+    def test_gate_on_recognises_the_converse_truncation(
+        self, monkeypatch: pytest.MonkeyPatch, denoiser_trace
+    ) -> None:
+        """GATE ON: the R91 guard fires on the Bedrock link.
+
+        This is the row that FAILS without the adapter's vocabulary translation
+        and passes with it.
+        """
+        monkeypatch.setenv("REGENOLD_DENOISER_TRUNCATION_VOCAB", "1")
+        groq = MagicMock()
+        groq.complete.return_value = _mk_resp("", None)
+        _wire_groq_candidate(monkeypatch, groq)
+        _wire_real_bedrock_adapter(
+            monkeypatch, text=_TRUNCATED, stop_reason="max_tokens"
+        )
+
+        from app.routes.regenold import _rewrite_multiturn_query
+
+        out = _rewrite_multiturn_query(
+            "What about deployers?", [_mk_msg("user", "What is Article 13?")]
+        )
+        assert out is None
+        assert denoiser_trace.query_denoiser["fallback_reason"] == "truncated"
+
+    def test_a_clean_converse_stop_is_untouched_by_the_gate(
+        self, monkeypatch: pytest.MonkeyPatch, denoiser_trace
+    ) -> None:
+        """``end_turn`` must not be mistaken for truncation when the gate is on."""
+        monkeypatch.setenv("REGENOLD_DENOISER_TRUNCATION_VOCAB", "1")
+        groq = MagicMock()
+        groq.complete.return_value = _mk_resp("", None)
+        _wire_groq_candidate(monkeypatch, groq)
+        _wire_real_bedrock_adapter(
+            monkeypatch, text="deployer obligations under Article 26",
+            stop_reason="end_turn",
+        )
+
+        from app.routes.regenold import _rewrite_multiturn_query
+
+        out = _rewrite_multiturn_query(
+            "What about deployers?", [_mk_msg("user", "What is Article 13?")]
+        )
+        assert out == "deployer obligations under Article 26"
+
+    def test_the_denoiser_never_re_enters_the_untimed_wrapper_hop(
+        self, monkeypatch: pytest.MonkeyPatch, denoiser_trace
+    ) -> None:
+        """R378 — the adapter must pass ``allow_wrapper_hop=False``.
+
+        ``_try_wrapper_fallback`` builds its request with no ``timeout_seconds``
+        (60 s singleton default), and R377 deleted the wrapper CANDIDATE from
+        this chain precisely because the tunnel cannot answer inside the 3 s
+        fail-fast. Reaching it one layer down would reinstate the hop.
+        """
+        groq = MagicMock()
+        groq.complete.return_value = _mk_resp("", None)
+        _wire_groq_candidate(monkeypatch, groq)
+        seen = _wire_real_bedrock_adapter(
+            monkeypatch, text="deployer obligations under Article 26",
+            stop_reason="end_turn",
+        )
+
+        from app.routes.regenold import _rewrite_multiturn_query
+
+        _rewrite_multiturn_query(
+            "What about deployers?", [_mk_msg("user", "What is Article 13?")]
+        )
+        assert seen, "the Bedrock adapter was never reached"
+        _req, kwargs = seen[0]
+        assert kwargs.get("allow_wrapper_hop") is False

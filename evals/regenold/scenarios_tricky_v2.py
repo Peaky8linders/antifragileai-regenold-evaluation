@@ -40,7 +40,7 @@ SCENARIOS: list[dict] = [
         # engine wrong for obeying its own directive.
         "expected_keywords": ["2 August 2026", "Annex III"],
         "category": "omnibus",
-        "notes": "Post-Omnibus Annex III date is 2 Dec 2027 (was 2 Aug 2026). Engine must NOT cite the older date.",
+        "notes": "R378 - retargeted to the pin. Annex III high-risk is Art. 6(2), which Art. 113(3)(c) does NOT carve out, so it takes the general 2 August 2026 date. The question keeps its Omnibus framing on purpose: it is a distractor the engine must place out of scope.",
     },
     {
         "id": "tr_v2_002",
@@ -74,9 +74,27 @@ SCENARIOS: list[dict] = [
         # the pinned Article 62 or 63. At 220 staff the company is still an SME
         # under Recommendation 2003/361/EC (<250), so Article 62 priority
         # sandbox access continues. Keywords now come verbatim from Article 62.
-        "expected_keywords": ["SME", "priority access"],
+        #
+        # ⚠ R378 - THE R377 SET WAS NON-DISCRIMINATING, TWICE OVER.
+        # (1) `_keyword_recall` (evals/regenold/runner_v2.py:271) matches
+        #     case-insensitively by SUBSTRING, and "sme" is a substring of
+        #     "assessment". Verified against the LIVE Stage-2 answer for this
+        #     row, which says "conformity assessment fees" - so the "SME"
+        #     keyword scored a hit on a word that has nothing to do with SMEs.
+        # (2) Neither "SME" nor "priority access" carries DIRECTION. The
+        #     question is yes/no ("Do we lose ... privileges?"), and an answer
+        #     saying privileges ARE lost contains both tokens just as an answer
+        #     saying they are not. The R377 retarget dropped "preserve", the
+        #     only directional token the original gold had, so the row could no
+        #     longer fail.
+        # Replacement verified present VERBATIM in the live Stage-2 answer:
+        #   "an enterprise remains an SME while it employs fewer than 250
+        #    persons" / "priority access to the AI regulatory sandboxes".
+        # "remains an SME" is directional (a wrong answer cannot contain it)
+        # and collision-free.
+        "expected_keywords": ["remains an SME", "priority access"],
         "category": "omnibus",
-        "notes": "Digital Omnibus extended SME privileges to small mid-caps (Art. 62/63). Engine must NOT say privileges are lost on graduation from SME.",
+        "notes": "R378 - retargeted to the pin. There is no small mid-cap category in the pinned Regulation. At 220 staff the company is still an SME under Recommendation 2003/361/EC (fewer than 250), so Art. 62 priority access continues. Engine must NOT say privileges are lost.",
     },
     {
         "id": "tr_v2_006",

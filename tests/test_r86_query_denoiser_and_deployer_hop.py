@@ -124,6 +124,16 @@ def _install_bedrock_denoiser(monkeypatch, provider) -> None:
     from app.llm import bedrock_client as bc
     from app.routes import regenold as R
 
+    # R378 — HERMETIC against an ambient ``REGENOLD_DENOISER_BEDROCK=0``.
+    # That export is now part of the documented deterministic gate env (it stops
+    # a live Bedrock hop making the "deterministic" runner non-deterministic),
+    # and without this line it removes the candidate ABOVE the two patches
+    # below, so the mock is never consulted and these rows fail — or worse, the
+    # ``returns_none`` rows go green for the wrong reason, which is exactly the
+    # vacuity `_denoiser_chain_isolated` exists to prevent. Same shape as
+    # R127-E's `_neutralise_cli_provider_gate` fix: test-only, no production
+    # change. The cache-key row overrides this deliberately.
+    monkeypatch.setenv("REGENOLD_DENOISER_BEDROCK", "1")
     monkeypatch.setattr(bc, "is_bedrock_provider_enabled", lambda: True)
     monkeypatch.setattr(R, "_BedrockDenoiserProvider", lambda: provider)
 
@@ -404,27 +414,55 @@ def test_denoiser_env_vars_in_cache_key(monkeypatch) -> None:
     key_off = _engine_cache_key("test question", None)
     assert key_on != key_off
 
+    # R378 — ``REGENOLD_DENOISER_MODEL`` is DEREGISTERED, and this row now pins
+    # that. The note below already recorded that it "is no longer read by
+    # ``_rewrite_multiturn_query``" after R377 deleted the wrapper candidate it
+    # selected; a key entry for a var nothing reads is a decoy that implies an
+    # ablation which cannot be run, so R378 removed it — the same call the R288
+    # note in ``_engine_cache_key`` made for ``REGENOLD_GROUNDING_SCOPE_ALL``.
     monkeypatch.setenv("REGENOLD_QUERY_DENOISER", "1")
     monkeypatch.setenv("REGENOLD_DENOISER_MODEL", "claude-haiku-4-5-20251001")
-    key_haiku = _engine_cache_key("test question", None)
+    key_dead_a = _engine_cache_key("test question", None)
     monkeypatch.setenv("REGENOLD_DENOISER_MODEL", "claude-sonnet-4-6")
-    key_sonnet = _engine_cache_key("test question", None)
-    assert key_haiku != key_sonnet
+    key_dead_b = _engine_cache_key("test question", None)
+    assert key_dead_a == key_dead_b, (
+        "REGENOLD_DENOISER_MODEL is read nowhere in app/ since R377; it must "
+        "not still split the cache key."
+    )
 
-    # R377 — the model override that the CURRENT chain actually reads on its
-    # primary link. ``REGENOLD_DENOISER_MODEL`` above is the pre-R377
-    # wrapper-era override and is no longer read by
-    # ``_rewrite_multiturn_query``; the two live overrides are
-    # ``REGENOLD_DENOISER_MODEL_GROQ`` (asserted here) and
-    # ``REGENOLD_DENOISER_MODEL_BEDROCK``.
-    # ⚠ Only the Groq one is in the cache key today — see the report note on
-    # the unkeyed Bedrock override; not asserted here because that is a
-    # production-side gap, not a test-side one.
+    # R377/R378 — the model overrides the CURRENT chain actually reads:
+    # ``REGENOLD_DENOISER_MODEL_GROQ`` on the primary link and
+    # ``REGENOLD_DENOISER_MODEL_BEDROCK`` on the fallback. R378 registered the
+    # Bedrock one (previously the production-side gap this note described).
     monkeypatch.setenv("REGENOLD_DENOISER_MODEL_GROQ", "openai/gpt-oss-120b")
     key_groq_a = _engine_cache_key("test question", None)
     monkeypatch.setenv("REGENOLD_DENOISER_MODEL_GROQ", "llama-3.3-70b-versatile")
     key_groq_b = _engine_cache_key("test question", None)
     assert key_groq_a != key_groq_b
+
+    monkeypatch.setenv(
+        "REGENOLD_DENOISER_MODEL_BEDROCK", "eu.anthropic.claude-sonnet-4-6"
+    )
+    key_bedrock_a = _engine_cache_key("test question", None)
+    monkeypatch.setenv(
+        "REGENOLD_DENOISER_MODEL_BEDROCK", "eu.anthropic.claude-sonnet-4-5"
+    )
+    key_bedrock_b = _engine_cache_key("test question", None)
+    assert key_bedrock_a != key_bedrock_b
+
+    # R378 — the two behaviour gates on the same chain. Both change the
+    # rewritten query, which IS the engine's `question` input.
+    monkeypatch.setenv("REGENOLD_DENOISER_BEDROCK", "1")
+    key_bd_on = _engine_cache_key("test question", None)
+    monkeypatch.setenv("REGENOLD_DENOISER_BEDROCK", "0")
+    key_bd_off = _engine_cache_key("test question", None)
+    assert key_bd_on != key_bd_off
+
+    monkeypatch.setenv("REGENOLD_DENOISER_TRUNCATION_VOCAB", "0")
+    key_vocab_off = _engine_cache_key("test question", None)
+    monkeypatch.setenv("REGENOLD_DENOISER_TRUNCATION_VOCAB", "1")
+    key_vocab_on = _engine_cache_key("test question", None)
+    assert key_vocab_off != key_vocab_on
 
 
 # ─── R86-D Deployer Graph-Hop ─────────────────────────────────────────────

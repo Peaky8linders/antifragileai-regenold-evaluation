@@ -67,6 +67,13 @@ def _wire_bedrock_denoiser(monkeypatch, fake_provider) -> None:
     import app.llm.bedrock_client
 
     monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    # R378 — HERMETIC against an ambient ``REGENOLD_DENOISER_BEDROCK=0``, which
+    # is now part of the documented deterministic gate env. The gate is read
+    # ABOVE the patches below, so an exported ``0`` drops the candidate before
+    # the fake is ever reached and every exit-path assertion here collapses to
+    # ``no_provider``. Same shape as R127-E's `_neutralise_cli_provider_gate`:
+    # test-only, no production change.
+    monkeypatch.setenv("REGENOLD_DENOISER_BEDROCK", "1")
     monkeypatch.setattr(
         app.llm.bedrock_client, "is_bedrock_provider_enabled", lambda: True
     )

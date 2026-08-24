@@ -27,25 +27,40 @@ from evals.judge.runner import (
 )
 
 
+# R378 — retargeted to the PINNED Regulation, completing the R377 sweep.
+#
+# This fixture carried scenario id ``tr_v2_001`` with the Omnibus gold
+# ``["2 December 2027", "Annex III"]`` while R377 retargeted the REAL
+# ``tr_v2_001`` (evals/regenold/scenarios_tricky_v2.py) to "2 August 2026" — so
+# one id meant two contradictory things in one repo, and the assertion below
+# pinned the version the legal-version constraint forbids.
+#
+# It is a prompt-RENDERING fixture, so it never graded the engine; the change is
+# for coherence, and the assertions still test exactly what they tested before
+# (that gold refs, gold keywords and the predicted answer reach the prompt).
+# Dates verified against ``get_provision_text("Article 113")``: 113(2) "It shall
+# apply from 2 August 2026"; 113(3)(c) "Article 6(1) ... shall apply from
+# 2 August 2027".
 _SAMPLE_ROW = {
     "id": "tr_v2_001",
     "category": "omnibus",
     "question": "After the 7 May 2026 Digital Omnibus agreement, when do Annex III high-risk obligations apply?",
     "expected_refs": ["Article 113"],
-    "expected_keywords": ["2 December 2027", "Annex III"],
+    "expected_keywords": ["2 August 2026", "Annex III"],
     "pred_refs": ["Article 113"],
     "answer_preview": (
-        "Per Article 113 as amended by the Digital Omnibus agreement, "
-        "Annex III high-risk obligations apply from 2 December 2027."
+        "Under Article 113 the Regulation applies from 2 August 2026, which is "
+        "when Annex III high-risk obligations apply; the Digital Omnibus falls "
+        "outside the version applied here."
     ),
 }
 
 _SAMPLE_SUMMARIES = {
     "Article 113": (
         "Application timeline: Art. 5 prohibitions from 2 February 2025; "
-        "GPAI provisions from 2 August 2025; Annex III high-risk from "
-        "2 December 2027 (Digital Omnibus update); Annex I embedded-product "
-        "from 2 August 2028."
+        "GPAI provisions from 2 August 2025; general application including "
+        "Annex III high-risk from 2 August 2026; Article 6(1) (Annex I "
+        "embedded-product) from 2 August 2027."
     ),
 }
 
@@ -57,7 +72,7 @@ class TestPromptRendering:
     def test_correctness_prompt_includes_gold_and_predicted(self) -> None:
         p = render_axis_correctness(_SAMPLE_ROW)
         assert "Article 113" in p  # gold ref
-        assert "2 December 2027" in p  # gold keyword
+        assert "2 August 2026" in p  # gold keyword (R378: was the Omnibus date)
         assert "Annex III high-risk obligations apply" in p  # predicted answer
         assert "JSON" in p  # output instruction
 
