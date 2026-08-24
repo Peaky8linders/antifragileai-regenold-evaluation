@@ -16,7 +16,7 @@ breakdown across all 100 sample rows.
 """
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -26,7 +26,7 @@ from app.routes.regenold import _rewrite_multiturn_query
 
 @pytest.fixture(autouse=True)
 def _neutralise_cli_provider_gate(monkeypatch):
-    """Make the wrapper/Groq de-noiser branch reachable regardless of the
+    """Make the Groq/Bedrock de-noiser branch reachable regardless of the
     ambient provider env.
 
     R127 made ``is_openai_wrapper_enabled()`` return ``False`` whenever
@@ -34,14 +34,46 @@ def _neutralise_cli_provider_gate(monkeypatch):
     setting (and the value the davidath harness exports). These tests
     exercise the LLM-wired de-noiser path and ``patch`` the provider
     factory; under the cli gate ``_rewrite_multiturn_query`` short-circuits
-    to ``no_provider`` BEFORE reaching that patch, so the wrapper-branch
-    assertions fail. Drop the cli override here so the suite passes under
-    any invocation env. Tests that want the wrapper OFF patch
-    ``is_openai_wrapper_enabled`` directly (``test_records_no_provider_fallback``)
-    and are unaffected; the disabled / single-turn / trace-inactive tests
-    short-circuit before the provider gate.
+    to ``no_provider`` BEFORE reaching that patch, so the branch assertions
+    fail. Drop the cli override here so the suite passes under any
+    invocation env.
+
+    R377 — THE CHAIN IS NOW GROQ -> BEDROCK; the wrapper candidate is gone,
+    so this delenv is no longer strictly load-bearing (neither
+    ``is_groq_intent_provider_enabled`` nor ``is_bedrock_provider_enabled``
+    consults ``P2P_GRAPH_RAG_PROVIDER``). It is kept as the cheap guarantee
+    that no ambient provider selection can reroute these tests. The
+    provider-wired tests below now enable the BEDROCK link explicitly;
+    ``test_records_no_provider_fallback`` turns both links off; the disabled /
+    single-turn / trace-inactive tests short-circuit before the provider gate.
     """
     monkeypatch.delenv("P2P_GRAPH_RAG_PROVIDER", raising=False)
+
+
+def _wire_bedrock_denoiser(monkeypatch, fake_provider) -> None:
+    """Wire the BEDROCK link of the de-noiser chain to ``fake_provider``.
+
+    R377 — these tests used to drive the chain through the Claude-Max wrapper
+    candidate (``OPENAI_API_BASE`` + a patched ``get_openai_wrapper_provider``).
+    That candidate was deleted: the chain is Groq -> Bedrock, and Bedrock is the
+    fallback link Gemini/Mistral/the wrapper used to occupy. Every exit-path
+    assertion below therefore targets the same PROPERTY on the new fallback.
+
+    ``GROQ_API_KEY`` is dropped so the PRIMARY link cannot pre-empt the fake and
+    make a real call — conftest already scrubs it, we restate the premise here
+    rather than depend on that. ``is_bedrock_provider_enabled`` is patched on
+    the module because ``_rewrite_multiturn_query`` imports it function-locally.
+    """
+    import app.llm.bedrock_client
+
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    monkeypatch.setattr(
+        app.llm.bedrock_client, "is_bedrock_provider_enabled", lambda: True
+    )
+    monkeypatch.setattr(
+        "app.routes.regenold._BedrockDenoiserProvider",
+        MagicMock(return_value=fake_provider),
+    )
 
 
 @pytest.fixture
@@ -82,13 +114,15 @@ def test_records_single_turn_no_history(monkeypatch, trace) -> None:
 
 
 def test_records_no_provider_fallback(monkeypatch, trace) -> None:
+    # R377 — "no provider" now means BOTH links of the Groq -> Bedrock chain
+    # are unconfigured (it used to mean Groq off + the wrapper gate off).
     monkeypatch.setenv("REGENOLD_QUERY_DENOISER", "1")
-    monkeypatch.delenv("OPENAI_API_BASE", raising=False)
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("REGENOLD_INTENT_PROVIDER", raising=False)
     monkeypatch.delenv("GROQ_API_KEY", raising=False)
-    import app.llm.openai_wrapper_provider
-    monkeypatch.setattr(app.llm.openai_wrapper_provider, "is_openai_wrapper_enabled", lambda: False)
+    import app.llm.bedrock_client
+    monkeypatch.setattr(
+        app.llm.bedrock_client, "is_bedrock_provider_enabled", lambda: False
+    )
 
     _rewrite_multiturn_query("any?", [_mk_msg("user", "prior")])
     assert trace.query_denoiser == {
@@ -98,26 +132,24 @@ def test_records_no_provider_fallback(monkeypatch, trace) -> None:
 
 
 def test_records_provider_error_with_latency(monkeypatch, trace) -> None:
+    # R377 — driven through the BEDROCK link (the chain's fallback since the
+    # Gemini / Mistral / wrapper candidates were deleted).
     monkeypatch.setenv("REGENOLD_QUERY_DENOISER", "1")
-    monkeypatch.setenv("OPENAI_API_BASE", "http://127.0.0.1:8000/v1")
-    monkeypatch.setenv("OPENAI_API_KEY", "dummy")
 
     fake_resp = MagicMock()
     fake_resp.error = "network_error: timed out"
     fake_resp.text = ""
     fake_provider = MagicMock()
     fake_provider.complete.return_value = fake_resp
+    _wire_bedrock_denoiser(monkeypatch, fake_provider)
 
-    with patch(
-        "app.llm.openai_wrapper_provider.get_openai_wrapper_provider",
-        return_value=fake_provider,
-    ):
-        _rewrite_multiturn_query("any?", [_mk_msg("user", "prior")])
+    _rewrite_multiturn_query("any?", [_mk_msg("user", "prior")])
 
+    fake_provider.complete.assert_called_once()
     qd = trace.query_denoiser
     assert qd["fired"] is False
     assert qd["fallback_reason"] == "provider_error"
-    assert qd["provider"] == "wrapper"
+    assert qd["provider"] == "bedrock"
     assert "model" in qd
     # latency may or may not exceed 1 ms tick — just sanity-check it's
     # either absent (sub-ms) or a small integer.
@@ -125,22 +157,19 @@ def test_records_provider_error_with_latency(monkeypatch, trace) -> None:
 
 
 def test_records_empty_text_distinct_from_error(monkeypatch, trace) -> None:
+    # R377 — same property, now on the Bedrock link (see _wire_bedrock_denoiser).
     monkeypatch.setenv("REGENOLD_QUERY_DENOISER", "1")
-    monkeypatch.setenv("OPENAI_API_BASE", "http://127.0.0.1:8000/v1")
-    monkeypatch.setenv("OPENAI_API_KEY", "dummy")
 
     fake_resp = MagicMock()
     fake_resp.error = None
     fake_resp.text = "   "
     fake_provider = MagicMock()
     fake_provider.complete.return_value = fake_resp
+    _wire_bedrock_denoiser(monkeypatch, fake_provider)
 
-    with patch(
-        "app.llm.openai_wrapper_provider.get_openai_wrapper_provider",
-        return_value=fake_provider,
-    ):
-        _rewrite_multiturn_query("any?", [_mk_msg("user", "prior")])
+    _rewrite_multiturn_query("any?", [_mk_msg("user", "prior")])
 
+    fake_provider.complete.assert_called_once()
     qd = trace.query_denoiser
     assert qd["fired"] is False
     assert qd["fallback_reason"] == "empty_text"
@@ -149,21 +178,20 @@ def test_records_empty_text_distinct_from_error(monkeypatch, trace) -> None:
 def test_records_length_out_of_bounds(monkeypatch, trace) -> None:
     """A too-long rewrite means the LLM ignored rule 7 — bail + record."""
     monkeypatch.setenv("REGENOLD_QUERY_DENOISER", "1")
-    monkeypatch.setenv("OPENAI_API_BASE", "http://127.0.0.1:8000/v1")
-    monkeypatch.setenv("OPENAI_API_KEY", "dummy")
 
     fake_resp = MagicMock()
     fake_resp.error = None
     fake_resp.text = "x" * 600
     fake_provider = MagicMock()
     fake_provider.complete.return_value = fake_resp
+    # R377 — on the Bedrock link now; the bail is still TERMINAL (a
+    # content-quality bail on a SUCCESSFUL response, unlike R377's truncation
+    # fall-through), so the chain ends here exactly as before.
+    _wire_bedrock_denoiser(monkeypatch, fake_provider)
 
-    with patch(
-        "app.llm.openai_wrapper_provider.get_openai_wrapper_provider",
-        return_value=fake_provider,
-    ):
-        _rewrite_multiturn_query("any?", [_mk_msg("user", "prior")])
+    _rewrite_multiturn_query("any?", [_mk_msg("user", "prior")])
 
+    fake_provider.complete.assert_called_once()
     qd = trace.query_denoiser
     assert qd["fired"] is False
     assert qd["fallback_reason"] == "length_out_of_bounds"
@@ -172,34 +200,34 @@ def test_records_length_out_of_bounds(monkeypatch, trace) -> None:
 
 def test_records_happy_path_with_provider_metadata(monkeypatch, trace) -> None:
     monkeypatch.setenv("REGENOLD_QUERY_DENOISER", "1")
-    monkeypatch.setenv("OPENAI_API_BASE", "http://127.0.0.1:8000/v1")
-    monkeypatch.setenv("OPENAI_API_KEY", "dummy")
     monkeypatch.delenv("REGENOLD_INTENT_PROVIDER", raising=False)
+    # R377 — the recorded provider/model pair is Bedrock's now, not the
+    # wrapper's Haiku: the chain is Groq -> Bedrock and the wrapper candidate
+    # was deleted. Default model is the code default in `_rewrite_multiturn_query`.
+    monkeypatch.delenv("REGENOLD_DENOISER_MODEL_BEDROCK", raising=False)
 
     fake_resp = MagicMock()
     fake_resp.error = None
     fake_resp.text = "deployer transparency obligations Art. 26"
     fake_provider = MagicMock()
     fake_provider.complete.return_value = fake_resp
+    _wire_bedrock_denoiser(monkeypatch, fake_provider)
 
-    with patch(
-        "app.llm.openai_wrapper_provider.get_openai_wrapper_provider",
-        return_value=fake_provider,
-    ):
-        out = _rewrite_multiturn_query(
-            "What about deployers?",
-            [_mk_msg("user", "What is Article 13?")],
-        )
+    out = _rewrite_multiturn_query(
+        "What about deployers?",
+        [_mk_msg("user", "What is Article 13?")],
+    )
 
     # Happy path actually returns the rewrite to the caller
     assert out == "deployer transparency obligations Art. 26"
 
+    fake_provider.complete.assert_called_once()
     qd = trace.query_denoiser
     assert qd["fired"] is True
     # Happy path: fallback_reason MUST be absent from the payload.
     assert "fallback_reason" not in qd
-    assert qd["provider"] == "wrapper"
-    assert qd["model"] == "claude-haiku-4-5-20251001"
+    assert qd["provider"] == "bedrock"
+    assert qd["model"] == "eu.anthropic.claude-sonnet-4-6"
     assert qd["rewritten_chars"] == len(out)
 
 

@@ -433,3 +433,149 @@ class TestR377EChallengeTurnDetection:
         src = inspect.getsource(impl._two_stage_generate)
         assert "_challenge_exempt = is_challenge_turn(question)" not in src
         assert "(history_turn_count or 1) > 1" in src
+
+
+# ─── R377-F ──────────────────────────────────────────────────────────────────
+
+
+class TestR377FJudgeReasoningEnvelope:
+    """A reasoning judge's hidden tokens are billed inside ``max_tokens``.
+
+    MEASURED LIVE, anthropic/claude-sonnet-5 on OpenRouter, one realistic judge
+    prompt::
+
+        max_tokens= 400  reasoning=322  content= 249  -> unbalanced_json
+        max_tokens= 800  reasoning=799  content=   0  -> empty_response
+        max_tokens=1600  reasoning=728  content=1301  -> ok, barely
+
+    A 30-row x 4-axis run at the shipped 1600 produced 8 ``empty_response`` and
+    1 ``unbalanced_json`` on the correctness axis. ``pass_rate`` divides by TOTAL
+    rows, so those nine unscored rows read as nine non-passes: 0.600 reported
+    against a usable 18/21 = 0.857. Re-run with the additive envelope: errors
+    9 -> 1, correctness 0.600 -> 0.800.
+    """
+
+    def test_headroom_default_is_additive(self) -> None:
+        from evals.judge.runner import _judge_max_tokens, _judge_reasoning_headroom
+
+        assert _judge_reasoning_headroom() == 2048
+        assert _judge_max_tokens() + _judge_reasoning_headroom() > _judge_max_tokens()
+
+    def test_headroom_clears_the_measured_reasoning_range(self) -> None:
+        """Measured reasoning on real judge prompts ranged 265-799 tokens."""
+        from evals.judge.runner import _judge_reasoning_headroom
+
+        assert _judge_reasoning_headroom() >= 800
+
+    def test_off_switch_restores_the_pre_r377_envelope(self, monkeypatch) -> None:
+        from evals.judge.runner import _judge_max_tokens, _judge_reasoning_headroom
+
+        monkeypatch.setenv("REGENOLD_JUDGE_REASONING_HEADROOM", "0")
+        assert _judge_reasoning_headroom() == 0
+        assert _judge_max_tokens() + _judge_reasoning_headroom() == _judge_max_tokens()
+
+    def test_malformed_value_falls_back_to_the_default(self, monkeypatch) -> None:
+        from evals.judge.runner import _judge_reasoning_headroom
+
+        monkeypatch.setenv("REGENOLD_JUDGE_REASONING_HEADROOM", "not-a-number")
+        assert _judge_reasoning_headroom() == 2048
+
+    def test_only_the_openrouter_path_is_topped_up(self) -> None:
+        """The wrapper / anthropic / groq / gemini paths keep the plain ceiling.
+
+        Bedrock has its own budget (``REGENOLD_BEDROCK_JUDGE_MAX_TOKENS``) and
+        sends no thinking by default, so it never spent the envelope on hidden
+        reasoning.
+        """
+        import inspect
+
+        from evals.judge import runner as JR
+
+        assert "_judge_reasoning_headroom()" in inspect.getsource(JR._call_judge_openrouter)
+        for fn in (JR._call_judge_sonnet, JR._call_judge_anthropic, JR._call_judge_bedrock):
+            assert "_judge_reasoning_headroom()" not in inspect.getsource(fn)
+
+
+# ─── R377-G ──────────────────────────────────────────────────────────────────
+
+
+class TestR377GDenoiserFallbackChain:
+    """The multi-turn query denoiser must survive a Groq quota exhaustion.
+
+    MEASURED LIVE with the Groq daily cap spent: Groq 429s, Gemini 2.5 Flash
+    spends the 100-token rewrite budget on a hidden reasoning trace and returns
+    ``finish_reason=length``, and R91 treated that as TERMINAL -- so Mistral,
+    Bedrock and the wrapper never got a turn::
+
+        {"fired": false, "fallback_reason": "truncated", "provider": "gemini"}
+
+    The elliptical live turn then reached ``_deterministic_parse`` unresolved,
+    scanned to ZERO curated keywords, and BM25 on six anaphoric words returned
+    the GPAI cluster instead of Article 73.
+    """
+
+    def test_chain_is_exactly_groq_then_bedrock(self) -> None:
+        """Operator directive 2026-08-23: Groq primary, Bedrock fallback.
+
+        Gemini 2.5 Flash is a reasoning model that truncated the 100-token
+        rewrite on every measured call, and under R91 truncation was TERMINAL --
+        so it did not merely fail, it starved every provider behind it. The
+        wrapper candidate is the ~10 s Claude Max tunnel, which the 3 s
+        per-provider fail-fast can never beat.
+        """
+        import inspect
+
+        from app.routes import regenold as R
+
+        src = inspect.getsource(R._rewrite_multiturn_query)
+        assert '"groq",' in src
+        assert '"bedrock",' in src
+        assert src.index('"groq",') < src.index('"bedrock",')
+        for dropped in ('"gemini",', '"mistral",', '"wrapper",'):
+            assert dropped not in src, f"{dropped} is back in the denoiser chain"
+
+    def test_bedrock_adapter_maps_the_request_and_uses_fallback(self) -> None:
+        """It must call complete_with_fallback so a 403 is paid once per TTL."""
+        import inspect
+
+        from app.routes.regenold import _BedrockDenoiserProvider
+
+        src = inspect.getsource(_BedrockDenoiserProvider)
+        assert "complete_with_fallback" in src
+        assert "BedrockRequest" in src
+
+    def test_truncation_falls_through_instead_of_ending_the_chain(self) -> None:
+        import inspect
+
+        from app.routes import regenold as R
+
+        src = inspect.getsource(R._rewrite_multiturn_query)
+        trunc = src.index('finish_reason", None) == "length"')
+        tail = src[trunc:trunc + 2600]
+        # The fall-through must precede the terminal salvage.
+        assert "_denoiser_truncation_fallthrough_enabled()" in tail
+        assert tail.index("continue") < tail.index('_salvage_on_provider_failure(\n                    "truncated"')
+
+    def test_gates_default_on_and_are_read_fresh(self, monkeypatch) -> None:
+        from app.routes.regenold import (
+            _denoiser_bedrock_enabled,
+            _denoiser_truncation_fallthrough_enabled,
+        )
+
+        assert _denoiser_bedrock_enabled() is True
+        assert _denoiser_truncation_fallthrough_enabled() is True
+        monkeypatch.setenv("REGENOLD_DENOISER_BEDROCK", "0")
+        monkeypatch.setenv("REGENOLD_DENOISER_TRUNCATION_FALLTHROUGH", "0")
+        assert _denoiser_bedrock_enabled() is False
+        assert _denoiser_truncation_fallthrough_enabled() is False
+
+    def test_r91_intent_preserved_a_truncated_rewrite_is_never_used(self) -> None:
+        """Falling through must not make a truncated rewrite usable."""
+        import inspect
+
+        from app.routes import regenold as R
+
+        src = inspect.getsource(R._rewrite_multiturn_query)
+        trunc = src.index('finish_reason", None) == "length"')
+        # `rewritten` is only computed AFTER the truncation branch.
+        assert src.index("rewritten = resp.text.strip()") > trunc
