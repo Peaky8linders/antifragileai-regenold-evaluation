@@ -6958,6 +6958,77 @@ def _live_turn_is_self_contained(live_question: str) -> bool:
     return bool(_has_ai_act_anchor(q))
 
 
+class _BedrockDenoiserProvider:
+    """Adapt the Bedrock Converse client to the denoiser's provider contract.
+
+    R377 - THE DENOISER HAD NO SEPARATELY-QUOTA'D CLAUDE FALLBACK.
+
+    The chain was Groq -> Gemini -> Mistral -> Claude-Max wrapper. Measured
+    live, Groq returned ``api_status_429 ... tokens per day (TPD): Limit
+    200000`` on every call, and the wrapper candidate is the ~10 s Claude Max
+    tunnel which the 3 s per-provider fail-fast ALWAYS times out on. So once the
+    Groq daily cap is hit the multi-turn rewrite is effectively dead, and an
+    elliptical follow-up reaches ``_deterministic_parse`` unresolved.
+
+    MEASURED, the cost of that: the live turn "What's the AI Act window then?"
+    scans to ZERO curated keywords, so the BM25 fallback fires on six anaphoric
+    words and returns ``['Annex XII', 'Art. 25', 'Art. 51', 'Art. 54',
+    'Art. 55', 'Art. 56']`` - the GPAI cluster, nothing to do with the question.
+    The same turn WITH its inherited topic ("serious incident reporting")
+    resolves to ``Art. 73`` correctly.
+
+    Bedrock is the right fourth link: it is separately quota'd from Groq,
+    Gemini and Mistral, it answers a 100-token rewrite in ~1.0-1.4 s (measured,
+    comfortably inside the 3 s fail-fast), and it is already the repo's
+    cross-provider safety net everywhere else. It is placed BEFORE the wrapper
+    because it replaces a hop that always times out with one that usually
+    succeeds - so in the failure case this REDUCES tail latency rather than
+    adding to it.
+
+    ``complete_with_fallback`` rather than ``complete``: it advances only on an
+    entitlement error and memoises a denial for the TTL, so a 403 on a pinned
+    tier is paid once per process rather than once per request, and the pin
+    heals itself the moment the key is re-minted.
+    """
+
+    def complete(self, req: Any) -> Any:  # OpenAIWrapperRequest -> BedrockResponse
+        from app.llm.bedrock_client import (  # noqa: PLC0415
+            BedrockRequest,
+            complete_with_fallback,
+        )
+
+        return complete_with_fallback(
+            BedrockRequest(
+                user=req.user,
+                system=req.system,
+                model=req.model,
+                max_tokens=req.max_tokens or 100,
+                temperature=req.temperature or 0.0,
+                timeout_seconds=req.timeout_seconds,
+            )
+        )
+
+
+def _denoiser_truncation_fallthrough_enabled() -> bool:
+    """R377 env gate, fresh read per call.
+
+    ``REGENOLD_DENOISER_TRUNCATION_FALLTHROUGH=0`` restores R91's terminal bail.
+    """
+    return os.getenv(
+        "REGENOLD_DENOISER_TRUNCATION_FALLTHROUGH", "1"
+    ).strip().lower() not in ("0", "false", "no", "off")
+
+
+def _denoiser_bedrock_enabled() -> bool:
+    """R377 env gate, fresh read per call. ``=0`` restores the pre-R377 chain."""
+    return os.getenv("REGENOLD_DENOISER_BEDROCK", "1").strip().lower() not in (
+        "0",
+        "false",
+        "no",
+        "off",
+    )
+
+
 def _rewrite_multiturn_query(
     live_question: str,
     history_turns: list,
@@ -7037,20 +7108,31 @@ def _rewrite_multiturn_query(
         from app.llm.openai_wrapper_provider import (  # noqa: PLC0415
             OpenAIWrapperRequest,
             default_groq_model,
-            get_gemini_provider,
             get_groq_intent_provider,
-            get_mistral_provider,
-            get_openai_wrapper_provider,
-            is_gemini_provider_enabled,
             is_groq_intent_provider_enabled,
-            is_mistral_provider_enabled,
-            is_openai_wrapper_enabled,
         )
     except ImportError:
         logger.debug("query_denoiser: wrapper import failed")
         record_query_denoiser(fired=False, fallback_reason="import_error")
         return None
 
+    # R377 — THE CHAIN IS GROQ -> BEDROCK. Operator directive 2026-08-23.
+    #
+    # It used to be Groq -> Gemini -> Mistral -> Claude-Max wrapper, and the two
+    # middle links were actively harmful rather than merely redundant:
+    #
+    #   * Gemini 2.5 Flash is a REASONING model. It spends the 100-token rewrite
+    #     budget on a hidden reasoning trace and returns finish_reason=length.
+    #     Measured live it truncated on every call, and R91 treated truncation as
+    #     TERMINAL - so it did not just fail, it ENDED the chain and starved
+    #     every provider behind it.
+    #   * The wrapper candidate is the ~10 s Claude Max tunnel, which the 3 s
+    #     per-provider fail-fast always times out on. It could never succeed.
+    #
+    # Bedrock is separately quota'd from Groq, answers a 100-token rewrite in
+    # ~1.0-1.4 s (measured, inside the fail-fast), and is already this repo's
+    # cross-provider safety net everywhere else.
+    #
     # R148 — provider preference CHAIN, not a single pick. Groq Llama 3.3
     # 70B (sub-300 ms typical, R52) first when the operator wired
     # GROQ_API_KEY + REGENOLD_INTENT_PROVIDER=groq; then the OpenAI wrapper
@@ -7079,50 +7161,29 @@ def _rewrite_multiturn_query(
             ))
     except Exception:  # noqa: BLE001 — singleton init must not crash route
         logger.debug("query_denoiser: groq provider init failed", exc_info=True)
-    # R267.1 — Gemini flash + Mistral large are fast (1-2 s), separately-
-    # quota'd fallbacks inserted BETWEEN Groq and the slow wrapper. When Groq
-    # hits its daily TPD 429 cap these keep the multi-turn rewrite working
-    # instead of dropping through to the ~10 s Claude Max wrapper, which the
-    # fail-fast per-provider timeout below always times out on (that timeout —
-    # a wrapper ``provider_error model=claude-haiku-4-5-...`` — was the exact
-    # symptom the operator flagged).
     try:
-        if is_gemini_provider_enabled():
-            any_configured = True
-            candidates.append((
-                get_gemini_provider(),
-                os.environ.get(
-                    "REGENOLD_DENOISER_MODEL_GEMINI", "gemini-2.5-flash"
-                ),
-                "gemini",
-            ))
+        if _denoiser_bedrock_enabled():
+            from app.llm.bedrock_client import (  # noqa: PLC0415
+                is_bedrock_provider_enabled,
+            )
+
+            if is_bedrock_provider_enabled():
+                any_configured = True
+                candidates.append((
+                    _BedrockDenoiserProvider(),
+                    # A query rewrite is a Stage-0 utility task, so this is
+                    # deliberately not the frontier tier. sonnet-4-6 also avoids
+                    # paying an entitlement 403 round-trip on a key minted before
+                    # sonnet-5 shipped; complete_with_fallback still degrades
+                    # within the family if this one is denied.
+                    os.environ.get(
+                        "REGENOLD_DENOISER_MODEL_BEDROCK",
+                        "eu.anthropic.claude-sonnet-4-6",
+                    ),
+                    "bedrock",
+                ))
     except Exception:  # noqa: BLE001 — singleton init must not crash route
-        logger.debug("query_denoiser: gemini provider init failed", exc_info=True)
-    try:
-        if is_mistral_provider_enabled():
-            any_configured = True
-            candidates.append((
-                get_mistral_provider(),
-                os.environ.get(
-                    "REGENOLD_DENOISER_MODEL_MISTRAL", "mistral-large-latest"
-                ),
-                "mistral",
-            ))
-    except Exception:  # noqa: BLE001 — singleton init must not crash route
-        logger.debug("query_denoiser: mistral provider init failed", exc_info=True)
-    try:
-        if is_openai_wrapper_enabled():
-            any_configured = True
-            candidates.append((
-                get_openai_wrapper_provider(),
-                # Haiku — much faster than Sonnet for a 100-token rewrite.
-                os.environ.get(
-                    "REGENOLD_DENOISER_MODEL", "claude-haiku-4-5-20251001"
-                ),
-                "wrapper",
-            ))
-    except Exception:  # noqa: BLE001 — singleton init must not crash route
-        logger.debug("query_denoiser: wrapper provider init failed", exc_info=True)
+        logger.debug("query_denoiser: bedrock provider init failed", exc_info=True)
 
     if not candidates:
         if any_configured:
@@ -7133,10 +7194,16 @@ def _rewrite_multiturn_query(
 
     # Try each provider in preference order. A provider FAILURE (transport
     # error, api_status_429/4xx/5xx surfaced as resp.error, or an empty
-    # completion) falls through to the next. Content-quality bails on a
-    # SUCCESSFUL response (truncation / length-out-of-bounds) are terminal —
-    # the same max_tokens budget applies to every provider, so retrying
-    # would only add latency for no gain.
+    # completion) falls through to the next.
+    #
+    # R377 — TRUNCATION ALSO FALLS THROUGH NOW. This comment used to say every
+    # content-quality bail was terminal because "the same max_tokens budget
+    # applies to every provider, so retrying would only add latency for no
+    # gain". That premise is false for a REASONING model, which spends the
+    # budget on a hidden trace before writing anything. See the R377 block on
+    # the finish_reason=="length" branch below. ``length_out_of_bounds`` IS
+    # still terminal: a rewrite that is too short or too long is a genuine
+    # content failure, not a provider-specific artefact.
     last_reason = "provider_error"
     last_model = ""
     last_provider = ""
@@ -7154,13 +7221,13 @@ def _rewrite_multiturn_query(
                 # fallback chain is at most two such calls.
                 max_tokens=100,
                 temperature=0.0,
-                # R267.1 — 3.0 s (was R264's 2.0 s). Qwen 3.6 27B via Groq is
-                # ~500-750 ms typical and Gemini flash ~2.1 s, so the extra
-                # second of headroom lets the Gemini fallback complete under the
-                # fail-fast instead of tripping a spurious "provider_error".
-                # Still negligible against the ~28 s multi-turn p50; the fast
-                # providers (Groq/Gemini/Mistral) succeed well before the slow
-                # ~10 s wrapper candidate is ever reached.
+                # R267.1 — 3.0 s (was R264's 2.0 s), and R377 keeps it.
+                # Groq is ~500-750 ms typical; Bedrock measured 1.0-2.5 s for a
+                # 100-token rewrite on eu.anthropic.claude-sonnet-4-6, so both
+                # links of the Groq -> Bedrock chain complete inside the
+                # fail-fast. Still negligible against the ~28 s multi-turn p50.
+                # (The Gemini/Mistral/wrapper candidates this budget was
+                # originally sized around are gone — see the chain note above.)
                 timeout_seconds=float(
                     os.getenv("REGENOLD_DENOISER_TIMEOUT", "3.0")
                 ),
@@ -7183,8 +7250,36 @@ def _rewrite_multiturn_query(
             # actual intent. Terminal (see note above).
             if getattr(resp, "finish_reason", None) == "length":
                 logger.debug(
-                    "query_denoiser: response truncated (finish_reason=length)"
+                    "query_denoiser: response truncated via %s (finish_reason=length)",
+                    provider_name,
                 )
+                # R377 - TRUNCATION IS PROVIDER-SPECIFIC, SO IT IS NOT TERMINAL.
+                #
+                # R91 made this a terminal bail on the premise quoted above the
+                # loop: "the same max_tokens budget applies to every provider, so
+                # retrying would only add latency for no gain." That premise is
+                # false for a REASONING model. Gemini 2.5 Flash spends the
+                # 100-token rewrite budget on a hidden reasoning trace and
+                # returns finish_reason=length; a provider that does not reason,
+                # given the identical budget, answers fine.
+                #
+                # MEASURED LIVE with the Groq daily cap exhausted: Groq 429s,
+                # Gemini returns truncated, and the chain STOPPED there -
+                # ``{"fired": false, "fallback_reason": "truncated", "provider":
+                # "gemini"}`` - so Mistral, Bedrock and the wrapper never got a
+                # turn and the multi-turn rewrite was dead. The elliptical live
+                # turn then reached _deterministic_parse unresolved, scanned to
+                # ZERO curated keywords, and BM25 on six anaphoric words
+                # returned the GPAI cluster instead of Article 73.
+                #
+                # R91's real intent is preserved in full: a truncated rewrite is
+                # still never USED. It just no longer ends the chain. If every
+                # candidate truncates, the post-loop salvage fires with
+                # last_reason="truncated" - byte-identical to the old behaviour.
+                if _denoiser_truncation_fallthrough_enabled():
+                    last_reason = "truncated"
+                    last_model, last_provider = model, provider_name
+                    continue
                 return _salvage_on_provider_failure(
                     "truncated",
                     latency_ms=last_latency,

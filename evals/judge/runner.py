@@ -253,6 +253,25 @@ def _call_judge_sonnet(prompt: str, timeout_s: float = 30.0) -> dict[str, Any]:
 # reply becomes `unbalanced_json`, which is in `_NON_RETRYABLE_ERROR_SUBSTRINGS`,
 # so it never retries, and `pass_rate` divides by total rows: the axis scores a
 # silent zero. Raising the budget is the fix; the retry list is not.
+def _judge_reasoning_headroom(default: int = 2048) -> int:
+    """R377 - extra ceiling for hidden reasoning tokens on reasoning transports.
+
+    OpenRouter bills an Anthropic model's reasoning inside ``max_tokens``, so
+    the judge's OUTPUT allowance has to be topped up or the reply truncates to
+    partial JSON (``unbalanced_json``) or to nothing at all
+    (``empty_response``). Measured reasoning on real judge prompts ranged
+    265-799 tokens; 2048 clears it with margin.
+    ``REGENOLD_JUDGE_REASONING_HEADROOM=0`` restores the pre-R377 envelope.
+    """
+    raw = os.getenv("REGENOLD_JUDGE_REASONING_HEADROOM", "").strip()
+    if raw:
+        try:
+            return max(0, int(raw))
+        except ValueError:
+            pass
+    return default
+
+
 def _judge_max_tokens(default: int = 1600) -> int:
     """Judge output ceiling. ``REGENOLD_JUDGE_MAX_TOKENS`` overrides all
     transports; ``REGENOLD_BEDROCK_JUDGE_MAX_TOKENS`` still wins on Bedrock."""
@@ -514,7 +533,39 @@ def _call_judge_openrouter(prompt: str, timeout_s: float = 30.0) -> dict[str, An
         system=_JUDGE_SYSTEM,
         user=prompt,
         model=model,
-        max_tokens=_judge_max_tokens(),
+        # R377 - THE REASONING BUDGET IS DEDUCTED FROM max_tokens, SO ADD IT ON TOP.
+        #
+        # OpenRouter routes Anthropic Claude 5 models with reasoning ON by
+        # default, and those hidden reasoning tokens are billed INSIDE
+        # ``max_tokens``. The provider only emits a ``reasoning`` object when
+        # ``reasoning_max_tokens`` is set, and its ``reasoning_effort`` fallback
+        # carries defaults for qwen and gpt-oss only - so an Anthropic judge
+        # model reasons unconstrained against the judge's OUTPUT allowance.
+        #
+        # MEASURED LIVE, anthropic/claude-sonnet-5, one realistic judge prompt:
+        #     max_tokens= 400  reasoning=322  content= 249  -> unbalanced_json
+        #     max_tokens= 800  reasoning=799  content=   0  -> empty_response
+        #     max_tokens=1600  reasoning=728  content=1301  -> ok, barely
+        #     max_tokens=4096  reasoning=464  content=1316  -> ok
+        #
+        # A 30-row x 4-axis run at the shipped 1600 produced 8 empty_response
+        # and 1 unbalanced_json on the correctness axis. Both are the SAME
+        # defect: when reasoning consumes the whole envelope the content is
+        # empty; when it consumes most of it the JSON truncates.
+        #
+        # pass_rate divides by TOTAL rows, so nine unscored rows read as nine
+        # non-passes: correctness reported 0.600 where the usable rate was
+        # 18/21 = 0.857. R328.4 raised this ceiling 400 -> 1600 for exactly
+        # this reason on Bedrock (a truncated judge reply becomes
+        # unbalanced_json - a SILENTLY UNSCORED axis); a reasoning transport
+        # needs the allowance to be ADDITIVE, not merely larger.
+        #
+        # Raising the envelope is deliberately preferred over disabling
+        # reasoning: it leaves the judge's grading semantics byte-identical and
+        # removes only the truncation. Turning reasoning off would change what
+        # the instrument measures, and CLAUDE.md's rule is that a changed
+        # formula gets a changed name.
+        max_tokens=_judge_max_tokens() + _judge_reasoning_headroom(),
         temperature=0.0,
         timeout_seconds=timeout_s,
     )

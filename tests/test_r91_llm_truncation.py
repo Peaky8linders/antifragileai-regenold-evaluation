@@ -24,6 +24,19 @@ denoiser, and mirrors the signal via the Anthropic SDK's
 These tests lock in the contract — the fail-soft envelope is
 preserved (no exception raised; the caller falls back to the
 deterministic path).
+
+⚠ R377 (operator directive 2026-08-23) rewired the denoiser chain from
+``Groq -> Gemini -> Mistral -> Claude-Max wrapper`` to ``Groq ->
+Bedrock``, so the section-2 rows below now drive the denoiser through
+the GROQ (primary) and BEDROCK (fallback) links instead of the deleted
+wrapper candidate. R377 also made the truncation bail NON-TERMINAL: a
+``finish_reason="length"`` response falls through to the next candidate
+instead of ending the chain. **R91's property is unchanged and is what
+these rows still pin — a truncated rewrite is never USED.** When every
+candidate truncates the end state is byte-identical to R91's terminal
+bail. Sections 1, 3 and 4 are untouched: they exercise the wrapper
+response model and the ``graph_rag`` Stage-2 helpers, neither of which
+the denoiser chain change touches.
 """
 from __future__ import annotations
 
@@ -136,122 +149,304 @@ def _mk_msg(role: str, content: str):
     return m
 
 
+def _mk_resp(text: str, finish_reason: str | None):
+    """A provider response carrying just what the denoiser reads."""
+    resp = MagicMock()
+    resp.error = None
+    resp.text = text
+    resp.finish_reason = finish_reason
+    return resp
+
+
+def _wire_groq_candidate(monkeypatch: pytest.MonkeyPatch, provider) -> None:
+    """R377 — make ``provider`` the chain's PRIMARY (Groq) link.
+
+    ``_rewrite_multiturn_query`` imports both names function-locally from
+    ``app.llm.openai_wrapper_provider``, so the module attribute is the
+    seam. Patching the ENABLE gate as well as the getter is deliberate:
+    ``conftest`` scrubs ``GROQ_API_KEY``, so patching only the getter
+    would leave the candidate off the chain and the mock unconsulted —
+    the vacuity the R339 note below is about.
+    """
+    monkeypatch.setattr(
+        "app.llm.openai_wrapper_provider.is_groq_intent_provider_enabled",
+        lambda: True,
+    )
+    monkeypatch.setattr(
+        "app.llm.openai_wrapper_provider.get_groq_intent_provider",
+        lambda: provider,
+    )
+
+
+def _wire_bedrock_candidate(monkeypatch: pytest.MonkeyPatch, provider) -> None:
+    """R377 — make ``provider`` the chain's FALLBACK (Bedrock) link.
+
+    Two seams, mirroring the route: the credential gate
+    (``app.llm.bedrock_client.is_bedrock_provider_enabled``, imported
+    function-locally) and the adapter class itself, which the route
+    instantiates by name off its own module.
+    """
+    monkeypatch.setenv("REGENOLD_DENOISER_BEDROCK", "1")
+    monkeypatch.setattr(
+        "app.llm.bedrock_client.is_bedrock_provider_enabled", lambda: True
+    )
+    monkeypatch.setattr(
+        "app.routes.regenold._BedrockDenoiserProvider", lambda: provider
+    )
+
+
+@pytest.fixture
+def denoiser_trace():
+    """Activate a fresh ReasoningTrace so ``record_query_denoiser`` lands.
+
+    R87-A wires every de-noiser exit path through the trace; without an
+    active trace ``record_query_denoiser`` is a no-op, so a row that wants
+    to read ``fallback_reason`` must activate one.
+    """
+    from app.integrations.regenold import reasoning_trace as rt
+
+    t = rt.activate()
+    yield t
+    rt.deactivate()
+
+
 class TestRewriteMultiturnQueryTruncation:
     @pytest.fixture(autouse=True)
-    def _denoiser_wrapper_candidate_reachable(
+    def _denoiser_candidate_reachable(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """R339 — pin the provider ABOVE the mocked seam these rows patch.
+        """R339 — pin the chain shape ABOVE the mocked seam these rows patch.
 
         ``_rewrite_multiturn_query`` (``app/routes/regenold.py``) builds a
-        provider CHAIN and only appends the wrapper candidate when
-        ``is_openai_wrapper_enabled()`` is True. R127 made that function
-        cli-sensitive (``openai_wrapper_provider.py:381`` — an explicit
-        ``P2P_GRAPH_RAG_PROVIDER=cli`` returns False so the deterministic
-        contract holds). These rows patch only
-        ``get_openai_wrapper_provider``, one layer BELOW that check, so
-        under the documented deterministic gate the chain came back empty,
+        provider CHAIN and only appends a candidate when that candidate's
+        ENABLE gate says so. These rows used to patch only
+        ``get_openai_wrapper_provider``, one layer BELOW
+        ``is_openai_wrapper_enabled()``, so under the documented
+        deterministic gate the chain came back empty,
         ``_rewrite_multiturn_query`` bailed with ``fallback_reason=
         "no_provider"`` and the mock was never consulted.
 
         That made ``test_truncated_response_returns_none`` pass VACUOUSLY —
         it asserts ``out is None``, which the empty chain satisfies without
         ever reaching the truncation guard it exists to pin. Hence the
-        added ``complete.assert_called_once()`` below: the row must fail if
-        it ever regresses to the vacuous path again.
+        ``complete.assert_called_once()`` guards below: the rows must fail
+        if they ever regress to the vacuous path again. ``_wire_groq_
+        candidate`` / ``_wire_bedrock_candidate`` patch the gate AND the
+        getter for exactly that reason.
 
-        Nothing reaches the network — ``conftest`` scrubs
-        ``GROQ_API_KEY`` / ``GEMINI_API_KEY`` / ``MISTRAL_API_KEY`` (so the
-        wrapper is the sole candidate) and pins ``OPENAI_API_BASE`` to a
-        dead port; the provider itself is a ``MagicMock``.
+        ⚠ R377 — the chain is now ``Groq -> Bedrock``; the Gemini, Mistral
+        and Claude-Max-wrapper candidates were DELETED, so the old
+        ``P2P_GRAPH_RAG_PROVIDER=openai_wrapper`` pin no longer makes any
+        candidate reachable. The rows below drive the PRIMARY link
+        (Groq) — the same single-candidate shape the wrapper row had, so
+        R91's contract is pinned unchanged — and one row drives the
+        truncation guard across BOTH links.
+
+        Bedrock is pinned OFF here so the default is a one-candidate
+        chain; the fall-through row re-enables it explicitly. The
+        truncation fall-through is pinned to its CODE default (ON) so an
+        exported ``REGENOLD_DENOISER_TRUNCATION_FALLTHROUGH=0`` — the
+        documented R91 rollback — cannot silently change what these rows
+        measure. ⚠ Pinning a gate ON is only safe if something still
+        exercises it OFF, or the rollback branch becomes dead code that no
+        mutation can fail: ``test_fallthrough_disabled_restores_r91_
+        terminal_bail`` overrides this setenv and owns that branch.
+        Nothing reaches the network — ``conftest`` scrubs every provider
+        credential and the providers themselves are ``MagicMock``s.
         """
-        monkeypatch.setenv("P2P_GRAPH_RAG_PROVIDER", "openai_wrapper")
+        monkeypatch.setenv("REGENOLD_QUERY_DENOISER", "1")
+        monkeypatch.delenv("REGENOLD_INTENT_PROVIDER", raising=False)
+        monkeypatch.setenv("REGENOLD_DENOISER_BEDROCK", "0")
+        monkeypatch.setenv("REGENOLD_DENOISER_TRUNCATION_FALLTHROUGH", "1")
 
     def test_truncated_response_returns_none(self, monkeypatch) -> None:
         """``finish_reason="length"`` with non-empty text → return None
         even though the text would otherwise pass the ``10 < len <= 500``
-        sanity gate."""
-        monkeypatch.setenv("REGENOLD_QUERY_DENOISER", "1")
-        monkeypatch.setenv("OPENAI_API_BASE", "http://127.0.0.1:8000/v1")
-        monkeypatch.setenv("OPENAI_API_KEY", "dummy")
-        monkeypatch.delenv("REGENOLD_INTENT_PROVIDER", raising=False)
+        sanity gate.
 
-        fake_resp = MagicMock()
-        fake_resp.error = None
+        R377 — with Bedrock pinned off (class fixture) Groq is the sole
+        candidate, so the end state is byte-identical to R91's terminal
+        bail. The truncated text is never used either way; what R377
+        changed is only whether the CHAIN continues.
+        """
         # Long enough to pass the 10 < len <= 500 sanity check.
-        fake_resp.text = "deployer transparency obligations under Article 26 of"
-        fake_resp.finish_reason = "length"
+        fake_resp = _mk_resp(
+            "deployer transparency obligations under Article 26 of", "length"
+        )
         fake_provider = MagicMock()
         fake_provider.complete.return_value = fake_resp
+        _wire_groq_candidate(monkeypatch, fake_provider)
 
         from app.routes.regenold import _rewrite_multiturn_query
 
-        with patch(
-            "app.llm.openai_wrapper_provider.get_openai_wrapper_provider",
-            return_value=fake_provider,
-        ):
-            out = _rewrite_multiturn_query(
-                "What about deployers?",
-                [_mk_msg("user", "What is Article 13?")],
-            )
+        out = _rewrite_multiturn_query(
+            "What about deployers?",
+            [_mk_msg("user", "What is Article 13?")],
+        )
         assert out is None
         # R339 non-vacuity guard — prove the None came from the truncation
         # bail and not from an empty provider chain (see the class fixture).
         fake_provider.complete.assert_called_once()
 
-    def test_natural_stop_returns_rewritten_text(self, monkeypatch) -> None:
-        """``finish_reason="stop"`` + valid text → caller gets the rewrite."""
-        monkeypatch.setenv("REGENOLD_QUERY_DENOISER", "1")
-        monkeypatch.setenv("OPENAI_API_BASE", "http://127.0.0.1:8000/v1")
-        monkeypatch.setenv("OPENAI_API_KEY", "dummy")
-        monkeypatch.delenv("REGENOLD_INTENT_PROVIDER", raising=False)
+    def test_truncated_primary_never_ships_the_fallbacks_rewrite_untouched(
+        self, monkeypatch
+    ) -> None:
+        """R377 — the truncated rewrite is still never USED, across the
+        WHOLE chain.
 
-        fake_resp = MagicMock()
-        fake_resp.error = None
-        fake_resp.text = "deployer obligations Art. 26"
-        fake_resp.finish_reason = "stop"
-        fake_provider = MagicMock()
-        fake_provider.complete.return_value = fake_resp
+        The old chain's fallback link (Gemini/Mistral/wrapper) is now
+        Bedrock, so this is the retargeted form of "a truncated response
+        does not become the retrieval query": Groq truncates, Bedrock
+        answers cleanly, and the caller gets BEDROCK's text — never the
+        truncated Groq fragment, and never ``None`` while a healthy
+        candidate remains.
+        """
+        groq_resp = _mk_resp(
+            "deployer transparency obligations under Article 26 of", "length"
+        )
+        groq_provider = MagicMock()
+        groq_provider.complete.return_value = groq_resp
+        bedrock_resp = _mk_resp("deployer obligations Art. 26", "stop")
+        bedrock_provider = MagicMock()
+        bedrock_provider.complete.return_value = bedrock_resp
+        _wire_groq_candidate(monkeypatch, groq_provider)
+        _wire_bedrock_candidate(monkeypatch, bedrock_provider)
 
         from app.routes.regenold import _rewrite_multiturn_query
 
-        with patch(
-            "app.llm.openai_wrapper_provider.get_openai_wrapper_provider",
-            return_value=fake_provider,
-        ):
-            out = _rewrite_multiturn_query(
-                "What about deployers?",
-                [_mk_msg("user", "What is Article 13?")],
-            )
+        out = _rewrite_multiturn_query(
+            "What about deployers?",
+            [_mk_msg("user", "What is Article 13?")],
+        )
         assert out == "deployer obligations Art. 26"
+        groq_provider.complete.assert_called_once()
+        bedrock_provider.complete.assert_called_once()
+
+    def test_every_candidate_truncating_returns_none(
+        self, monkeypatch, denoiser_trace
+    ) -> None:
+        """R377 — when the FALLBACK truncates too, the end state is
+        byte-identical to R91's terminal bail: no rewrite reaches the
+        caller. Pins that the fall-through is a chain change, not a
+        loosening of the guard.
+
+        The trace assertion is what makes "byte-identical" a MEASUREMENT
+        rather than an assertion: R91's terminal bail recorded
+        ``fallback_reason="truncated"``, so the exhausted chain must record
+        it too. Without this the fall-through could quietly downgrade the
+        outcome to the generic ``"provider_error"`` and every ``out is
+        None`` row would still be green — the reason string is the only
+        thing that tells R87-A's attribution WHY the rewrite was dropped.
+        """
+        groq_provider = MagicMock()
+        groq_provider.complete.return_value = _mk_resp(
+            "deployer transparency obligations under Article 26 of", "length"
+        )
+        bedrock_provider = MagicMock()
+        bedrock_provider.complete.return_value = _mk_resp(
+            "deployer transparency obligations under Article 26 of", "length"
+        )
+        _wire_groq_candidate(monkeypatch, groq_provider)
+        _wire_bedrock_candidate(monkeypatch, bedrock_provider)
+
+        from app.routes.regenold import _rewrite_multiturn_query
+
+        out = _rewrite_multiturn_query(
+            "What about deployers?",
+            [_mk_msg("user", "What is Article 13?")],
+        )
+        assert out is None
+        groq_provider.complete.assert_called_once()
+        bedrock_provider.complete.assert_called_once()
+        qd = denoiser_trace.query_denoiser
+        assert qd["fired"] is False
+        assert qd["fallback_reason"] == "truncated"
+        # The LAST candidate to truncate is the one attributed.
+        assert qd["provider"] == "bedrock"
+
+    def test_fallthrough_disabled_restores_r91_terminal_bail(
+        self, monkeypatch, denoiser_trace
+    ) -> None:
+        """``REGENOLD_DENOISER_TRUNCATION_FALLTHROUGH=0`` → truncation is
+        TERMINAL again, exactly as R91 shipped it.
+
+        This is the code path the pre-R377 form of
+        ``test_truncated_response_returns_none`` exercised: the truncation
+        branch RETURNS via ``_salvage_on_provider_failure("truncated", …)``
+        instead of continuing the loop. R377 kept that branch behind a
+        documented off-switch, so it is still live production behaviour and
+        still needs a row — the class fixture pins the gate ON for every
+        other row here, which would otherwise leave the rollback branch
+        unexecuted by the whole suite (``test_r377_live_fixes`` covers it
+        only with ``inspect.getsource`` string assertions).
+
+        The discriminator is the FALLBACK provider: under the terminal bail
+        Bedrock must never be consulted, even though it is wired and would
+        have answered cleanly. That is the difference the gate controls, so
+        it is what this row asserts.
+        """
+        monkeypatch.setenv("REGENOLD_DENOISER_TRUNCATION_FALLTHROUGH", "0")
+
+        groq_provider = MagicMock()
+        groq_provider.complete.return_value = _mk_resp(
+            "deployer transparency obligations under Article 26 of", "length"
+        )
+        # Healthy fallback — if the chain continued, this text would ship.
+        bedrock_provider = MagicMock()
+        bedrock_provider.complete.return_value = _mk_resp(
+            "deployer obligations Art. 26", "stop"
+        )
+        _wire_groq_candidate(monkeypatch, groq_provider)
+        _wire_bedrock_candidate(monkeypatch, bedrock_provider)
+
+        from app.routes.regenold import _rewrite_multiturn_query
+
+        out = _rewrite_multiturn_query(
+            "What about deployers?",
+            [_mk_msg("user", "What is Article 13?")],
+        )
+        assert out is None
+        groq_provider.complete.assert_called_once()
+        # THE ROLLBACK'S DEFINING PROPERTY — the bail ended the chain.
+        bedrock_provider.complete.assert_not_called()
+        qd = denoiser_trace.query_denoiser
+        assert qd["fired"] is False
+        assert qd["fallback_reason"] == "truncated"
+        assert qd["provider"] == "groq"
+
+    def test_natural_stop_returns_rewritten_text(self, monkeypatch) -> None:
+        """``finish_reason="stop"`` + valid text → caller gets the rewrite."""
+        fake_resp = _mk_resp("deployer obligations Art. 26", "stop")
+        fake_provider = MagicMock()
+        fake_provider.complete.return_value = fake_resp
+        _wire_groq_candidate(monkeypatch, fake_provider)
+
+        from app.routes.regenold import _rewrite_multiturn_query
+
+        out = _rewrite_multiturn_query(
+            "What about deployers?",
+            [_mk_msg("user", "What is Article 13?")],
+        )
+        assert out == "deployer obligations Art. 26"
+        fake_provider.complete.assert_called_once()
 
     def test_missing_finish_reason_returns_rewritten_text(self, monkeypatch) -> None:
         """Backwards compatibility — when ``finish_reason`` is None
         (legacy responses, mocked tests without the field) the rewrite
         still flows through. Only an explicit ``"length"`` bails."""
-        monkeypatch.setenv("REGENOLD_QUERY_DENOISER", "1")
-        monkeypatch.setenv("OPENAI_API_BASE", "http://127.0.0.1:8000/v1")
-        monkeypatch.setenv("OPENAI_API_KEY", "dummy")
-        monkeypatch.delenv("REGENOLD_INTENT_PROVIDER", raising=False)
-
-        fake_resp = MagicMock()
-        fake_resp.error = None
-        fake_resp.text = "deployer obligations Art. 26"
-        fake_resp.finish_reason = None
+        fake_resp = _mk_resp("deployer obligations Art. 26", None)
         fake_provider = MagicMock()
         fake_provider.complete.return_value = fake_resp
+        _wire_groq_candidate(monkeypatch, fake_provider)
 
         from app.routes.regenold import _rewrite_multiturn_query
 
-        with patch(
-            "app.llm.openai_wrapper_provider.get_openai_wrapper_provider",
-            return_value=fake_provider,
-        ):
-            out = _rewrite_multiturn_query(
-                "What about deployers?",
-                [_mk_msg("user", "What is Article 13?")],
-            )
+        out = _rewrite_multiturn_query(
+            "What about deployers?",
+            [_mk_msg("user", "What is Article 13?")],
+        )
         assert out == "deployer obligations Art. 26"
+        fake_provider.complete.assert_called_once()
 
 
 # ─── 3. Wrapper graph-RAG helper bails on truncation ──────────────────────

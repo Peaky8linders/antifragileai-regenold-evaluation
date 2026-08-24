@@ -159,11 +159,15 @@ SCENARIOS: list[dict] = [
             {"role": "user", "content": "We're a SaaS startup with 40 employees and €8M annual turnover."},
             {"role": "assistant", "content": "You qualify as an SME under Article 62."},
             {"role": "user", "content": "We just raised Series B and grew to 250 employees, €60M turnover."},
-            {"role": "assistant", "content": "You're now a small mid-cap — the Digital Omnibus extended SME privileges to small mid-caps under Article 62."},
+            {"role": "assistant", "content": "At 250 employees and EUR 60M turnover you exceed the SME thresholds in Recommendation 2003/361/EC."},
             {"role": "user", "content": "Does our priority sandbox access carry over?"},
         ],
         "expected_final_refs": ["Article 62", "Article 57"],
-        "expected_final_keywords": ["small mid-cap", "sandbox", "priority"],
+        # R377 - Omnibus out of scope. Article 62 grants priority sandbox
+        # access to SMEs including start-ups; there is no "small mid-cap" in
+        # the pinned text, and at 250 staff / EUR 60M the company is no longer
+        # an SME under Recommendation 2003/361/EC.
+        "expected_final_keywords": ["SME", "sandbox", "priority"],
         "notes": "Digital Omnibus small_mid_cap modifier role + sandbox priority. Engine must hold the size transition fact from turn 3 and apply the post-Omnibus rule.",
     },
     {
@@ -258,11 +262,15 @@ SCENARIOS: list[dict] = [
         "id": "mt_v2_019",
         "turns": [
             {"role": "user", "content": "When do high-risk Annex III obligations apply?"},
-            {"role": "assistant", "content": "Per the May 2026 Digital Omnibus political agreement, Annex III high-risk obligations apply from 2 December 2027."},
+            {"role": "assistant", "content": "Under Article 113 the Regulation applies from 2 August 2026, which is when the Annex III high-risk obligations start to apply."},
             {"role": "user", "content": "And for Annex I (medical devices etc.) embedded systems?"},
         ],
         "expected_final_refs": ["Article 113"],
-        "expected_final_keywords": ["2 August 2028", "Annex I"],
+        # R377 - Omnibus out of scope, and the old gold date was wrong twice
+        # over. Pinned Article 113(3)(c): "Article 6(1) and the corresponding
+        # obligations in this Regulation shall apply from 2 August 2027" - the
+        # Annex I embedded route, i.e. 2027, not 2028.
+        "expected_final_keywords": ["2 August 2027", "Annex I"],
         "notes": "Digital Omnibus deferred timeline. Annex I embedded path moves to 2 Aug 2028 (Art. 113 as amended).",
     },
     {
