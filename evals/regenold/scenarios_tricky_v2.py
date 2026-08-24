@@ -33,7 +33,12 @@ SCENARIOS: list[dict] = [
         "id": "tr_v2_001",
         "question": "After the 7 May 2026 Digital Omnibus agreement, when do Annex III high-risk obligations actually start applying?",
         "expected_refs": ["Article 113"],
-        "expected_keywords": ["2 December 2027", "Annex III"],
+        # R377 - OMNIBUS IS OUT OF SCOPE (operator, 2026-08-23; CLAUDE.md
+        # legal-version constraint 2026-08-07). The pinned Article 113 reads
+        # "It shall apply from 2 August 2026", and run_omnibus_probe_r318
+        # FAILS the run if Omnibus content appears - so this gold graded the
+        # engine wrong for obeying its own directive.
+        "expected_keywords": ["2 August 2026", "Annex III"],
         "category": "omnibus",
         "notes": "Post-Omnibus Annex III date is 2 Dec 2027 (was 2 Aug 2026). Engine must NOT cite the older date.",
     },
@@ -65,7 +70,11 @@ SCENARIOS: list[dict] = [
         "id": "tr_v2_005",
         "question": "We grew from a 30-employee SME to a 220-employee company last quarter. Do we lose AI Act SME privileges?",
         "expected_refs": ["Article 62", "Article 63"],
-        "expected_keywords": ["small mid-cap", "preserve", "extended"],
+        # R377 - "small mid-cap" is an Omnibus category and appears nowhere in
+        # the pinned Article 62 or 63. At 220 staff the company is still an SME
+        # under Recommendation 2003/361/EC (<250), so Article 62 priority
+        # sandbox access continues. Keywords now come verbatim from Article 62.
+        "expected_keywords": ["SME", "priority access"],
         "category": "omnibus",
         "notes": "Digital Omnibus extended SME privileges to small mid-caps (Art. 62/63). Engine must NOT say privileges are lost on graduation from SME.",
     },
