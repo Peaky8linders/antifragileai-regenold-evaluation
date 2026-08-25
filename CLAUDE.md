@@ -581,6 +581,52 @@ that the instance is pristine.
   OOS **49/51, 0 leaks**. ⚠ **All answer-affecting levers are UNMEASURED on
   answer quality** — the owed `dynamic_ab` commands are listed in the record.
   Full evidence: [`docs/R376-e2e-provider-graph-pushback.md`](docs/R376-e2e-provider-graph-pushback.md).
+* **R377 — the judge's reasoning budget, the denoiser chain, and the Omnibus
+  pin (PR #82, merged `db5a26c`).** (1) OpenRouter bills an Anthropic model's
+  hidden reasoning INSIDE `max_tokens`; the judge sent 1600 with no allowance,
+  so reasoning ate the envelope and the reply came back empty or as
+  `unbalanced_json`. Both are one defect and it is a MEASUREMENT bug —
+  `pass_rate` divides by total rows, so 9 unscored rows read as 9 non-passes
+  (errors 9 → 1, correctness 0.600 → **0.800** on the identical sidecar).
+  (2) The suite held two instruments with OPPOSITE pass conditions —
+  `scenarios_tricky_v2` demanded the Omnibus date while
+  `run_omnibus_probe_r318` exits 1 if Omnibus content appears. Four scenarios
+  retargeted to the pin; `mt_v2_019`'s gold was wrong twice over (Art. 113(3)(c)
+  applies Article 6(1) from **2 August 2027**, not 2028). (3) The denoiser chain
+  died at Gemini — a reasoning model that burns the 100-token rewrite budget and
+  returns `finish_reason=length`, which R91 treated as TERMINAL, so it did not
+  merely fail, it ENDED the chain. Now **Groq → Bedrock**, truncation falls
+  through. ⚠ Ships default-ON against its own measurement: `refs_within_max`
+  231/255 → **196/255**. **Owes a `dynamic_ab` verdict.**
+* **R378 — adversarial review of R377 (20 agents, 0 errors).** Record:
+  [`docs/reviews/r377-pr82-deep-review-2026-08-24.md`](docs/reviews/r377-pr82-deep-review-2026-08-24.md).
+  The legal work verified CORRECT against `get_provision_text`. What it left
+  behind:
+  * **The R91 truncation guard is dead on the Bedrock link** — Converse says
+    `max_tokens`, the denoiser tests `length`. Reproduced by execution three
+    independent ways. Fixed in the ADAPTER behind `REGENOLD_DENOISER_TRUNCATION_VOCAB`
+    (**default OFF** — see the flag table for why the "obvious" fix is not free).
+  * **The tests could not see it.** All five R377 denoiser tests are
+    `inspect.getsource()` STRING assertions, and every truncation fixture
+    hand-builds a MagicMock with `finish_reason="length"` — a value the real
+    adapter cannot emit. 87 tests passed with the defect live. Bedrock rows now
+    build their response through the real `_parse_converse_response`.
+  * **A new test PINNED the unfixed sibling** of the judge fix, asserting the
+    headroom must be ABSENT from `_call_judge_bedrock`. Retargeted to pin the
+    contract; Bedrock and Gemini judges fixed.
+  * **The Omnibus sweep was incomplete** — `tests/test_judge_prompts.py` and two
+    rows in `scenarios_r89_live_probe.py` still carried gold demanding the exact
+    strings in `GLOBAL_FORBIDDEN`. Swept.
+  * **Two retargeted golds could not fail.** `"sme"` is a substring of
+    `"assessment"` and `"annex i"` of `"annex iii"` under the runner's
+    case-insensitive substring matcher. Replaced with directional, collision-free
+    tokens verified VERBATIM in a live Stage-2 answer.
+  * ⚠ **REFUTED, do not re-raise:** "R377 broke the `cli` contract." The denoiser
+    ignored `cli` 25 days before R127's guard existed (proved by execution
+    against `58c9831`), and R377 cut unguarded candidates 3 → 2. **R91 and R127
+    are both NO-RECORD** — neither guard was ever measured; that changes the
+    remedy from "restore the protection" to "make the call sites agree, then
+    measure the guard."
 * **The judge cannot read the tail of long answers.** 8 of 22 answer failures
   are labelled "truncated" and **all 8 are false positives** — the content
   called missing is the answer's last sentence. Zero of 100 answers lack
@@ -1167,6 +1213,10 @@ Keep the curated subset here; do not inline the index.
 | `REGENOLD_PROMPT_V2` | **ON** | R340 — selects `ANSWER_GENERATE_SYSTEM_V2` (**16,146** chars, XML-sectioned) over V1's **51,516** (−69%), inside `resolve_answer_system()` (`graph_rag_prompts.py:440`) — one selector, one concept. Under the 32,767 argv ceiling, so it is safe on an unpatched wrapper. `=0` is a byte-identical rollback to V1. **Live A/B (R346, n=60, Bedrock): V1 REJECTED by the gold veto (gold_dropped 15→16, +1) — V2 is confirmed as the live default** |
 | `REGENOLD_CURATED_STAGE2_SKIP` | **ON** | R144, **settled by measurement R339 — keep ON**. Ships the curated deterministic answer without Stage-2; fires on 10/20 Antifragile rows |
 | `REGENOLD_DEFINITIONAL_STAGE2_SKIP` | **ON** | R275, same verdict; fires on 1/20. Together the two bypass Stage-2 on **11/20** rows (9/20 reach it). Turning both OFF resolves the SAME 34/38 expert mistakes and costs ans_conciseness **−0.163**, ref_conciseness −0.099, ref_strict −0.068, judge reference precision −0.093, one citation-faithfulness failure and **2.4× latency**. Fire check passed (`stage2_polish` 9→19) |
+| `REGENOLD_DENOISER_BEDROCK` | **ON** | R377 — the multi-turn query denoiser's chain is **Groq → Bedrock**; Gemini, Mistral and the Claude-Max wrapper candidates were deleted. ⚠ `=0` does **NOT** restore the pre-R377 chain (R378 corrected that docstring) — it leaves **Groq-only**. Ships default-ON against its own measurement, disclosed in the commit: `=0` → runner OVERALL 251/255, `refs_within_max` **231/255**; `=1` → 250/255, **196/255**. A working denoiser rewrites the query, a richer query retrieves more, and 35 more rows breach the legacy 5-ref conciseness proxy — on the one axis the official scorecard says we lead. **Owes a `dynamic_ab` verdict.** ⚠ The probe pool matters: only **37 of 297** `probe_set` rows are multi-turn (`mt_v2` 25, `paper_mt_v4` 12); a default run reports a meaningless NULL. Use `--probe-sources mt_v2,paper_mt_v4`. Export `=0` for deterministic gates |
+| `REGENOLD_DENOISER_TRUNCATION_FALLTHROUGH` | **ON** | R377 — a `finish_reason` truncation no longer ENDS the provider chain; it falls through to the next candidate. R91 had made it terminal on the premise that "the same max_tokens budget applies to every provider", which is false for a reasoning model that spends the budget on a hidden trace before writing anything. `=0` restores R91's terminal bail. A truncated rewrite is still never USED |
+| `REGENOLD_DENOISER_TRUNCATION_VOCAB` | **OFF** | R378 — makes the R91 truncation guard recognise the Bedrock link's Converse `stopReason="max_tokens"`. ⚠ **The guard is structurally dead on that link without this**: `_parse_converse_response` passes `stopReason` through raw (`bedrock_client.py:596`) and the denoiser tests `== "length"` (`regenold.py:7251`), so a token-capped Bedrock rewrite becomes the retrieval query — and the `10 < len <= 500` bound cannot backstop it, because a 100-token cut is ~400-480 chars. Not a new rule: R91 itself shipped both spellings (`_anthropic_complete_for_graph_rag returns None on max_tokens stop`) and the sibling guard at `_graph_rag_impl.py:1002` still tests `== "max_tokens"`. **Default OFF deliberately** — R91's denoiser guard is NO-RECORD (no Round 91 entry, no A/B; its only number is a test count), and with fall-through ON a caught truncation routes to salvage → concatenation, which measured WORSE on one probed row (dead guard `['Art. 26']`, fixed guard `['Annex III']`). Flip ON only after the Bedrock truncation RATE is measured and a `dynamic_ab` clears the gold veto. Normalised in the ADAPTER, not at the comparison site — `BedrockResponse.finish_reason` must keep the raw Converse spelling for `_graph_rag_impl` |
+| `REGENOLD_JUDGE_REASONING_HEADROOM` | **2048** | R377 — added ON TOP of `_judge_max_tokens()` on reasoning transports. OpenRouter routes Anthropic Claude 5 with reasoning ON by default and bills the hidden tokens INSIDE `max_tokens`; measured, at 800 reasoning consumed 799 and content came back empty, at 400 it truncated to `unbalanced_json`. Both are the same defect, and both are a MEASUREMENT bug: `pass_rate` divides by total rows, so unscored rows read as non-passes (errors 9 → 1, correctness 0.600 → 0.800 on the identical sidecar). ⚠ R378 extended it to `_call_judge_gemini` (`gemini-2.5-flash` is a reasoning model — R377's own denoiser commit says so) and made `_call_judge_bedrock` add `thinking_budget` on top of `max_tokens` (the Anthropic contract deducts it, so `REGENOLD_BEDROCK_JUDGE_THINKING_TOKENS>0` silently starved the JSON). Clamped `[0, 8000]` — R378; it bounded only the floor while its sibling `_judge_max_tokens` clamped both |
 | `REGENOLD_CROSS_REF_CONTEXT` | **ON** | the `CROSS-REFERENCED PROVISIONS` block in the Stage-2 user message. ⚠ Default-ON and **absent from `_engine_cache_key` since R69**, so every in-process A/B of this path was served one arm's cached output; registered R339 |
 | `REGENOLD_CROSS_REF_SNIPPET_CHARS` | **20000** | R339 — per-node ceiling, clamped `[240, 60000]`. Was a hard-coded 240 that cut MID-WORD, and clipped Article 41 to 158 of 3,873 chars (96% loss) with **no marker at all**. Set above the largest reachable node (`art_3`, 17,079) so nothing truncates by default; `_clip_clause` now cuts on a clause/word boundary and always marks ` [...]`. Measured: Stage-2 user payload 122,828 → **135,778** chars, ellipses 2 → **0**, and **Annex IV now arrives complete at 5,720 chars** — where Annex IV(1)(e) lives |
 | `REGENOLD_ANSWER_NO_CAP` | **ON** | removes sentence + char caps live (hard rule #2) |
@@ -1533,7 +1583,22 @@ $env:P2P_GRAPH_RAG_PROVIDER = "openai_wrapper"
 
 ```bash
 # deterministic env for every gate
-OPENAI_API_BASE=http://127.0.0.1:1/v1 P2P_GRAPH_RAG_PROVIDER=cli REGENOLD_EXTERNAL_EMBEDDINGS=0
+OPENAI_API_BASE=http://127.0.0.1:1/v1 P2P_GRAPH_RAG_PROVIDER=cli REGENOLD_EXTERNAL_EMBEDDINGS=0 REGENOLD_DENOISER_BEDROCK=0
+```
+
+⚠ **`REGENOLD_DENOISER_BEDROCK=0` is part of the deterministic env, and
+`P2P_GRAPH_RAG_PROVIDER=cli` does NOT cover it.** R378 established by execution
+that **`cli` is a PROVIDER SELECTOR, not an LLM kill-switch**: only
+`is_openai_wrapper_enabled()` (R127-E) and one other surface honour it.
+`is_groq_intent_provider_enabled()` and `is_bedrock_provider_enabled()` are
+credential-only, so the multi-turn denoiser fires a live LLM call under `cli`
+whenever `GROQ_API_KEY` or an AWS credential is in the environment — and it did
+so 25 days *before* R127's guard existed, so this is inherited, not new. R377
+added the Bedrock link and thereby a second unguarded provider (while removing
+three others, so the net count went 3 → 2). Unset `GROQ_API_KEY` too if you need
+the denoiser fully silent.
+
+```bash
 
 py -3.12 -m pytest tests/ -q -p no:cacheprovider          # 6491 passed, 35 skipped, 0 failed (235 s, measured at R349)
 

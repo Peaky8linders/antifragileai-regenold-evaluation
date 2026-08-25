@@ -167,8 +167,20 @@ SCENARIOS: list[dict] = [
         # access to SMEs including start-ups; there is no "small mid-cap" in
         # the pinned text, and at 250 staff / EUR 60M the company is no longer
         # an SME under Recommendation 2003/361/EC.
-        "expected_final_keywords": ["SME", "sandbox", "priority"],
-        "notes": "Digital Omnibus small_mid_cap modifier role + sandbox priority. Engine must hold the size transition fact from turn 3 and apply the post-Omnibus rule.",
+        #
+        # ⚠ R378 - THE R377 SET COULD NOT FAIL. Recommendation 2003/361/EC
+        # requires FEWER than 250 staff AND (turnover <= EUR 50M or balance
+        # sheet <= EUR 43M); at exactly 250 and EUR 60M the company fails both
+        # limbs, so the correct answer is that priority access does NOT carry
+        # over. "SME" / "sandbox" / "priority" are all satisfied by an answer
+        # that wrongly says it DOES carry over - and "sme" is additionally a
+        # substring of "assessment" under the runner's case-insensitive
+        # substring matcher (runner_v2.py:271).
+        # Replacement verified VERBATIM in the live Stage-2 answer for this
+        # conversation: "No, priority sandbox access does not carry over once
+        # you exceed the SME thresholds."
+        "expected_final_keywords": ["does not carry over", "sandbox", "priority"],
+        "notes": "R378 - retargeted to the pin. Engine must hold the size transition from turn 3 and reach the OPPOSITE conclusion to the SME case: at 250 staff / EUR 60M both limbs of Recommendation 2003/361/EC fail, so Art. 62(1)(a) priority access does NOT carry over.",
     },
     {
         "id": "mt_v2_012",
@@ -270,8 +282,19 @@ SCENARIOS: list[dict] = [
         # over. Pinned Article 113(3)(c): "Article 6(1) and the corresponding
         # obligations in this Regulation shall apply from 2 August 2027" - the
         # Annex I embedded route, i.e. 2027, not 2028.
-        "expected_final_keywords": ["2 August 2027", "Annex I"],
-        "notes": "Digital Omnibus deferred timeline. Annex I embedded path moves to 2 Aug 2028 (Art. 113 as amended).",
+        #
+        # ⚠ R378 - "Annex I" WAS A VACUOUS SECOND KEYWORD. The runner matches
+        # case-insensitively by substring and "annex i" is a substring of
+        # "annex iii", so an answer discussing only Annex III satisfied it -
+        # and turn 1 of this very conversation is about Annex III, making a
+        # false hit the likely case rather than the edge case. The row was
+        # effectively a one-keyword assertion. "Article 6(1)" is the Annex I
+        # route's own provision, is collision-free, and is verified VERBATIM in
+        # the live Stage-2 answer ("Under Article 6(1), an embedded
+        # medical-device AI system is high-risk on the Annex I route only
+        # where...", "...applies from 2 August 2027").
+        "expected_final_keywords": ["2 August 2027", "Article 6(1)"],
+        "notes": "R378 - retargeted to the pin. The Annex I embedded route is Art. 6(1), which Art. 113(3)(c) applies from 2 August 2027. Engine must hold the Annex III answer from turn 1 and distinguish the Annex I route.",
     },
     {
         "id": "mt_v2_020",

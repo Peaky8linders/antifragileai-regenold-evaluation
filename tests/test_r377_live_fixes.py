@@ -480,20 +480,63 @@ class TestR377FJudgeReasoningEnvelope:
         monkeypatch.setenv("REGENOLD_JUDGE_REASONING_HEADROOM", "not-a-number")
         assert _judge_reasoning_headroom() == 2048
 
-    def test_only_the_openrouter_path_is_topped_up(self) -> None:
-        """The wrapper / anthropic / groq / gemini paths keep the plain ceiling.
+    def test_reasoning_transports_are_topped_up_and_others_are_not(self) -> None:
+        """R378 — pin the CONTRACT, not the gap.
 
-        Bedrock has its own budget (``REGENOLD_BEDROCK_JUDGE_MAX_TOKENS``) and
-        sends no thinking by default, so it never spent the envelope on hidden
-        reasoning.
+        This test used to assert ``_judge_reasoning_headroom()`` was ABSENT from
+        ``_call_judge_bedrock``, justified as "sends no thinking by default, so
+        it never spent the envelope on hidden reasoning". True at the default and
+        false the moment ``REGENOLD_BEDROCK_JUDGE_THINKING_TOKENS`` is set — the
+        flag that exists to set it. So the test pinned a defect as intent, and
+        would have failed the fix.
+
+        The real rule is about REASONING, not about transports: a transport that
+        can spend the envelope on a hidden trace needs the allowance to be
+        ADDITIVE. Bedrock does it via ``thinking_budget`` (checked behaviourally
+        below, since the addition is arithmetic rather than a call); Gemini 2.5
+        Flash and OpenRouter-routed Claude do it implicitly and take the helper.
         """
         import inspect
 
         from evals.judge import runner as JR
 
-        assert "_judge_reasoning_headroom()" in inspect.getsource(JR._call_judge_openrouter)
-        for fn in (JR._call_judge_sonnet, JR._call_judge_anthropic, JR._call_judge_bedrock):
+        for fn in (JR._call_judge_openrouter, JR._call_judge_gemini):
+            assert "_judge_reasoning_headroom()" in inspect.getsource(fn)
+        # Non-reasoning transports keep the plain ceiling.
+        for fn in (JR._call_judge_sonnet, JR._call_judge_anthropic):
             assert "_judge_reasoning_headroom()" not in inspect.getsource(fn)
+
+    def test_bedrock_judge_adds_the_thinking_budget_on_top(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """R378 — behavioural, not textual: read the REQUEST that is built.
+
+        The Anthropic contract bills ``thinking_budget`` inside ``maxTokens``,
+        so a judge asked for 1600 with a 1024-token trace gets 576 for its JSON,
+        truncates to ``unbalanced_json`` (non-retryable), and the axis takes a
+        silent zero because ``pass_rate`` divides by total rows.
+        """
+        from evals.judge import runner as JR
+
+        captured: dict[str, object] = {}
+
+        def _spy(req, **kwargs):  # noqa: ANN001
+            captured["max_tokens"] = req.max_tokens
+            captured["thinking_budget"] = req.thinking_budget
+            raise RuntimeError("stop after capture")
+
+        monkeypatch.setenv("REGENOLD_BEDROCK_JUDGE_THINKING_TOKENS", "1024")
+        monkeypatch.setenv("REGENOLD_BEDROCK_JUDGE_MAX_TOKENS", "1600")
+        monkeypatch.setattr(
+            "app.llm.bedrock_client.is_bedrock_provider_enabled", lambda: True
+        )
+        monkeypatch.setattr("app.llm.bedrock_client.complete_with_fallback", _spy)
+
+        JR._call_judge_bedrock("grade this")
+
+        assert captured["thinking_budget"] == 1024
+        # 1600 for the JSON, PLUS 1024 for the trace — not 1600 shared.
+        assert captured["max_tokens"] == 2624
 
 
 # ─── R377-G ──────────────────────────────────────────────────────────────────
@@ -562,6 +605,13 @@ class TestR377GDenoiserFallbackChain:
             _denoiser_truncation_fallthrough_enabled,
         )
 
+        # R378 — a CODE-DEFAULT assertion has to start from an UNSET variable.
+        # ``REGENOLD_DENOISER_BEDROCK=0`` is now part of the documented
+        # deterministic gate env, so reading the ambient environment here tested
+        # the operator's export rather than the default and failed the moment
+        # the env line landed in CLAUDE.md.
+        monkeypatch.delenv("REGENOLD_DENOISER_BEDROCK", raising=False)
+        monkeypatch.delenv("REGENOLD_DENOISER_TRUNCATION_FALLTHROUGH", raising=False)
         assert _denoiser_bedrock_enabled() is True
         assert _denoiser_truncation_fallthrough_enabled() is True
         monkeypatch.setenv("REGENOLD_DENOISER_BEDROCK", "0")

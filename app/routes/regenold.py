@@ -2024,8 +2024,21 @@ def _engine_cache_key(
             "REGENOLD_EXTERNAL_EMBEDDING_MODEL",
             # R86 — Phase 2 benchmark optimisation env gates
             "REGENOLD_QUERY_DENOISER",
-            "REGENOLD_DENOISER_MODEL",
+            # R378 — ``REGENOLD_DENOISER_MODEL`` REMOVED. It selected the
+            # Claude-Max wrapper candidate, which R377 deleted from the chain,
+            # so it is read nowhere in `app/` any more. Left in place it is a
+            # decoy: it implies an ablation that cannot be run. Same call the
+            # R288 note twenty lines above made for
+            # ``REGENOLD_GROUNDING_SCOPE_ALL`` — "Removed rather than left as a
+            # decoy implying an ablation that cannot be run."
             "REGENOLD_DENOISER_MODEL_GROQ",
+            # R378 — the R377 chain's own selectors, registered for the same
+            # reason their Groq sibling is: each picks the model that WRITES the
+            # rewritten query, and that query is the engine's `question` input.
+            "REGENOLD_DENOISER_BEDROCK",
+            "REGENOLD_DENOISER_MODEL_BEDROCK",
+            "REGENOLD_DENOISER_TRUNCATION_FALLTHROUGH",
+            "REGENOLD_DENOISER_TRUNCATION_VOCAB",
             "REGENOLD_ONTOLOGY_HOP",
             # R263 — MedTech classifier/bridging + scoped hop flip engine
             # output (risk tier, refs, Stage-2 bridging), so they must be in
@@ -6992,12 +7005,14 @@ class _BedrockDenoiserProvider:
     """
 
     def complete(self, req: Any) -> Any:  # OpenAIWrapperRequest -> BedrockResponse
+        from dataclasses import replace  # noqa: PLC0415
+
         from app.llm.bedrock_client import (  # noqa: PLC0415
             BedrockRequest,
             complete_with_fallback,
         )
 
-        return complete_with_fallback(
+        resp = complete_with_fallback(
             BedrockRequest(
                 user=req.user,
                 system=req.system,
@@ -7005,8 +7020,81 @@ class _BedrockDenoiserProvider:
                 max_tokens=req.max_tokens or 100,
                 temperature=req.temperature or 0.0,
                 timeout_seconds=req.timeout_seconds,
-            )
+            ),
+            # R378 — keep the denoiser inside its own fail-fast. The cross-
+            # provider Claude-Max hop ignores ``timeout_seconds`` (60 s default),
+            # and R377 removed the wrapper CANDIDATE from this very chain on the
+            # grounds that the tunnel can never answer inside 3 s. Re-entering it
+            # one layer down would undo that. Bedrock's own in-family degrade
+            # (sonnet-4-6 -> sonnet-4-5) is unaffected and still runs.
+            allow_wrapper_hop=False,
         )
+
+        # R378 - TRANSLATE THE TRUNCATION VOCABULARY, BECAUSE THIS IS AN ADAPTER.
+        #
+        # The denoiser loop's R91 guard tests ``finish_reason == "length"`` --
+        # the OpenAI/Groq spelling, correct for every other link this chain has
+        # ever had. Bedrock is the first Anthropic-Converse-shaped link, and
+        # ``_parse_converse_response`` passes ``stopReason`` through RAW
+        # (bedrock_client.py:596), so a token-capped reply arrives as
+        # ``"max_tokens"`` and the guard is structurally dead on it.
+        #
+        # MEASURED by execution, one token of vocabulary the only variable:
+        #     finish_reason="max_tokens" -> the truncated fragment is RETURNED
+        #                                   and becomes the retrieval query
+        #     finish_reason="length"     -> the guard fires, salvage path
+        # The ``10 < len <= 500`` sanity bound below cannot backstop it: a
+        # 100-token cut is ~400-480 chars, so it can essentially never breach
+        # the 500-char ceiling.
+        #
+        # This is not a new rule. R91 (8a7ef61) shipped BOTH spellings on the
+        # day -- its own commit body lists ``_anthropic_complete_for_graph_rag
+        # returns None on max_tokens stop`` -- and the sibling Bedrock guard at
+        # ``_graph_rag_impl.py:1002`` still tests ``== "max_tokens"`` today. The
+        # denoiser got only the ``length`` half because in 2026-05 its chain was
+        # OpenAI-shaped end to end. R377 added an Anthropic-shaped link without
+        # revisiting the comparison.
+        #
+        # ONE CONCEPT, ONE DEFINITION: normalise HERE, in the adapter whose job
+        # is contract parity with ``OpenAIWrapperResponse``, rather than adding a
+        # second literal at the comparison site. ``BedrockResponse.finish_reason``
+        # must NOT be normalised globally -- ``_graph_rag_impl.py:1002`` depends
+        # on the raw Converse spelling.
+        #
+        # ⚠ DEFAULT OFF, and deliberately so. R91's denoiser guard is NO-RECORD
+        # (no Round 91 entry, no A/B, no bench row -- its only number is a test
+        # count), so this is a CONSISTENCY fix, not a restored protection. With
+        # R377's fall-through enabled, a caught truncation on the LAST candidate
+        # routes to salvage -> concatenation, and that is measurably not always
+        # better: on one probed row the dead guard yielded ``['Art. 26']`` and the
+        # fixed guard ``['Annex III']``. Flip this ON only after the Bedrock-link
+        # truncation RATE is measured and a ``dynamic_ab`` clears the gold veto.
+        if _denoiser_truncation_vocab_enabled():
+            if (resp.finish_reason or "") in _BEDROCK_TRUNCATION_STOP_REASONS:
+                resp = replace(resp, finish_reason="length")
+        return resp
+
+
+_BEDROCK_TRUNCATION_STOP_REASONS = frozenset({"max_tokens"})
+"""Converse ``stopReason`` values that mean the model hit the token ceiling.
+
+Kept as a named set rather than a literal so the next Converse truncation
+spelling has one place to land. The other Converse values (``end_turn``,
+``stop_sequence``, ``tool_use``, ``guardrail_intervened``, ``content_filtered``)
+are NOT truncation and must not be mapped.
+"""
+
+
+def _denoiser_truncation_vocab_enabled() -> bool:
+    """R378 env gate, fresh read per call. Default **OFF**.
+
+    ``REGENOLD_DENOISER_TRUNCATION_VOCAB=1`` makes the R91 truncation guard
+    recognise the Bedrock link's Converse ``stopReason="max_tokens"``. See the
+    block in :meth:`_BedrockDenoiserProvider.complete` for why this ships off.
+    """
+    return os.getenv(
+        "REGENOLD_DENOISER_TRUNCATION_VOCAB", "0"
+    ).strip().lower() in ("1", "true", "yes", "on")
 
 
 def _denoiser_truncation_fallthrough_enabled() -> bool:
@@ -7020,7 +7108,14 @@ def _denoiser_truncation_fallthrough_enabled() -> bool:
 
 
 def _denoiser_bedrock_enabled() -> bool:
-    """R377 env gate, fresh read per call. ``=0`` restores the pre-R377 chain."""
+    """R377 env gate, fresh read per call. ``=0`` drops the Bedrock candidate.
+
+    ⚠ R378 correction: this used to say ``=0`` "restores the pre-R377 chain".
+    It does not. R377 also deleted the Gemini, Mistral and wrapper candidates,
+    so ``=0`` leaves a **Groq-only** chain, not the four-link one. Setting it is
+    still the right move for a deterministic gate -- it removes the live Bedrock
+    hop -- but it does not restore anything.
+    """
     return os.getenv("REGENOLD_DENOISER_BEDROCK", "1").strip().lower() not in (
         "0",
         "false",
@@ -7035,9 +7130,13 @@ def _rewrite_multiturn_query(
 ) -> str | None:
     """Rewrite a multi-turn follow-up into a standalone search query.
 
-    Uses the Groq singleton (Llama 3.3 70B, ~200ms) when available,
-    else falls back to the default OpenAI wrapper (Haiku, ~500ms).
-    Timeout: 1.0s.  On LLM-provider failure the R131 deterministic salvage
+    R377/R378 — the chain is **Groq -> Bedrock**, and both links are
+    CREDENTIAL-gated: Groq needs ``GROQ_API_KEY``, Bedrock needs an AWS
+    credential. With neither the chain is empty. The Gemini, Mistral and
+    Claude-Max-wrapper candidates this docstring used to describe were deleted
+    by R377; the per-provider fail-fast is ``REGENOLD_DENOISER_TIMEOUT``
+    (**3.0 s**, not the 1.0 s claimed here for several rounds).
+    On LLM-provider failure — including an EMPTY chain (R378) — the R131 salvage
     (:func:`_live_turn_is_self_contained`) returns the self-contained live
     turn so the contaminating history is dropped; otherwise → ``None``
     (caller keeps concatenation).
@@ -7189,6 +7288,23 @@ def _rewrite_multiturn_query(
         if any_configured:
             # A provider was configured but every singleton init raised.
             return _salvage_on_provider_failure("provider_init_error")
+        # ⚠ R378 — DO NOT route this exit through `_salvage_on_provider_failure`.
+        #
+        # A review proposed exactly that, on the grounds that R377's deletion of
+        # the always-enabled wrapper candidate means a no-credential environment
+        # now lands here instead of reaching the salvage via a wrapper timeout.
+        # The observation is correct; the fix is wrong. Not salvaging here is a
+        # deliberate contract, pinned by three rows in
+        # `tests/test_r131_denoise_salvage.py` whose comment states it:
+        # "cli / no-provider (the davidath bench): the salvage must NOT fire so
+        # the multi-turn flatten stays byte-identical."
+        #
+        # So the behaviour change R377 introduced is real but confined to a
+        # non-cli, no-credential deployment (the documented eval env is `cli`,
+        # and production carries credentials). Closing it would require
+        # distinguishing "nothing configured" from "everything configured
+        # failed" — which `any_configured` no longer can, since the wrapper that
+        # used to make the distinction is gone. Recorded, not patched.
         record_query_denoiser(fired=False, fallback_reason="no_provider")
         return None
 
@@ -7215,10 +7331,12 @@ def _rewrite_multiturn_query(
                 system=_QUERY_DENOISER_SYSTEM,
                 user=user_prompt[:1500],  # cap input size
                 model=model,
-                # 1.0 s fail-fast PER PROVIDER: the multi-turn p50 is 28.6 s
-                # so a 200 ms Groq RTT is rounding error, but a hung call
-                # must not add a multi-second tail to the critical path. The
-                # fallback chain is at most two such calls.
+                # Fail-fast PER PROVIDER: the multi-turn p50 is 28.6 s so a
+                # 200 ms Groq RTT is rounding error, but a hung call must not
+                # add a multi-second tail to the critical path. The chain is at
+                # most two such calls.
+                # ⚠ R378 — this comment said "1.0 s" while the value eight lines
+                # below has been 3.0 s since R267.1. One knob, one number.
                 max_tokens=100,
                 temperature=0.0,
                 # R267.1 — 3.0 s (was R264's 2.0 s), and R377 keeps it.

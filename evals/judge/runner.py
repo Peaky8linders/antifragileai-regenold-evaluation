@@ -266,7 +266,15 @@ def _judge_reasoning_headroom(default: int = 2048) -> int:
     raw = os.getenv("REGENOLD_JUDGE_REASONING_HEADROOM", "").strip()
     if raw:
         try:
-            return max(0, int(raw))
+            # R378 — clamp the TOP as well as the bottom. Its sibling
+            # ``_judge_max_tokens`` twelve lines below clamps to [200, 8000];
+            # this one bounded only the floor, so the two halves of the SAME
+            # envelope had different validation and a fat-fingered override
+            # (``=999999``) posted a million-token ceiling that every provider
+            # rejects as a 400 — which surfaces as a judge_error, i.e. a
+            # silently unscored axis, the exact failure R328.4 raised this
+            # budget to prevent.
+            return max(0, min(8000, int(raw)))
         except ValueError:
             pass
     return default
@@ -334,6 +342,25 @@ def _call_judge_bedrock(prompt: str, timeout_s: float = 30.0) -> dict[str, Any]:
         )
     except (TypeError, ValueError):
         thinking_budget = 0
+    # R378 - THE THINKING BUDGET IS DEDUCTED FROM max_tokens HERE TOO.
+    #
+    # R377 fixed exactly this on the OpenRouter transport and left its twin.
+    # On the Anthropic API — which Bedrock Converse speaks — an enabled
+    # ``reasoning_config`` budget is billed INSIDE ``maxTokens``, so sending
+    # ``max_tokens=1600, thinking_budget=1024`` leaves the judge 576 tokens for
+    # its JSON. The repo states the contract itself at
+    # ``_graph_rag_impl.py:1619-1620``: "The thinking budget counts INSIDE
+    # max_tokens on the Anthropic API, so we give the answer headroom above the
+    # budget" — and the Stage-2 path adds it on top for that reason.
+    #
+    # Why this was missed: ``REGENOLD_BEDROCK_JUDGE_THINKING_TOKENS`` defaults
+    # to 0, so the shipped default is unaffected — which is precisely what makes
+    # it a trap. The flag exists to be turned on, and the moment it is, the
+    # reply truncates to ``unbalanced_json``: non-retryable, and ``pass_rate``
+    # divides by TOTAL rows, so the axis takes a SILENT ZERO rather than a
+    # visible failure. Same defect, same file, same failure mode as R377.
+    if thinking_budget > 0:
+        max_tokens += thinking_budget
     req = BedrockRequest(
         system=_JUDGE_SYSTEM,
         user=prompt,
@@ -487,11 +514,25 @@ def _call_judge_gemini(prompt: str, timeout_s: float = 30.0) -> dict[str, Any]:
         return {"judge_error": f"gemini_init_failed: {exc}"}
 
     model = os.environ.get("GEMINI_JUDGE_MODEL", "gemini-2.5-flash")
+    # R378 - GEMINI 2.5 FLASH IS A REASONING MODEL, SO IT NEEDS THE HEADROOM TOO.
+    #
+    # R377's own denoiser commit is the evidence: "Gemini 2.5 Flash is a
+    # REASONING model. It spends the 100-token rewrite budget on a hidden
+    # reasoning trace and returns finish_reason=length. Measured live it
+    # truncated on every call." The same PR diagnosed that in
+    # app/routes/regenold.py and left this judge — running the same model — on
+    # the plain ceiling.
+    #
+    # Nothing sets a reasoning control on this path: in
+    # ``_OpenAIWrapperProvider.complete`` the Gemini base is not OpenRouter, the
+    # model is not ``claude*``, and the ``reasoning_effort`` auto-injection only
+    # covers ``qwen`` and ``gpt-oss`` — so the request carries no cap at all and
+    # the hidden trace competes with the judge's JSON inside ``max_tokens``.
     req = OpenAIWrapperRequest(
         system=_JUDGE_SYSTEM,
         user=prompt,
         model=model,
-        max_tokens=_judge_max_tokens(),
+        max_tokens=_judge_max_tokens() + _judge_reasoning_headroom(),
         temperature=0.0,
         timeout_seconds=timeout_s,
     )

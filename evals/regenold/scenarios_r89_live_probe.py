@@ -335,9 +335,26 @@ SINGLE_TURN: list[dict] = [
         "id": "live_time_01",
         "question": "After the Digital Omnibus, when do Annex III high-risk obligations actually start applying?",
         "expected_refs": ["Article 113"],
-        "expected_keywords": ["2 December 2027", "Annex III", "Digital Omnibus"],
+        # R378 — retargeted to the PINNED Regulation, completing the R377 sweep.
+        # This gold rewarded the engine for emitting "2 december 2027", which is
+        # a literal member of ``GLOBAL_FORBIDDEN`` in
+        # ``scenarios_omnibus_probe_r318.py`` — so two instruments in this repo
+        # graded the same string in opposite directions. R377 fixed four
+        # scenarios in two files and missed this one.
+        # Pinned Art. 113(2): "It shall apply from 2 August 2026." The 113(3)(c)
+        # carve-out covers Article 6(1) ONLY; Annex III high-risk is Article
+        # 6(2), so it is not carved out and takes the general date.
+        # "Digital Omnibus" stays an expected keyword deliberately — the probe's
+        # own note says naming it is CORRECT when the answer names it in order
+        # to place it out of scope.
+        "expected_keywords": ["2 August 2026", "Annex III", "Digital Omnibus"],
         "category": "timeline_omnibus",
-        "notes": "Post-Omnibus deferral — Annex III HRAIS to 2 Dec 2027.",
+        "notes": (
+            "Omnibus is OUT OF SCOPE (operator, 2026-08-07). Annex III "
+            "high-risk = Art. 6(2), not carved out by Art. 113(3)(c), so it "
+            "takes the general 2 August 2026 date. The correct answer names "
+            "the Omnibus only to place it outside the pinned version."
+        ),
     },
     {
         "id": "live_time_02",
@@ -351,9 +368,22 @@ SINGLE_TURN: list[dict] = [
         "id": "live_time_03",
         "question": "What's the new deadline for Annex I embedded-product high-risk obligations?",
         "expected_refs": ["Article 113"],
-        "expected_keywords": ["2 August 2028", "Annex I", "embedded"],
+        # R378 — retargeted to the pin. "2 august 2028" is also a literal
+        # ``GLOBAL_FORBIDDEN`` member. Pinned Art. 113(3)(c): "Article 6(1) and
+        # the corresponding obligations in this Regulation shall apply from
+        # 2 August 2027" — and Art. 6(1)(a) IS the Annex I harmonisation-
+        # legislation route, so the embedded-product date is 2027, not 2028.
+        # ⚠ "Annex I" is NOT used as a keyword here: the runner matches
+        # case-insensitively by SUBSTRING, and "annex i" is a substring of
+        # "annex iii", so it would be satisfied by an answer that only ever
+        # discusses Annex III. "embedded" carries the same discrimination
+        # without the collision.
+        "expected_keywords": ["2 August 2027", "embedded"],
         "category": "timeline_omnibus",
-        "notes": "Post-Omnibus deferral — Annex I embedded-product to 2 Aug 2028.",
+        "notes": (
+            "Omnibus is OUT OF SCOPE. Annex I embedded-product high-risk is "
+            "Art. 6(1), which Art. 113(3)(c) defers to 2 August 2027."
+        ),
     },
 ]
 

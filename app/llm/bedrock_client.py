@@ -1146,7 +1146,10 @@ def fallback_chain_for(model_id: str) -> tuple[str, ...]:
 
 
 def complete_with_fallback(
-    req: BedrockRequest, *, fallbacks: tuple[str, ...] | None = None
+    req: BedrockRequest,
+    *,
+    fallbacks: tuple[str, ...] | None = None,
+    allow_wrapper_hop: bool = True,
 ) -> BedrockResponse:
     """``BedrockProvider.complete`` plus ordered entitlement failover.
 
@@ -1204,9 +1207,21 @@ def complete_with_fallback(
 
     # Bedrock is exhausted. Try the cross-provider last resort before giving up
     # — but only now, so a working lower tier is never skipped in its favour.
-    hopped = _try_wrapper_fallback(req, primary, last)
-    if hopped is not None:
-        return hopped
+    # R378 — ``allow_wrapper_hop=False`` for LATENCY-CRITICAL callers.
+    #
+    # ``_try_wrapper_fallback`` builds its ``OpenAIWrapperRequest`` WITHOUT
+    # ``timeout_seconds``, so it uses the provider singleton's default
+    # (``OPENAI_TIMEOUT_SECONDS``, 60 s) no matter how tight the caller's own
+    # budget was. That is right for Stage-2 and the judge, where an answer is
+    # worth waiting for. It is wrong for a Stage-0 utility on the request path:
+    # the R377 denoiser passes ``timeout_seconds=3.0`` and its own chain note
+    # says the Claude-Max tunnel "could never succeed" inside that fail-fast --
+    # which is exactly why R377 deleted the wrapper CANDIDATE. Reaching the same
+    # tunnel one layer down, unbudgeted, reinstates the hop that was removed.
+    if allow_wrapper_hop:
+        hopped = _try_wrapper_fallback(req, primary, last)
+        if hopped is not None:
+            return hopped
 
     return last or BedrockResponse(
         error="no_invocable_model", model=primary
