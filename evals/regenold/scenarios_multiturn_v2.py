@@ -176,10 +176,21 @@ SCENARIOS: list[dict] = [
         # that wrongly says it DOES carry over - and "sme" is additionally a
         # substring of "assessment" under the runner's case-insensitive
         # substring matcher (runner_v2.py:271).
-        # Replacement verified VERBATIM in the live Stage-2 answer for this
-        # conversation: "No, priority sandbox access does not carry over once
-        # you exceed the SME thresholds."
-        "expected_final_keywords": ["does not carry over", "sandbox", "priority"],
+        # ⚠ R378.2 - THE DIRECTIONAL TOKEN WAS WITHDRAWN, MEASURED LIVE.
+        # "does not carry over" was verified verbatim in ONE live answer, but a
+        # re-run through the tunnel produced an equally correct answer phrased
+        # differently - "No. Priority access ... ceases once the thresholds are
+        # exceeded" - which the substring matcher scored as a MISS (kw 0.67).
+        # A gold that fails a CORRECT answer is the same defect as one that
+        # passes a wrong answer, just pointing the other way.
+        # `_keyword_recall` is substring AND-recall; it cannot express negation,
+        # and every phrasing of "priority access ends" is a different string.
+        # DIRECTION ON THIS ROW BELONGS TO THE JUDGE (legal_v2 answer_correctness),
+        # not to keyword recall. What IS fixed here is the real instrument bug:
+        # "sme" is a substring of "assessment", so the R377 token scored a hit on
+        # any answer mentioning conformity assessment. "smes" is not ("...ssments"
+        # never yields s-m-e-s), so the plural is collision-free.
+        "expected_final_keywords": ["SMEs", "sandbox", "priority"],
         "notes": "R378 - retargeted to the pin. Engine must hold the size transition from turn 3 and reach the OPPOSITE conclusion to the SME case: at 250 staff / EUR 60M both limbs of Recommendation 2003/361/EC fail, so Art. 62(1)(a) priority access does NOT carry over.",
     },
     {

@@ -92,6 +92,24 @@ SCENARIOS: list[dict] = [
         #    persons" / "priority access to the AI regulatory sandboxes".
         # "remains an SME" is directional (a wrong answer cannot contain it)
         # and collision-free.
+        #
+        # ⚠⚠ R378.2 - THIS ROW IS EXPECTED TO FAIL, AND THE FAILURE IS REAL.
+        # Measured live through the tunnel (runner_v2, label r378-gold), the
+        # engine answers: "Yes as regards the SME-specific measures ... The two
+        # advantages lose are those Article 62 reserves to SMEs ... the operator
+        # should treat the SME-reserved benefits as unavailable from the point
+        # the thresholds are exceeded."
+        # At 220 employees the company is BELOW the 250-person ceiling in
+        # Recommendation 2003/361/EC, so it is still an SME and the Article 62
+        # benefits continue. The engine asserts the opposite - precisely what
+        # this scenario's own notes say it must not do.
+        # The R377 gold ["SME", "priority access"] scored 2/2 on that same wrong
+        # answer, because "sme" matches "assessment" and neither token carries
+        # direction. kw is now 0.5, and the miss is the point: this gold now
+        # detects a genuine legal error instead of masking it.
+        # If the engine is fixed and phrases the conclusion differently
+        # ("still an SME", "continues to qualify"), REVISIT this token rather
+        # than assuming a regression - substring recall cannot express negation.
         "expected_keywords": ["remains an SME", "priority access"],
         "category": "omnibus",
         "notes": "R378 - retargeted to the pin. There is no small mid-cap category in the pinned Regulation. At 220 staff the company is still an SME under Recommendation 2003/361/EC (fewer than 250), so Art. 62 priority access continues. Engine must NOT say privileges are lost.",
