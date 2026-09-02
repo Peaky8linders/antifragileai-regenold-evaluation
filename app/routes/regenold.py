@@ -1860,6 +1860,12 @@ def _engine_cache_key(
             # (measured: arm B served from cache in 0.1s vs arm A's 37.8s,
             # giving a zero-generation-variance comparison).
             "REGENOLD_ANSWER_COVERAGE",
+            # R340 — critical answer rules on the user message.
+            "REGENOLD_USER_CRITICAL_RULES",
+            # R367 — the scope stop rule appends to the same Stage-2 USER
+            # message, so it flips the polished answer AND (via the three
+            # prose->refs passes) the wire citations. Same doctrine.
+            "REGENOLD_SCOPE_STOP_RULE",
             # R300 — the wrapper model alias decides WHICH model generates the
             # Stage-2 answer, so flipping it flips the answer.
             "REGENOLD_WRAPPER_MODEL_ALIAS",
@@ -4477,13 +4483,17 @@ def _reconcile_references_to_prose(
         return references
 
 
-# R133 — parenthetical sub-point citations the prose names (``Article 6(1)``,
-# ``Article 5(1)(a)``, ``Annex IV(2)``). group(1) = bare parent prefix,
-# group(2) = the ``(N)`` / ``(N)(x)`` chain. No ``\s*`` between them so a
-# spaced cross-Regulation paren ("Article 50 of Regulation (EU) 2024/…") never
-# matches; the chain must attach directly to the number / Roman id.
+# R133/R380 — parenthetical and statutory sub-point citations the prose
+# names (``Article 6(1)``, ``Article 5(1)(a)``, ``Annex IV point 1(e)``,
+# ``Article 26 paragraph 6``). group(1) = bare parent prefix,
+# group(2) = point/paragraph number, group(3) = sub-letter, group(4) = direct paren chain.
 _PROSE_SUBPOINT_RE = re.compile(
-    r"((?:Article\s+\d+)|(?:Annex\s+[IVXLC]+))((?:\((?:\d+|[A-Za-z]+)\))+)",
+    r"((?:Article\s+\d+)|(?:Annex\s+[IVXLC]+))"
+    r"(?:"
+    r"(?:\s+(?:point|paragraph)\s+(\d+)(?:\(([A-Za-z\d]+)\))?)"
+    r"|"
+    r"((?:\((?:\d+|[A-Za-z]+)\))+)"
+    r")",
     re.IGNORECASE,
 )
 
@@ -4519,7 +4529,14 @@ def _surface_prose_subpoints(answer: str, references: list[str]) -> list[str]:
         # parent (user-facing) -> ordered sub-point forms named in prose
         wanted: dict[str, list[str]] = {}
         for m in _PROSE_SUBPOINT_RE.finditer(answer):
-            parent_tok, chain = m.group(1), m.group(2)
+            parent_tok = m.group(1)
+            pt = m.group(2)
+            sub_letter = m.group(3)
+            direct_paren = m.group(4)
+            if pt:
+                chain = f"({pt})({sub_letter})" if sub_letter else f"({pt})"
+            else:
+                chain = direct_paren or ""
             try:
                 parent_uf = _refs.to_user_facing(parent_tok)
                 sub_uf = _refs.to_user_facing(parent_tok + chain)
@@ -11058,21 +11075,6 @@ def regenold_eu_ai_act_ask(
         except Exception:  # noqa: BLE001 — never 500 the route on a guard
             pass
 
-    # R325 — drop a bare head when one of its OWN sub-points is already cited.
-    # Must run LAST: ``_reemit_parents_for_subpoints`` (R87-C) and Component D
-    # both ADD heads, so anything earlier is undone downstream.
-    if _parent_collapse_enabled():
-        try:
-            _pc_refs = _collapse_parent_when_subpoint_cited(references)
-            if _pc_refs != references:
-                _trace_note(
-                    "parent_collapse dropped="
-                    + ",".join(r for r in references if r not in _pc_refs)
-                )
-                references = _pc_refs
-        except Exception:  # noqa: BLE001 — never 500 the route on a guard
-            pass
-
     # R369 — R368 wire guard (LAST reference pass, after every lossy pass).
     # Re-instates the trigger-canonical heads the R368 supplements fired for
     # but the route dropped: the exact set scratch/r369_sim_r368.py validated
@@ -11185,6 +11187,84 @@ def regenold_eu_ai_act_ask(
                     + ",".join(r for r in _promoted if r not in references)
                 )
                 references = _promoted
+        except Exception:  # noqa: BLE001 — never 500 the route on a guard
+            pass
+
+    # R366 — R325 parent collapse: drop a bare head when one of its OWN
+    # sub-points is already cited. THIS CALL SITE IS THE FIX.
+    #
+    # ``_parent_collapse_enabled`` (:2830) and
+    # ``_collapse_parent_when_subpoint_cited`` (:2840) arrived in a659849 (the
+    # R320-R328 port) together with their unit tests, their ``.env.example``
+    # row, the ``_engine_cache_key`` entry and the AGENTS.md pipeline diagram
+    # — but WITHOUT the upstream call site. ``REGENOLD_PARENT_COLLAPSE`` was
+    # therefore inert for the whole life of the branch while two doctrine
+    # documents drew it as a live pass. Same failure class as R329's three
+    # rerank placements (all read correctly in the diff, all made zero calls)
+    # and R330's never-executed R327 semantic layer.
+    #
+    # WHY LAST. ``_collapse_parent_refs`` (:3107) already implements this rule
+    # mid-pipeline, but it runs at :8112 — immediately BEFORE
+    # ``_reemit_parents_for_subpoints`` (:8118, R87-C, default ON), which
+    # re-ADDS the top-level parent. That ordering defect is the one recorded at
+    # :3163: the collapse is structurally undone downstream, which is why the
+    # wire ships clusters like ``[Article 50.1, Article 50, Article 50.2]``.
+    # Running here — after the R276-D1 granularity pass (:9544), both clamps,
+    # the R260 closed-set and R311 exclusivity enforcement (which ADD heads),
+    # the R302 freeze and the R365 wire guard (:9822, which also ADDS) — is the
+    # only position nothing later re-inflates. It is also BEFORE the trace
+    # finalisation, so the trace still equals the wire refs.
+    #
+    # ORDER vs THE R365 WIRE GUARD, deliberately chosen: the guard runs FIRST,
+    # this collapse SECOND. They do not fight. The guard is ADD-only and gates
+    # each append on ``_canonical_reference_base(r) not in _r365_have``, i.e.
+    # it only re-instates a head when NO reference carrying that base is on the
+    # list — so a head this pass drops (which by definition still has its own
+    # leaf present, and therefore still contributes its base) is never re-added,
+    # and conversely a head the guard just added has no leaf beside it for this
+    # pass to collapse against. Running the collapse second is nonetheless the
+    # safer of the two equivalents: it makes 'no bare head survives beside its
+    # own leaf' hold unconditionally at the wire, even if the guard's
+    # base-coverage test is later loosened. Both are default OFF, so no
+    # interaction ships today.
+    #
+    # DEFAULT OFF, and it stays off. This pass DROPS references, the R142.1
+    # failure mode that lost a live pairwise judge 11-0 (p=0.001), so it ships
+    # only behind an ``evals.harness.easyhard_ab`` win (gold-bearing — NOT
+    # ``ab_judge``). It also knowingly overrides the R274 curated-intercept
+    # protection: ``['Article 6.3', 'Article 6', 'Annex III']`` collapses to
+    # ``['Article 6.3', 'Annex III']``, dropping the general-rule head that
+    # R274 deliberately pairs with its carve-out. That trade is test-pinned in
+    # ``tests/test_r325_parent_collapse.py::TestKnownTradeIsPinned``.
+    #
+    # ⚠ IT IS A NO-OP ON THE OFFLINE DETERMINISTIC PATH — expect +0.0000 there
+    # and do NOT read that as a broken lever (the R329 trap in reverse). Head+
+    # leaf clusters are minted live by ``_surface_prose_subpoints`` (:9506,
+    # ``_stage2_landed``-gated) and re-formed by the additive passes; offline,
+    # the R276-D1 ``auto`` mode at :9544 has already resolved every mixed
+    # cluster by the time control reaches here. Measured over 20 offline
+    # questions spanning the sub-point-emitting topics: zero collapsible
+    # pairs. Its live surface is the curated intercepts (exempt from R276-D1
+    # per R274; R287 only collapses a head with 2+ of its own leaves) and any
+    # head re-added by R260/R311 after the granularity pass ran.
+    #
+    # ``tests/test_r366_parent_collapse_wired.py`` asserts that this call site
+    # is REACHED and that its return value reaches the wire — never on the
+    # shape of this code, per the R360 rule.
+    if _parent_collapse_enabled():
+        try:
+            _pc_refs = _collapse_parent_when_subpoint_cited(references)
+            if _pc_refs != references:
+                _pc_dropped = [r for r in references if r not in _pc_refs]
+                references = _pc_refs
+                try:
+                    from app.integrations.regenold.reasoning_trace import (  # noqa: PLC0415
+                        record_note as _rn,
+                    )
+
+                    _rn("parent_collapse dropped=" + ",".join(_pc_dropped))
+                except Exception:  # noqa: BLE001 — fail-soft on trace
+                    pass
         except Exception:  # noqa: BLE001 — never 500 the route on a guard
             pass
 
