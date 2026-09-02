@@ -513,6 +513,9 @@ USER_REF_MINIMALITY_CLAUSE = (
     "Annex III) or the high-risk requirement chain (Articles 9 to 15) merely "
     "because the system happens to be high-risk; cite them only when the "
     "question is ABOUT classification or about that specific requirement. "
+    "Do not append EU database registration (Article 49), declaration of conformity "
+    "(Article 47), or CE marking (Article 48) unless the question specifically asks "
+    "about registration, formalities, or market placement procedure. "
     "Describing everything supplied is over-citation and is penalised.\n"
 )
 
@@ -743,13 +746,17 @@ _CHALLENGE_PATTERNS: tuple[re.Pattern[str], ...] = (
     ),
     re.compile(r"\bwe\s+(?:are|'re)\s+(?:therefore\s+)?exempt\b", re.IGNORECASE),
     re.compile(r"\bwe\s+have\s+no\s+obligations?\b", re.IGNORECASE),
-    # A demand to ratify the user's own conclusion. "confirm the article number"
-    # and "confirm whether X applies" are deliberately NOT matched — those ask a
-    # question rather than assert an answer.
-    re.compile(r"\b(?:just\s+)?confirm\s+(?:that|this|there|it|we|our)\b", re.IGNORECASE),
+    # A demand to ratify the user's own conclusion — only as the HEAD of the
+    # live turn ("Confirm that we …"). Mid-sentence "confirm that" is the
+    # Act's own verb (biometric verification "… to confirm that a specific
+    # natural person …") and must never read as a dispute.
+    re.compile(
+        r"^\s*(?:please\s+|just\s+)?confirm\s+(?:that|this|there|it|we|our)\b",
+        re.IGNORECASE,
+    ),
     # Direct contradiction of the previous answer's substance.
     re.compile(
-        r"\bthat\s+is\s+not\s+what\s+(?:the\s+)?(?:act|regulation|article)\b",
+        r"\bthat\s+is\s+not\s+what\s+(?:the\s+)?(?:act|regulation|article|annex|recital)\b",
         re.IGNORECASE,
     ),
 )
@@ -774,6 +781,12 @@ def is_challenge_turn(question: str) -> bool:
         if any(m in low for m in _CHALLENGE_MARKERS):
             return True
         # R377 — the leading-confirmation family (see _CHALLENGE_PATTERNS).
+        # R379 — only where a prior turn exists. The route flattens history
+        # with the ``Latest question:`` marker, so its absence means turn 1,
+        # and a "challenge" to a previous answer is undefined there. The
+        # explicit dispute markers above stay unconditional.
+        if idx < 0:
+            return False
         return any(p.search(text) for p in _CHALLENGE_PATTERNS)
     except Exception:  # noqa: BLE001 — a detector must never break the route
         return False
@@ -1102,6 +1115,157 @@ def answer_coverage_enabled() -> bool:
     }
 
 
+# R340 — Compact extraction of the highest-impact ANSWER_GENERATE_SYSTEM rules,
+# delivered on the USER channel because the wrapper drops system messages 100%
+# (measured 2026-08-03). The system prompt contains hundreds of rules that reach
+# the model on ZERO live wrapper requests. This clause carries the critical
+# subset through the channel that actually works. NOT a blind forward of the
+# system prompt (R282 measured that as rubric-NEGATIVE); instead a surgical
+# extraction of the rules with the highest impact on correctness, reference
+# precision, and answer quality.
+USER_CRITICAL_RULES_CLAUSE = (
+    " CRITICAL ANSWER RULES (these override any conflicting instruction):\n"
+    "CITE-DESCRIBE MANDATE: Every Article or Annex you cite MUST be described "
+    "in the answer prose. State in a few words what that provision requires or "
+    "establishes. Never leave a cited number unexplained. When one provision "
+    "depends on another (e.g. an Article pointing at an Annex), name both and "
+    "what each contributes. Unmentioned citations are severely penalised.\n"
+    "GROUNDING: Ground every statement in the cited provisions. Do not invent "
+    "obligations the references do not support. When the references DO cover "
+    "the topic, answer directly and confidently; do not hedge that information "
+    "is missing if the relevant provisions are present.\n"
+    "CANONICAL TERMINOLOGY: Name each obligation, risk tier, and role using the "
+    "EU AI Act's OWN words. Use 'provider', 'deployer', 'authorised representative', "
+    "'operator'; NEVER 'user', 'customer', 'developer', or 'creator'. Spell "
+    "multi-word obligations as SEPARATE words (not hyphenated): 'risk management "
+    "system' (Article 9), 'data governance' (Article 10), 'technical documentation' "
+    "(Article 11), 'record-keeping' (Article 12), 'human oversight' (Article 14), "
+    "'conformity assessment' (Article 43), 'post-market monitoring' (Article 72). "
+    "State the risk TIER verbatim: 'prohibited', 'high-risk', 'limited risk', "
+    "'minimal risk'. Keep hyphens ONLY where the Act has them ('high-risk', "
+    "'post-market').\n"
+    "CLOSED-SET COMPLETENESS: When the question's subject IS an enumerated "
+    "statutory set (e.g. 'what practices are prohibited', 'what are the risk "
+    "tiers', 'what are the Annex III categories'), name EVERY member, not a "
+    "sample. Pack them into ONE compact comma-separated sentence.\n"
+    "FACTUAL GUARDS: (a) Article 5(1)(c) social scoring is prohibited for ANY "
+    "provider or deployer, public or private, not only 'public authorities'. "
+    "(b) Article 5(1)(h) real-time remote biometric identification is prohibited "
+    "ONLY for law-enforcement use in publicly accessible spaces; always qualify "
+    "it as such. (c) High-risk under Article 6 has TWO routes: Annex I product "
+    "safety (Article 6(1)) AND Annex III use cases (Article 6(2)); describe BOTH "
+    "when asked what high-risk means. (d) Article 6(3) carve-outs: a narrow "
+    "procedural task, improving a completed human activity, detecting decision "
+    "patterns without replacing human assessment, or a preparatory task removes "
+    "Annex III systems from high-risk UNLESS they profile natural persons. "
+    "(e) GPAI Chapter V spans Articles 51 TO 56, not 51 to 55.\n"
+    "VOICE: Write as the EU AI Act legal specialist. Do NOT reference the source "
+    "of your information. Never say 'the graph', 'graph context', 'knowledge "
+    "graph', 'the data provided', 'based on the context', 'the references "
+    "supplied'. Talk about the regulation directly. Write in neutral third-person "
+    "declarative register; never address the reader as 'you'.\n"
+    "DIRECT VERDICT FIRST: When the question asks whether something is high-risk, "
+    "prohibited, in scope, etc., the FIRST clause states the concise verdict "
+    "BEFORE naming any provision. Do NOT open with 'Article N is the operative "
+    "provision' or 'Under Article N'. Never open with 'It depends'. Lead with "
+    "the classification itself.\n"
+    "LENGTH: AT MOST four sentences. Each a complete period-terminated sentence. "
+    "Group related obligations into one sentence with a count plus key items. "
+    "No markdown, no bullet points, no bold text, no headers. Plain prose only.\n"
+    "REFERENCE SELECTION: For definitions cite Article 3. For prohibited practices "
+    "cite Article 5 only. For high-risk sectors cite Article 6 and Annex III only. "
+    "Prefer fewer, more precise references over many broad ones. The evaluator "
+    "penalises over-citation.\n"
+)
+
+
+def user_critical_rules_enabled() -> bool:
+    """R340 — deliver the critical ANSWER_GENERATE_SYSTEM rules on the user channel.
+
+    Fresh env read per call so an in-process two-arm A/B is valid (R263.2).
+    DEFAULT ON per the R340 directive. Set ``REGENOLD_USER_CRITICAL_RULES=0``
+    to revert to the pre-R340 instruction set (coverage clause only).
+    """
+    import os
+
+    return os.environ.get("REGENOLD_USER_CRITICAL_RULES", "1").strip().lower() in {
+        "1", "true", "yes", "on",
+    }
+
+
+# R367 - the SCOPE STOP RULE.
+#
+# The official 2026-08-25 report measures Answer Conciseness as an "inverted
+# measure of answer verbosity relative to the reference answers". Between the
+# 2026-07-14 and 2026-08-25 scorecards it collapsed 96.0 -> 51.9 (easy) and
+# 93.4 -> 45.2 (hard), while Reference Conciseness fell 79.3 -> 50.4 and
+# 72.1 -> 49.8. Every OTHER axis improved sharply over the same window
+# (AnsCorrectness Loose +17.6, Strict +17.6, RefStrict +9.5, Speed +12.5) --
+# and because Overall is a plain GEOMETRIC MEAN, the two conciseness
+# collapses ate the whole gain: easy Overall went 77.5 -> 75.1, i.e. DOWN.
+#
+# Holding the 2026-08-25 correctness numbers and restoring only the July
+# conciseness numbers yields easy 85.8 / hard 84.2, which BEATS the 2026
+# frontier baseline (80.9 / 81.7) in both modes. These two axes now also
+# carry the highest marginal GM leverage of the eight (0.179 / 0.185 pp of
+# Overall per pp, vs 0.104 for AnsLoose).
+#
+# The defect is NOT length as such, and a blunt cap is the refuted remedy
+# (R320's own A/B: answer_conciseness +0.095 but answer_correctness -0.143;
+# R142.1 lost a pairwise judge 11-0 on positional trimming). MEASURED shape
+# of the fat, on the six report questions replayed live: each answer states
+# the answer in its first one or two sentences and then appends two to four
+# sentences of ADJACENT-BUT-UNASKED law -- Art. 97's delegation mechanics on
+# an Art. 7 question, the Art. 6(3) derogation on a definitional one,
+# Art. 26 deployer duties on an Art. 13 one, the Annex I product route on an
+# Annex III one. That trailing material is also what drags the extra
+# provisions into the wire refs, because `_add_prose_named_refs` promotes
+# every provision the prose names, uncapped. ONE root cause, BOTH axes.
+#
+# So this clause targets the cause (writing the unasked sentence) rather
+# than the symptom (the answer being long). It never licenses dropping a
+# member of a set the question asked for -- that would trade into
+# AnsCorrectness, which is the trade R320 measured and rejected.
+USER_SCOPE_STOP_CLAUSE = (
+    " SCOPE STOP RULE (this governs where the answer ENDS): answer the "
+    "question asked, completely, and then STOP. Do not add a further "
+    "sentence about a neighbouring provision, a related power, a procedural "
+    "or institutional mechanism, an exception, a derogation, a transitional "
+    "rule, or another actor's duties, when the question did not raise it. "
+    "Before writing each sentence after the first, ask which words of the "
+    "question it answers; if none, delete it. Correct law that answers a "
+    "question nobody asked is a DEFECT here, not added value: it costs "
+    "conciseness directly, and it costs reference precision too, because "
+    "every provision your prose names is promoted into the citation list. "
+    "This rule NEVER licenses dropping something the question did ask for: "
+    "where the question names an enumerated set, a count, a second limb, or "
+    "a yes/no, deliver all of it -- completeness of what was asked always "
+    "beats brevity, and only material outside the question is cut. Where a "
+    "qualifier, exception or condition is part of the rule you are stating, "
+    "it is IN scope and stays.\n"
+)
+USER_SCOPE_STOP_RULE = USER_SCOPE_STOP_CLAUSE
+
+
+def scope_stop_rule_enabled() -> bool:
+    """R367 - the scope stop rule, delivered on the USER channel.
+
+    Fresh env read per call so an in-process two-arm A/B is valid (R263.2).
+
+    DEFAULT **OFF**. It changes the Stage-2 prompt, and per AGENTS.md
+    invariant #5 a prompt-side change is NOT reference-neutral: three
+    default-ON, ``stage2_landed``-gated passes recompute the wire refs from
+    the final prose. So it must clear ``easyhard_ab``/``gold_dropped_head``
+    for references AND ``ab_judge`` for answers before it flips. Shipping it
+    ON with its gate un-run is exactly what R308 and R299 did.
+    """
+    import os
+
+    return os.environ.get("REGENOLD_SCOPE_STOP_RULE", "0").strip().lower() in {
+        "1", "true", "yes", "on",
+    }
+
+
 # ==========================================================================
 # R340 — the rebuilt Stage-2 prompts.
 # ==========================================================================
@@ -1135,7 +1299,7 @@ ANSWER_GENERATE_SYSTEM_V2 = '<role>\nYou are an EU AI Act legal specialist. You 
 
 USER_ANSWER_COVERAGE_CLAUSE_V2 = " ANSWER COVERAGE: cover the content the question actually asks for, in the Act's own words. This is never a licence to cite or to describe more provisions, and it does not relax the reference minimality rule. Draw every point below from the supplied text of provisions you were already going to cite. Naming a member, condition, exception or limb inside such a provision adds no new reference. Close the literal question: a yes or no question states Yes or No, a how many or how long question states the number, a which or list question names them, and a question with a second limb answers that limb too. Correct discussion of neighbouring law that never states the thing asked is a failure. Do not announce a count, or say that exceptions or further duties exist, and then leave them unnamed. Where the question's subject IS an enumerated statutory set, name every member the supplied text states, as short labels packed into ONE compact comma-separated sentence, never as lettered or semicolon-separated items. Where the supplied text qualifies something you assert with a proviso, carve-out or exception, state that qualifier in the same sentence: an unqualified statement of a qualified rule is wrong. Where the supplied text of something you name is satisfied by either of two alternative limbs, as in 'either or both of the following', name both limbs in the same clause: naming one states a narrower rule than the Act does. Name obligations, roles and risk tiers as the Act names them rather than paraphrasing. Find the room by cutting: delete sentences about supplied provisions the question did not ask about, and keep the whole answer as short as full coverage allows. Assert only what the supplied text states. If it does not settle a point, say so as a matter of LAW -- 'the Act does not specify X' -- and NEVER as a matter of your own sources: do not mention the references, provisions or material supplied to you, what was or was not retrieved, or how complete your inputs are. The reader sees only the answer, so a remark about your inputs is unanswerable to them, and it is self-contradictory whenever the answer cites the very provision it claims to be missing. LEGAL VERSION: apply Regulation (EU) 2024/1689 as adopted; the Digital Omnibus (2026/1744) is out of scope. Never adopt its deferred dates, small mid-cap category or lettered articles, even from memory: say they fall outside the version applied here, then answer from the adopted text.\n"
 
-USER_REF_MINIMALITY_CLAUSE_V2 = " REFERENCE MINIMALITY: the EU AI ACT REFERENCES block is over-retrieved candidate context, NOT an agenda. Cite and describe ONLY the provisions this question actually turns on, the ones a lawyer would put in the citation line for THIS question. Test every candidate: if removing it would not change the answer, do not cite it and do not describe it. In particular do NOT cite the classification apparatus (Article 6, Annex I, Annex III) or the high-risk requirement chain (Articles 9 to 15) merely because the system happens to be high-risk; cite them only when the question is ABOUT classification or about that specific requirement. Describing everything supplied is over-citation and is penalised. Name each provision you do cite immediately beside what it requires, in the same clause: a bare number in a list or in a range does not count as cited and does not reach the reader. Cite a provision only where the question's own facts establish the condition that provision itself requires; if the only way to state it is 'where', 'if' or 'to the extent that' some fact the question never gave, leave the provision and its sentence out. This does not restrict the provision supplying the verdict asked for, which may be stated conditionally. When you rule a tier, route or use case OUT, name it in words rather than by number unless the question itself named that provision, because a number you write is a citation whether you affirm the provision or reject it.\n"
+USER_REF_MINIMALITY_CLAUSE_V2 = " REFERENCE MINIMALITY: the EU AI ACT REFERENCES block is over-retrieved candidate context, NOT an agenda. Cite and describe ONLY the provisions this question actually turns on, the ones a lawyer would put in the citation line for THIS question. Test every candidate: if removing it would not change the answer, do not cite it and do not describe it. In particular do NOT cite the classification apparatus (Article 6, Annex I, Annex III) or the high-risk requirement chain (Articles 9 to 15) merely because the system happens to be high-risk; cite them only when the question is ABOUT classification or about that specific requirement. Do not append EU database registration (Article 49), declaration of conformity (Article 47), or CE marking (Article 48) unless the question specifically asks about registration, formalities, or market placement procedure. Describing everything supplied is over-citation and is penalised. Name each provision you do cite immediately beside what it requires, in the same clause: a bare number in a list or in a range does not count as cited and does not reach the reader. Cite a provision only where the question's own facts establish the condition that provision itself requires; if the only way to state it is 'where', 'if' or 'to the extent that' some fact the question never gave, leave the provision and its sentence out. This does not restrict the provision supplying the verdict asked for, which may be stated conditionally. When you rule a tier, route or use case OUT, name it in words rather than by number unless the question itself named that provision, because a number you write is a citation whether you affirm the provision or reject it.\n"
 
 USER_SUBPARAGRAPH_ATTRIBUTION_CLAUSE_V2 = " SUB-PARAGRAPH DISCIPLINE: attribute a legal claim to the coordinate whose supplied text contains the words your sentence relies on. If those words appear only in the parent article, cite the parent article. Where a provision states more than one route, condition or derogation, cite the one whose conditions the stated facts satisfy, not a neighbouring one. Write a sub-paragraph in parentheses, as in Article 5(1)(f) or Annex III(5)(d), and only where the supplied references carry it. Do NOT invent a sub-clause number, and do not add a sub-paragraph walk-through the question did not ask for. This never overrides closed-set completeness: when the question's subject IS an enumerated statutory set, name every member of it.\n"
 
@@ -1143,44 +1307,31 @@ USER_CHALLENGE_BREVITY_CLAUSE_V2 = ' CHALLENGE TURN: the user is disputing the p
 
 
 def _prompt_v2_enabled() -> bool:
-    """R340 — select the rebuilt prompt set. **Default ON.**
+    """R340 port — select the rebuilt prompt set. **Default OFF as of R379.**
 
-    The default is ON in CODE, not via an env var: ``railway.toml
-    [deploy.envs]`` has never applied in this repo, so an env-gated default-OFF
-    flag never reaches the deployment at all. ``REGENOLD_PROMPT_V2=0`` is the
-    instant rollback to the accreted V1 prompt, which is kept byte-identical.
+    PR #368 shipped this ON on the claim "gold_dropped_head == 0, delta +0 on
+    paired A/B". No record of that run exists. R379 ran the gate on the
+    Bedrock leg (``evals.harness.easyhard_ab --local``, both arms on Opus 4.8,
+    label ``r379-promptv2-bedrock``, sidecar in ``evals/bench/results/``):
 
-    MEASURED before flipping (Antifragile 20, shipped config, paired arms, fire
-    check passed — delivered system prompt 51,513 → 15,462):
+        easy  n=95  ref_loose +0.0035  ref_strict +0.0142  ref_conc +0.0250
+                    kw_recall -0.0155  gold_dropped_head 21 -> 22  (+1)
+        hard  n=37  ref_loose +0.0811  ref_strict +0.0680  ref_conc -0.0001
+                    kw_recall +0.0631  gold_dropped_head 18 -> 16  (-2)
 
-        judge reference PRECISION   0.7890 → 0.8385   (+0.0495)
-        judge reference F1          0.8641 → 0.8859   (+0.0218)
-        judge reference recall      0.9550 → 0.9389   (−0.0161)
-        judge answer correctness    0.85   → 0.85     (flat)
-        judge citation faithfulness 1.00   → 1.00     (flat)
-        ans_conciseness             0.5160 → 0.5518   (+0.0358)
-        ans_f1                      0.5967 → 0.6230   (+0.0263)
-        expert-flagged mistakes     33/38  → 33/38    (flat)
-        latency p50                 7,180  → 7,006 ms
-
-    Reference precision is the axis CLAUDE.md names as the entire remaining
-    competitive gap, and the movement matches the designed mechanism: cite fewer
-    and better-chosen provisions, so precision rises, recall gives back a little,
-    F1 nets positive. Answer correctness and citation faithfulness did not move.
-
-    ⚠ HONEST LIMIT ON THAT EVIDENCE. Only 9 of the 20 rows reach Stage-2 in the
-    shipped configuration (the curated gate fires on 10 rows, the definitional
-    gate on 1), so the effective n is **9**. +0.0495 precision on 9 rows is a
-    consistent signal across two independent instruments, NOT a resolved one. The
-    confirmatory run is V1-vs-V2 on the official July-7 batch, where the gates
-    fire on only 22/110 and ~88 rows per arm reach Stage-2.
+    Hard rule #8 is "drop ZERO more on ANY split"; the easy split drops one
+    more and the harness exits 1. So it ships OFF, exactly as the R367 scope
+    stop rule did on the same rule. The hard-split gains are real-looking and
+    are the case for a powered re-run (n >= 120 per split), not for a default.
 
     Read fresh per call so a paired in-process A/B can flip between arms;
     registered in ``_engine_cache_key`` so the arms cannot share a cached
-    response.
+    response. Allow-list truthiness, like every default-OFF gate here: a
+    value we cannot read as ON means OFF (R321 fail-closed).
     """
     import os
-    return os.getenv("REGENOLD_PROMPT_V2", "1").strip().lower() in (
+
+    return os.getenv("REGENOLD_PROMPT_V2", "0").strip().lower() in (
         "1", "true", "yes", "on",
     )
 

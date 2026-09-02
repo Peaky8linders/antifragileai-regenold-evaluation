@@ -182,36 +182,66 @@ _TIER_LABEL_RE: dict[str, re.Pattern[str]] = {
     "gpai": re.compile(r"\b(?:general[-\s]purpose\s+ai|gpai)\b", re.IGNORECASE),
 }
 
-#: R377-B - a sentence-local DENIAL of a tier's own label. Deliberately tight:
-#: the negation cue must sit within 40 characters of the label and inside the
-#: same sentence, so "Article 6(3) does not remove this classification, because
-#: ranking candidates materially influences the outcome" is NOT read as a denial
-#: of high-risk - there is no label inside the window.
+#: R377-B — a sentence-local DENIAL of a tier's own label. Deliberately tight:
+#: the negation cue must directly precede the label (with optional adverbs like
+#: "categorically" in between) and must NOT bridge across clause-boundary
+#: punctuation (``,``, ``;``, ``—``). The original 40-char window falsely matched
+#: compound sentences like "not prohibited, but high-risk" because ``not`` sat
+#: within 40 chars of ``high-risk`` across the comma.
 _TIER_DENIAL_RE: dict[str, re.Pattern[str]] = {
     "prohibited": re.compile(
-        r"\b(?:not|neither|nor)\b[^.!?]{0,40}?\b(?:prohibited|banned)\b", re.IGNORECASE
+        r"\b(?:not|neither|nor)\s+(?:(?:categorically|automatically|necessarily|considered|classified\s+as)\s+)?"
+        r"(?:prohibited|banned)\b",
+        re.IGNORECASE,
     ),
     "high_risk": re.compile(
-        r"\b(?:not|no\s+longer)\b[^.!?]{0,40}?\bhigh[-\s]?risk\b", re.IGNORECASE
+        r"\b(?:not|no\s+longer)\s+(?:(?:categorically|automatically|necessarily|inherently|considered|classified\s+as)\s+)?"
+        r"high[-\s]?risk\b",
+        re.IGNORECASE,
     ),
     "limited": re.compile(
-        r"\b(?:not|no\s+longer)\b[^.!?]{0,40}?\blimited[-\s]?risk\b", re.IGNORECASE
+        r"\b(?:not|no\s+longer)\s+(?:(?:categorically|automatically|necessarily|considered|classified\s+as)\s+)?"
+        r"limited[-\s]?risk\b",
+        re.IGNORECASE,
     ),
     "gpai": re.compile(
-        r"\b(?:not|no\s+longer)\b[^.!?]{0,40}?\b(?:general[-\s]purpose\s+ai|gpai)\b",
+        r"\b(?:not|no\s+longer)\s+(?:(?:categorically|automatically|necessarily|considered|classified\s+as|a)\s+)?"
+        r"(?:general[-\s]purpose\s+ai|gpai)\b",
         re.IGNORECASE,
     ),
 }
 
 
 def tier_negation_enabled() -> bool:
-    """R377-B env gate. Default ON; ``REGENOLD_FIDELITY_TIER_NEGATION=0``
-    restores the pre-R377 reading in which the CONTRACT was anchor-only."""
-    return os.getenv("REGENOLD_FIDELITY_TIER_NEGATION", "1").strip().lower() not in (
-        "0",
-        "false",
-        "no",
-        "off",
+    """R377-B env gate. **Default OFF as of R379**; ``=1`` opts in.
+
+    The port shipped it ON. The R379 review executed it and found three
+    defects, none of which the port's own tests reach:
+
+    * the ``elif label`` fallback in :func:`extract_asserted_tier_set` puts a
+      tier into the CONTRACT on a bare English word ("the provider is
+      prohibited from placing … without a CE marking") while the POLISH side
+      stays anchor-only, so the contract is no longer a subset of the draft's
+      anchors (this module's own documented invariant) and a correct concise
+      polish is discarded as ``fallback_tier_drop`` — the R142.1 conciseness
+      regression the guard exists to avoid;
+    * the denial filter drops the whole SENTENCE, so "not high-risk under
+      Annex I, but high-risk under Annex III" deletes ``high_risk`` from the
+      contract, ``len(contract) < 2`` short-circuits, and a genuinely
+      tier-dropping polish ships — the guard switches itself off;
+    * on the deterministic drafts the engine actually emits for a cross-tier
+      ask ("… not among the practices prohibited under Article 5 …") the
+      denial regex does not match at all, so the lever is a no-op on the
+      class it was built for, while still carrying the two regressions above.
+
+    OFF restores the pre-R377 anchor-only contract. Re-enable only behind a
+    clause-scoped denial that is measured on real drafts.
+    """
+    return os.getenv("REGENOLD_FIDELITY_TIER_NEGATION", "0").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
     )
 
 

@@ -248,47 +248,8 @@ def _looks_structurally_truncated(text: str | None) -> bool:
     stripped = text.rstrip()
     if not stripped:
         return False
-    # R328.3 — a MARKDOWN TABLE ROW is a structurally complete ending. Long
-    # enumerative answers (role × obligation matrices) legitimately end on one,
-    # and its terminal ``|`` is a row close, not a mid-clause stop.
-    last_line = stripped.splitlines()[-1].strip()
-    if last_line.startswith("|") and last_line.endswith("|") and len(last_line) > 2:
-        return False
-    # Peel trailing closing wrappers a complete sentence may carry after
-    # its terminator: e.g. ``(see Annex IV).`` ends ``).`` → peel ``)``
-    # is unnecessary because the terminator is already last; but ``…IV.)``
-    # ends ``)`` → peel to reach the ``.``. Quotes/brackets likewise.
-    # R328.3 (restored — the R349→R361 window clobbered it): markdown
-    # emphasis/code markers (``*`` ``_`` backtick ``~``) belong in the peel
-    # set for exactly the same reason — they WRAP text rather than end it.
-    # Measured live on Bedrock: a COMPLETE answer ending
-    # ``*Sources: … Recitals 46-59.*`` was judged truncated on its closing
-    # ``*`` and discarded. A formatting character is not a truncation.
     tail = stripped
-    # R377 - a trailing XML CHANNEL tag is a WRAPPER, not a terminator.
-    #
-    # The V2 output contract (``ANSWER_GENERATE_SYSTEM_V2`` output_contract)
-    # and ``USER_CHALLENGE_BREVITY_CLAUSE_V2`` both instruct the model to put
-    # its clean statutory answer inside an ``answer`` XML channel when it is
-    # re-deriving under a challenge. ``prompt_guard.split_reasoning_and_answer``
-    # unwraps that - but it runs AFTER this guard, which sees the RAW provider
-    # text. So a correctly-formatted challenge answer ends on ">", which is not
-    # in ".!?", and this returned True.
-    #
-    # MEASURED LIVE 2026-08-22 on the emotion-recognition pushback turn: a
-    # COMPLETE and CORRECT Sonnet 5 answer whose final characters were
-    # "... regardless of written employee consent." followed by the closing
-    # answer tag was judged truncated on that tag. Every model on BOTH
-    # providers then "truncated" identically - anthropic/claude-opus-5,
-    # anthropic/claude-sonnet-5, eu.anthropic.claude-opus-4-6-v1, qwen3-235b,
-    # nemotron-super, devstral - both chains exhausted, and the route shipped a
-    # 2538-char deterministic dump of unrelated Article 5 carve-outs on THE
-    # GRADED TURN. Six models failing the same way is a detector fault, not six
-    # model faults.
-    #
-    # Same category as the R328.3 markdown peel below it: a tag WRAPS text
-    # rather than ending it. Only a WELL-FORMED closing tag is peeled, so an
-    # answer genuinely ending on a bare ">" still reads as truncated.
+    # R377 — a trailing XML CHANNEL tag is a WRAPPER, not a terminator.
     while True:
         _before_peel = tail
         while tail and tail[-1] in ")]}\"”’'*_`~":
@@ -300,11 +261,29 @@ def _looks_structurally_truncated(text: str | None) -> bool:
             break
     if not tail:
         return False
+    # R328.3 / R377 — a MARKDOWN TABLE ROW is a structurally complete ending. Long
+    # enumerative answers (role × obligation matrices) legitimately end on one,
+    # and its terminal ``|`` is a row close, not a mid-clause stop. Evaluated on
+    # ``tail`` so a table enclosed within ``</answer>`` is recognised.
+    last_line = tail.splitlines()[-1].strip()
+    # R379 — a row needs at least two cells to be a complete row. A stream
+    # cut right after a cell separator leaves ``| Deployer |``, which starts
+    # and ends with a pipe exactly like a finished row and was excused as
+    # one; requiring three pipes (two interior cells) closes that.
+    if (
+        last_line.startswith("|")
+        and last_line.endswith("|")
+        and last_line.count("|") >= 3
+    ):
+        return False
     # R357 — an ending ellipsis ("…") is a CUT, not a terminator: a
     # complete regulatory sentence never trails off. Previously "…" sat
     # in the terminal set, so a stream cut right after the model wrote an
     # ellipsis passed the structural guard and shipped a broken fragment.
     return tail[-1] not in ".!?"
+
+
+_is_likely_truncated = _looks_structurally_truncated
 
 
 # R142 — incomplete-verdict guard. Even when an answer ends in terminal
@@ -587,6 +566,7 @@ def _shrink_user_for_groq(user: str, budget: int = 10000) -> str:
     _TAIL_MARKERS = (
         " ANSWER COVERAGE:",          # USER_ANSWER_COVERAGE_CLAUSE start
         " CRITICAL ANSWER RULES",     # USER_CRITICAL_RULES_CLAUSE start
+        " SCOPE STOP RULE",           # R367 USER_SCOPE_STOP_CLAUSE start
     )
     tail_start = len(user)  # default: no protected tail found
     for tm in _TAIL_MARKERS:
@@ -4170,6 +4150,37 @@ _ENFORCEMENT_CORRECTIVE_RE = re.compile(
     r"\bmarket\s+surveillance\b.*?\b(?:recall|suspend|withdraw|corrective|timeframe|reclassif\w*)")
 
 
+# R367 - AMENDMENT-POWER shapes are questions about how the Act's own lists are
+# CHANGED (Art. 7 for Annex III, Art. 6(6) for the Art. 6(3) conditions,
+# Art. 97 for the delegation itself), not verdicts about where a given system
+# sits. The official 2026-08-25 benchmark Q17 ("Can the European Commission
+# amend Annex III ... to add or modify use-cases classified as high-risk AI
+# systems? Under what conditions?", gold ref Article 7.1) tripped the verdict
+# gate on its "classified as high-risk" clause and received the canned
+# general-classification roster - Art. 5 (prohibitions), Art. 6, Annex III,
+# Annex I, Art. 50 (transparency) - which EVICTED the Art. 7 the retriever had
+# already surfaced in ``ctx.obligations``. Three of its four correctness
+# criteria failed. Same defect class and same remedy shape as R356 above.
+#
+# Both limbs are required: an amendment VERB reaching an amendment OBJECT (an
+# Annex, the high-risk list, or the delegated-act machinery), AND an amending
+# ACTOR. A question that merely says "modify"/"update" about a SYSTEM cannot
+# match, and neither can a plain "what does the Commission do?".
+_AMENDMENT_POWER_RE = re.compile(
+    r"\b(?:amend\w*|modif\w*|updat\w*|add|adds|adding|remov\w*|delet\w*"
+    r"|revis\w*|chang\w*|extend\w*)\b"
+    r"[^.?!]{0,80}?"
+    r"\b(?:annex\s+(?:i{1,3}v?|vi{0,3}|ix|xi{0,3}|x)\b"
+    r"|the\s+high[-\s]?risk\s+list\b|list\s+of\s+high[-\s]?risk\b"
+    r"|delegated\s+acts?\b)",
+    re.IGNORECASE,
+)
+_AMENDMENT_ACTOR_RE = re.compile(
+    r"\b(?:commission|delegated\s+acts?|article\s*97|art\.?\s*97)\b",
+    re.IGNORECASE,
+)
+
+
 def _general_classification_verdict(question: str) -> dict | None:
     """Domain-general risk-tier verdict for un-catalogued classification asks.
 
@@ -4205,6 +4216,14 @@ def _general_classification_verdict(question: str) -> dict | None:
     # The shape requires an MSA mention PLUS a corrective/enforcement verb,
     # so no classification question (Q7/Q24/Q46-class) can trip it.
     if _ENFORCEMENT_CORRECTIVE_RE.search(question):
+        return None
+    # R367 - see _AMENDMENT_POWER_RE. Requires BOTH an amendment
+    # verb+object AND an amending actor, so "can I modify my Annex III
+    # system?" (no actor) and "what does the Commission do?" (no
+    # amendment object) both stay on the classification path.
+    if _AMENDMENT_POWER_RE.search(question) and _AMENDMENT_ACTOR_RE.search(
+        question
+    ):
         return None
     live = question
     if "Latest question:" in live:
@@ -9779,6 +9798,25 @@ def _claude_max_enhance_answer(
 
             if user_critical_rules_enabled():
                 user_message += USER_CRITICAL_RULES_CLAUSE
+        except Exception:  # noqa: BLE001 — a prompt add-on must never break Stage-2
+            pass
+
+        # R367 — the SCOPE STOP RULE. Appended LAST so it is the final
+        # instruction the model reads, and so the R336 tail-preserving
+        # truncation (see ``_TAIL_MARKERS``) keeps it. Default OFF: it
+        # changes the Stage-2 prompt, and per AGENTS.md invariant #5 that is
+        # NOT reference-neutral, so it needs both gates before it flips.
+        # Keyed in ``_engine_cache_key`` (R263.2) — without that a
+        # same-process two-arm A/B serves arm A's cache to arm B, which is
+        # exactly how a lever reads +0.0000 while doing nothing.
+        try:
+            from app.data.graph_rag_prompts import (  # noqa: PLC0415
+                USER_SCOPE_STOP_CLAUSE,
+                scope_stop_rule_enabled,
+            )
+
+            if scope_stop_rule_enabled():
+                user_message += USER_SCOPE_STOP_CLAUSE
         except Exception:  # noqa: BLE001 — a prompt add-on must never break Stage-2
             pass
 

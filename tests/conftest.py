@@ -375,6 +375,36 @@ def _reset_request_intent_cache():
     yield
 
 
+@pytest.fixture(autouse=True)
+def _restore_regenold_api_key_setting():
+    """R365 — restore ``settings.regenold.api_key`` after every test.
+
+    Several suites pin the auth key on the GLOBAL settings singleton and never
+    put it back — ``test_r100_synthesis_default._client`` (:204) and
+    ``test_r115_followups._wire`` (:37) both do. Settings wins over env at the
+    route, so the leak is AUTHORITATIVE: any later suite that posts with its own
+    key gets ``403 regenold_api_key_invalid``. That is what broke seven R365
+    tests in-suite while they were 50/50 green file-scoped.
+
+    Restoring here fixes the whole family at once rather than chasing each
+    writer, and it is a no-op for any test that does not touch the singleton.
+    """
+    try:
+        from app.config import settings as _cfg  # noqa: PLC0415
+
+        _saved = _cfg.regenold.api_key
+    except Exception:  # noqa: BLE001 — never block a test on cleanup
+        yield
+        return
+    try:
+        yield
+    finally:
+        try:
+            _cfg.regenold.api_key = _saved
+        except Exception:  # noqa: BLE001
+            pass
+
+
 # R105 — reset the pooled LLM provider singletons + the lazy Anthropic
 # client cache between tests. The provider module memoises FOUR
 # process-wide objects that bind to env at FIRST construction and never
